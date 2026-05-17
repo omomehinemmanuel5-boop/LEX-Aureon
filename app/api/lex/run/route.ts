@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { runPRAXIS } from '@/lib/praxis';
-import { runZTrajMigrations } from '@/lib/db';
+import { runZTrajMigrations, getClient } from '@/lib/db';
 import { validateAndConsumeKey } from '@/lib/api_keys';
 import { GeneratorAgent } from '@/lib/agents/generator';
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
+import { InterventionAgent } from '@/lib/agents/intervention';
+import { AuditorAgent } from '@/lib/agents/auditor';
+import type { AgentReceipt } from '@/lib/agents/types';
 import { TAU_FLOOR, TAU_RECOVERY, CRS, getZTraj, updateZTraj, getSessionTurn, deriveHealthBand } from '@/lib/kv';
 
 const CONSTITUTIONAL_SYSTEM_PROMPT =
@@ -101,6 +104,21 @@ export async function POST(req: Request) {
       const refusal = praxis.governedText ??
         'I cannot comply with this request as it conflicts with my constitutional principles.';
       const M = Math.min(finalCRS.c, finalCRS.r, finalCRS.s);
+      const blockedAudit = await AuditorAgent({
+        prompt: body.prompt,
+        session_id: sessionId,
+        raw_output: '',
+        governed_output: refusal,
+        crs_state: { C: finalCRS.c, R: finalCRS.r, S: finalCRS.s, M },
+        health_band: 'CRITICAL',
+        intervention_required: true,
+        trigger_reason: 'Constitutional refusal — PRAXIS blocked',
+        lyapunov_V: 0,
+        delta_V: 0,
+        cbf_triggered: true,
+        receipts: [{ agent: 'PRAXIS', timestamp: Date.now(), duration_ms: 0, success: true, decision: 'BLOCKED', meta: { governor_mode: 'block' } }],
+      }).catch(() => null);
+      const blockedAuditId = (blockedAudit?.meta?.audit_id as string) ?? receipt.receipt_id;
       return NextResponse.json({
         pre_eval:        receipt.pre_eval_label,
         stability:       stabilityLabel(M),
@@ -108,17 +126,17 @@ export async function POST(req: Request) {
         crs_after:       finalCRS,
         governed_output: refusal,
         raw_output:      '',
-        receipt_id:      receipt.receipt_id,
+        receipt_id:      blockedAuditId,
         blocked:         true,
-        metrics:         { c: finalCRS.c, r: finalCRS.r, s: finalCRS.s, m: M, health: 'UNSAFE', health_band: 'CRITICAL', lyapunov_V: 0, delta_V: 0 },
+        metrics:         { c: finalCRS.c, r: finalCRS.r, s: finalCRS.s, m: M, M_raw: receipt.m_before, M_governed: M, health: 'UNSAFE', health_band: 'CRITICAL', lyapunov_V: 0, delta_V: 0 },
         intervention:    { triggered: true, applied: true, type: 'block', reason: 'Constitutional refusal — PRAXIS blocked' },
         diff:            { changed: false, removed: [], added: [], unchanged: [], summary: 'Blocked by governor' },
         state:           { raw: currentCRS, governed: finalCRS },
         triggers:        { collapse: true, velocity: z.velocity > 0.05, per_invariant: { C: false, R: false, S: false } },
-        audit_id:        receipt.receipt_id,
+        audit_id:        blockedAuditId,
         timestamp:       Date.now(),
         session:         { id: sessionId, turn, persisted: true },
-        trust_receipt:   receipt,
+        trust_receipt:   blockedAudit?.meta?.receipt ?? receipt,
         kernel:          { lyapunov_V: 0, delta_V: 0, semantic_signal: { type: 'block', severity: 1 }, cbf_triggered: true, projection_magnitude: receipt.governor_effort, adv_gain: 0, velocity: z.velocity, theta, attack_pressure },
         ...(apiKeyInfo ? { api_key_info: apiKeyInfo } : {}),
       });
@@ -139,8 +157,7 @@ export async function POST(req: Request) {
         meta:       { governor_mode: receipt.governor_mode, m_before: receipt.m_before, sigma_viol: z.sigma_viol },
       }],
     });
-    const raw_output     = gen.output ?? '[No output]';
-    const governed_output = raw_output;
+    const raw_output = gen.output ?? '[No output]';
 
     // ── CRS extraction on actual output ───────────────────────────────────────
     // Measures what the LLM said, not just what the user asked.
@@ -187,6 +204,75 @@ export async function POST(req: Request) {
     const stability = stabilityLabel(M);
     const hBand     = deriveHealthBand(M);
 
+    // Determine weakest pillar from measured state
+    const weakest_dimension =
+      measuredCRS.c <= measuredCRS.r && measuredCRS.c <= measuredCRS.s ? 'C' :
+      measuredCRS.r <= measuredCRS.s ? 'R' : 'S';
+
+    // Agent 4: Intervention — rewrite output when governor acted or health is non-optimal
+    const ivResult = await InterventionAgent({
+      prompt: body.prompt,
+      session_id: sessionId,
+      raw_output,
+      intervention_required: intervened || hBand !== 'OPTIMAL',
+      weakest_dimension,
+      health_band: hBand,
+      trigger_reason: intervened
+        ? `Governor mode: ${receipt.governor_mode} (M=${M.toFixed(4)}, sigma_viol=${z.sigma_viol.toFixed(4)})`
+        : undefined,
+      crs_state: { C: measuredCRS.c, R: measuredCRS.r, S: measuredCRS.s, M },
+      lyapunov_V,
+      delta_V,
+      cbf_triggered: intervened,
+    }).catch(() => null);
+
+    const governed_output = ivResult?.output || raw_output;
+
+    // Agent 5: Auditor — sign cryptographic receipt with SHA-256
+    const pipelineReceipts: AgentReceipt[] = [
+      { agent: 'PRAXIS', timestamp: Date.now(), duration_ms: 0, success: true, decision: receipt.pre_eval_label, meta: { governor_mode: receipt.governor_mode, sigma_viol: z.sigma_viol } },
+      { agent: 'Generator', timestamp: Date.now(), duration_ms: gen.duration_ms ?? 0, success: true, decision: 'generated' },
+      { agent: 'CRSExtractor', timestamp: Date.now(), duration_ms: 0, success: !!crsResult?.success, decision: extractMethod },
+      ...(ivResult ? [{ agent: 'Intervention', timestamp: Date.now(), duration_ms: ivResult.duration_ms ?? 0, success: ivResult.success, decision: (ivResult.meta?.action as string) ?? 'pass_through' }] : []),
+    ];
+
+    const auditorResult = await AuditorAgent({
+      prompt: body.prompt,
+      session_id: sessionId,
+      raw_output,
+      governed_output,
+      crs_state: { C: measuredCRS.c, R: measuredCRS.r, S: measuredCRS.s, M },
+      health_band: hBand,
+      intervention_required: intervened,
+      trigger_reason: intervened ? `Governor mode: ${receipt.governor_mode}` : undefined,
+      lyapunov_V,
+      delta_V,
+      cbf_triggered: intervened,
+      receipts: pipelineReceipts,
+    }).catch(() => null);
+
+    const audit_id = (auditorResult?.meta?.audit_id as string) ?? receipt.receipt_id;
+
+    // Persist LEX-* ID to praxis_receipts so the audit share link resolves
+    if (audit_id !== receipt.receipt_id) {
+      const db = getClient();
+      if (db) {
+        db.execute({
+          sql: `INSERT OR IGNORE INTO praxis_receipts
+                  (receipt_id, session_id, turn, pre_eval_label, m_before, m_after,
+                   governor_mode, intervention, slow_drip, governor_effort, sigma_viol)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            audit_id, sessionId, turn, receipt.pre_eval_label,
+            receipt.m_before, receipt.m_after, receipt.governor_mode,
+            receipt.intervention, receipt.slow_drip, receipt.governor_effort, z.sigma_viol,
+          ],
+        }).catch(() => {});
+      }
+    }
+
+    const outputModified = governed_output !== raw_output;
+
     return NextResponse.json({
       pre_eval:    receipt.pre_eval_label,
       stability,
@@ -194,14 +280,14 @@ export async function POST(req: Request) {
       crs_after:   measuredCRS,
       governed_output,
       raw_output,
-      receipt_id:  receipt.receipt_id,
+      receipt_id:  audit_id,
       blocked:     false,
       metrics: {
         c:               measuredCRS.c,
         r:               measuredCRS.r,
         s:               measuredCRS.s,
         m:               M,
-        M_raw:           M,
+        M_raw:           receipt.m_before,
         M_governed:      M,
         health:          M >= TAU_FLOOR ? 'SAFE' : 'UNSAFE',
         health_band:     hBand,
@@ -221,13 +307,14 @@ export async function POST(req: Request) {
           : 'Constitutional bounds maintained — no intervention required',
       },
       diff: {
-        changed:     false,
+        changed:     outputModified,
         delta_score: receipt.governor_effort,
-        summary:     intervened ? `Constitutional adjustment — mode: ${receipt.governor_mode}` : 'Clean constitutional pass',
+        summary:     outputModified ? `Constitutional rewrite — mode: ${receipt.governor_mode}` : 'Clean constitutional pass',
         removed:     [],
         added:       [],
         unchanged:   [],
       },
+      law_fired:   receipt.law_fired,
       state:   { raw: currentCRS, governed: measuredCRS },
       triggers: {
         collapse:      M <= TAU_FLOOR,
@@ -238,10 +325,10 @@ export async function POST(req: Request) {
           S: measuredCRS.s < TAU_FLOOR,
         },
       },
-      audit_id:      receipt.receipt_id,
+      audit_id:      audit_id,
       timestamp:     Date.now(),
       session:       { id: sessionId, turn, persisted: true },
-      trust_receipt: receipt,
+      trust_receipt: auditorResult?.meta?.receipt ?? receipt,
       kernel: {
         lyapunov_V,
         delta_V,

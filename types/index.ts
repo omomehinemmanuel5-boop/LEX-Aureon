@@ -32,10 +32,12 @@ export interface GovernanceResponse {
     r: number;
     s: number;
     m: number;
-    M_raw?: number;
-    M_governed?: number;
+    M_raw?: number;    // pre-governance stability margin
+    M_governed?: number; // post-governance measured stability margin
     health?: string;
+    health_band?: string;
   };
+  law_fired?: string | null;
   intervention?: {
     triggered?: boolean;
     applied?: boolean;
@@ -51,8 +53,8 @@ export interface GovernanceResponse {
     unchanged: string[];
   };
   state?: {
-    raw: { C: number; R: number; S: number };
-    governed: { C: number; R: number; S: number };
+    raw: { c: number; r: number; s: number };
+    governed: { c: number; r: number; s: number };
   };
   triggers?: {
     collapse: boolean;
@@ -68,6 +70,7 @@ export interface GovernanceResponse {
     n_stable: number;
     drift_dir: string;
     sigma_viol: number;
+    attack_pressure?: number;
   };
 }
 

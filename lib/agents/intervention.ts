@@ -85,7 +85,7 @@ async function llmConstitutionalRewrite(
   lawText?: string
 ): Promise<string | null> {
   try {
-    const key = process.env.GROQ_API_KEY || process.env.groq_api_key;
+    const key = process.env.GROQ_API_KEY;
     if (!key) return null;
 
     const system = [

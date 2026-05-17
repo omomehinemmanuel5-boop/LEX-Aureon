@@ -10,7 +10,7 @@ import { AgentContext, AgentResult } from './types';
 export async function GeneratorAgent(ctx: AgentContext): Promise<AgentResult> {
   const t = Date.now();
   try {
-    const key = process.env.GROQ_API_KEY || process.env.groq_api_key;
+    const key = process.env.GROQ_API_KEY;
     if (!key) {
       return {
         success: true,
@@ -33,7 +33,8 @@ export async function GeneratorAgent(ctx: AgentContext): Promise<AgentResult> {
           { role: 'user', content: ctx.prompt },
         ],
         max_tokens: 500,
-        temperature: 0.7,
+        // Lower temperature under constitutional pressure — more deterministic responses
+        temperature: Math.max(0.1, 0.7 - (ctx.attack_pressure ?? 0) * 0.4),
       }),
     });
 
