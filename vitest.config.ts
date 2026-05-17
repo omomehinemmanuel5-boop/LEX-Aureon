@@ -9,5 +9,14 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    environmentMatchGlobs: [
+      ['**/*.dom.test.{ts,tsx}', 'jsdom'],
+    ],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      include: ['lib/**/*.ts', 'app/api/**/*.ts'],
+      exclude: ['**/*.test.ts', '**/types.ts'],
+    },
   },
 });

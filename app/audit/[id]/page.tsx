@@ -9,9 +9,35 @@ interface Props { params: Promise<{ id: string }> }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
+  const result = await getAuditEntry(id);
+
+  if (!result.ok) {
+    return {
+      title: `Audit Receipt ${id} — Lex Aureon`,
+      description: 'Constitutional governance audit receipt.',
+      robots: { index: false },
+    };
+  }
+
+  const e = result.entry;
+  const m = ((e.m_after ?? 0) * 100).toFixed(1);
+  const verdict = e.intervention ? 'Governor intervened' : 'Clean constitutional pass';
+  const desc = `${verdict} · M=${m}% · ${e.governor_mode} · turn ${e.turn}. Cryptographically signed PRAXIS v1.0 receipt.`;
+
   return {
-    title: `Audit Receipt ${id} — Lex Aureon`,
-    description: 'Cryptographically signed constitutional governance audit receipt.',
+    title: `Receipt ${id.slice(0, 12)}… · M=${m}% — Lex Aureon`,
+    description: desc,
+    openGraph: {
+      title: `Audit Receipt · ${verdict}`,
+      description: desc,
+      type: 'article',
+      images: [{ url: '/logo.png', width: 1080, height: 1080 }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `Audit Receipt · M=${m}%`,
+      description: desc,
+    },
   };
 }
 

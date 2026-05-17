@@ -6,31 +6,46 @@ on:
     branches: [main]
 
 jobs:
-  review:
+  build:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
+      - run: npm run lint
+      - run: npm test
       - run: npm run build
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL || 'libsql://placeholder.turso.io' }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN || 'placeholder' }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'sk-ant-placeholder' }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'placeholder' }}
       - name: Post PR comment on success
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           script: |
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '**Build passed — ready to merge**\n\nLex Aureon · PRAXIS v1.0 · C+R+S=1'
+              body: '**Build, lint, and tests passed — ready to review**\n\nLex Aureon · PRAXIS v1.0 · C+R+S=1'
             })
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified

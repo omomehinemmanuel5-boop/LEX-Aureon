@@ -128,7 +128,7 @@ export default function Console() {
     } finally {
       setLoading(false);
     }
-  }, [apiCalls, prompt, totalRuns, addLine]);
+  }, [apiCalls, prompt, totalRuns, addLine, sessionId]);
 
   const m = res?.metrics;
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
@@ -622,8 +622,7 @@ export default function Console() {
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} callsUsed={apiCalls} />}
       {showEmail && (
-        <EmailCapture onComplete={(email) => {
-          console.log('Email captured:', email);
+        <EmailCapture onComplete={() => {
           setShowEmail(false);
           setTimeout(() => run(), 100);
         }} />

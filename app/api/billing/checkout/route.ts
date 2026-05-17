@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND = process.env.LEX_API_BASE_URL ?? 'https://api.lexaureon.com';
+import { getBackendUrl } from '@/lib/backend';
+import { logger, errorFields } from '@/lib/logger';
 
 /* Proxy to Python backend /billing/checkout.
    If a NEXT_PUBLIC_PRO_CHECKOUT_URL (Stripe link) is set, redirect there instead. */
@@ -10,6 +10,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ checkout_url: stripeUrl });
   }
 
+  let backend: string;
+  try {
+    backend = getBackendUrl();
+  } catch (e) {
+    logger.error('billing.checkout', 'backend URL not configured', errorFields(e));
+    return NextResponse.json({ error: 'Billing service unavailable' }, { status: 503 });
+  }
+
   try {
     const auth = req.headers.get('authorization');
     const body = await req.json() as Record<string, unknown>;
@@ -17,7 +25,7 @@ export async function POST(req: NextRequest) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (auth) headers['Authorization'] = auth;
 
-    const res = await fetch(`${BACKEND}/billing/checkout`, {
+    const res = await fetch(`${backend}/billing/checkout`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -32,7 +40,8 @@ export async function POST(req: NextRequest) {
       );
     }
     return NextResponse.json(data);
-  } catch {
+  } catch (e) {
+    logger.error('billing.checkout', 'upstream checkout failed', errorFields(e));
     return NextResponse.json({ error: 'Billing service unavailable' }, { status: 503 });
   }
 }
