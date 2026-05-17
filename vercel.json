@@ -9,5 +9,11 @@
       "destination": "https://www.lexaureon.com/$1",
       "permanent": true
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/synthetic",
+      "schedule": "0 12 * * *"
+    }
   ]
 }
