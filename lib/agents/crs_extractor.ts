@@ -102,7 +102,7 @@ async function groqCRS(
   output: string,
   prompt: string,
 ): Promise<{ C: number; R: number; S: number } | null> {
-  const key = process.env.GROQ_API_KEY || process.env.groq_api_key;
+  const key = process.env.GROQ_API_KEY;
   if (!key) return null;
 
   const scoringPrompt =

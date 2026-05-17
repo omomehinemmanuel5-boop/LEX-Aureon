@@ -8,6 +8,8 @@ import { InterventionAgent } from '@/lib/agents/intervention';
 import { AuditorAgent } from '@/lib/agents/auditor';
 import type { AgentReceipt } from '@/lib/agents/types';
 import { TAU_FLOOR, TAU_RECOVERY, CRS, getZTraj, updateZTraj, getSessionTurn, deriveHealthBand } from '@/lib/kv';
+import { logger, errorFields } from '@/lib/logger';
+import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 
 const CONSTITUTIONAL_SYSTEM_PROMPT =
   'You are Lex Aureon — a Sovereign Constitutional AI operating under the Aureonics framework. ' +
@@ -34,9 +36,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  // Run migrations once per cold start
+  const startedAt = Date.now();
+
   if (!migrationsDone) {
-    await runZTrajMigrations().catch(() => {});
+    await runZTrajMigrations().catch((e) =>
+      logger.error('lex.run.migrations', 'z_traj migration failed', errorFields(e)),
+    );
     migrationsDone = true;
   }
 
@@ -73,6 +78,18 @@ export async function POST(req: Request) {
         runs_limit:     validation.key!.runs_limit,
         runs_remaining: validation.key!.runs_limit - validation.key!.runs_used,
       };
+    }
+
+    // ── Rate limit anonymous (no API key) callers by IP ──────────────────────
+    if (!apiKeyInfo) {
+      const ip = getClientIp(req);
+      const rl = await checkRateLimit(`lex.run:${ip}`, 30, 60);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: 'Rate limit exceeded', retry_after_seconds: rl.retryAfter },
+          { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+        );
+      }
     }
 
     const sessionId: string = body.session_id;
@@ -117,7 +134,10 @@ export async function POST(req: Request) {
         delta_V: 0,
         cbf_triggered: true,
         receipts: [{ agent: 'PRAXIS', timestamp: Date.now(), duration_ms: 0, success: true, decision: 'BLOCKED', meta: { governor_mode: 'block' } }],
-      }).catch(() => null);
+      }).catch((e) => {
+        logger.error('lex.run.auditor.blocked', 'auditor failed on blocked path', { session_id: sessionId, ...errorFields(e) });
+        return null;
+      });
       const blockedAuditId = (blockedAudit?.meta?.audit_id as string) ?? receipt.receipt_id;
       return NextResponse.json({
         pre_eval:        receipt.pre_eval_label,
@@ -171,7 +191,10 @@ export async function POST(req: Request) {
         S: currentCRS.s,
         M: Math.min(currentCRS.c, currentCRS.r, currentCRS.s),
       },
-    }).catch(() => null);
+    }).catch((e) => {
+      logger.error('lex.run.crs_extractor', 'CRS extraction failed', { session_id: sessionId, ...errorFields(e) });
+      return null;
+    });
 
     // Merge: PRAXIS governs the input, extractor measures the output.
     // z_traj is updated with the measured output CRS so the next session
@@ -197,7 +220,9 @@ export async function POST(req: Request) {
       ));
 
       // Overwrite z_traj with output-measured state so next session reads real CRS
-      await updateZTraj(sessionId, measuredCRS, finalCRS, newAttackPressure).catch(() => {});
+      await updateZTraj(sessionId, measuredCRS, finalCRS, newAttackPressure).catch((e) =>
+        logger.error('lex.run.z_traj.update', 'updateZTraj failed', { session_id: sessionId, ...errorFields(e) }),
+      );
     }
 
     const M    = Math.min(measuredCRS.c, measuredCRS.r, measuredCRS.s);
@@ -224,7 +249,10 @@ export async function POST(req: Request) {
       lyapunov_V,
       delta_V,
       cbf_triggered: intervened,
-    }).catch(() => null);
+    }).catch((e) => {
+      logger.error('lex.run.intervention', 'intervention agent failed', { session_id: sessionId, ...errorFields(e) });
+      return null;
+    });
 
     const governed_output = ivResult?.output || raw_output;
 
@@ -249,7 +277,10 @@ export async function POST(req: Request) {
       delta_V,
       cbf_triggered: intervened,
       receipts: pipelineReceipts,
-    }).catch(() => null);
+    }).catch((e) => {
+      logger.error('lex.run.auditor', 'auditor agent failed', { session_id: sessionId, ...errorFields(e) });
+      return null;
+    });
 
     const audit_id = (auditorResult?.meta?.audit_id as string) ?? receipt.receipt_id;
 
@@ -267,7 +298,9 @@ export async function POST(req: Request) {
             receipt.m_before, receipt.m_after, receipt.governor_mode,
             receipt.intervention, receipt.slow_drip, receipt.governor_effort, z.sigma_viol,
           ],
-        }).catch(() => {});
+        }).catch((e) =>
+          logger.error('lex.run.receipt_insert', 'praxis_receipts insert failed', { audit_id, session_id: sessionId, ...errorFields(e) }),
+        );
       }
     }
 
@@ -344,7 +377,8 @@ export async function POST(req: Request) {
     });
 
   } catch (e) {
-    console.error('PRAXIS error:', e);
-    return NextResponse.json({ error: String(e).slice(0, 200) }, { status: 500 });
+    logger.error('lex.run', 'unhandled PRAXIS error', { duration_ms: Date.now() - startedAt, ...errorFields(e) });
+    const expose = process.env.NODE_ENV === 'production' ? 'Internal error' : String(e).slice(0, 200);
+    return NextResponse.json({ error: expose }, { status: 500 });
   }
 }

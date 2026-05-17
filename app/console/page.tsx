@@ -128,7 +128,7 @@ export default function Console() {
     } finally {
       setLoading(false);
     }
-  }, [apiCalls, prompt, totalRuns, addLine]);
+  }, [apiCalls, prompt, totalRuns, addLine, sessionId]);
 
   const m = res?.metrics;
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
@@ -176,9 +176,6 @@ export default function Console() {
               <TermProgressBar value={apiCalls} max={MAX_CALLS} color={pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#22c55e'} label={`${apiCalls}/${MAX_CALLS}`} />
             </div>
             <span className="sm:hidden text-xs font-mono text-slate-500">{apiCalls}/{MAX_CALLS}</span>
-            {totalRuns && (
-              <span className="text-xs text-slate-700 font-mono hidden sm:inline">· {totalRuns.toLocaleString()} total</span>
-            )}
           </div>
           <button
             onClick={() => setShowUpgrade(true)}
@@ -192,6 +189,28 @@ export default function Console() {
 
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 pt-4 pb-36 space-y-4">
+
+          {/* ── Global Runs Counter ─────────────────────── */}
+          <div
+            className="rounded-lg border px-4 py-3 flex items-center justify-between"
+            style={{ background: '#070b14', borderColor: '#1a2040' }}
+          >
+            <div className="flex items-center gap-3">
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}
+              />
+              <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#64748b' }}>
+                Total governed runs
+              </span>
+            </div>
+            <span
+              className="text-xl sm:text-2xl font-bold font-mono tabular-nums"
+              style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }}
+            >
+              {totalRuns !== null ? totalRuns.toLocaleString() : '———'}
+            </span>
+          </div>
 
           {/* ── Terminal Input ──────────────────────────── */}
           <div
@@ -622,8 +641,7 @@ export default function Console() {
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} callsUsed={apiCalls} />}
       {showEmail && (
-        <EmailCapture onComplete={(email) => {
-          console.log('Email captured:', email);
+        <EmailCapture onComplete={() => {
           setShowEmail(false);
           setTimeout(() => run(), 100);
         }} />

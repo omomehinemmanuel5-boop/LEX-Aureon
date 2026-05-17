@@ -24,7 +24,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem('lex_token');
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('lex_token');
     if (!stored) return;
     setToken(stored);
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${stored}` } })
@@ -33,12 +34,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data) {
           setUser(data);
         } else {
-          localStorage.removeItem('lex_token');
+          window.localStorage.removeItem('lex_token');
           setToken(null);
         }
       })
       .catch(() => {
-        localStorage.removeItem('lex_token');
+        window.localStorage.removeItem('lex_token');
         setToken(null);
       });
   }, []);

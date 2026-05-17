@@ -1,14 +1,17 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.lexaureon.com';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Lex Aureon | Constitutional AI Governance',
   description: 'State-space control system for language generation. Constitutional AI governance powered by the Aureonics framework.',
   openGraph: {
     title: 'Lex Aureon — Govern AI. Ensure Trust. Defend Truth.',
     description: 'Constitutional AI governance. Real-time CBF control, Lyapunov stability, cryptographic audit receipts.',
     images: [{ url: '/logo.png', width: 1080, height: 1080 }],
-    url: 'https://lexaureon.com',
+    url: SITE_URL,
     type: 'website',
   },
   twitter: {

@@ -321,7 +321,7 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
 
 // ── Deprecated stub ───────────────────────────────────────────────────────────
 
-export async function runPraxis(_prompt: string, _session_id: string): Promise<never> {
+export async function runPraxis(): Promise<never> {
   throw new Error('runPraxis is deprecated — use runPRAXIS');
 }
 
