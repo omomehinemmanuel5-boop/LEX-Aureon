@@ -273,8 +273,10 @@ export async function updateZTraj(
     }
   }
 
-  // sigma_viol: rolling exponential average of floor violations
-  const viol = M < TAU_FLOOR ? (TAU_FLOOR - M) : 0;
+  // sigma_viol: rolling exponential average of constitutional stress.
+  // Accumulates when M < TAU_LYP (0.08) so slow-drip is detected DURING drift,
+  // not only after the CBF floor (0.05) has already been breached.
+  const viol = M < TAU_LYP ? (TAU_LYP - M) : 0;
   const prevSigma = existing?.sigma_viol ?? 0;
   const sigma_viol = prevSigma * ((SIGMA_WINDOW - 1) / SIGMA_WINDOW) + viol / SIGMA_WINDOW;
 
@@ -377,6 +379,9 @@ export function applyLawImpact(crs: CRS, impact: LawImpact): CRS {
   );
 }
 
+// applyRecovery: heuristic pillar rebalancing — raises weakest, lowers strongest.
+// NOT called by the PRAXIS pipeline; that uses applyGovernorCorrection (formal paper math).
+// Kept for research/comparison purposes only.
 export function applyRecovery(crs: CRS): CRS {
   const minVal = Math.min(crs.c, crs.r, crs.s);
   const maxVal = Math.max(crs.c, crs.r, crs.s);
@@ -393,10 +398,16 @@ export function applyRecovery(crs: CRS): CRS {
 export function getGovernorMode(z: ZTraj, tauFloor?: number): GovernorMode {
   const M   = z.last_m;
   const tau = tauFloor ?? TAU_FLOOR;
+  // suppress: M well above recovery floor AND session has been stable for N_MIN turns
   if (M > TAU_RECOVERY && z.n_stable >= N_MIN) return 'suppress';
+  // correction: M at or below constitutional floor (CBF active)
   if (M <= tau) return 'correction';
+  // nudge: drifting toward floor with detectable velocity
   if (tau < M && M <= TAU_RECOVERY && z.velocity > 0.05) return 'nudge';
-  return 'recovery';
+  // recovery: above floor, low velocity — spec: M > TAU_FLOOR AND n_stable > 0
+  // If n_stable = 0 and velocity is also low, system is newly initialised — nudge gently.
+  if (z.n_stable > 0) return 'recovery';
+  return 'nudge';
 }
 
 export function detectSlowDrip(z: ZTraj): boolean {

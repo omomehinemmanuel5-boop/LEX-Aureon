@@ -48,6 +48,14 @@ export default function Console() {
   const [showEmail, setShowEmail] = useState(false);
   const [totalRuns, setTotalRuns] = useState<number | null>(null);
   const [outputLines, setOutputLines] = useState<{ ts: string; text: string; color: string }[]>([]);
+  const [sessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'console';
+    const stored = localStorage.getItem('lex_session_id');
+    if (stored) return stored;
+    const id = `console_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`;
+    localStorage.setItem('lex_session_id', id);
+    return id;
+  });
   const resultsRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,7 +101,7 @@ export default function Console() {
       const r = await fetch('/api/lex/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, session_id: 'console' }),
+        body: JSON.stringify({ prompt, session_id: sessionId }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
@@ -395,7 +403,7 @@ export default function Console() {
                       <div className="flex items-center gap-2 mb-3">
                         <TS />
                         <span className="text-xs font-mono" style={{ color: intervened ? '#f59e0b' : '#22c55e' }}>
-                          {intervened ? '// governor modified output' : '// passed constitutional review'}
+                          {intervened ? '// governor invoked constitutional constraints' : '// passed constitutional review'}
                         </span>
                       </div>
                       <div
