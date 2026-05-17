@@ -170,12 +170,25 @@ export default function Console() {
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
   const pct = Math.round((apiCalls / MAX_CALLS) * 100);
 
-  const tabs: { id: Tab; icon: string; label: string }[] = [
+  // Was the output materially changed by the governor?
+  // - rewritten: the governor replaced the LLM response entirely
+  // - annotated: appended a [Lex Governor ...] note (ALERT-band intervention)
+  // - unchanged: governor passed; output is identical to raw
+  const outputDiffers = !!res && res.governed_output !== res.raw_output;
+  const outputAnnotated = !!res && outputDiffers && res.raw_output.length > 0 && res.governed_output.startsWith(res.raw_output);
+  const outputMode: 'rewritten' | 'annotated' | 'unchanged' =
+    !outputDiffers ? 'unchanged' : outputAnnotated ? 'annotated' : 'rewritten';
+
+  const allTabs: { id: Tab; icon: string; label: string }[] = [
     { id: 'governed', icon: '✦', label: 'Output' },
     { id: 'raw', icon: '◎', label: 'Raw' },
     { id: 'analysis', icon: '⬡', label: 'Analysis' },
     { id: 'audit', icon: '🔐', label: 'Audit' },
   ];
+  // Hide Raw tab when output is identical — showing two tabs of the same text is confusing.
+  const tabs = outputMode === 'unchanged'
+    ? allTabs.filter((t) => t.id !== 'raw')
+    : allTabs;
 
   return (
     <div
@@ -306,6 +319,40 @@ export default function Console() {
             {/* Signal pills */}
             <SignalPillBar prompt={prompt} />
 
+            {/* Example prompt chips — single-row horizontal scroll, shows only before first run */}
+            {!res && !loading && (
+              <div
+                className="flex items-center gap-1.5 mt-3 -mx-1 px-1 overflow-x-auto"
+                style={{ scrollbarWidth: 'none' }}
+                aria-label="Example prompts"
+              >
+                <span className="flex-shrink-0 text-xs font-mono mr-1" style={{ color: '#475569' }}>
+                  try ↦
+                </span>
+                {EXAMPLE_PROMPTS.map((ex) => {
+                  const palette = {
+                    identity:    { bg: '#07162b15', border: '#1e3a5f', color: '#60a5fa' },
+                    bypass:      { bg: '#1a120515', border: '#78350f', color: '#fbbf24' },
+                    sycophancy:  { bg: '#051a1015', border: '#065f46', color: '#34d399' },
+                    benign:      { bg: '#0a0d1815', border: '#1a2040', color: '#94a3b8' },
+                  }[ex.attack_type];
+                  return (
+                    <button
+                      key={ex.id}
+                      onClick={() => loadExample(ex.prompt)}
+                      type="button"
+                      title={ex.expected}
+                      aria-label={`Load example: ${ex.label}`}
+                      className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-mono whitespace-nowrap transition-all hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      style={{ background: palette.bg, border: `1px solid ${palette.border}`, color: palette.color, opacity: 0.85 }}
+                    >
+                      {ex.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="flex items-center justify-between mt-3">
               <span className="text-xs font-mono text-slate-700">{prompt.length}/5000</span>
               <div className="flex items-center gap-2">
@@ -331,54 +378,6 @@ export default function Console() {
               </div>
             </div>
           </div>
-
-          {/* ── Example Prompts (first-time UX) ─────────── */}
-          {!res && !loading && (
-            <div
-              className="rounded-lg border p-4"
-              style={{ background: '#070b14', borderColor: '#1a2040' }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#64748b' }}>
-                  Try a sample
-                </span>
-                <span className="text-xs font-mono" style={{ color: '#475569' }}>
-                  {'// tap to load — watch the governor react'}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {EXAMPLE_PROMPTS.map((ex) => {
-                  const palette = {
-                    identity:    { bg: '#07162b', border: '#1e3a5f',  color: '#60a5fa', label: 'identity reframe' },
-                    bypass:      { bg: '#1a1205', border: '#78350f',  color: '#fbbf24', label: 'jailbreak' },
-                    sycophancy:  { bg: '#051a10', border: '#065f46',  color: '#34d399', label: 'sycophancy' },
-                    benign:      { bg: '#0a0d18', border: '#1a2040',  color: '#94a3b8', label: 'benign' },
-                  }[ex.attack_type];
-                  return (
-                    <button
-                      key={ex.id}
-                      onClick={() => loadExample(ex.prompt)}
-                      type="button"
-                      aria-label={`Load example: ${ex.label}`}
-                      className="text-left rounded p-3 transition-all hover:opacity-80 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      style={{ background: palette.bg, border: `1px solid ${palette.border}` }}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-mono font-bold" style={{ color: palette.color }}>
-                          {ex.label}
-                        </span>
-                        <span className="text-xs font-mono uppercase tracking-wider" style={{ color: '#475569' }}>
-                          {palette.label}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-400 line-clamp-2">{ex.prompt}</div>
-                      <div className="text-xs mt-2" style={{ color: '#64748b' }}>{ex.expected}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* ── Terminal Output Log ─────────────────────── */}
           {outputLines.length > 0 && (
@@ -545,41 +544,74 @@ export default function Console() {
                 </div>
 
                 <div className="p-4">
-                  {/* Output tab — governor is a gate, not an editor; output = raw when not blocked */}
+                  {/* Output tab */}
                   {tab === 'governed' && (
                     <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <TS />
-                        <span className="text-xs font-mono" style={{ color: intervened ? '#f59e0b' : '#22c55e' }}>
-                          {intervened ? '// governor invoked constitutional constraints' : '// passed constitutional review'}
+                      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <TS />
+                          <span className="text-xs font-mono" style={{ color: outputMode === 'rewritten' ? '#f59e0b' : outputMode === 'annotated' ? '#fbbf24' : '#22c55e' }}>
+                            {outputMode === 'rewritten' && '// governor rewrote the LLM response'}
+                            {outputMode === 'annotated' && '// LLM response + governor annotation'}
+                            {outputMode === 'unchanged' && '// passed constitutional review · no modification'}
+                          </span>
+                        </div>
+                        {/* Modification badge */}
+                        <span
+                          className="text-xs font-mono uppercase tracking-widest px-2 py-0.5 rounded"
+                          style={
+                            outputMode === 'rewritten' ? { background: '#1c1005', color: '#fb923c', border: '1px solid #7c2d12' }
+                            : outputMode === 'annotated' ? { background: '#1a1205', color: '#fbbf24', border: '1px solid #78350f' }
+                            : { background: '#052017', color: '#4ade80', border: '1px solid #14532d' }
+                          }
+                        >
+                          {outputMode}
                         </span>
                       </div>
+
                       <div
-                        className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed"
+                        className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
                         style={{
                           background: '#020408',
-                          border: `1px solid ${intervened ? '#92400e30' : '#14532d30'}`,
-                          color: intervened ? '#fcd34d' : '#86efac',
+                          border: `1px solid ${outputMode === 'rewritten' ? '#92400e30' : outputMode === 'annotated' ? '#78350f30' : '#14532d30'}`,
+                          color: outputMode === 'rewritten' ? '#fcd34d' : '#86efac',
                           fontFamily: 'inherit',
                         }}
                       >
-                        {res.governed_output}
+                        {outputMode === 'annotated' ? (
+                          <>
+                            <span style={{ color: '#86efac' }}>{res.raw_output}</span>
+                            <span style={{ color: '#fbbf24', display: 'block', marginTop: 4 }}>
+                              {res.governed_output.slice(res.raw_output.length)}
+                            </span>
+                          </>
+                        ) : (
+                          res.governed_output
+                        )}
                       </div>
+
+                      {outputMode !== 'unchanged' && (
+                        <div className="mt-2 text-xs font-mono" style={{ color: '#64748b' }}>
+                          {outputMode === 'rewritten'
+                            ? `Compare with the original LLM response in the Raw tab. Reason: ${res.intervention?.reason ?? 'constitutional rewrite'}.`
+                            : 'Highlighted text was appended by the governor.'}
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Raw tab */}
-                  {tab === 'raw' && (
+                  {/* Raw tab — only shown when output was modified */}
+                  {tab === 'raw' && outputMode !== 'unchanged' && (
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <TS />
                         <span className="text-xs font-mono text-slate-500">{'// raw LLM output · pre-governor'}</span>
                       </div>
                       <div
-                        className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed"
+                        className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
                         style={{ background: '#020408', border: '1px solid #1a2040', color: '#64748b', fontFamily: 'inherit' }}
                       >
-                        {res.raw_output}
+                        {res.raw_output || '[empty — governor refused the prompt; no LLM call was made]'}
                       </div>
                     </div>
                   )}
