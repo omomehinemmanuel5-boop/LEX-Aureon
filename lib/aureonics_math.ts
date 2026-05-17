@@ -166,7 +166,7 @@ export function computeADV(decisions: string[], complianceFlags: boolean[]): {
  * dV/dt ≤ 0 when governor active → proven stable
  */
 const MU_LYP = 2.0;
-const TAU_LYP = 0.08;
+const TAU_LYP = 0.05;   // = TAU_FLOOR — paper uses one τ: V(x) = -Σlog(xi) + (μ/2)Σmax(0,τ-xi)²
 const FLOOR_LYP = 1e-9;
 
 export function lyapunov(C: number, R: number, S: number): number {
@@ -274,6 +274,7 @@ export function runRealAureonicsMath(
   const lyapunov_V = lyapunov(C, R, S);
 
   // Health band
+  // Boundaries match deriveHealthBand() in lib/kv.ts — single source of truth
   const health_band = M >= 0.25 ? 'OPTIMAL' : M >= 0.15 ? 'ALERT' : M >= 0.08 ? 'STRESSED' : 'CRITICAL';
 
   // Governor

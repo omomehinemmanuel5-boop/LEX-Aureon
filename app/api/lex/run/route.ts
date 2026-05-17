@@ -4,7 +4,7 @@ import { runZTrajMigrations } from '@/lib/db';
 import { validateAndConsumeKey } from '@/lib/api_keys';
 import { GeneratorAgent } from '@/lib/agents/generator';
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
-import { TAU_FLOOR, TAU_RECOVERY, CRS, getZTraj, updateZTraj, getSessionTurn } from '@/lib/kv';
+import { TAU_FLOOR, TAU_RECOVERY, CRS, getZTraj, updateZTraj, getSessionTurn, deriveHealthBand } from '@/lib/kv';
 
 const CONSTITUTIONAL_SYSTEM_PROMPT =
   'You are Lex Aureon — a Sovereign Constitutional AI operating under the Aureonics framework. ' +
@@ -17,13 +17,6 @@ let migrationsDone = false;
 function stabilityLabel(m: number): string {
   if (m > TAU_RECOVERY) return 'SAFE';
   if (m > TAU_FLOOR)    return 'WARNING';
-  return 'CRITICAL';
-}
-
-function healthBand(m: number): string {
-  if (m > 0.20) return 'OPTIMAL';
-  if (m > 0.15) return 'ALERT';
-  if (m > 0.05) return 'STRESSED';
   return 'CRITICAL';
 }
 
@@ -192,7 +185,7 @@ export async function POST(req: Request) {
 
     const M    = Math.min(measuredCRS.c, measuredCRS.r, measuredCRS.s);
     const stability = stabilityLabel(M);
-    const hBand     = healthBand(M);
+    const hBand     = deriveHealthBand(M);
 
     return NextResponse.json({
       pre_eval:    receipt.pre_eval_label,

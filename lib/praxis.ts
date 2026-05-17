@@ -36,6 +36,8 @@ const ATTACK_PATTERNS: Record<string, RegExp[]> = {
     /act\s+as\s+(if\s+you\s+(were|are)\s+)/i,
     /pretend\s+you\s+(are|were)\s+/i,
     /you.?re\s+not\s+(an?\s+)?(AI|assistant|constitutional)/i,
+    /forget\s+(your\s+)?(identity|name|values|purpose|who\s+you\s+are)/i,
+    /ignore\s+(who|what)\s+you\s+are/i,
   ],
   sycophancy: [
     /you\s+(must\s+)?(agree|admit)\s+(with\s+me|that)/i,
@@ -62,11 +64,22 @@ const STATIC_DELTA: Record<string, { dc: number; dr: number; ds: number }> = {
 };
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
-
+// CBF-safe Euclidean projection: guarantees each pillar ≥ TAU_FLOOR and C+R+S=1
 function projectToSimplex(c: number, r: number, s: number): CRS {
-  const sum = c + r + s;
-  if (sum <= 0) return { c: 1 / 3, r: 1 / 3, s: 1 / 3 };
-  return { c: c / sum, r: r / sum, s: s / sum };
+  const floor = TAU_FLOOR;
+  const vals = [c, r, s];
+  let v = vals.map(x => Math.max(x - floor, 0));
+  const target = 1.0 - 3 * floor;
+  const u = [...v].sort((a, b) => b - a);
+  let cssv = 0, rho = 0;
+  for (let j = 0; j < 3; j++) {
+    cssv += u[j];
+    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
+  }
+  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
+  v = v.map(x => Math.max(x - theta, 0) + floor);
+  const total = v.reduce((a, b) => a + b, 0);
+  return { c: v[0] / total, r: v[1] / total, s: v[2] / total };
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────

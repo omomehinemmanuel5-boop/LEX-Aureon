@@ -25,7 +25,8 @@ export default function HeroTicker() {
     return () => clearInterval(id);
   }, []);
 
-  const health = M > 0.15 ? 'SAFE' : M > 0.05 ? 'MONITORING' : 'CRITICAL';
+  // TAU_RECOVERY=0.15, TAU_FLOOR=0.05 — must match lib/kv.ts constants
+  const health = M > 0.15 ? 'SAFE' : M > 0.05 ? 'WARNING' : 'CRITICAL';
   const healthColor = M > 0.15 ? '#22c55e' : M > 0.05 ? '#f59e0b' : '#ef4444';
 
   return (

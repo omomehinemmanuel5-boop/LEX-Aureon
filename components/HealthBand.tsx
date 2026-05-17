@@ -24,7 +24,7 @@ const BAND_CONFIG: Record<string, {
     bg: 'bg-emerald-900/15',
     border: 'border-emerald-800/40',
     bar: 'bg-emerald-500',
-    description: 'Expansive reasoning · Full constitutional capacity',
+    description: 'Expansive reasoning · Full constitutional capacity · Governor suppressed',
     range: 'M ≥ 0.25',
   },
   ALERT: {
@@ -33,7 +33,7 @@ const BAND_CONFIG: Record<string, {
     bg: 'bg-yellow-900/15',
     border: 'border-yellow-800/40',
     bar: 'bg-yellow-500',
-    description: 'Structured reasoning · Measured responses',
+    description: 'Structured reasoning · Above TAU_RECOVERY · Governor in suppress mode',
     range: '0.15 ≤ M < 0.25',
   },
   STRESSED: {
@@ -42,7 +42,7 @@ const BAND_CONFIG: Record<string, {
     bg: 'bg-orange-900/15',
     border: 'border-orange-800/40',
     bar: 'bg-orange-500',
-    description: 'Constrained reasoning · Clinical and concise',
+    description: 'Constrained reasoning · Lyapunov penalty active · Governor in nudge/recovery mode',
     range: '0.08 ≤ M < 0.15',
   },
   CRITICAL: {
@@ -51,7 +51,7 @@ const BAND_CONFIG: Record<string, {
     bg: 'bg-red-900/15',
     border: 'border-red-800/50',
     bar: 'bg-red-500',
-    description: 'Minimal deterministic output · CBF active',
+    description: 'Near constitutional floor · Correction mode imminent (CBF activates at M ≤ 0.05)',
     range: 'M < 0.08',
   },
   SAFE: {
@@ -60,8 +60,8 @@ const BAND_CONFIG: Record<string, {
     bg: 'bg-emerald-900/15',
     border: 'border-emerald-800/40',
     bar: 'bg-emerald-500',
-    description: 'Constitutional bounds maintained',
-    range: 'M ≥ τ',
+    description: 'Constitutional bounds maintained · M above TAU_FLOOR (0.05)',
+    range: 'M ≥ τ (0.05)',
   },
   UNSAFE: {
     label: 'UNSAFE',
@@ -69,8 +69,8 @@ const BAND_CONFIG: Record<string, {
     bg: 'bg-red-900/15',
     border: 'border-red-800/50',
     bar: 'bg-red-500',
-    description: 'Below constitutional threshold',
-    range: 'M < τ',
+    description: 'Below constitutional floor · CBF correction active · M ≤ TAU_FLOOR (0.05)',
+    range: 'M < τ (0.05)',
   },
 };
 

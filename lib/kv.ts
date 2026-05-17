@@ -135,12 +135,23 @@ export async function getTotalRuns(): Promise<number> {
 
 // ── Z-Traj Governor Constants ─────────────────────────────────────────────────
 
-export const TAU_FLOOR       = 0.05;
-export const TAU_RECOVERY    = 0.15;
+export const TAU_FLOOR       = 0.05;  // CBF floor — correction mode triggers at M ≤ this
+export const TAU_RECOVERY    = 0.15;  // suppress mode triggers at M > this with n_stable ≥ N_MIN
+export const TAU_LYP         = 0.08;  // Lyapunov penalty threshold — V quadratic term fires below this
 export const N_MIN           = 3;
 export const RECOVERY_RATE   = 0.02;
 export const SIGMA_WINDOW    = 10;
 export const SIGMA_THRESHOLD = 0.25;
+
+// ── Health Band — single source of truth ─────────────────────────────────────
+// Boundaries: TAU_LYP (0.08), TAU_RECOVERY (0.15), and 0.25 (optimal ceiling)
+// Aligned with Lyapunov stability analysis and governor mode transitions.
+export function deriveHealthBand(m: number): string {
+  if (m >= 0.25)          return 'OPTIMAL';   // governor suppresses; V ≈ pure log barrier
+  if (m >= TAU_RECOVERY)  return 'ALERT';     // above recovery floor, approaching optimal
+  if (m >= TAU_LYP)       return 'STRESSED';  // Lyapunov penalty active, nudge/recovery mode
+  return 'CRITICAL';                           // near CBF floor, correction imminent or active
+}
 
 // ── Z-Traj Governor Types ─────────────────────────────────────────────────────
 
@@ -180,11 +191,22 @@ export type GovernorMode = 'suppress' | 'nudge' | 'correction' | 'recovery';
 const memZTraj = new Map<string, ZTraj>();
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
-
+// CBF-safe Euclidean projection: guarantees each pillar ≥ TAU_FLOOR and C+R+S=1
 function projectToSimplex(c: number, r: number, s: number): CRS {
-  const sum = c + r + s;
-  if (sum <= 0) return { c: 1 / 3, r: 1 / 3, s: 1 / 3 };
-  return { c: c / sum, r: r / sum, s: s / sum };
+  const floor = TAU_FLOOR;
+  const vals = [c, r, s];
+  let v = vals.map(x => Math.max(x - floor, 0));
+  const target = 1.0 - 3 * floor;
+  const u = [...v].sort((a, b) => b - a);
+  let cssv = 0, rho = 0;
+  for (let j = 0; j < 3; j++) {
+    cssv += u[j];
+    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
+  }
+  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
+  v = v.map(x => Math.max(x - theta, 0) + floor);
+  const total = v.reduce((a, b) => a + b, 0);
+  return { c: v[0] / total, r: v[1] / total, s: v[2] / total };
 }
 
 // ── Z-Traj Functions ──────────────────────────────────────────────────────────

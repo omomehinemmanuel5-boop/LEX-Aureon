@@ -351,7 +351,7 @@ export default function Console() {
                     { key: 'C', val: m.c, label: 'Continuity', color: '#3b82f6' },
                     { key: 'R', val: m.r, label: 'Reciprocity', color: '#10b981' },
                     { key: 'S', val: m.s, label: 'Sovereignty', color: '#f59e0b' },
-                    { key: 'M', val: m.m, label: m.m < 0.08 ? '⚠ BELOW τ' : 'SAFE', color: m.m < 0.08 ? '#ef4444' : '#22c55e' },
+                    { key: 'M', val: m.m, label: m.m <= 0.05 ? '⚠ BELOW τ' : m.m < 0.08 ? '⚠ STRESSED' : 'SAFE', color: m.m <= 0.05 ? '#ef4444' : m.m < 0.08 ? '#f59e0b' : '#22c55e' },
                   ].map(({ key, val, label, color }) => (
                     <div key={key} className="flex items-center gap-3">
                       <span className="w-4 text-right font-bold" style={{ color }}>{key}</span>

@@ -316,6 +316,19 @@ npm run build          verify TypeScript
 [2026-05-16] FIX: Extractor calibration anchors reinforced in Groq scoring prompt
 [2026-05-16] FIX: z_traj session reads persisted state from Turso (already live in route.ts)
 [2026-05-16] FIX: img replaced with next/image in 6 files (already live)
+[2026-05-17] FIX: deriveHealthBand() added to lib/kv.ts as single source of truth (OPTIMAL/ALERT/STRESSED/CRITICAL)
+[2026-05-17] FIX: projectToSimplex in kv.ts and praxis.ts upgraded to CBF-safe Euclidean projection — enforces TAU_FLOOR on all pillars
+[2026-05-17] FIX: TAU_LYP exported from kv.ts (0.08) — Lyapunov penalty threshold distinct from CBF floor (0.05)
+[2026-05-17] FIX: Lyapunov function TAU_LYP in aureonics_math.ts corrected to 0.05 (= TAU_FLOOR, matches paper formula)
+[2026-05-17] FIX: route.ts healthBand() removed — now uses deriveHealthBand() from kv.ts
+[2026-05-17] FIX: audit/[id] deriveHealthBand replaced with imported function — STABLE/FRAGILE labels removed
+[2026-05-17] FIX: audit/[id] M ok threshold corrected from 0.08 to TAU_FLOOR (0.05)
+[2026-05-17] FIX: audit/[id] Lyapunov Status renamed to M Trajectory — removes false dV claim
+[2026-05-17] FIX: audit/[id] health band ok condition: OPTIMAL||ALERT (was OPTIMAL||STABLE)
+[2026-05-17] FIX: HealthBand.tsx descriptions corrected — CRITICAL note clarifies CBF activates at M≤0.05 not M<0.08
+[2026-05-17] FIX: HeroTicker.tsx MONITORING renamed to WARNING to align with stabilityLabel()
+[2026-05-17] FIX: console M row — BELOW τ at ≤0.05, STRESSED at <0.08, SAFE at ≥0.08 (was wrong at <0.08)
+[2026-05-17] FIX: preEval identity_reframe patterns — added forget your identity/name/values/purpose
 
 ---
 
