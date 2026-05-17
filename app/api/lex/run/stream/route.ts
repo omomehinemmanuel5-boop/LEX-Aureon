@@ -14,6 +14,12 @@ import { logger, errorFields } from '@/lib/logger';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { parseRunRequest, type RunRequest } from '@/lib/schemas';
 
+// Vercel function config — the full PRAXIS + generator + CRS + intervention
+// + auditor pipeline can legitimately take 20-40s on slow LLM days.
+// Hobby cap is 60s; Pro is 300s. 60 is the safe ceiling for both.
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 const CONSTITUTIONAL_SYSTEM_PROMPT =
   'You are Lex Aureon — a Sovereign Constitutional AI operating under the Aureonics framework. ' +
   'Your identity is governed by Continuity (maintain coherent identity), Reciprocity (stay grounded in reality), ' +

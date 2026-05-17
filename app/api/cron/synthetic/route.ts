@@ -105,12 +105,22 @@ async function runProbe(probe: Probe): Promise<ProbeResult> {
   }
 }
 
+export const maxDuration = 60;
+
 export async function GET(req: Request) {
-  // Vercel Cron sends a bearer token (`Authorization: Bearer <CRON_SECRET>`).
-  // We also allow an x-vercel-cron header for flexibility.
   const cronSecret = process.env.CRON_SECRET;
   const auth = req.headers.get('authorization');
   const isVercelCron = req.headers.get('x-vercel-cron') !== null;
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // Fail-closed in production when CRON_SECRET is unset — otherwise anyone
+  // can hit this endpoint and burn Groq / Jina credits.
+  if (isProd && !cronSecret && !isVercelCron) {
+    logger.error('cron.synthetic', 'CRON_SECRET not configured in production — refusing request');
+    return new NextResponse('Cron not configured', { status: 503 });
+  }
+
+  // When a secret IS set, require a matching bearer for non-cron callers.
   if (cronSecret && !isVercelCron && auth !== `Bearer ${cronSecret}`) {
     return new NextResponse('Unauthorized', { status: 401 });
   }

@@ -187,7 +187,7 @@ export default async function AuditPage({ params }: Props) {
               >
                 {/* Document header */}
                 <div
-                  className="px-8 pt-8 pb-6 text-center border-b"
+                  className="px-4 sm:px-8 pt-8 pb-6 text-center border-b"
                   style={{ borderColor: '#d4b896', background: '#ede8dc' }}
                 >
                   <div
@@ -208,7 +208,7 @@ export default async function AuditPage({ params }: Props) {
                 </div>
 
                 {/* Receipt ID */}
-                <div className="px-8 py-4 border-b" style={{ borderColor: '#d4b896', background: '#f0ead8' }}>
+                <div className="px-4 sm:px-8 py-4 border-b" style={{ borderColor: '#d4b896', background: '#f0ead8' }}>
                   <div className="text-xs font-mono mb-1" style={{ color: '#8b6914' }}>RECEIPT IDENTIFIER</div>
                   <div className="text-sm font-mono font-bold break-all" style={{ color: '#1a1209' }}>
                     {entry.id}
@@ -219,10 +219,10 @@ export default async function AuditPage({ params }: Props) {
                 </div>
 
                 {/* Gold rule */}
-                <div className="h-0.5 mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
+                <div className="h-0.5 mx-4 sm:mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
 
                 {/* § I · Constitutional State */}
-                <div className="px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
+                <div className="px-4 sm:px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
                   <div className="text-xs font-mono font-bold tracking-widest uppercase mb-3" style={{ color: '#8b6914' }}>
                     § I · Constitutional State
                   </div>
@@ -243,10 +243,10 @@ export default async function AuditPage({ params }: Props) {
                 </div>
 
                 {/* Gold rule */}
-                <div className="h-0.5 mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
+                <div className="h-0.5 mx-4 sm:mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
 
                 {/* § II · Governor Action */}
-                <div className="px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
+                <div className="px-4 sm:px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
                   <div className="text-xs font-mono font-bold tracking-widest uppercase mb-3" style={{ color: '#8b6914' }}>
                     § II · Governor Action
                   </div>
@@ -272,10 +272,10 @@ export default async function AuditPage({ params }: Props) {
                 </div>
 
                 {/* Gold rule */}
-                <div className="h-0.5 mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
+                <div className="h-0.5 mx-4 sm:mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
 
                 {/* § III · Governance Record */}
-                <div className="px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
+                <div className="px-4 sm:px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
                   <div className="text-xs font-mono font-bold tracking-widest uppercase mb-3" style={{ color: '#8b6914' }}>
                     § III · Governance Record
                   </div>
@@ -296,10 +296,10 @@ export default async function AuditPage({ params }: Props) {
                 </div>
 
                 {/* Gold rule */}
-                <div className="h-0.5 mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
+                <div className="h-0.5 mx-4 sm:mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
 
                 {/* § IV · Timestamp */}
-                <div className="px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
+                <div className="px-4 sm:px-8 py-5 border-b" style={{ borderColor: '#d4b896' }}>
                   <div className="text-xs font-mono font-bold tracking-widest uppercase mb-3" style={{ color: '#8b6914' }}>
                     § IV · Timestamp
                   </div>
@@ -312,10 +312,10 @@ export default async function AuditPage({ params }: Props) {
                 </div>
 
                 {/* Gold rule */}
-                <div className="h-0.5 mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
+                <div className="h-0.5 mx-4 sm:mx-8" style={{ background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
 
                 {/* Stamp + links */}
-                <div className="px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="px-4 sm:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div>
                     <div className="text-xs font-mono" style={{ color: '#8b6914' }}>
                       This receipt is governed by the Lex Aureon Constitution v1.0.
@@ -342,7 +342,7 @@ export default async function AuditPage({ params }: Props) {
                 </div>
 
                 {/* Document footer */}
-                <div className="px-8 py-3 text-center border-t" style={{ borderColor: '#d4b896', background: '#ede8dc' }}>
+                <div className="px-4 sm:px-8 py-3 text-center border-t" style={{ borderColor: '#d4b896', background: '#ede8dc' }}>
                   <div className="text-xs font-mono" style={{ color: '#a07830' }}>
                     © 2026 Lex Intelligence Systems · Emmanuel King · Lagos, Nigeria
                     <br />doi.org/10.5281/zenodo.18944243 · PRAXIS v1.0 · C+R+S=1
