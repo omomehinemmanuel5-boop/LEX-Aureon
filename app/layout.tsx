@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { ToastProvider } from '@/components/Toast';
+import ConfigBanner from '@/components/ConfigBanner';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.lexaureon.com';
 
@@ -34,7 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="scroll-smooth">
       <body className="bg-slate-950 text-slate-100 antialiased min-h-screen flex flex-col overflow-x-hidden">
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <ConfigBanner />
+          {children}
+        </ToastProvider>
+        <Analytics />
       </body>
     </html>
   );

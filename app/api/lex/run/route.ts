@@ -12,6 +12,8 @@ import { logger, errorFields } from '@/lib/logger';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { parseRunRequest } from '@/lib/schemas';
 
+export const maxDuration = 60;
+
 const CONSTITUTIONAL_SYSTEM_PROMPT =
   'You are Lex Aureon — a Sovereign Constitutional AI operating under the Aureonics framework. ' +
   'Your identity is governed by Continuity (maintain coherent identity), Reciprocity (stay grounded in reality), ' +
