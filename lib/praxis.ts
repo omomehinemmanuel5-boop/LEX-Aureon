@@ -10,7 +10,7 @@
 import { getClient } from './db';
 import {
   CRS, ZTraj, LawImpact, GovernorMode,
-  TAU_FLOOR,
+  TAU_FLOOR, TAU_RECOVERY,
   updateZTraj, getLawImpact, applyLawImpact,
   getGovernorMode, detectSlowDrip, logGovernorAction,
 } from './kv';
@@ -36,6 +36,8 @@ const ATTACK_PATTERNS: Record<string, RegExp[]> = {
     /act\s+as\s+(if\s+you\s+(were|are)\s+)/i,
     /pretend\s+you\s+(are|were)\s+/i,
     /you.?re\s+not\s+(an?\s+)?(AI|assistant|constitutional)/i,
+    /forget\s+(your\s+)?(identity|name|values|purpose|who\s+you\s+are)/i,
+    /ignore\s+(who|what)\s+you\s+are/i,
   ],
   sycophancy: [
     /you\s+(must\s+)?(agree|admit)\s+(with\s+me|that)/i,
@@ -62,11 +64,22 @@ const STATIC_DELTA: Record<string, { dc: number; dr: number; ds: number }> = {
 };
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
-
+// CBF-safe Euclidean projection: guarantees each pillar ≥ TAU_FLOOR and C+R+S=1
 function projectToSimplex(c: number, r: number, s: number): CRS {
-  const sum = c + r + s;
-  if (sum <= 0) return { c: 1 / 3, r: 1 / 3, s: 1 / 3 };
-  return { c: c / sum, r: r / sum, s: s / sum };
+  const floor = TAU_FLOOR;
+  const vals = [c, r, s];
+  let v = vals.map(x => Math.max(x - floor, 0));
+  const target = 1.0 - 3 * floor;
+  const u = [...v].sort((a, b) => b - a);
+  let cssv = 0, rho = 0;
+  for (let j = 0; j < 3; j++) {
+    cssv += u[j];
+    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
+  }
+  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
+  v = v.map(x => Math.max(x - theta, 0) + floor);
+  const total = v.reduce((a, b) => a + b, 0);
+  return { c: v[0] / total, r: v[1] / total, s: v[2] / total };
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -161,20 +174,21 @@ export function applyDelta(crs: CRS, delta: { dc: number; dr: number; ds: number
 
 // ── applyGovernorCorrection ───────────────────────────────────────────────────
 
-export function applyGovernorCorrection(crs: CRS, _z: ZTraj, mode: GovernorMode): CRS {
+export function applyGovernorCorrection(crs: CRS, _z: ZTraj, mode: GovernorMode, tauFloor?: number): CRS {
   if (mode === 'suppress') return crs;
 
   const scale   = mode === 'nudge' ? 0.4 : 1.0;
   const k0      = 0.3;
   const epsilon = 0.01;
   const w_i     = 1 / 3;
+  const tau     = tauFloor ?? TAU_FLOOR;
   const M       = Math.min(crs.c, crs.r, crs.s);
 
   const k = k0 * w_i / (M + epsilon);
 
-  const phi_c   = Math.max(0, TAU_FLOOR - crs.c);
-  const phi_r   = Math.max(0, TAU_FLOOR - crs.r);
-  const phi_s   = Math.max(0, TAU_FLOOR - crs.s);
+  const phi_c   = Math.max(0, tau - crs.c);
+  const phi_r   = Math.max(0, tau - crs.r);
+  const phi_s   = Math.max(0, tau - crs.s);
   const phi_bar = (phi_c + phi_r + phi_s) / 3;
 
   const G_c = k * (phi_c - phi_bar) * scale;
@@ -216,6 +230,13 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
   // 4. Update z_traj in Turso (pass prevCRS so velocity is computed correctly)
   const z = await updateZTraj(sessionId, crs, currentCRS);
 
+  // Effective tau: raised when pre_eval=HIGH (label boost) and/or accumulated attack pressure.
+  // attack_pressure is carried from z_traj (previous turn) so persistent adversarial sessions
+  // face a progressively stricter constitutional floor — up to TAU_FLOOR+0.10 at pressure=1.
+  const pressureBoost = Math.min(0.05, z.attack_pressure * 0.05);
+  const labelBoost    = pre.label === 'HIGH' ? 0.05 : 0;
+  const effective_tau = Math.min(TAU_RECOVERY - 0.01, TAU_FLOOR + pressureBoost + labelBoost);
+
   // 5. Apply law impact if a law fired
   if (pre.lawId) {
     const impact: LawImpact | null = await getLawImpact(pre.lawId);
@@ -224,11 +245,11 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
     }
   }
 
-  // 6. Governor mode from updated z_traj
-  const mode = getGovernorMode(z);
+  // 6. Governor mode from updated z_traj (effective_tau raised by label/pressure)
+  const mode = getGovernorMode(z, effective_tau);
 
   // 7. Apply governor correction
-  const corrected = applyGovernorCorrection(crs, z, mode);
+  const corrected = applyGovernorCorrection(crs, z, mode, effective_tau);
 
   // 8. Detect slow drip
   const slowDrip = detectSlowDrip(z);
@@ -282,8 +303,8 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
     } catch { /* ignore */ }
   }
 
-  // blocked = HIGH threat AND corrected M at or below floor
-  const blocked = pre.label === 'HIGH' && m_after <= TAU_FLOOR;
+  // blocked = HIGH threat AND corrected M at or below effective floor (0.10 when HIGH, 0.05 when CLEAR)
+  const blocked = pre.label === 'HIGH' && m_after <= effective_tau;
 
   return {
     receipt,

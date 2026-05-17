@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import { getClient } from '@/lib/db';
+import { TAU_FLOOR, deriveHealthBand } from '@/lib/kv';
 import PrintButton from '@/components/PrintButton';
 
 interface Props { params: Promise<{ id: string }> }
@@ -34,12 +35,6 @@ type AuditResult =
   | { ok: false; reason: 'not_found' }
   | { ok: false; reason: 'db_error'; message: string };
 
-function deriveHealthBand(m: number): string {
-  if (m > 0.15) return 'OPTIMAL';
-  if (m > 0.08) return 'STABLE';
-  if (m > 0.03) return 'FRAGILE';
-  return 'CRITICAL';
-}
 
 async function getAuditEntry(id: string): Promise<AuditResult> {
   const db = getClient();
@@ -207,10 +202,10 @@ export default async function AuditPage({ params }: Props) {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     {[
-                      { label: 'M Score (Before)', value: `${((entry.m_before ?? 0) * 100).toFixed(1)}%`, sub: 'Pre-governance stability', ok: entry.m_before > 0.08 },
-                      { label: 'M Score (After)', value: `${((entry.m_after ?? 0) * 100).toFixed(1)}%`, sub: 'Post-governance stability', ok: entry.m_after > 0.08 },
-                      { label: 'Health Band', value: healthBand, sub: 'Constitutional classification', ok: healthBand === 'OPTIMAL' || healthBand === 'STABLE' },
-                      { label: 'Lyapunov Status', value: entry.m_after >= entry.m_before ? 'STABLE ↑' : 'RECOVERING', sub: 'δV trajectory direction', ok: entry.m_after >= entry.m_before },
+                      { label: 'M Score (Before)', value: `${((entry.m_before ?? 0) * 100).toFixed(1)}%`, sub: 'Pre-governance stability margin', ok: entry.m_before > TAU_FLOOR },
+                      { label: 'M Score (After)', value: `${((entry.m_after ?? 0) * 100).toFixed(1)}%`, sub: 'Post-governance stability margin', ok: entry.m_after > TAU_FLOOR },
+                      { label: 'Health Band', value: healthBand, sub: 'Constitutional classification', ok: healthBand === 'OPTIMAL' || healthBand === 'ALERT' },
+                      { label: 'M Trajectory', value: entry.m_after >= entry.m_before ? 'IMPROVING ↑' : 'RECOVERING ↓', sub: 'Stability margin direction (M before → after)', ok: entry.m_after >= entry.m_before },
                     ].map(({ label, value, sub, ok }) => (
                       <div key={label} className="rounded-lg p-3" style={{ background: '#e8e0cc', border: '1px solid #d4b896' }}>
                         <div className="text-xs font-mono mb-1" style={{ color: '#8b6914' }}>{label}</div>

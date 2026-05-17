@@ -48,6 +48,14 @@ export default function Console() {
   const [showEmail, setShowEmail] = useState(false);
   const [totalRuns, setTotalRuns] = useState<number | null>(null);
   const [outputLines, setOutputLines] = useState<{ ts: string; text: string; color: string }[]>([]);
+  const [sessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'console';
+    const stored = localStorage.getItem('lex_session_id');
+    if (stored) return stored;
+    const id = `console_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`;
+    localStorage.setItem('lex_session_id', id);
+    return id;
+  });
   const resultsRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,7 +101,7 @@ export default function Console() {
       const r = await fetch('/api/lex/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, session_id: 'console' }),
+        body: JSON.stringify({ prompt, session_id: sessionId }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
@@ -127,7 +135,7 @@ export default function Console() {
   const pct = Math.round((apiCalls / MAX_CALLS) * 100);
 
   const tabs: { id: Tab; icon: string; label: string }[] = [
-    { id: 'governed', icon: '✦', label: 'Governed' },
+    { id: 'governed', icon: '✦', label: 'Output' },
     { id: 'raw', icon: '◎', label: 'Raw' },
     { id: 'analysis', icon: '⬡', label: 'Analysis' },
     { id: 'audit', icon: '🔐', label: 'Audit' },
@@ -351,7 +359,7 @@ export default function Console() {
                     { key: 'C', val: m.c, label: 'Continuity', color: '#3b82f6' },
                     { key: 'R', val: m.r, label: 'Reciprocity', color: '#10b981' },
                     { key: 'S', val: m.s, label: 'Sovereignty', color: '#f59e0b' },
-                    { key: 'M', val: m.m, label: m.m < 0.08 ? '⚠ BELOW τ' : 'SAFE', color: m.m < 0.08 ? '#ef4444' : '#22c55e' },
+                    { key: 'M', val: m.m, label: m.m <= 0.05 ? '⚠ BELOW τ' : m.m < 0.08 ? '⚠ STRESSED' : 'SAFE', color: m.m <= 0.05 ? '#ef4444' : m.m < 0.08 ? '#f59e0b' : '#22c55e' },
                   ].map(({ key, val, label, color }) => (
                     <div key={key} className="flex items-center gap-3">
                       <span className="w-4 text-right font-bold" style={{ color }}>{key}</span>
@@ -389,13 +397,13 @@ export default function Console() {
                 </div>
 
                 <div className="p-4">
-                  {/* Governed tab */}
+                  {/* Output tab — governor is a gate, not an editor; output = raw when not blocked */}
                   {tab === 'governed' && (
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <TS />
                         <span className="text-xs font-mono" style={{ color: intervened ? '#f59e0b' : '#22c55e' }}>
-                          {intervened ? '// governor modified output' : '// passed constitutional review'}
+                          {intervened ? '// governor invoked constitutional constraints' : '// passed constitutional review'}
                         </span>
                       </div>
                       <div
@@ -409,16 +417,6 @@ export default function Console() {
                       >
                         {res.governed_output}
                       </div>
-                      {intervened && res.diff && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {res.diff.removed?.slice(0, 6).map((w, i) => (
-                            <span key={`r${i}`} className="text-xs px-2 py-0.5 rounded font-mono line-through" style={{ background: '#1a0505', color: '#f87171', border: '1px solid #7f1d1d' }}>{w}</span>
-                          ))}
-                          {res.diff.added?.slice(0, 6).map((w, i) => (
-                            <span key={`a${i}`} className="text-xs px-2 py-0.5 rounded font-mono" style={{ background: '#052017', color: '#4ade80', border: '1px solid #14532d' }}>+{w}</span>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )}
 

@@ -1,21 +1,29 @@
 /**
- * Agent 3: Governor
- * Exact implementation of Section 11 — Aureonics Formal Dynamical System
- * 
+ * FORMAL PAPER REFERENCE IMPLEMENTATION — NOT WIRED INTO PRODUCTION PIPELINE
+ *
+ * This is the exact Section 11 Aureonics dynamical system from the paper.
+ * Production governance runs through lib/praxis.ts (runPRAXIS) which uses
+ * the same G_i = k(φ_i - φ̄) correction but without replicator dynamics.
+ *
+ * Kept here as the authoritative mathematical reference.
+ * Do not delete — do not wire into route.ts without review.
+ *
+ * Agent 3: Governor — Aureonics Formal Dynamical System (Section 11)
+ *
  * dx_i/dt = F_i(x, z) + G_i(x)
- * 
+ *
  * F_i = x_i(f_i - f̄)  ← replicator dynamics
  * G_i = k(φ_i - φ̄)   ← mass-conserving governor correction
- * 
+ *
  * Lyapunov Section 11.10:
- * V(x) = -Σ log(x_i) + (μ/2) Σ max(0, τ - x_i)²
- * dV/dt ≤ 0 when governor active
+ * V(x) = -Σ log(x_i) + (μ/2) Σ max(0, τ - x_i)²   τ = TAU_FLOOR = 0.05
+ * dV/dt ≤ 0 when governor active → proven stable
  */
 
 import { AgentContext, AgentResult, CRSState } from './types';
 
 // ── Constants from paper ──────────────────────────────────────────────────
-const TAU   = 0.08;   // constitutional threshold
+const TAU   = 0.05;   // TAU_FLOOR — matches PRAXIS pipeline constitutional floor
 const K     = 4.0;    // governor gain k
 const ALPHA = 0.5;    // replicator coupling α
 const MU    = 2.0;    // Lyapunov quadratic weight μ

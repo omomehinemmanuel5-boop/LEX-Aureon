@@ -159,8 +159,8 @@ export default function DynamicSimplex({
 
   const pos = toSVG(displayState.C, displayState.R, displayState.S);
   const M = Math.min(displayState.C, displayState.R, displayState.S);
-  const isSafe = M >= 0.08;
-  const tau = 0.08;
+  const isSafe = M >= 0.05; // TAU_FLOOR = 0.05 — CBF floor, correction mode threshold
+  const tau = 0.05;         // TAU_FLOOR — must match lib/kv.ts
   const off = tau * 95;
 
   return (

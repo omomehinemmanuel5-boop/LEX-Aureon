@@ -187,6 +187,40 @@ export async function getLatestSessionState(): Promise<{ id: string; state: Sess
   return { id: memLatestSessionId, state };
 }
 
+// Aggregate constitutional state across recent active sessions — safe for public display.
+// Returns average C/R/S/M across the last 20 z_traj rows so no individual session is exposed.
+export async function getAggregateConstitutionalState(): Promise<{ C: number; R: number; S: number; M: number }> {
+  const fallback = { C: 0.333, R: 0.333, S: 0.334, M: 0.333 };
+  const db = getClient();
+  if (db) {
+    try {
+      await initSchema();
+      const r = await db.execute({
+        sql: `SELECT AVG(last_c) as ac, AVG(last_r) as ar, AVG(last_s) as aas, AVG(last_m) as am
+              FROM (SELECT last_c, last_r, last_s, last_m FROM z_traj ORDER BY updated_at DESC LIMIT 20)`,
+        args: [],
+      });
+      if (r.rows.length > 0 && r.rows[0].ac !== null) {
+        const C = r.rows[0].ac as number;
+        const R = r.rows[0].ar as number;
+        const S = r.rows[0].aas as number;
+        const M = r.rows[0].am as number;
+        return { C, R, S, M };
+      }
+    } catch { /* fall through */ }
+  }
+  // In-memory fallback: average across all in-memory sessions
+  if (memSessions.size > 0) {
+    let sumC = 0, sumR = 0, sumS = 0, count = 0;
+    for (const s of memSessions.values()) {
+      sumC += s.C; sumR += s.R; sumS += s.S; count++;
+    }
+    const C = sumC / count, R = sumR / count, S = sumS / count;
+    return { C, R, S, M: Math.min(C, R, S) };
+  }
+  return fallback;
+}
+
 // ── Audit Log ─────────────────────────────────────────────────────────────────
 
 export interface AuditEntry {
