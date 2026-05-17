@@ -10,7 +10,7 @@
 import { getClient } from './db';
 import {
   CRS, ZTraj, LawImpact, GovernorMode,
-  TAU_FLOOR,
+  TAU_FLOOR, TAU_RECOVERY,
   updateZTraj, getLawImpact, applyLawImpact,
   getGovernorMode, detectSlowDrip, logGovernorAction,
 } from './kv';
@@ -221,9 +221,6 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
   // 1. Pre-eval
   const pre = preEval(prompt);
 
-  // HIGH detection raises the effective floor so intervention fires at M ≤ 0.10 not just M ≤ 0.05
-  const effective_tau = (pre.label === 'HIGH') ? TAU_FLOOR + 0.05 : TAU_FLOOR;
-
   // 2. Semantic transducer delta
   const delta = semanticTransducer(prompt, pre);
 
@@ -233,6 +230,13 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
   // 4. Update z_traj in Turso (pass prevCRS so velocity is computed correctly)
   const z = await updateZTraj(sessionId, crs, currentCRS);
 
+  // Effective tau: raised when pre_eval=HIGH (label boost) and/or accumulated attack pressure.
+  // attack_pressure is carried from z_traj (previous turn) so persistent adversarial sessions
+  // face a progressively stricter constitutional floor — up to TAU_FLOOR+0.10 at pressure=1.
+  const pressureBoost = Math.min(0.05, z.attack_pressure * 0.05);
+  const labelBoost    = pre.label === 'HIGH' ? 0.05 : 0;
+  const effective_tau = Math.min(TAU_RECOVERY - 0.01, TAU_FLOOR + pressureBoost + labelBoost);
+
   // 5. Apply law impact if a law fired
   if (pre.lawId) {
     const impact: LawImpact | null = await getLawImpact(pre.lawId);
@@ -241,7 +245,7 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
     }
   }
 
-  // 6. Governor mode from updated z_traj (effective_tau raised when pre_eval is HIGH)
+  // 6. Governor mode from updated z_traj (effective_tau raised by label/pressure)
   const mode = getGovernorMode(z, effective_tau);
 
   // 7. Apply governor correction

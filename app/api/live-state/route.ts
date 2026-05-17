@@ -1,22 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getLatestSessionState, getTotalRuns } from '@/lib/db';
+import { getAggregateConstitutionalState, getTotalRuns } from '@/lib/db';
 
+// Returns aggregate constitutional state (average across recent sessions).
+// Individual session IDs are never exposed here — this endpoint is public.
 export async function GET() {
-  const latest = await getLatestSessionState();
-  const totalRuns = await getTotalRuns();
-
-  const fallback = { C: 0.333, R: 0.333, S: 0.334, M: 0.333 };
-  const state = latest?.state
-    ? {
-        C: latest.state.C,
-        R: latest.state.R,
-        S: latest.state.S,
-        M: Math.min(latest.state.C, latest.state.R, latest.state.S),
-      }
-    : fallback;
+  const [state, totalRuns] = await Promise.all([
+    getAggregateConstitutionalState(),
+    getTotalRuns(),
+  ]);
 
   return NextResponse.json({
-    session_id: latest?.id ?? null,
     state,
     total_runs: totalRuns,
   });

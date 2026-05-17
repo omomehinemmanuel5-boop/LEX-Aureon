@@ -135,7 +135,7 @@ export default function Console() {
   const pct = Math.round((apiCalls / MAX_CALLS) * 100);
 
   const tabs: { id: Tab; icon: string; label: string }[] = [
-    { id: 'governed', icon: '✦', label: 'Governed' },
+    { id: 'governed', icon: '✦', label: 'Output' },
     { id: 'raw', icon: '◎', label: 'Raw' },
     { id: 'analysis', icon: '⬡', label: 'Analysis' },
     { id: 'audit', icon: '🔐', label: 'Audit' },
@@ -397,7 +397,7 @@ export default function Console() {
                 </div>
 
                 <div className="p-4">
-                  {/* Governed tab */}
+                  {/* Output tab — governor is a gate, not an editor; output = raw when not blocked */}
                   {tab === 'governed' && (
                     <div>
                       <div className="flex items-center gap-2 mb-3">
@@ -417,16 +417,6 @@ export default function Console() {
                       >
                         {res.governed_output}
                       </div>
-                      {intervened && res.diff && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {res.diff.removed?.slice(0, 6).map((w, i) => (
-                            <span key={`r${i}`} className="text-xs px-2 py-0.5 rounded font-mono line-through" style={{ background: '#1a0505', color: '#f87171', border: '1px solid #7f1d1d' }}>{w}</span>
-                          ))}
-                          {res.diff.added?.slice(0, 6).map((w, i) => (
-                            <span key={`a${i}`} className="text-xs px-2 py-0.5 rounded font-mono" style={{ background: '#052017', color: '#4ade80', border: '1px solid #14532d' }}>+{w}</span>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )}
 

@@ -329,6 +329,12 @@ npm run build          verify TypeScript
 [2026-05-17] FIX: HeroTicker.tsx MONITORING renamed to WARNING to align with stabilityLabel()
 [2026-05-17] FIX: console M row — BELOW τ at ≤0.05, STRESSED at <0.08, SAFE at ≥0.08 (was wrong at <0.08)
 [2026-05-17] FIX: preEval identity_reframe patterns — added forget your identity/name/values/purpose
+[2026-05-17] FIX: console "Governed" tab renamed to "Output" — governor is a gate, not an editor
+[2026-05-17] FIX: console diff chip display removed — governed_output equals raw_output when not blocked
+[2026-05-17] FIX: attack_pressure from z_traj now feeds effective_tau in runPRAXIS — persistent adversarial sessions face stricter floor
+[2026-05-17] FIX: velocity>0.05 nudge threshold documented with rationale — prevents overcorrection of fast transient perturbations
+[2026-05-17] FIX: /api/live-state now returns aggregate CRS average (last 20 z_traj rows) — individual session data no longer exposed publicly
+[2026-05-17] FIX: getAggregateConstitutionalState() added to db.ts — replaces getLatestSessionState() in public endpoint
 
 ---
 

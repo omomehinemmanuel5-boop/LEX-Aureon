@@ -402,7 +402,10 @@ export function getGovernorMode(z: ZTraj, tauFloor?: number): GovernorMode {
   if (M > TAU_RECOVERY && z.n_stable >= N_MIN) return 'suppress';
   // correction: M at or below constitutional floor (CBF active)
   if (M <= tau) return 'correction';
-  // nudge: drifting toward floor with detectable velocity
+  // nudge: intermediate zone with detectable movement (velocity > 0.05).
+  // 0.05 ≈ 2× the n_stable threshold (0.02) — distinguishes transient drift from settled deficit.
+  // Applies 0.4× correction scale to avoid overcorrecting fast but short-lived perturbations.
+  // States with velocity ≤ 0.05 that have accumulated n_stable turns get full recovery (1.0×).
   if (tau < M && M <= TAU_RECOVERY && z.velocity > 0.05) return 'nudge';
   // recovery: above floor, low velocity — spec: M > TAU_FLOOR AND n_stable > 0
   // If n_stable = 0 and velocity is also low, system is newly initialised — nudge gently.
