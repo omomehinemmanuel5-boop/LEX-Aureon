@@ -333,7 +333,7 @@ export default function Console() {
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-red-400 text-sm">⚠</span>
-                    <span className="text-red-400 font-bold text-sm">GOVERNOR INTERVENED · VELOCITY BREACH · mode: correction</span>
+                    <span className="text-red-400 font-bold text-sm">GOVERNOR INTERVENED · mode: {res.intervention?.type ?? 'correction'}</span>
                   </div>
                   <div className="text-red-300/70">{res.intervention?.reason ?? 'Constitutional threshold violated'}</div>
                 </div>
@@ -442,7 +442,7 @@ export default function Console() {
                       <DynamicSimplex
                         liveC={m.c} liveR={m.r} liveS={m.s} liveM={m.m}
                         intervention={intervened}
-                        healthBand={(res.metrics as { health_band?: string }).health_band ?? 'OPTIMAL'}
+                        healthBand={res.metrics.health_band ?? 'OPTIMAL'}
                         animating={pulse}
                       />
 
