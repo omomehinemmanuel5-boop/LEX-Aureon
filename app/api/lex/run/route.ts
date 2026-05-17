@@ -10,6 +10,7 @@ import type { AgentReceipt } from '@/lib/agents/types';
 import { TAU_FLOOR, TAU_RECOVERY, CRS, getZTraj, updateZTraj, getSessionTurn, deriveHealthBand } from '@/lib/kv';
 import { logger, errorFields } from '@/lib/logger';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
+import { parseRunRequest } from '@/lib/schemas';
 
 const CONSTITUTIONAL_SYSTEM_PROMPT =
   'You are Lex Aureon — a Sovereign Constitutional AI operating under the Aureonics framework. ' +
@@ -46,20 +47,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json() as {
-      prompt?:     string;
-      session_id?: string;
-      turn?:       number;
-      crs?:        { c: number; r: number; s: number };
-      model?:      string;
-    };
-
-    if (!body.session_id || !body.prompt?.trim()) {
-      return NextResponse.json({ error: 'session_id and prompt required' }, { status: 400 });
-    }
-    if (body.prompt.length > 8000) {
-      return NextResponse.json({ error: 'Prompt too long' }, { status: 400 });
-    }
+    let raw: unknown;
+    try { raw = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
+    const parsed = parseRunRequest(raw);
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    const body = parsed.data;
 
     // ── API Key Auth (developer access) ──────────────────────────────────────
     const apiKeyHeader =

@@ -6,6 +6,10 @@ import SignalPillBar from '@/components/SignalPillBar';
 import UpgradeModal from '@/components/UpgradeModal';
 import DynamicSimplex from '@/components/DynamicSimplex';
 import EmailCapture from '@/components/EmailCapture';
+import CountUp from '@/components/CountUp';
+import { useToast } from '@/components/Toast';
+import { useLexStream } from '@/lib/use_lex_stream';
+import { EXAMPLE_PROMPTS } from '@/lib/example_prompts';
 import { GovernanceResponse } from '@/types';
 
 const MAX_CALLS = 10;
@@ -38,11 +42,8 @@ function TS() {
 /* ── Main Console ─────────────────────────────────────────── */
 export default function Console() {
   const [prompt, setPrompt] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [res, setRes] = useState<GovernanceResponse | null>(null);
   const [apiCalls, setApiCalls] = useState(0);
   const [showUpgrade, setShowUpgrade] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('governed');
   const [pulse, setPulse] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
@@ -58,6 +59,14 @@ export default function Console() {
   });
   const resultsRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const { state: stream, run: runStream, cancel } = useLexStream();
+  const toast = useToast();
+
+  // Derived view state, kept name-compatible with previous render code below
+  const loading = stream.loading;
+  const error = stream.error;
+  const res: GovernanceResponse | null = stream.complete;
 
   useEffect(() => {
     fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
@@ -86,49 +95,76 @@ export default function Console() {
     setOutputLines(prev => [...prev.slice(-200), { ts, text, color }]);
   }, []);
 
-  const run = useCallback(async () => {
+  const run = useCallback(async (promptOverride?: string) => {
+    const p = (promptOverride ?? prompt).trim();
     if (apiCalls >= MAX_CALLS) { setShowUpgrade(true); return; }
-    if (!localStorage.getItem('lex_email_captured') && apiCalls === 0) {
+    if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 0) {
       setShowEmail(true); return;
     }
-    if (!prompt.trim()) return;
+    if (!p) return;
 
-    setLoading(true); setError(null); setPulse(false);
+    setPulse(false);
+    setTab('governed');
     addLine('> Initiating constitutional governance pipeline...', '#c9a84c');
-    addLine('> Extracting CRS state from prompt...', '#64748b');
+    await runStream(p, sessionId);
+  }, [apiCalls, prompt, runStream, sessionId, addLine]);
 
-    try {
-      const r = await fetch('/api/lex/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, session_id: sessionId }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+  const loadExample = useCallback((examplePrompt: string) => {
+    setPrompt(examplePrompt);
+    if (textareaRef.current) textareaRef.current.focus();
+  }, []);
 
-      setRes(data); setApiCalls(p => p + 1); setTab('governed');
-      if (totalRuns !== null) setTotalRuns(t => t !== null ? t + 1 : null);
-      setPulse(true); setTimeout(() => setPulse(false), 2500);
-
-      const m = data.metrics;
-      const intervened = data.intervention?.triggered || data.intervention?.applied || false;
-      addLine(`> CRS extracted: C=${m?.c?.toFixed(3)} R=${m?.r?.toFixed(3)} S=${m?.s?.toFixed(3)}`, '#3b82f6');
-      addLine(`> M score: ${((m?.m ?? 0) * 100).toFixed(1)}% — ${m?.health ?? 'UNKNOWN'}`, m?.health === 'SAFE' ? '#22c55e' : '#ef4444');
-      if (intervened) {
-        addLine(`> ⚠ GOVERNOR INTERVENED · ${data.intervention?.reason ?? 'threshold breach'}`, '#ef4444');
-      } else {
-        addLine('> ✓ Constitutional bounds maintained — no intervention', '#22c55e');
-      }
-      addLine(`> Audit receipt: ${data.audit_id ?? 'N/A'}`, '#c9a84c');
-      addLine('> Pipeline complete.', '#64748b');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Execution failed';
-      setError(msg);
-      addLine(`> ERROR: ${msg}`, '#ef4444');
-    } finally {
-      setLoading(false);
+  // ── Side effects driven by stream events ──────────────────────
+  useEffect(() => {
+    if (!stream.preEval) return;
+    addLine(`> Pre-eval: ${stream.preEval.label} (governor: ${stream.preEval.governor_mode})`, '#3b82f6');
+    if (stream.preEval.blocked) {
+      addLine('> ⚠ BLOCKED — constitutional refusal', '#ef4444');
+      toast.push('Governor blocked the prompt', 'error');
     }
-  }, [apiCalls, prompt, totalRuns, addLine, sessionId]);
+  }, [stream.preEval, addLine, toast]);
+
+  useEffect(() => {
+    if (!stream.metrics) return;
+    const m = stream.metrics;
+    addLine(`> CRS extracted: C=${m.c.toFixed(3)} R=${m.r.toFixed(3)} S=${m.s.toFixed(3)}`, '#3b82f6');
+    addLine(
+      `> M score: ${(m.m * 100).toFixed(1)}% — ${m.health ?? 'UNKNOWN'}`,
+      m.health === 'SAFE' ? '#22c55e' : '#ef4444',
+    );
+  }, [stream.metrics, addLine]);
+
+  useEffect(() => {
+    if (!stream.intervention) return;
+    if (stream.intervention.triggered) {
+      addLine(`> ⚠ GOVERNOR INTERVENED · ${stream.intervention.reason ?? 'threshold breach'}`, '#ef4444');
+      toast.push(`Governor intervened: ${stream.intervention.type ?? 'correction'}`, 'warning');
+    } else {
+      addLine('> ✓ Constitutional bounds maintained — no intervention', '#22c55e');
+    }
+  }, [stream.intervention, addLine, toast]);
+
+  useEffect(() => {
+    if (!stream.auditId) return;
+    addLine(`> Audit receipt: ${stream.auditId}`, '#c9a84c');
+  }, [stream.auditId, addLine]);
+
+  useEffect(() => {
+    if (stream.stage !== 'complete' || !stream.complete) return;
+    setApiCalls((c) => c + 1);
+    setTotalRuns((t) => (t !== null ? t + 1 : null));
+    setPulse(true);
+    const id = setTimeout(() => setPulse(false), 2500);
+    addLine('> Pipeline complete.', '#64748b');
+    toast.push('Run complete — receipt signed', 'success');
+    return () => clearTimeout(id);
+  }, [stream.stage, stream.complete, addLine, toast]);
+
+  useEffect(() => {
+    if (!stream.error) return;
+    addLine(`> ERROR: ${stream.error}`, '#ef4444');
+    toast.push(stream.error, 'error');
+  }, [stream.error, addLine, toast]);
 
   const m = res?.metrics;
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
@@ -204,12 +240,21 @@ export default function Console() {
                 Total governed runs
               </span>
             </div>
-            <span
-              className="text-xl sm:text-2xl font-bold font-mono tabular-nums"
-              style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }}
-            >
-              {totalRuns !== null ? totalRuns.toLocaleString() : '———'}
-            </span>
+            {totalRuns !== null ? (
+              <CountUp
+                value={totalRuns}
+                className="text-xl sm:text-2xl font-bold font-mono tabular-nums"
+                style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }}
+              />
+            ) : (
+              <span
+                className="text-xl sm:text-2xl font-bold font-mono tabular-nums"
+                style={{ color: '#64748b' }}
+                aria-label="Loading total runs"
+              >
+                ———
+              </span>
+            )}
           </div>
 
           {/* ── Terminal Input ──────────────────────────── */}
@@ -266,7 +311,7 @@ export default function Console() {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-slate-700 hidden sm:block">⌘+Enter to run</span>
                 <button
-                  onClick={run}
+                  onClick={() => run()}
                   disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
                   className="px-5 py-2 rounded text-xs font-bold font-mono transition-all active:scale-95 disabled:opacity-30"
                   style={{
@@ -287,11 +332,63 @@ export default function Console() {
             </div>
           </div>
 
+          {/* ── Example Prompts (first-time UX) ─────────── */}
+          {!res && !loading && (
+            <div
+              className="rounded-lg border p-4"
+              style={{ background: '#070b14', borderColor: '#1a2040' }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#64748b' }}>
+                  Try a sample
+                </span>
+                <span className="text-xs font-mono" style={{ color: '#475569' }}>
+                  {'// tap to load — watch the governor react'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {EXAMPLE_PROMPTS.map((ex) => {
+                  const palette = {
+                    identity:    { bg: '#07162b', border: '#1e3a5f',  color: '#60a5fa', label: 'identity reframe' },
+                    bypass:      { bg: '#1a1205', border: '#78350f',  color: '#fbbf24', label: 'jailbreak' },
+                    sycophancy:  { bg: '#051a10', border: '#065f46',  color: '#34d399', label: 'sycophancy' },
+                    benign:      { bg: '#0a0d18', border: '#1a2040',  color: '#94a3b8', label: 'benign' },
+                  }[ex.attack_type];
+                  return (
+                    <button
+                      key={ex.id}
+                      onClick={() => loadExample(ex.prompt)}
+                      type="button"
+                      aria-label={`Load example: ${ex.label}`}
+                      className="text-left rounded p-3 transition-all hover:opacity-80 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      style={{ background: palette.bg, border: `1px solid ${palette.border}` }}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-mono font-bold" style={{ color: palette.color }}>
+                          {ex.label}
+                        </span>
+                        <span className="text-xs font-mono uppercase tracking-wider" style={{ color: '#475569' }}>
+                          {palette.label}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 line-clamp-2">{ex.prompt}</div>
+                      <div className="text-xs mt-2" style={{ color: '#64748b' }}>{ex.expected}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ── Terminal Output Log ─────────────────────── */}
           {outputLines.length > 0 && (
             <div
               className="rounded-lg border p-4 font-mono text-xs space-y-1 max-h-48 overflow-y-auto"
               style={{ background: '#040609', borderColor: '#1a2040' }}
+              role="log"
+              aria-live="polite"
+              aria-atomic="false"
+              aria-label="Governance pipeline log"
             >
               <div className="text-slate-700 mb-2">{'// system output'}</div>
               {outputLines.map((line, i) => (
@@ -323,18 +420,50 @@ export default function Console() {
             </div>
           )}
 
-          {/* ── Loading ─────────────────────────────────── */}
-          {loading && (
+          {/* ── Streaming Output (live tokens) ───────────── */}
+          {loading && stream.partialOutput && (
+            <div
+              className="rounded-lg border p-4 font-mono text-sm leading-relaxed"
+              style={{ background: '#020408', borderColor: '#1a2040', color: '#86efac' }}
+              aria-live="polite"
+              aria-label="Streaming governed output"
+            >
+              <div className="flex items-center justify-between mb-2 text-xs">
+                <span style={{ color: '#c9a84c' }}>{'// generating · stage: ' + stream.stage}</span>
+                <button
+                  onClick={cancel}
+                  type="button"
+                  className="px-2 py-0.5 rounded text-xs font-mono"
+                  style={{ background: '#1a0505', color: '#f87171', border: '1px solid #7f1d1d' }}
+                >
+                  cancel
+                </button>
+              </div>
+              <div>
+                {stream.partialOutput}
+                <span
+                  className="inline-block w-2 h-4 align-text-bottom ml-0.5"
+                  style={{ background: '#22c55e', animation: 'term-blink 0.8s step-end infinite' }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Loading (pre-token) ─────────────────────── */}
+          {loading && !stream.partialOutput && (
             <div
               className="rounded-lg border p-6 flex flex-col items-center gap-3"
               style={{ background: '#040609', borderColor: '#1a2040' }}
+              aria-live="polite"
             >
               <div className="relative w-12 h-12">
                 <div className="absolute inset-0 border-2 border-slate-800 border-t-green-500 rounded-full animate-spin" />
                 <div className="absolute inset-1 border border-transparent border-b-amber-500 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.7s' }} />
               </div>
               <div className="text-center font-mono">
-                <p className="text-xs text-green-400">Executing constitutional governance pipeline...</p>
+                <p className="text-xs text-green-400">
+                  {stream.stage === 'pre_eval' ? 'Pre-evaluating constitutional risk...' : 'Initiating constitutional governance pipeline...'}
+                </p>
                 <p className="text-xs text-slate-600 mt-1">extracting CRS · checking M · evaluating velocity</p>
               </div>
             </div>
@@ -590,7 +719,7 @@ export default function Console() {
               <div className="flex items-center gap-2 p-3 rounded font-mono text-xs"
                 style={{ background: '#040609', border: '1px solid #1a2040' }}>
                 <span className="text-slate-600 flex-1">{'>'} run complete — edit prompt or re-run</span>
-                <button onClick={run} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
+                <button onClick={() => run()} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
                   className="px-3 py-1 rounded text-xs font-mono transition-all disabled:opacity-30"
                   style={{ background: '#c9a84c15', color: '#c9a84c', border: '1px solid #c9a84c30' }}>
                   {apiCalls >= MAX_CALLS ? 'upgrade ↗' : '↺ re-run'}
@@ -623,7 +752,7 @@ export default function Console() {
             </div>
           )}
           <button
-            onClick={run}
+            onClick={() => run()}
             disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
             className={`${res ? 'flex-shrink-0 px-5' : 'w-full'} py-3 rounded text-xs font-bold font-mono transition-all active:scale-95 disabled:opacity-30`}
             style={{

@@ -335,6 +335,25 @@ npm run build          verify TypeScript
 [2026-05-17] FIX: velocity>0.05 nudge threshold documented with rationale — prevents overcorrection of fast transient perturbations
 [2026-05-17] FIX: /api/live-state now returns aggregate CRS average (last 20 z_traj rows) — individual session data no longer exposed publicly
 [2026-05-17] FIX: getAggregateConstitutionalState() added to db.ts — replaces getLatestSessionState() in public endpoint
+[2026-05-17] SYSTEM: Production-readiness pass — rate limiting, structured logger, real /api/health probes, secret-scanning in CI, CSP+HSTS headers, sitemap + robots, dynamic OG metadata, error & loading boundaries (PR #19)
+[2026-05-17] FIX: Removed lowercase groq_api_key env-var fallback in crs_extractor
+[2026-05-17] FIX: /api/debug hardened — returns 401 before any config-state disclosure
+[2026-05-17] FIX: Silent .catch blocks replaced with structured logging across /api/lex/run pipeline
+[2026-05-17] FIX: AuthContext localStorage guarded with typeof window check
+[2026-05-17] FIX: Auth/billing routes fail-fast in production when LEX_API_BASE_URL is unset
+[2026-05-17] FIX: Removed leaked console.log of captured email from /console
+[2026-05-17] FIX: eslint config import/no-anonymous-default-export warning resolved
+[2026-05-17] DESIGN: /console gets prominent total-runs counter with live pulse
+[2026-05-17] SYSTEM: SSE streaming endpoint /api/lex/run/stream — token-level streaming via useLexStream hook
+[2026-05-17] DESIGN: Example attack prompts on /console — identity reframe, jailbreak, sycophancy, benign — tap to load
+[2026-05-17] DESIGN: ToastProvider added; pre-eval / intervention / receipt events surface as toasts
+[2026-05-17] DESIGN: CountUp component animates total-runs from 0 with easeOutCubic
+[2026-05-17] DESIGN: aria-live + role=log on console output for screen readers
+[2026-05-17] DESIGN: Skeleton shimmer on /audit/[id]/loading.tsx
+[2026-05-17] SYSTEM: Dynamic OG image at /audit/[id]/opengraph-image — receipts render verdict + M score in social previews
+[2026-05-17] SYSTEM: Synthetic governance probe /api/cron/synthetic — runs known attacks every 6h, returns 503 on regression
+[2026-05-17] SYSTEM: Zod schemas for /api/lex/run and /stream — single source of truth for request contract
+[2026-05-17] FIX: api.integration.test.ts mocks updated for current db.ts surface (39 tests → 46 tests)
 
 ---
 

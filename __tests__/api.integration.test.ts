@@ -25,7 +25,8 @@ describe('API integration', () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toMatch(/session_id and prompt required/);
+    // zod surfaces the first failing field — either prompt or session_id
+    expect(body.error).toMatch(/prompt|session_id/i);
   });
 
   it('POST /api/lex/run rejects oversized prompts', async () => {
