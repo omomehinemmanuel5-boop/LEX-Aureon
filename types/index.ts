@@ -32,11 +32,12 @@ export interface GovernanceResponse {
     r: number;
     s: number;
     m: number;
-    M_raw?: number;
-    M_governed?: number;
+    M_raw?: number;    // pre-governance stability margin
+    M_governed?: number; // post-governance measured stability margin
     health?: string;
     health_band?: string;
   };
+  law_fired?: string | null;
   intervention?: {
     triggered?: boolean;
     applied?: boolean;

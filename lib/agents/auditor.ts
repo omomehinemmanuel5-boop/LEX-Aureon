@@ -23,6 +23,7 @@ export async function AuditorAgent(ctx: AgentContext): Promise<AgentResult> {
     const crs = ctx.crs_state;
     const M = crs?.M ?? 0;
     const health_band = ctx.health_band ?? 'UNKNOWN';
+    const sigma_viol = (ctx.receipts?.find(r => r.agent === 'PRAXIS')?.meta?.sigma_viol as number) ?? 0;
 
     // Compute pipeline receipt hash
     const receiptData = JSON.stringify({
@@ -52,6 +53,7 @@ export async function AuditorAgent(ctx: AgentContext): Promise<AgentResult> {
       lyapunov_V: ctx.lyapunov_V,
       delta_V: ctx.delta_V,
       cbf_triggered: ctx.cbf_triggered,
+      sigma_viol,
       model: 'llama-3.3-70b-versatile',
       kernel_version: 'SovereignKernel-v2-Agentic',
       constitution: 'Lex Aureon Constitution v1.0 — Article IV',

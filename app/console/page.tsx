@@ -52,7 +52,7 @@ export default function Console() {
     if (typeof window === 'undefined') return 'console';
     const stored = localStorage.getItem('lex_session_id');
     if (stored) return stored;
-    const id = `console_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`;
+    const id = `console_${crypto.randomUUID()}`;
     localStorage.setItem('lex_session_id', id);
     return id;
   });

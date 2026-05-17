@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runPRAXIS } from '@/lib/praxis';
-import { runZTrajMigrations } from '@/lib/db';
+import { runZTrajMigrations, getClient } from '@/lib/db';
 import { validateAndConsumeKey } from '@/lib/api_keys';
 import { GeneratorAgent } from '@/lib/agents/generator';
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
         raw_output:      '',
         receipt_id:      blockedAuditId,
         blocked:         true,
-        metrics:         { c: finalCRS.c, r: finalCRS.r, s: finalCRS.s, m: M, health: 'UNSAFE', health_band: 'CRITICAL', lyapunov_V: 0, delta_V: 0 },
+        metrics:         { c: finalCRS.c, r: finalCRS.r, s: finalCRS.s, m: M, M_raw: receipt.m_before, M_governed: M, health: 'UNSAFE', health_band: 'CRITICAL', lyapunov_V: 0, delta_V: 0 },
         intervention:    { triggered: true, applied: true, type: 'block', reason: 'Constitutional refusal — PRAXIS blocked' },
         diff:            { changed: false, removed: [], added: [], unchanged: [], summary: 'Blocked by governor' },
         state:           { raw: currentCRS, governed: finalCRS },
@@ -230,7 +230,7 @@ export async function POST(req: Request) {
 
     // Agent 5: Auditor — sign cryptographic receipt with SHA-256
     const pipelineReceipts: AgentReceipt[] = [
-      { agent: 'PRAXIS', timestamp: Date.now(), duration_ms: 0, success: true, decision: receipt.pre_eval_label, meta: { governor_mode: receipt.governor_mode } },
+      { agent: 'PRAXIS', timestamp: Date.now(), duration_ms: 0, success: true, decision: receipt.pre_eval_label, meta: { governor_mode: receipt.governor_mode, sigma_viol: z.sigma_viol } },
       { agent: 'Generator', timestamp: Date.now(), duration_ms: gen.duration_ms ?? 0, success: true, decision: 'generated' },
       { agent: 'CRSExtractor', timestamp: Date.now(), duration_ms: 0, success: !!crsResult?.success, decision: extractMethod },
       ...(ivResult ? [{ agent: 'Intervention', timestamp: Date.now(), duration_ms: ivResult.duration_ms ?? 0, success: ivResult.success, decision: (ivResult.meta?.action as string) ?? 'pass_through' }] : []),
@@ -253,6 +253,26 @@ export async function POST(req: Request) {
 
     const audit_id = (auditorResult?.meta?.audit_id as string) ?? receipt.receipt_id;
 
+    // Persist LEX-* ID to praxis_receipts so the audit share link resolves
+    if (audit_id !== receipt.receipt_id) {
+      const db = getClient();
+      if (db) {
+        db.execute({
+          sql: `INSERT OR IGNORE INTO praxis_receipts
+                  (receipt_id, session_id, turn, pre_eval_label, m_before, m_after,
+                   governor_mode, intervention, slow_drip, governor_effort, sigma_viol)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            audit_id, sessionId, turn, receipt.pre_eval_label,
+            receipt.m_before, receipt.m_after, receipt.governor_mode,
+            receipt.intervention, receipt.slow_drip, receipt.governor_effort, z.sigma_viol,
+          ],
+        }).catch(() => {});
+      }
+    }
+
+    const outputModified = governed_output !== raw_output;
+
     return NextResponse.json({
       pre_eval:    receipt.pre_eval_label,
       stability,
@@ -267,7 +287,7 @@ export async function POST(req: Request) {
         r:               measuredCRS.r,
         s:               measuredCRS.s,
         m:               M,
-        M_raw:           M,
+        M_raw:           receipt.m_before,
         M_governed:      M,
         health:          M >= TAU_FLOOR ? 'SAFE' : 'UNSAFE',
         health_band:     hBand,
@@ -287,13 +307,14 @@ export async function POST(req: Request) {
           : 'Constitutional bounds maintained — no intervention required',
       },
       diff: {
-        changed:     false,
+        changed:     outputModified,
         delta_score: receipt.governor_effort,
-        summary:     intervened ? `Constitutional adjustment — mode: ${receipt.governor_mode}` : 'Clean constitutional pass',
+        summary:     outputModified ? `Constitutional rewrite — mode: ${receipt.governor_mode}` : 'Clean constitutional pass',
         removed:     [],
         added:       [],
         unchanged:   [],
       },
+      law_fired:   receipt.law_fired,
       state:   { raw: currentCRS, governed: measuredCRS },
       triggers: {
         collapse:      M <= TAU_FLOOR,

@@ -103,6 +103,7 @@ export interface PRAXISReceipt {
   slow_drip:       number;
   governor_effort: number;
   sigma_viol:      number;
+  law_fired:       string | null;
 }
 
 export interface PRAXISInput {
@@ -285,6 +286,7 @@ export async function runPRAXIS(input: PRAXISInput): Promise<PRAXISResult> {
     slow_drip:       slowDrip ? 1 : 0,
     governor_effort: effort,
     sigma_viol:      z.sigma_viol,
+    law_fired:       pre.lawId,
   };
 
   const db = getClient();
