@@ -6,19 +6,12 @@
  */
 
 import { AgentContext, AgentResult } from './types';
+import { env } from '../env';
 
 export async function GeneratorAgent(ctx: AgentContext): Promise<AgentResult> {
   const t = Date.now();
   try {
-    const key = process.env.GROQ_API_KEY;
-    if (!key) {
-      return {
-        success: true,
-        output: `[Demo mode] Constitutional analysis of: ${ctx.prompt.slice(0, 80)}`,
-        duration_ms: Date.now() - t,
-        meta: { model: 'demo', tokens: 0 },
-      };
-    }
+    const key = env.GROQ_API_KEY;
 
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',

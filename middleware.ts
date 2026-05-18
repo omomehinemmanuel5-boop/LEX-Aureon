@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { env } from '@/lib/env';
 
 export function middleware(req: NextRequest) {
-  const adminPassword = process.env.ADMIN_PASSWORD;
-
-  // Fail secure: if env var is not set, block all access
-  if (!adminPassword) {
+  // env.ADMIN_PASSWORD throws on missing — startup-validated requirement.
+  let adminPassword: string;
+  try {
+    adminPassword = env.ADMIN_PASSWORD;
+  } catch {
     return new NextResponse('Admin access is not configured', { status: 503 });
   }
 

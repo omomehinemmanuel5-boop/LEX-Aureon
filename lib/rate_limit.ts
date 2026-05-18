@@ -1,16 +1,10 @@
-import { kv } from '@vercel/kv';
+import { getClient } from './db';
 import { logger } from './logger';
 
 interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   retryAfter: number;
-}
-
-const mem = new Map<string, { count: number; resetAt: number }>();
-
-function hasKV(): boolean {
-  return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 }
 
 export function getClientIp(req: Request): string {
@@ -21,43 +15,54 @@ export function getClientIp(req: Request): string {
   );
 }
 
+let _schemaReady = false;
+async function ensureSchema(): Promise<void> {
+  if (_schemaReady) return;
+  await getClient().execute(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      key          TEXT PRIMARY KEY,
+      count        INTEGER NOT NULL DEFAULT 0,
+      window_start INTEGER NOT NULL
+    )
+  `);
+  _schemaReady = true;
+}
+
+// Sliding-window rate limit on Turso. Atomic via INSERT ... ON CONFLICT DO UPDATE.
+//   key            — unique identifier for the limited resource ("lex.run:<ip>")
+//   limit          — max requests allowed within the window
+//   windowSeconds  — window length in seconds
 export async function checkRateLimit(
   key: string,
   limit: number,
   windowSeconds: number,
 ): Promise<RateLimitResult> {
   const windowMs = windowSeconds * 1000;
-
-  if (hasKV()) {
-    try {
-      const fullKey = `rl:${key}`;
-      const count = await kv.incr(fullKey);
-      if (count === 1) {
-        await kv.expire(fullKey, windowSeconds);
-      }
-      const ttl = await kv.ttl(fullKey);
-      const allowed = count <= limit;
-      return {
-        allowed,
-        remaining: Math.max(0, limit - count),
-        retryAfter: allowed ? 0 : Math.max(1, ttl ?? windowSeconds),
-      };
-    } catch (e) {
-      logger.warn('rate_limit', 'KV rate limit failed, falling back to memory', { error: String(e) });
-    }
-  }
-
   const now = Date.now();
-  const entry = mem.get(key);
-  if (!entry || entry.resetAt < now) {
-    mem.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, remaining: limit - 1, retryAfter: 0 };
+  const windowStart = now - windowMs;
+
+  try {
+    await ensureSchema();
+    const result = await getClient().execute({
+      sql: `INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              count = CASE WHEN window_start < ? THEN 1 ELSE count + 1 END,
+              window_start = CASE WHEN window_start < ? THEN ? ELSE window_start END
+            RETURNING count, window_start`,
+      args: [key, now, windowStart, windowStart, now],
+    });
+
+    const row = result.rows[0];
+    const count = (row?.count as number) ?? 0;
+    const ws    = (row?.window_start as number) ?? now;
+    const allowed = count <= limit;
+    const remaining = Math.max(0, limit - count);
+    const retryAfter = allowed ? 0 : Math.max(1, Math.ceil((ws + windowMs - now) / 1000));
+
+    return { allowed, remaining, retryAfter };
+  } catch (e) {
+    // Storage outage shouldn't gate user traffic — fail open and surface in logs.
+    logger.warn('rate_limit', 'turso rate limit failed, failing open', { error: String(e) });
+    return { allowed: true, remaining: limit, retryAfter: 0 };
   }
-  entry.count += 1;
-  const allowed = entry.count <= limit;
-  return {
-    allowed,
-    remaining: Math.max(0, limit - entry.count),
-    retryAfter: allowed ? 0 : Math.ceil((entry.resetAt - now) / 1000),
-  };
 }

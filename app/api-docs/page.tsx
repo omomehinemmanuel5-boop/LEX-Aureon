@@ -101,7 +101,7 @@ export default function ApiDocsPage() {
             </p>
             <div style={{ marginTop: 20, background: G.surface, border: `1px solid ${G.border}`, borderLeft: `3px solid ${G.gold}`, borderRadius: 8, padding: '12px 16px', fontFamily: 'monospace', fontSize: 13, display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ color: '#4a5870', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase' }}>BASE URL</span>
-              <span style={{ color: G.gold }}>https://api.lexaureon.com/v1</span>
+              <span style={{ color: G.gold }}>https://www.lexaureon.com/api</span>
             </div>
           </div>
 

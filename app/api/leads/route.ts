@@ -1,54 +1,65 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getClient } from '@/lib/db';
+import { env } from '@/lib/env';
+import { logger, errorFields } from '@/lib/logger';
+
+const LeadSchema = z.object({
+  email:  z.string().email().max(254),
+  source: z.string().max(64).optional(),
+  plan:   z.string().max(64).optional(),
+  txId:   z.string().max(128).optional(),
+  amount: z.string().max(64).optional(),
+  coin:   z.string().max(32).optional(),
+});
 
 export async function POST(req: Request) {
-  try {
-    const body = await req.json() as {
-      email?: string; source?: string; plan?: string;
-      txId?: string; amount?: string; coin?: string;
-    };
-    const { email, source = 'console', plan = 'explorer', txId, amount, coin } = body;
-    if (!email?.includes('@')) return NextResponse.json({ error: 'Invalid email' }, { status: 400 });
+  let body: unknown;
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const parsed = LeadSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  const { email, source = 'console', plan = 'explorer', txId, amount, coin } = parsed.data;
 
-    const db = getClient();
-    if (db) {
-      await db.execute({
-        sql: `CREATE TABLE IF NOT EXISTS leads (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          email TEXT UNIQUE NOT NULL,
-          source TEXT DEFAULT 'console',
-          plan TEXT DEFAULT 'explorer',
-          tx_id TEXT,
-          amount TEXT,
-          coin TEXT,
-          created_at INTEGER NOT NULL DEFAULT (unixepoch())
-        )`,
-        args: [],
-      });
-      // Try insert, if exists update source/plan if upgrading
-      await db.execute({
-        sql: `INSERT INTO leads (email, source, plan, tx_id, amount, coin)
-              VALUES (?, ?, ?, ?, ?, ?)
-              ON CONFLICT(email) DO UPDATE SET
-                source = excluded.source,
-                plan = excluded.plan,
-                tx_id = COALESCE(excluded.tx_id, leads.tx_id),
-                amount = COALESCE(excluded.amount, leads.amount),
-                coin = COALESCE(excluded.coin, leads.coin)`,
-        args: [email, source, plan, txId ?? null, amount ?? null, coin ?? null],
-      });
-    }
+  try {
+    const c = getClient();
+    await c.execute({
+      sql: `CREATE TABLE IF NOT EXISTS leads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        source TEXT DEFAULT 'console',
+        plan TEXT DEFAULT 'explorer',
+        tx_id TEXT,
+        amount TEXT,
+        coin TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      )`,
+      args: [],
+    });
+    await c.execute({
+      sql: `INSERT INTO leads (email, source, plan, tx_id, amount, coin)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET
+              source = excluded.source,
+              plan = excluded.plan,
+              tx_id = COALESCE(excluded.tx_id, leads.tx_id),
+              amount = COALESCE(excluded.amount, leads.amount),
+              coin = COALESCE(excluded.coin, leads.coin)`,
+      args: [email, source, plan, txId ?? null, amount ?? null, coin ?? null],
+    });
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error('leads:', e);
-    return NextResponse.json({ ok: true });
+    logger.error('leads', 'insert failed', errorFields(e));
+    return NextResponse.json({ error: 'storage error' }, { status: 500 });
   }
 }
 
 export async function GET(req: Request) {
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  if (!adminPassword) return new NextResponse('Admin not configured', { status: 503 });
+  const adminPassword = env.ADMIN_PASSWORD;
 
   const auth = req.headers.get('authorization');
   let authorized = false;
@@ -67,10 +78,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const db = getClient();
-    if (!db) return NextResponse.json({ leads: [], total: 0, note: 'No DB configured' });
-
-    const result = await db.execute({
+    const result = await getClient().execute({
       sql: `SELECT id, email, source, plan, tx_id, amount, coin,
                    datetime(created_at, 'unixepoch') as created_at
             FROM leads ORDER BY created_at DESC LIMIT 500`,
@@ -84,6 +92,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ leads, total: leads.length });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    logger.error('leads.get', 'query failed', errorFields(e));
+    return NextResponse.json({ error: 'query failed' }, { status: 500 });
   }
 }

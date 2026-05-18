@@ -7,6 +7,8 @@
  * Internally accumulates the full output for the post-stream pipeline.
  */
 
+import { env } from '../env';
+
 export interface StreamedGeneration {
   tokens: AsyncIterable<string>;
   done: Promise<{ output: string; model: string; tokens_emitted: number; finish_reason?: string }>;
@@ -21,19 +23,10 @@ export function streamGeneration(prompt: string, attack_pressure: number = 0): S
   });
 
   async function* iterate(): AsyncIterable<string> {
-    const key = process.env.GROQ_API_KEY;
+    const key = env.GROQ_API_KEY;
     let output = '';
     let tokensEmitted = 0;
     let finishReason: string | undefined;
-
-    if (!key) {
-      const demo = `[Demo mode] Constitutional analysis of: ${prompt.slice(0, 80)}`;
-      output = demo;
-      yield demo;
-      tokensEmitted = 1;
-      resolveDone({ output, model: 'demo', tokens_emitted: tokensEmitted });
-      return;
-    }
 
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {

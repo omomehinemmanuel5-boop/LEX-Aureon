@@ -187,12 +187,22 @@ slow_drip        M global     detected via sigma_viol
 
 ## ENVIRONMENT VARIABLES
 
-TURSO_DATABASE_URL
-TURSO_AUTH_TOKEN
-ANTHROPIC_API_KEY
-ADMIN_PASSWORD
+Required (app refuses to start without these):
+  GROQ_API_KEY
+  JINA_API_KEY
+  TURSO_DATABASE_URL
+  TURSO_AUTH_TOKEN
+  ADMIN_PASSWORD
+  CRON_SECRET
+  NEXT_PUBLIC_SITE_URL
 
-Never hardcode. Always use process.env.
+Optional:
+  Claude_api_key                  (exposed as env.ANTHROPIC_API_KEY)
+  NEXT_PUBLIC_PRO_CHECKOUT_URL    (Stripe link)
+  LOG_DRAIN_URL · LOG_DRAIN_TOKEN (remote log intake)
+
+Never hardcode. Always use `env` from `lib/env.ts` — process.env access is
+no longer allowed except for NODE_ENV.
 
 ---
 
@@ -354,13 +364,30 @@ npm run build          verify TypeScript
 [2026-05-17] SYSTEM: Synthetic governance probe /api/cron/synthetic — runs known attacks every 6h, returns 503 on regression
 [2026-05-17] SYSTEM: Zod schemas for /api/lex/run and /stream — single source of truth for request contract
 [2026-05-17] FIX: api.integration.test.ts mocks updated for current db.ts surface (39 tests → 46 tests)
+[2026-05-18] FIX: Toast loop — PR #23 merged, ToastProvider memoized
+[2026-05-18] FIX: Run counter — atomic Turso increment via UPDATE ... RETURNING, persists across cold starts (run_stats table, seeded at 0)
+[2026-05-18] SYSTEM: lib/env.ts — single source of truth, lazy Proxy throws on missing required vars at first access
+[2026-05-18] SYSTEM: lib/constitution.ts — TAU_FLOOR/TAU_GOVERNOR/TAU_RECOVERY frozen, assertSimplex enforces C+R+S=1
+[2026-05-18] FIX: Removed all demo/mock/fallback data — vocabulary CRS fallback gone, Generator demo path gone, live-state returns nulls when DB empty
+[2026-05-18] FIX: LEX_API_BASE_URL removed — lib/backend.ts deleted, auth + billing routes return 501 until native auth lands
+[2026-05-18] FIX: @vercel/kv removed — rate limiting and session_state now Turso-only, atomic INSERT ... ON CONFLICT
+[2026-05-18] FIX: vercel.json — adds python3.10 runtime for api/python/*.py, daily cron at 12:00 UTC
+[2026-05-18] FIX: /api/cron/synthetic — CRON_SECRET strictly required, no production-only branch
+[2026-05-18] FIX: /api/health — reports services.turso/groq/jina + counters.total_runs; matches spec
+[2026-05-18] FIX: SimplexDemoClient honest empty state — "Run a prompt to see live state" when DB has no rows
+[2026-05-18] LOCK: Zod validation on POST /api/leads, /api/keys, /api/keys/revoke (lex/run + stream already validated)
+[2026-05-18] LOCK: GitHub Actions — build + test + secret-scan jobs, placeholder env vars provided for both
+[2026-05-18] FIX: .gitignore — lexaureon-frontend.tar and *.tar excluded
 
 ---
 
 ## CURRENT STATUS
 
-System:     LIVE at lexaureon.com
-Governor:   PRAXIS v1.0 — z_traj stateful
+System:     LIVE at lexaureon.com — real backend, zero demo, zero silent failures
+Counter:    Turso atomic increment — never resets
+Governor:   PRAXIS v1.0 — Groq + Jina + Turso, all hard-required
+Cost:       Zero extra — no Vercel KV, no paid add-ons
+Locks:      Constants frozen · Zod on inputs · CI blocks broken merges
 Paper:      v2 — DOI 10.5281/zenodo.20183807
 Grants:     Schmidt Sciences submitted · LTFF in progress
 Revenue:    $500 audit · Upwork active
@@ -377,8 +404,8 @@ X:          Active — @lexAureon
 - [ ] MATS application (June 1)
 - [ ] First paying client
 - [ ] LinkedIn appeal
-- [ ] Audit page fix
-- [ ] Usage counter reset
+- [x] Audit page fix (2026-05-17)
+- [x] Usage counter reset — atomic Turso, never resets (2026-05-18)
 
 ---
 

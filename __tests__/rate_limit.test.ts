@@ -1,13 +1,41 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock Turso so rate_limit's atomic SQL behaves correctly without a live DB.
+type Row = { count: number; window_start: number };
+const store = new Map<string, Row>();
+
+vi.mock('../lib/db', () => ({
+  getClient: () => ({
+    async execute(arg: string | { sql: string; args: (string | number)[] }) {
+      if (typeof arg === 'string') return { rows: [] };
+      const { sql, args } = arg;
+      if (sql.includes('CREATE TABLE') || sql.includes('CREATE INDEX')) return { rows: [] };
+      if (sql.startsWith('INSERT INTO rate_limits')) {
+        const [key, now, windowStart, , nowFresh] = args as [string, number, number, number, number];
+        const existing = store.get(key);
+        let row: Row;
+        if (!existing) {
+          row = { count: 1, window_start: now };
+        } else if (existing.window_start < windowStart) {
+          row = { count: 1, window_start: nowFresh };
+        } else {
+          row = { count: existing.count + 1, window_start: existing.window_start };
+        }
+        store.set(key, row);
+        return { rows: [row] };
+      }
+      return { rows: [] };
+    },
+  }),
+}));
+
 import { checkRateLimit, getClientIp } from '../lib/rate_limit';
 
-// Ensure KV is not detected → memory path
 beforeEach(() => {
-  delete process.env.KV_REST_API_URL;
-  delete process.env.KV_REST_API_TOKEN;
+  store.clear();
 });
 
-describe('checkRateLimit (memory fallback)', () => {
+describe('checkRateLimit (Turso-backed)', () => {
   it('allows up to the limit and blocks afterwards', async () => {
     const key = `test:${Date.now()}-${Math.random()}`;
     let allowedCount = 0;

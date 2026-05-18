@@ -38,7 +38,7 @@ export default function ConfigBanner() {
       <span aria-hidden>⚠</span>
       <span className="flex-1 truncate">
         Degraded mode — missing config: <strong>{missing.join(', ')}</strong>.
-        The governor pipeline may return demo / fallback output.
+        The governor pipeline will return explicit errors until this is set.
       </span>
       <button
         type="button"

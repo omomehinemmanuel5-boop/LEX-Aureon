@@ -1,11 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Minimal mocked Turso client used by every route under test.
+const mockClient = {
+  async execute(arg: string | { sql: string; args?: unknown[] }) {
+    const sql = typeof arg === 'string' ? arg : arg.sql;
+    if (sql === 'SELECT 1') return { rows: [{ '1': 1 }] };
+    if (sql.includes("FROM run_stats")) return { rows: [{ value: 1337 }] };
+    if (sql.startsWith('UPDATE run_stats')) return { rows: [{ value: 1338 }] };
+    if (sql.includes("FROM praxis_receipts")) return { rows: [] };
+    return { rows: [] };
+  },
+  async batch() { return []; },
+};
+
 vi.mock('../lib/db', () => ({
   seedSovereignLaws: vi.fn(async () => undefined),
   getTotalRuns: vi.fn(async () => 1337),
-  getClient: vi.fn(() => null),
+  incrementRuns: vi.fn(async () => 1338),
+  getClient: vi.fn(() => mockClient),
+  db: mockClient,
   runZTrajMigrations: vi.fn(async () => undefined),
-  getAggregateConstitutionalState: vi.fn(async () => ({ C: 0.34, R: 0.33, S: 0.33 })),
+  getAggregateConstitutionalState: vi.fn(async () => ({ C: 0.34, R: 0.33, S: 0.33, M: 0.33 })),
 }));
 
 describe('API integration', () => {
@@ -25,7 +40,6 @@ describe('API integration', () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
     const body = await res.json();
-    // zod surfaces the first failing field — either prompt or session_id
     expect(body.error).toMatch(/prompt|session_id/i);
   });
 
@@ -48,7 +62,9 @@ describe('API integration', () => {
     const { GET } = await import('../app/api/stats/route');
     const res = await GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ runs: 1337 });
+    const data = await res.json();
+    expect(data.runs).toBe(1337);
+    expect(data.total_runs).toBe(1337);
   });
 
   it('GET /api/health reports bridge status', async () => {
@@ -59,11 +75,11 @@ describe('API integration', () => {
 
     expect(data.ok).toBe(true);
     expect(data.api).toBe('healthy');
-    expect(data.storage.mode).toBe('memory');
+    expect(data.services.turso).toBe('connected');
     expect(data.frontend_contract.routes.lex_run).toBe('/api/lex/run');
   });
 
-  it('GET /api/audits/recent returns empty receipts when no DB', async () => {
+  it('GET /api/audits/recent returns empty receipts when no rows', async () => {
     const { GET } = await import('../app/api/audits/recent/route');
     const req = new Request('http://localhost/api/audits/recent?limit=5');
     const res = await GET(req);
