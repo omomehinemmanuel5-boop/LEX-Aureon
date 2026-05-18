@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 type ToastKind = 'info' | 'success' | 'warning' | 'error';
 
@@ -29,8 +29,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }, kind === 'error' ? 5000 : 3000);
   }, []);
 
+  // Stable context value — without useMemo, every render produces a new
+  // `{ push }` object whose identity change re-fires every consumer's
+  // useEffect that depends on `toast`, which can recursively trigger more
+  // toasts. This was the source of the "many notifications" loop.
+  const value = useMemo(() => ({ push }), [push]);
+
   return (
-    <ToastContext.Provider value={{ push }}>
+    <ToastContext.Provider value={value}>
       {children}
       <div
         role="status"
