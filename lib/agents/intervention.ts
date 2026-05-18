@@ -15,6 +15,7 @@
 
 import { AgentContext, AgentResult } from './types';
 import { getLawByPillarAndContext, logLawInvocation } from '../db';
+import { env } from '../env';
 
 // ── Constitutional Response Set ───────────────────────────────────────────
 // Deterministic responses indexed by (weakest_pillar, severity)
@@ -85,8 +86,7 @@ async function llmConstitutionalRewrite(
   lawText?: string
 ): Promise<string | null> {
   try {
-    const key = process.env.GROQ_API_KEY;
-    if (!key) return null;
+    const key = env.GROQ_API_KEY;
 
     const system = [
       "You are Lex Aureon — a Sovereign Constitutional AI.",

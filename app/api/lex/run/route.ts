@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runPRAXIS } from '@/lib/praxis';
-import { runZTrajMigrations, getClient } from '@/lib/db';
+import { runZTrajMigrations, getClient, incrementRuns } from '@/lib/db';
 import { validateAndConsumeKey } from '@/lib/api_keys';
 import { GeneratorAgent } from '@/lib/agents/generator';
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
@@ -105,6 +105,12 @@ export async function POST(req: Request) {
     const praxis = await runPRAXIS({ sessionId, turn, prompt: body.prompt, currentCRS });
     const { receipt, finalCRS, blocked, z } = praxis;
     const intervened = receipt.intervention === 1;
+
+    // Atomic counter bump — happens once per accepted run.
+    // Survives cold starts; never resets.
+    incrementRuns().catch((e) =>
+      logger.warn('lex.run.counter', 'incrementRuns failed', errorFields(e)),
+    );
 
     // Alert prefix injected into generation when PRAXIS detects a threat
     const alertPrefix = receipt.pre_eval_label === 'HIGH'

@@ -1,18 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
+import { logger, errorFields } from '@/lib/logger';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const limitParam = Number(searchParams.get('limit') ?? '8');
   const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(50, Math.floor(limitParam))) : 8;
 
-  const db = getClient();
-  if (!db) {
-    return NextResponse.json({ receipts: [], message: 'No database client available' }, { status: 200 });
-  }
-
   try {
-    const r = await db.execute({
+    const r = await getClient().execute({
       sql: `SELECT receipt_id, session_id, turn, pre_eval_label,
                    m_before, m_after, governor_mode, intervention,
                    slow_drip, governor_effort, sigma_viol, created_at
@@ -39,7 +35,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ receipts });
   } catch (e) {
-    console.error('[audits/recent] query error:', e);
-    return NextResponse.json({ receipts: [], message: 'No receipts yet' }, { status: 200 });
+    logger.warn('audits.recent', 'query failed', errorFields(e));
+    return NextResponse.json({ receipts: [] });
   }
 }

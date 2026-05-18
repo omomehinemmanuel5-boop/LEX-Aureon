@@ -3,8 +3,9 @@ import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { ToastProvider } from '@/components/Toast';
 import ConfigBanner from '@/components/ConfigBanner';
+import { env } from '@/lib/env';
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.lexaureon.com';
+const SITE_URL = env.NEXT_PUBLIC_SITE_URL;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

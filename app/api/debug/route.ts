@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { env } from '@/lib/env';
 
 function unauthorized(): NextResponse {
   return new NextResponse('Unauthorized', {
@@ -8,7 +9,7 @@ function unauthorized(): NextResponse {
 }
 
 export async function GET(req: Request) {
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  const adminPassword = env.ADMIN_PASSWORD;
   const auth = req.headers.get('authorization');
 
   let presented: string | null = null;
@@ -20,18 +21,19 @@ export async function GET(req: Request) {
     } catch { /* malformed base64 */ }
   }
 
-  if (!adminPassword || !presented || presented !== adminPassword) {
+  if (!presented || presented !== adminPassword) {
     return unauthorized();
   }
 
   const host = req.headers.get('host') ?? '';
   const isVercel = req.headers.get('x-vercel-id') !== null;
 
+  // Reaching this branch means env access succeeded — env.GROQ_API_KEY etc would throw otherwise.
   return NextResponse.json({
     ok: true,
-    groq:  !!process.env.GROQ_API_KEY,
-    turso: !!process.env.TURSO_DATABASE_URL,
-    jina:  !!process.env.JINA_API_KEY,
+    groq:  !!env.GROQ_API_KEY,
+    turso: !!env.TURSO_DATABASE_URL,
+    jina:  !!env.JINA_API_KEY,
     host,
     isVercel,
   });

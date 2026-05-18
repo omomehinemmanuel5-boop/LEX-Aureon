@@ -1,3 +1,5 @@
+import { env } from './env';
+
 type Level = 'debug' | 'info' | 'warn' | 'error';
 
 interface LogEntry {
@@ -14,17 +16,15 @@ interface LogEntry {
  * Best-effort fire-and-forget — never blocks the caller, never throws.
  */
 function drain(entry: LogEntry): void {
-  const url = process.env.LOG_DRAIN_URL;
+  const url = env.LOG_DRAIN_URL;
   if (!url) return;
-  // Don't await: serverless will hold the function open via Response anyway.
   void fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(process.env.LOG_DRAIN_TOKEN ? { Authorization: `Bearer ${process.env.LOG_DRAIN_TOKEN}` } : {}),
+      ...(env.LOG_DRAIN_TOKEN ? { Authorization: `Bearer ${env.LOG_DRAIN_TOKEN}` } : {}),
     },
     body: JSON.stringify(entry),
-    // Short timeout so a hung drain never starves the function.
     signal: AbortSignal.timeout(2000),
   }).catch(() => { /* never propagate */ });
 }

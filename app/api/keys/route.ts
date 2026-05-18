@@ -1,18 +1,25 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { generateApiKey, getKeysByEmail } from '@/lib/api_keys';
+
+const KeyCreateSchema = z.object({
+  email: z.string().email().max(254),
+  name:  z.string().max(64).optional(),
+  plan:  z.enum(['free', 'sovereign']).optional(),
+});
 
 // POST /api/keys — generate a new API key
 export async function POST(req: Request) {
   try {
-    const { email, name, plan } = await req.json() as {
-      email?: string;
-      name?: string;
-      plan?: 'free' | 'sovereign';
-    };
-
-    if (!email?.includes('@')) {
-      return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
+    let raw: unknown;
+    try { raw = await req.json(); } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
+    const parsed = KeyCreateSchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    }
+    const { email, name, plan } = parsed.data;
 
     // Free tier: max 3 keys per email
     const existing = await getKeysByEmail(email);

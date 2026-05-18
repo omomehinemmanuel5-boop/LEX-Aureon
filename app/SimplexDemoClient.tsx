@@ -10,7 +10,7 @@ const DynamicSimplex = dynamic(() => import('@/components/DynamicSimplex'), {
 const G = '#c9a84c';
 
 interface LiveStatePayload {
-  state: { C: number; R: number; S: number; M: number };
+  state: { C: number | null; R: number | null; S: number | null; M: number | null };
 }
 
 export default function SimplexDemoClient() {
@@ -38,23 +38,37 @@ export default function SimplexDemoClient() {
     return () => clearInterval(t);
   }, [mounted]);
 
-  if (!mounted) return (
-    <div className="w-full h-48 rounded-xl bg-slate-900/40 border border-white/5 flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-2xl mb-2">⬡</div>
-        <span className="text-xs font-mono" style={{color: G}}>C+R+S=1</span>
+  const noData = !live || live.C === null || live.R === null || live.S === null;
+
+  if (!mounted || noData) {
+    return (
+      <div className="w-full h-48 rounded-xl bg-slate-900/40 border border-white/5 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-2xl mb-2">⬡</div>
+          <span className="text-xs font-mono" style={{ color: G }}>C+R+S=1</span>
+          {mounted && (
+            <p className="text-xs font-mono text-slate-500 mt-2 px-4">
+              Run a prompt to see live state
+            </p>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
     <DynamicSimplex
-      liveC={live?.C}
-      liveR={live?.R}
-      liveS={live?.S}
-      liveM={live?.M}
+      liveC={live.C as number}
+      liveR={live.R as number}
+      liveS={live.S as number}
+      liveM={live.M as number}
       demoMode={false}
-      healthBand={(live?.M ?? 0.333) >= 0.25 ? 'OPTIMAL' : (live?.M ?? 0.333) >= 0.15 ? 'ALERT' : (live?.M ?? 0.333) >= 0.08 ? 'STRESSED' : 'CRITICAL'}
+      healthBand={
+        (live.M as number) >= 0.25 ? 'OPTIMAL'
+        : (live.M as number) >= 0.15 ? 'ALERT'
+        : (live.M as number) >= 0.08 ? 'STRESSED'
+        : 'CRITICAL'
+      }
     />
   );
 }

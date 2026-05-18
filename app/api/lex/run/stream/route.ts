@@ -1,5 +1,5 @@
 import { runPRAXIS } from '@/lib/praxis';
-import { runZTrajMigrations, getClient } from '@/lib/db';
+import { runZTrajMigrations, getClient, incrementRuns } from '@/lib/db';
 import { validateAndConsumeKey } from '@/lib/api_keys';
 import { streamGeneration } from '@/lib/agents/generator_stream';
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
@@ -116,6 +116,11 @@ export async function POST(req: Request) {
         const praxis = await runPRAXIS({ sessionId, turn, prompt, currentCRS });
         const { receipt, finalCRS, blocked, z } = praxis;
         const intervened = receipt.intervention === 1;
+
+        // Atomic counter bump — once per run, persists across cold starts.
+        incrementRuns().catch((e) =>
+          logger.warn('lex.stream.counter', 'incrementRuns failed', errorFields(e)),
+        );
 
         send('pre_eval', {
           label: receipt.pre_eval_label,

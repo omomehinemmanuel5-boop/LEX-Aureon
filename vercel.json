@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/python/:path*", "destination": "/api/python/:path*" },
     { "source": "/api/:path*", "destination": "/api/:path*" }
   ],
   "redirects": [
