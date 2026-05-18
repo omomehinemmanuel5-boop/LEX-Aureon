@@ -385,6 +385,7 @@ npm run build          verify TypeScript
 [2026-05-18] RESEARCH: research/open-problems.md updated — P1 downgraded to MEDIUM (non-expansive Π_S lemma), P3 rephrased to focus on dp_attack/dt coupling, P10-P12 proposed
 [2026-05-18] RESEARCH: scripts/harmbench/ — HarmBench harness (bare/anchored/governed arms); default judge llama-3.1-8b-instant with 3-vote consensus (free-tier safe); --validate N flag cross-checks cheap judge against llama-3.3-70b-versatile on N samples and prints agreement %; /data/ gitignored so adversarial prompts/outputs stay local
 [2026-05-18] AUTOMATION: .github/workflows/harmbench.yml — phone-triggerable benchmark via GitHub Actions workflow_dispatch; uses bundled 20-prompt test set in scripts/harmbench/test-prompts.jsonl; reads GROQ_API_KEY from repo secret; prints ASR table to workflow log + uploads results as artifact
+[2026-05-18] FIX: scripts/harmbench/ — switched runner from ts-node to tsx (devDep added); ts-node was throwing ERR_UNKNOWN_FILE_EXTENSION under Node 20 ESM in CI
 
 ---
 
