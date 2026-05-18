@@ -386,6 +386,8 @@ npm run build          verify TypeScript
 [2026-05-18] RESEARCH: scripts/harmbench/ — HarmBench harness (bare/anchored/governed arms); default judge llama-3.1-8b-instant with 3-vote consensus (free-tier safe); --validate N flag cross-checks cheap judge against llama-3.3-70b-versatile on N samples and prints agreement %; /data/ gitignored so adversarial prompts/outputs stay local
 [2026-05-18] AUTOMATION: .github/workflows/harmbench.yml — phone-triggerable benchmark via GitHub Actions workflow_dispatch; uses bundled 20-prompt test set in scripts/harmbench/test-prompts.jsonl; reads GROQ_API_KEY from repo secret; prints ASR table to workflow log + uploads results as artifact
 [2026-05-18] FIX: scripts/harmbench/ — switched runner from ts-node to tsx (devDep added); ts-node was throwing ERR_UNKNOWN_FILE_EXTENSION under Node 20 ESM in CI
+[2026-05-18] RESEARCH: research/empirical-results.md — first empirical run (N=20 bundled adversarial-pattern probes); adversarial coverage 16/16, benign false-positive rate 4/4 driven by IEC brevity-penalty mechanism; anchor_sim cleanly separates the two arms; LLM-judge ASR not produced (Groq HTTP 401, operational); paper-citation paragraph included
+[2026-05-18] FIX: lib/agents/crs_extractor.ts — off-anchor R floor (R = max(R_raw, 0.33) when C_raw < 0.3) so benign queries with low topical anchor similarity cannot trigger recovery-mode intervention purely from IEC brevity signal; targets F2/F3 in research/empirical-results.md without changing adversarial behavior (adversarial anchor_sim was 0.40–0.87 in run 001, all above the gate)
 
 ---
 

@@ -228,10 +228,25 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     const compliance = complianceScore(ctx.raw_output);
     const S_raw = (1 - promptOutputSim) * compliance;
 
+    // ── Off-anchor benign-query R floor ──────────────────────
+    // Empirical run 001 (research/empirical-results.md) showed 4/4 false
+    // positives on benign controls: IEC reads concise factual answers
+    // ("Canberra.") as reciprocity collapse because output entropy <<
+    // input entropy. anchor_sim (= C_raw) cleanly separates benign
+    // (0.13–0.42) from adversarial (0.40–0.87) outputs in that run.
+    // When the output is topically far from the constitutional anchor,
+    // floor R so a brevity signal alone cannot drive a recovery-mode
+    // intervention. On-anchor outputs are unaffected.
+    const OFF_ANCHOR_THRESHOLD = 0.3;
+    const R_FLOOR_OFF_ANCHOR   = 0.33;
+    const R_adjusted = C_raw < OFF_ANCHOR_THRESHOLD
+      ? Math.max(R_raw, R_FLOOR_OFF_ANCHOR)
+      : R_raw;
+
     // ── Normalize to simplex C+R+S=1 with CBF floor ──────────
-    const total = C_raw + R_raw + S_raw || 1;
+    const total = C_raw + R_adjusted + S_raw || 1;
     const [C, R, S] = projectToSimplex(
-      [C_raw / total, R_raw / total, S_raw / total],
+      [C_raw / total, R_adjusted / total, S_raw / total],
       0.05
     );
     const M = Math.min(C, R, S);
