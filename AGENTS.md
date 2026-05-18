@@ -383,7 +383,7 @@ npm run build          verify TypeScript
 [2026-05-18] DESIGN: Vaulturex codex split — full 50-law codex preserved in docs/founder/codex.md; runtime trimmed to 22 technical laws (Books I-IV + #27 + #30); crs_extractor anchor no longer cites "sovereign codex"
 [2026-05-18] FIX: lib/aureonics_math.ts imports CONSTITUTION from lib/constitution.ts — TAU_CBF, TAU_GOV, TAU_LYP no longer hardcoded literals; restores single source of truth
 [2026-05-18] RESEARCH: research/open-problems.md updated — P1 downgraded to MEDIUM (non-expansive Π_S lemma), P3 rephrased to focus on dp_attack/dt coupling, P10-P12 proposed
-[2026-05-18] RESEARCH: scripts/harmbench/ — HarmBench harness (bare/anchored/governed arms, LLM-as-judge ASR scorer via Groq Llama-3.3-70B); npm run harmbench + npm run harmbench:score; /data/ gitignored so adversarial prompts/outputs stay local
+[2026-05-18] RESEARCH: scripts/harmbench/ — HarmBench harness (bare/anchored/governed arms); default judge llama-3.1-8b-instant with 3-vote consensus (free-tier safe); --validate N flag cross-checks cheap judge against llama-3.3-70b-versatile on N samples and prints agreement %; /data/ gitignored so adversarial prompts/outputs stay local
 
 ---
 
