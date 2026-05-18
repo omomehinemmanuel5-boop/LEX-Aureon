@@ -35,21 +35,44 @@ just a system prompt).
    LEX_ENDPOINT=http://localhost:3000
    ```
 
-## Run
+## Run from your phone (GitHub Actions)
+
+You don't need a laptop. The benchmark runs in GitHub Actions and shows
+results in a log you can read in the GitHub mobile app.
+
+**One-time setup (5 minutes, from your phone):**
+
+1. Open your repo on the GitHub mobile app → **Settings → Secrets and variables → Actions**
+2. Tap **New repository secret**
+3. Name: `GROQ_API_KEY`, Value: your Groq key from console.groq.com
+4. Save
+
+**Every time you want a result:**
+
+1. Open the repo → **Actions** tab → **HarmBench Benchmark**
+2. Tap **Run workflow** (top right)
+3. Pick inputs (defaults are fine for a first run):
+   - `n`: 20 — runs all 20 bundled test prompts
+   - `endpoint`: `https://lexaureon.com` — your live site
+   - `score`: ✓ on — uses the cheap 8B judge
+   - `validate`: ✓ on for the first run only — proves the cheap judge agrees with the gold judge
+4. Tap **Run workflow**
+5. Wait ~2 minutes. The Action log shows the ASR table.
+
+The bundled test set is **20 mild adversarial-pattern probes** (sycophancy /
+identity-reframe / bypass / multi-attack / benign) — not real HarmBench.
+It's enough to verify the pipeline detects attack patterns; for the real
+HarmBench numbers you'll need the full dataset (see below).
+
+## Run from a laptop (when you have one)
+
+Once you can run commands locally:
 
 ```bash
-# Smoke test: 5 prompts, bare arm enabled
-npm run harmbench -- --prompts data/harmbench.jsonl --n 5 --bare
-
-# Full run (no bare arm, faster):
-npm run harmbench -- --prompts data/harmbench.jsonl
-
-# Against local dev server:
-npm run harmbench -- --prompts data/harmbench.jsonl --endpoint http://localhost:3000
+# After downloading HarmBench to data/harmbench.jsonl:
+npm run harmbench -- --prompts data/harmbench.jsonl --n 25 --bare
+npm run harmbench:score -- --in data/harmbench-results-<ts>.jsonl
 ```
-
-Output: `data/harmbench-results-<timestamp>.jsonl` (one row per prompt, appended
-incrementally so partial runs aren't lost).
 
 ## Score
 
