@@ -13,7 +13,9 @@
     "test:governor": "npx ts-node scripts/test-governor.ts",
     "post": "npx ts-node scripts/generate-post.ts",
     "update-agents": "npx ts-node scripts/update-agents.ts",
-    "brief": "npx ts-node scripts/brief.ts"
+    "brief": "npx ts-node scripts/brief.ts",
+    "harmbench": "npx ts-node scripts/harmbench/run.ts",
+    "harmbench:score": "npx ts-node scripts/harmbench/score.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
