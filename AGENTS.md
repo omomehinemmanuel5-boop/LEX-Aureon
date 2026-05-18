@@ -378,6 +378,11 @@ npm run build          verify TypeScript
 [2026-05-18] LOCK: Zod validation on POST /api/leads, /api/keys, /api/keys/revoke (lex/run + stream already validated)
 [2026-05-18] LOCK: GitHub Actions — build + test + secret-scan jobs, placeholder env vars provided for both
 [2026-05-18] FIX: .gitignore — lexaureon-frontend.tar and *.tar excluded
+[2026-05-18] RESEARCH: research/paper-updates.md — 7 suggestions for Aureonics v3 candidate, grounded in praxis.ts/kv.ts diffs since v2
+[2026-05-18] DESIGN: README rewrite mirroring AGENTS.md — Paper v2 cite, real Lyapunov V(x)=-Σlog(xi)+(μ/2)Σmax(0,τ-xi)², τ_eff/τ_LYP/τ_floor separation, 10-step pipeline, all 7 env vars
+[2026-05-18] DESIGN: Vaulturex codex split — full 50-law codex preserved in docs/founder/codex.md; runtime trimmed to 22 technical laws (Books I-IV + #27 + #30); crs_extractor anchor no longer cites "sovereign codex"
+[2026-05-18] FIX: lib/aureonics_math.ts imports CONSTITUTION from lib/constitution.ts — TAU_CBF, TAU_GOV, TAU_LYP no longer hardcoded literals; restores single source of truth
+[2026-05-18] RESEARCH: research/open-problems.md updated — P1 downgraded to MEDIUM (non-expansive Π_S lemma), P3 rephrased to focus on dp_attack/dt coupling, P10-P12 proposed
 
 ---
 

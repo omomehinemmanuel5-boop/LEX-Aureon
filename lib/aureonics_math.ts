@@ -2,11 +2,15 @@
  * AUREONICS REAL MATH ENGINE
  * Ported from Aureonics-OS- Python backend
  * Real CCP + IEC + ADV + CBF + Lyapunov — no external dependencies
+ *
+ * Constants imported from lib/constitution.ts — frozen single source of truth.
  */
 
+import { CONSTITUTION } from './constitution';
+
 const EPSILON = 1e-9;
-const TAU_CBF = 0.05;
-const TAU_GOV = 0.08;
+const TAU_CBF = CONSTITUTION.TAU_FLOOR;     // CBF floor (0.05)
+const TAU_GOV = CONSTITUTION.TAU_GOVERNOR;  // Lyapunov penalty threshold (0.08)
 
 // ── Text utilities ─────────────────────────────────────────────────────────
 
@@ -166,7 +170,7 @@ export function computeADV(decisions: string[], complianceFlags: boolean[]): {
  * dV/dt ≤ 0 when governor active → proven stable
  */
 const MU_LYP = 2.0;
-const TAU_LYP = 0.05;   // = TAU_FLOOR — paper uses one τ: V(x) = -Σlog(xi) + (μ/2)Σmax(0,τ-xi)²
+const TAU_LYP = CONSTITUTION.TAU_FLOOR;   // paper uses one τ: V(x) = -Σlog(xi) + (μ/2)Σmax(0,τ-xi)²
 const FLOOR_LYP = 1e-9;
 
 export function lyapunov(C: number, R: number, S: number): number {
