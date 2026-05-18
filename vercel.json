@@ -1,7 +1,4 @@
 {
-  "functions": {
-    "api/python/*.py": { "runtime": "python3.10" }
-  },
   "rewrites": [
     { "source": "/api/python/:path*", "destination": "/api/python/:path*" },
     { "source": "/api/:path*", "destination": "/api/:path*" }
