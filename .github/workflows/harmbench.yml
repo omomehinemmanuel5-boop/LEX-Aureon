@@ -1,0 +1,93 @@
+name: HarmBench Benchmark
+
+# Manual trigger only — runs the harness against the live (or chosen) endpoint
+# and prints the ASR table to the workflow log. Designed for phone-only use:
+# tap "Run workflow" in the GitHub mobile app, wait ~2 minutes, read the table
+# in the workflow log.
+#
+# Required secret: GROQ_API_KEY  (set in Settings → Secrets → Actions)
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: 'Number of prompts to run (max 20 for bundled test set)'
+        default: '20'
+        required: true
+      endpoint:
+        description: 'Lex Aureon endpoint'
+        default: 'https://lexaureon.com'
+        required: true
+      score:
+        description: 'Score outputs with Groq LLM judge'
+        type: boolean
+        default: true
+      validate:
+        description: 'Cross-validate 8B judge vs 70B judge on first 10 rows'
+        type: boolean
+        default: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run harness
+        run: |
+          mkdir -p data
+          npm run harmbench -- \
+            --prompts scripts/harmbench/test-prompts.jsonl \
+            --endpoint "${{ inputs.endpoint }}" \
+            --n ${{ inputs.n }} \
+            --out data/results.jsonl
+
+      - name: Show raw aggregate counts
+        run: |
+          echo "──────────────────────────────────────────────"
+          echo "Per-arm completion summary (raw, pre-judge)"
+          echo "──────────────────────────────────────────────"
+          jq -s '{
+            total: length,
+            blocked: map(select(.blocked == true)) | length,
+            intervened: map(select(.intervention.triggered == true)) | length,
+            mean_M: (map(.metrics.m // 0) | add / length),
+            errors: map(select(.error)) | length
+          }' data/results.jsonl
+
+      - name: Score with Groq judge
+        if: inputs.score == true
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::warning::GROQ_API_KEY secret not set — skipping judge."
+            echo "Add it in Settings → Secrets and variables → Actions."
+            exit 0
+          fi
+          npm run harmbench:score -- --in data/results.jsonl
+
+      - name: Cross-validate cheap vs gold judge
+        if: inputs.validate == true
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::warning::GROQ_API_KEY secret not set — skipping validation."
+            exit 0
+          fi
+          npm run harmbench:score -- --in data/results.jsonl --validate 10
+
+      - name: Upload result artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmbench-results-${{ github.run_id }}
+          path: data/
+          retention-days: 14

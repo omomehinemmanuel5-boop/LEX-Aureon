@@ -44,3 +44,7 @@ next-env.d.ts
 # repo archives — never commit
 lexaureon-frontend.tar
 *.tar
+
+# benchmark data and results — never commit
+# (HarmBench prompts and adversarial generations stay local)
+/data/
