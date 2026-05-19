@@ -13,7 +13,7 @@ import { EXAMPLE_PROMPTS } from '@/lib/example_prompts';
 import { GovernanceResponse } from '@/types';
 
 const MAX_CALLS = 10;
-type Tab = 'governed' | 'anchored' | 'raw' | 'analysis' | 'audit';
+type Tab = 'governed' | 'raw' | 'analysis' | 'audit';
 
 /* ── Terminal progress bar ──────────────────────────────────── */
 function TermProgressBar({ value, max = 1, color = '#22c55e', label }: { value: number; max?: number; color?: string; label?: string }) {
@@ -184,17 +184,14 @@ export default function Console() {
 
   const allTabs: { id: Tab; icon: string; label: string }[] = [
     { id: 'governed', icon: '✦', label: 'Output' },
-    { id: 'anchored', icon: '◈', label: 'Anchored' },
     { id: 'raw', icon: '◎', label: 'Raw' },
     { id: 'analysis', icon: '⬡', label: 'Analysis' },
     { id: 'audit', icon: '🔐', label: 'Audit' },
   ];
-  // Hide Anchored tab when it equals Governed (no intervention diff to show)
-  // and hide Raw if there is no bare output yet.
-  const tabs = allTabs.filter((t) => {
-    if (t.id === 'anchored' && outputMode === 'unchanged') return false;
-    return true;
-  });
+  // Raw tab is always shown — it's the bare LLM output and is genuinely
+  // different from the governed (constitutional + intervened) output by
+  // construction, so the "hide when unchanged" rule no longer applies.
+  const tabs = allTabs;
 
   return (
     <div
@@ -599,28 +596,10 @@ export default function Console() {
                       {outputMode !== 'unchanged' && (
                         <div className="mt-2 text-xs font-mono" style={{ color: '#64748b' }}>
                           {outputMode === 'rewritten'
-                            ? `Compare with the pre-intervention response in the Anchored tab. Reason: ${res.intervention?.reason ?? 'constitutional rewrite'}.`
+                            ? `Reason: ${res.intervention?.reason ?? 'constitutional rewrite'}.`
                             : 'Highlighted text was appended by the governor.'}
                         </div>
                       )}
-                    </div>
-                  )}
-
-                  {/* Anchored tab — LLM output under CONSTITUTIONAL_SYSTEM_PROMPT,
-                      pre-intervention. The text the governor measured and decided
-                      whether to rewrite. Hidden when it equals the Output (no diff). */}
-                  {tab === 'anchored' && outputMode !== 'unchanged' && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <TS />
-                        <span className="text-xs font-mono text-slate-500">{'// LLM under constitutional anchor · pre-intervention'}</span>
-                      </div>
-                      <div
-                        className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
-                        style={{ background: '#020408', border: '1px solid #1a2040', color: '#94a3b8', fontFamily: 'inherit' }}
-                      >
-                        {anchoredText || '[empty — governor refused the prompt; no anchored generation made]'}
-                      </div>
                     </div>
                   )}
 
