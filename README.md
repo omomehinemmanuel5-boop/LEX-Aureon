@@ -16,6 +16,36 @@ two drift, `AGENTS.md` is the source of truth.
 
 ---
 
+## Why this exists
+
+Most AI safety today is invisible — a black box of model fine-tuning that
+nobody outside the lab can verify. Lex Aureon makes safety a measurable,
+observable, mathematically auditable layer that sits above any LLM.
+Every output gets a cryptographic receipt: numbers grant reviewers can
+check, behaviors clients can audit, math researchers can prove.
+
+---
+
+## Glossary — the vocabulary
+
+| Term | Meaning |
+|------|---------|
+| **Aureonics** | The mathematical framework: simplex geometry, control-barrier function projection, Lyapunov stability. |
+| **PRAXIS** | The runtime pipeline that applies Aureonics to LLM outputs (10 steps, five isolated agents). |
+| **C, R, S** | Continuity / Reciprocity / Sovereignty — the three constitutional pillars. Always sum to 1. |
+| **M = min(C, R, S)** | Stability margin. The system intervenes when M crosses configured thresholds. |
+| **τ (tau)** | Frozen constitutional thresholds: `TAU_FLOOR = 0.05`, `TAU_LYP = 0.08`, `TAU_RECOVERY = 0.15`. |
+| **Constitutional anchor** | The identity statement Lex measures every output against (cosine similarity in embedding space). |
+| **Governor** | The control law that decides whether and how to intervene on a given turn. |
+| **Receipt** | Cryptographic audit record (SHA-256) of every constitutional decision. Immutable. |
+
+Compact mental model: an LLM produces text → embed it → measure how far it
+drifts from the anchor on C/R/S → if it crosses a threshold, the Governor
+applies the minimum correction needed to restore stability → an immutable
+receipt records the whole exchange.
+
+---
+
 ## What this is
 
 Lex Aureon is a production-ready constitutional control system that
@@ -99,6 +129,43 @@ governor is active.
 Exact projection onto `{y : Σyᵢ = 1, yᵢ ≥ τ_floor}` using the
 Duchi–Shalev-Shwartz–Singer algorithm with an offset. Replaces the
 naive `x / Σx` normalization used in Paper v2.
+
+---
+
+## Status & first empirical evaluation
+
+Full methodology and raw data in [`research/empirical-results.md`](./research/empirical-results.md).
+
+**Run 001 — May 2026.** 20-prompt bundled adversarial-pattern test set
+(sycophancy, identity-reframe, bypass, multi-attack, plus benign controls):
+
+| Arm | Intervention rate |
+|-----|-------------------|
+| Adversarial (n=16) | **16 / 16** correct interventions |
+| Benign (n=4) | 4 / 4 misfires — IEC brevity-penalty mechanism identified and patched |
+
+Benchmark infrastructure is reproducible: trigger
+[the HarmBench workflow](./.github/workflows/harmbench.yml) from the GitHub
+Actions tab. Bundled test set lives at
+[`scripts/harmbench/test-prompts.jsonl`](./scripts/harmbench/test-prompts.jsonl).
+The Groq judge ASR is validated against a stronger judge via the
+`--validate N` flag so the published number cites an agreement rate.
+
+---
+
+## Compared to the field
+
+| System | Approach | What Lex adds |
+|--------|----------|---------------|
+| **Llama Guard** | One-shot harmful-content classifier | Trajectory state across turns, Lyapunov stability tracking |
+| **NeMo Guardrails** | Rule engine + LLM checks | Continuous control via CBF projection on a simplex |
+| **Lakera Guard** | Pattern + ML classifier | Cryptographic, replayable audit receipts |
+| **OpenAI Moderation** | Category classifier | Per-output constitutional state vector |
+| **Constitutional AI** (Anthropic) | Training-time RLHF alignment | Runtime governance layer that works with any LLM |
+
+Lex sits at the layer above one-shot classifiers and below model
+training. It's the only one that emits a continuous state vector + a
+cryptographic receipt per output.
 
 ---
 
@@ -346,6 +413,36 @@ __tests__/                   Vitest unit + integration suites
 8. All governor logic lives in `lib/praxis.ts`.
 9. Security over convenience, always.
 10. Update `AGENTS.md` changelog after every change.
+
+---
+
+## Where this is going
+
+Aureonics is a research program, not a finished product. The current
+system implements the v2 paper and partially the v3 candidate; the open
+problems are tracked at
+[`research/open-problems.md`](./research/open-problems.md) and proposed
+paper additions at
+[`research/paper-updates.md`](./research/paper-updates.md).
+
+Near-term priorities:
+
+1. **Multi-turn slow-drip evaluation (P10)** — test attack-pressure
+   accumulation across turns; the current harness uses single-turn
+   isolation, so the slow-drip mechanism is not yet exercised at scale.
+2. **Full HarmBench benchmark** — Run 001 used a 20-prompt bundled set;
+   the canonical 400-prompt CAIS dataset is the next milestone.
+3. **Paper v3** — formalize adaptive `τ_eff`, the non-expansive simplex
+   projection lemma, the z-state trajectory with `attack_pressure`, and
+   `law_fired` on receipts.
+4. **Calibration hardening** — IEC entropy-ratio recalibration so
+   benign brevity no longer reads as reciprocity collapse; anchor-set
+   expansion beyond a single identity statement.
+
+The goal is a control-theoretic governance layer with empirical results
+strong enough to land in workshop papers and grant applications, then
+a stable enough API to be the audit substrate underneath production
+LLM deployments.
 
 ---
 
