@@ -25,7 +25,14 @@ export interface TrustReceipt {
 }
 
 export interface GovernanceResponse {
+  /** Bare LLM output — no constitutional preamble. The "what would the LLM say
+   *  without governance" arm. Used for transparency / comparison only; not
+   *  measured, not governed. Empty on blocked path (no LLM call made). */
   raw_output: string;
+  /** LLM output under CONSTITUTIONAL_SYSTEM_PROMPT. The pre-intervention arm
+   *  that CRS extraction, the governor, and the intervention agent all
+   *  operate on. Empty on blocked path. */
+  anchored_output?: string;
   governed_output: string;
   metrics: {
     c: number;

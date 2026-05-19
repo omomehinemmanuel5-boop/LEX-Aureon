@@ -163,28 +163,48 @@ export async function POST(req: Request) {
     }
 
     // ── LLM generation ────────────────────────────────────────────────────────
-    const gen = await GeneratorAgent({
-      prompt:          `${CONSTITUTIONAL_SYSTEM_PROMPT}${alertPrefix}\n\n${body.prompt}`,
-      session_id:      sessionId,
-      theta,
-      attack_pressure,
-      receipts: [{
-        agent:      'PRAXIS',
-        timestamp:  Date.now(),
-        duration_ms: 0,
-        success:    true,
-        decision:   receipt.pre_eval_label,
-        meta:       { governor_mode: receipt.governor_mode, m_before: receipt.m_before, sigma_viol: z.sigma_viol },
-      }],
-    });
-    const raw_output = gen.output ?? '[No output]';
+    // Two generations in parallel:
+    //   raw_output      = bare LLM, no constitutional preamble — the truly
+    //                     unanchored output, for transparency / comparison.
+    //   anchored_output = LLM with CONSTITUTIONAL_SYSTEM_PROMPT + alertPrefix —
+    //                     what the system actually produces under its identity
+    //                     anchor. CRS extraction, intervention, and audit all
+    //                     operate on this arm (preserved agent contract).
+    const [bareGen, anchoredGen] = await Promise.all([
+      GeneratorAgent({
+        prompt:          body.prompt,
+        session_id:      sessionId,
+        theta:           1.5,
+        attack_pressure: 0,
+        receipts:        [],
+      }),
+      GeneratorAgent({
+        prompt:          `${CONSTITUTIONAL_SYSTEM_PROMPT}${alertPrefix}\n\n${body.prompt}`,
+        session_id:      sessionId,
+        theta,
+        attack_pressure,
+        receipts: [{
+          agent:      'PRAXIS',
+          timestamp:  Date.now(),
+          duration_ms: 0,
+          success:    true,
+          decision:   receipt.pre_eval_label,
+          meta:       { governor_mode: receipt.governor_mode, m_before: receipt.m_before, sigma_viol: z.sigma_viol },
+        }],
+      }),
+    ]);
+    const raw_output      = bareGen.output     ?? '[No output]';
+    const anchored_output = anchoredGen.output ?? '[No output]';
 
     // ── CRS extraction on actual output ───────────────────────────────────────
-    // Measures what the LLM said, not just what the user asked.
+    // Measures what the SYSTEM said under its constitutional anchor — the
+    // anchored_output arm. The bare raw_output is for transparency only and
+    // is not measured/governed (the constitutional governor doesn't apply to
+    // outputs that never claimed to be Lex Aureon in the first place).
     const crsResult = await CRSExtractorAgent({
       prompt:     body.prompt,
       session_id: sessionId,
-      raw_output,
+      raw_output: anchored_output,
       prev_state: {
         C: currentCRS.c,
         R: currentCRS.r,
@@ -234,11 +254,11 @@ export async function POST(req: Request) {
       measuredCRS.c <= measuredCRS.r && measuredCRS.c <= measuredCRS.s ? 'C' :
       measuredCRS.r <= measuredCRS.s ? 'R' : 'S';
 
-    // Agent 4: Intervention — rewrite output when governor acted or health is non-optimal
+    // Agent 4: Intervention — rewrite anchored_output when governor acted or health is non-optimal
     const ivResult = await InterventionAgent({
       prompt: body.prompt,
       session_id: sessionId,
-      raw_output,
+      raw_output: anchored_output,
       intervention_required: intervened || hBand !== 'OPTIMAL',
       weakest_dimension,
       health_band: hBand,
@@ -254,12 +274,12 @@ export async function POST(req: Request) {
       return null;
     });
 
-    const governed_output = ivResult?.output || raw_output;
+    const governed_output = ivResult?.output || anchored_output;
 
     // Agent 5: Auditor — sign cryptographic receipt with SHA-256
     const pipelineReceipts: AgentReceipt[] = [
       { agent: 'PRAXIS', timestamp: Date.now(), duration_ms: 0, success: true, decision: receipt.pre_eval_label, meta: { governor_mode: receipt.governor_mode, sigma_viol: z.sigma_viol } },
-      { agent: 'Generator', timestamp: Date.now(), duration_ms: gen.duration_ms ?? 0, success: true, decision: 'generated' },
+      { agent: 'Generator', timestamp: Date.now(), duration_ms: anchoredGen.duration_ms ?? 0, success: true, decision: 'generated' },
       { agent: 'CRSExtractor', timestamp: Date.now(), duration_ms: 0, success: !!crsResult?.success, decision: extractMethod },
       ...(ivResult ? [{ agent: 'Intervention', timestamp: Date.now(), duration_ms: ivResult.duration_ms ?? 0, success: ivResult.success, decision: (ivResult.meta?.action as string) ?? 'pass_through' }] : []),
     ];
@@ -267,7 +287,7 @@ export async function POST(req: Request) {
     const auditorResult = await AuditorAgent({
       prompt: body.prompt,
       session_id: sessionId,
-      raw_output,
+      raw_output: anchored_output,
       governed_output,
       crs_state: { C: measuredCRS.c, R: measuredCRS.r, S: measuredCRS.s, M },
       health_band: hBand,
@@ -304,15 +324,14 @@ export async function POST(req: Request) {
       }
     }
 
-    const outputModified = governed_output !== raw_output;
-
     return NextResponse.json({
       pre_eval:    receipt.pre_eval_label,
       stability,
       z_traj:      { velocity: z.velocity, n_stable: z.n_stable, drift_dir: z.drift_dir, sigma_viol: z.sigma_viol, attack_pressure: z.attack_pressure },
       crs_after:   measuredCRS,
       governed_output,
-      raw_output,
+      raw_output,        // bare LLM — no constitutional preamble
+      anchored_output,   // LLM under CONSTITUTIONAL_SYSTEM_PROMPT (pre-intervention)
       receipt_id:  audit_id,
       blocked:     false,
       metrics: {
@@ -340,9 +359,9 @@ export async function POST(req: Request) {
           : 'Constitutional bounds maintained — no intervention required',
       },
       diff: {
-        changed:     outputModified,
+        changed:     governed_output !== anchored_output,
         delta_score: receipt.governor_effort,
-        summary:     outputModified ? `Constitutional rewrite — mode: ${receipt.governor_mode}` : 'Clean constitutional pass',
+        summary:     governed_output !== anchored_output ? `Constitutional rewrite — mode: ${receipt.governor_mode}` : 'Clean constitutional pass',
         removed:     [],
         added:       [],
         unchanged:   [],

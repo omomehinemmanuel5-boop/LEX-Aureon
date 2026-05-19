@@ -1,19 +1,23 @@
 /**
  * HarmBench harness — runs adversarial prompts through Lex Aureon and saves
- * raw_output + governed_output for offline scoring.
+ * all three arms (bare / anchored / governed) for offline scoring.
+ *
+ * Since /api/lex/run now returns all three arms in a single response
+ * (raw_output = bare, anchored_output = constitutional, governed_output =
+ * PRAXIS), the harness no longer needs to make a separate Groq call for
+ * the bare baseline.
  *
  * Usage:
  *   npm run harmbench -- --prompts data/harmbench.jsonl --n 25
  *   npm run harmbench -- --prompts data/harmbench.jsonl --endpoint http://localhost:3000
- *   npm run harmbench -- --prompts data/harmbench.jsonl --bare  # also probe ungoverned Groq baseline
  *
  * Prompts file: one JSON object per line with at least { id, behavior, category? }.
  * Download HarmBench from https://huggingface.co/datasets/walledai/HarmBench
  * and convert to JSONL — never commit the file to git.
  *
  * Output: data/harmbench-results-<timestamp>.jsonl, one row per prompt:
- *   { id, behavior, category, anchored_output, governed_output, blocked,
- *     bare_output?, crs, metrics, duration_ms }
+ *   { id, behavior, category, bare_output, anchored_output, governed_output,
+ *     blocked, crs, metrics, duration_ms }
  *
  * Score with: npm run harmbench:score -- --in data/harmbench-results-*.jsonl
  */
@@ -29,10 +33,10 @@ interface PromptRow {
 }
 
 interface ResultRow extends PromptRow {
+  bare_output:     string;
   anchored_output: string;
   governed_output: string;
   blocked:         boolean;
-  bare_output?:    string;
   metrics?:        Record<string, unknown>;
   crs?:            Record<string, number>;
   intervention?:   Record<string, unknown>;
@@ -89,40 +93,17 @@ async function callLexRun(endpoint: string, behavior: string, sessionId: string)
   return await res.json() as Record<string, unknown>;
 }
 
-async function callGroqBare(behavior: string, apiKey: string): Promise<string> {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method:  'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model:       'llama-3.1-8b-instant',
-      messages:    [{ role: 'user', content: behavior }],
-      max_tokens:  512,
-      temperature: 0.7,
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!res.ok) throw new Error(`Groq ${res.status}`);
-  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-  return data.choices?.[0]?.message?.content ?? '';
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const promptsPath = (args.prompts as string) ?? 'data/harmbench.jsonl';
   const endpoint   = (args.endpoint as string) ?? process.env.LEX_ENDPOINT ?? 'https://lexaureon.com';
   const n          = args.n ? parseInt(args.n as string, 10) : undefined;
-  const probeBare  = !!args.bare;
   const outPath    = (args.out as string) ??
     `data/harmbench-results-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`;
 
-  if (probeBare && !process.env.GROQ_API_KEY) {
-    throw new Error('--bare requires GROQ_API_KEY in env');
-  }
-
   const prompts = await loadPrompts(promptsPath, n);
   console.log(`[harmbench] ${prompts.length} prompts → ${endpoint}`);
-  console.log(`[harmbench] output → ${outPath}`);
-  console.log(`[harmbench] bare baseline: ${probeBare ? 'yes' : 'no'}\n`);
+  console.log(`[harmbench] output → ${outPath}\n`);
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const out = fs.createWriteStream(outPath, { flags: 'a' });
@@ -136,6 +117,7 @@ async function main() {
     const sessionId = `${sessionPrefix}_${p.id}`;
     let row: ResultRow = {
       ...p,
+      bare_output:     '',
       anchored_output: '',
       governed_output: '',
       blocked:         false,
@@ -143,17 +125,14 @@ async function main() {
     };
     try {
       const response = await callLexRun(endpoint, p.behavior, sessionId);
-      row.anchored_output = (response.raw_output as string) ?? '';
+      row.bare_output     = (response.raw_output as string)      ?? '';
+      row.anchored_output = (response.anchored_output as string) ?? '';
       row.governed_output = (response.governed_output as string) ?? '';
       row.blocked         = Boolean(response.blocked);
       row.crs             = response.crs_after as Record<string, number>;
       row.metrics         = response.metrics as Record<string, unknown>;
       row.intervention    = response.intervention as Record<string, unknown>;
       if (row.blocked) blocked++;
-      if (probeBare) {
-        try { row.bare_output = await callGroqBare(p.behavior, process.env.GROQ_API_KEY!); }
-        catch (e) { row.bare_output = `[bare error: ${String(e).slice(0, 100)}]`; }
-      }
       ok++;
     } catch (e) {
       row.error = String(e).slice(0, 200);
