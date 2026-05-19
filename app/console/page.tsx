@@ -170,12 +170,15 @@ export default function Console() {
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
   const pct = Math.round((apiCalls / MAX_CALLS) * 100);
 
-  // Was the output materially changed by the governor?
-  // - rewritten: the governor replaced the LLM response entirely
-  // - annotated: appended a [Lex Governor ...] note (ALERT-band intervention)
-  // - unchanged: governor passed; output is identical to raw
-  const outputDiffers = !!res && res.governed_output !== res.raw_output;
-  const outputAnnotated = !!res && outputDiffers && res.raw_output.length > 0 && res.governed_output.startsWith(res.raw_output);
+  // Was the anchored output materially changed by the governor?
+  // - rewritten: intervention replaced the anchored response entirely
+  // - annotated: intervention appended a [Lex Governor ...] note
+  // - unchanged: governor passed; anchored == governed
+  // Compare anchored vs governed (NOT raw vs governed — raw is now the bare
+  // LLM and would always differ from governed by construction).
+  const anchoredText = res?.anchored_output ?? '';
+  const outputDiffers = !!res && res.governed_output !== anchoredText;
+  const outputAnnotated = !!res && outputDiffers && anchoredText.length > 0 && res.governed_output.startsWith(anchoredText);
   const outputMode: 'rewritten' | 'annotated' | 'unchanged' =
     !outputDiffers ? 'unchanged' : outputAnnotated ? 'annotated' : 'rewritten';
 
@@ -185,10 +188,10 @@ export default function Console() {
     { id: 'analysis', icon: '⬡', label: 'Analysis' },
     { id: 'audit', icon: '🔐', label: 'Audit' },
   ];
-  // Hide Raw tab when output is identical — showing two tabs of the same text is confusing.
-  const tabs = outputMode === 'unchanged'
-    ? allTabs.filter((t) => t.id !== 'raw')
-    : allTabs;
+  // Raw tab is always shown — it's the bare LLM output and is genuinely
+  // different from the governed (constitutional + intervened) output by
+  // construction, so the "hide when unchanged" rule no longer applies.
+  const tabs = allTabs;
 
   return (
     <div
@@ -580,9 +583,9 @@ export default function Console() {
                       >
                         {outputMode === 'annotated' ? (
                           <>
-                            <span style={{ color: '#86efac' }}>{res.raw_output}</span>
+                            <span style={{ color: '#86efac' }}>{anchoredText}</span>
                             <span style={{ color: '#fbbf24', display: 'block', marginTop: 4 }}>
-                              {res.governed_output.slice(res.raw_output.length)}
+                              {res.governed_output.slice(anchoredText.length)}
                             </span>
                           </>
                         ) : (
@@ -593,25 +596,26 @@ export default function Console() {
                       {outputMode !== 'unchanged' && (
                         <div className="mt-2 text-xs font-mono" style={{ color: '#64748b' }}>
                           {outputMode === 'rewritten'
-                            ? `Compare with the original LLM response in the Raw tab. Reason: ${res.intervention?.reason ?? 'constitutional rewrite'}.`
+                            ? `Reason: ${res.intervention?.reason ?? 'constitutional rewrite'}.`
                             : 'Highlighted text was appended by the governor.'}
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Raw tab — only shown when output was modified */}
-                  {tab === 'raw' && outputMode !== 'unchanged' && (
+                  {/* Raw tab — bare LLM output, no constitutional preamble. The
+                      "what would the LLM say without governance" baseline. */}
+                  {tab === 'raw' && (
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <TS />
-                        <span className="text-xs font-mono text-slate-500">{'// raw LLM output · pre-governor'}</span>
+                        <span className="text-xs font-mono text-slate-500">{'// bare LLM output · no constitutional anchor'}</span>
                       </div>
                       <div
                         className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
                         style={{ background: '#020408', border: '1px solid #1a2040', color: '#64748b', fontFamily: 'inherit' }}
                       >
-                        {res.raw_output || '[empty — governor refused the prompt; no LLM call was made]'}
+                        {res.raw_output || '[empty — governor refused the prompt; no bare generation made]'}
                       </div>
                     </div>
                   )}

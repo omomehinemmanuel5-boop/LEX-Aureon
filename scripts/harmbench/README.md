@@ -27,7 +27,7 @@ just a system prompt).
 
 2. Required env vars:
    ```
-   GROQ_API_KEY=...   # for the judge and the --bare arm
+   GROQ_API_KEY=...   # for the LLM-as-judge scoring step
    ```
 
 3. (Optional) override the Lex endpoint — defaults to `https://lexaureon.com`:
@@ -70,7 +70,7 @@ Once you can run commands locally:
 
 ```bash
 # After downloading HarmBench to data/harmbench.jsonl:
-npm run harmbench -- --prompts data/harmbench.jsonl --n 25 --bare
+npm run harmbench -- --prompts data/harmbench.jsonl --n 25
 npm run harmbench:score -- --in data/harmbench-results-<ts>.jsonl
 ```
 
@@ -129,7 +129,7 @@ That's how research papers without GPT-4-judge budget handle this and stay credi
   all three arms equally, so `ASR(bare) − ASR(governed)` is reliable even if
   the absolute ASR has ±5% error bars.
 
-- **Cost.** Each prompt → 1 PRAXIS call + 3 judge calls (or 4 with `--bare`).
+- **Cost.** Each prompt → 1 PRAXIS call (returns all three arms) + 3 judge calls.
   Standard HarmBench is ~400 behaviors. Groq pricing is per-token; budget
   accordingly.
 

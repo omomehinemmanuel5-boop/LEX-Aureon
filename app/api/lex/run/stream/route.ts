@@ -5,6 +5,7 @@ import { streamGeneration } from '@/lib/agents/generator_stream';
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
 import { InterventionAgent } from '@/lib/agents/intervention';
 import { AuditorAgent } from '@/lib/agents/auditor';
+import { GeneratorAgent } from '@/lib/agents/generator';
 import type { AgentReceipt } from '@/lib/agents/types';
 import {
   TAU_FLOOR, TAU_RECOVERY, CRS,
@@ -154,7 +155,8 @@ export async function POST(req: Request) {
           send('receipt', { audit_id, blocked: true, intervention: { triggered: true, applied: true, type: 'block' } });
           send('complete', {
             governed_output: refusal,
-            raw_output: '',
+            raw_output: '',        // blocked path: no bare LLM call was made
+            anchored_output: '',   // blocked path: no anchored LLM call was made
             audit_id,
             blocked: true,
             metrics: { c: finalCRS.c, r: finalCRS.r, s: finalCRS.s, m: M, health: 'UNSAFE', health_band: 'CRITICAL' },
@@ -171,6 +173,20 @@ export async function POST(req: Request) {
           : '';
         const fullPrompt = `${CONSTITUTIONAL_SYSTEM_PROMPT}${alertPrefix}\n\n${prompt}`;
 
+        // Kick off the bare-LLM call in parallel (no preamble). This is the
+        // "what would the LLM say without governance" arm — for transparency.
+        // Not streamed; surfaced in the final 'complete' event as raw_output.
+        const bareGenPromise = GeneratorAgent({
+          prompt:          prompt,
+          session_id:      sessionId,
+          theta:           1.5,
+          attack_pressure: 0,
+          receipts:        [],
+        }).catch((e) => {
+          logger.warn('lex.run.stream.bare_generator', 'bare generator failed', { session_id: sessionId, ...errorFields(e) });
+          return { success: false, output: '[bare gen failed]', duration_ms: 0 };
+        });
+
         const gen = streamGeneration(fullPrompt, attack_pressure);
         send('stage', { name: 'generating' });
         for await (const token of gen.tokens) {
@@ -180,12 +196,16 @@ export async function POST(req: Request) {
           logger.error('lex.run.stream.generator', 'streaming gen failed', { session_id: sessionId, ...errorFields(e) });
           return { output: '[Generation failed]', model: 'error', tokens_emitted: 0 };
         });
-        const raw_output = genResult.output || '[No output]';
+        // anchored_output = the streamed arm (constitutional system prompt applied)
+        // raw_output      = the bare-LLM arm (resolves below)
+        const anchored_output = genResult.output || '[No output]';
+        const bareResult      = await bareGenPromise;
+        const raw_output      = bareResult.output || '[No output]';
 
-        // ── Stage 3: CRS extraction ─────────────────────────────────────────
+        // ── Stage 3: CRS extraction (on the anchored arm) ───────────────────
         send('stage', { name: 'measuring' });
         const crsResult = await CRSExtractorAgent({
-          prompt, session_id: sessionId, raw_output,
+          prompt, session_id: sessionId, raw_output: anchored_output,
           prev_state: {
             C: currentCRS.c, R: currentCRS.r, S: currentCRS.s,
             M: Math.min(currentCRS.c, currentCRS.r, currentCRS.s),
@@ -239,7 +259,7 @@ export async function POST(req: Request) {
 
         send('stage', { name: 'intervention' });
         const ivResult = await InterventionAgent({
-          prompt, session_id: sessionId, raw_output,
+          prompt, session_id: sessionId, raw_output: anchored_output,
           intervention_required: intervened || hBand !== 'OPTIMAL',
           weakest_dimension, health_band: hBand,
           trigger_reason: intervened
@@ -251,8 +271,8 @@ export async function POST(req: Request) {
           logger.error('lex.run.stream.intervention', 'intervention agent failed', { session_id: sessionId, ...errorFields(e) });
           return null;
         });
-        const governed_output = ivResult?.output || raw_output;
-        const outputModified = governed_output !== raw_output;
+        const governed_output = ivResult?.output || anchored_output;
+        const outputModified = governed_output !== anchored_output;
 
         send('intervention', {
           triggered: intervened,
@@ -274,7 +294,7 @@ export async function POST(req: Request) {
           ...(ivResult ? [{ agent: 'Intervention', timestamp: Date.now(), duration_ms: ivResult.duration_ms ?? 0, success: ivResult.success, decision: (ivResult.meta?.action as string) ?? 'pass_through' }] : []),
         ];
         const auditorResult = await AuditorAgent({
-          prompt, session_id: sessionId, raw_output, governed_output,
+          prompt, session_id: sessionId, raw_output: anchored_output, governed_output,
           crs_state: { C: measuredCRS.c, R: measuredCRS.r, S: measuredCRS.s, M },
           health_band: hBand,
           intervention_required: intervened,
@@ -315,7 +335,8 @@ export async function POST(req: Request) {
           z_traj: { velocity: z.velocity, n_stable: z.n_stable, drift_dir: z.drift_dir, sigma_viol: z.sigma_viol, attack_pressure: z.attack_pressure },
           crs_after: measuredCRS,
           governed_output,
-          raw_output,
+          raw_output,        // bare LLM — no constitutional preamble
+          anchored_output,   // LLM under CONSTITUTIONAL_SYSTEM_PROMPT (pre-intervention)
           receipt_id: audit_id,
           blocked: false,
           metrics: {
