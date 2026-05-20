@@ -196,7 +196,7 @@ export default function ConstitutionPage() {
           <p className="text-sm text-slate-400 leading-relaxed mb-8 max-w-xl mx-auto">
             This Constitution becomes effective upon system instantiation and remains binding
             across all versions of Lex Aureon. The mathematical framework is grounded in
-            peer-reviewed research and enforced by the SovereignKernel on every governed output.
+            published research and enforced by the SovereignKernel on every governed output.
           </p>
 
           {/* Enforcement block */}
