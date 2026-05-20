@@ -6,6 +6,7 @@ import SimplexVisualizer from '@/components/SimplexVisualizer';
 import GovernanceFeed from '@/components/GovernanceFeed';
 import HeroTicker from '@/components/HeroTicker';
 import LandingNav from '@/components/LandingNav';
+import LandingEmailCapture from '@/components/LandingEmailCapture';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -149,7 +150,7 @@ function Hero() {
           </a>
         </div>
 
-        <p className="text-xs text-slate-600">No credit card · 10 free governed runs · lexaureon@gmail.com</p>
+        <LandingEmailCapture />
       </div>
 
       {/* Simplex demo */}
