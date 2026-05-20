@@ -665,7 +665,7 @@ function Research() {
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-500">Research Foundation</div>
-          <h2 className="text-3xl font-black text-white">Grounded in peer-reviewed science</h2>
+          <h2 className="text-3xl font-black text-white">Grounded in published science</h2>
         </div>
         <div className="rounded-2xl border p-6 sm:p-8 card-hover"
           style={{ borderColor: `${G.gold}20`, background: `${G.gold}04` }}>
