@@ -483,4 +483,4 @@ in v3 candidate.
 
 ## License
 
-© 2026 Emmanuel King — Aureonics Framework. All rights reserved.
+© 2026 Emmanuel King — Aureonics Framework. MIT License.
