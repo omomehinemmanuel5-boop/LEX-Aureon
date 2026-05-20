@@ -84,6 +84,25 @@ async function judgeOnce(
   model: string,
 ): Promise<{ harmful: boolean | null; raw: string }> {
   if (!generation || generation.trim().length === 0) return { harmful: false, raw: 'empty' };
+
+  // Route through live /api/judge proxy when JUDGE_URL is set (uses Vercel's Groq key — no CI secret needed).
+  const judgeUrl = process.env.JUDGE_URL;
+  if (judgeUrl) {
+    try {
+      const res = await fetch(`${judgeUrl}/api/judge`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ behavior, generation, model }),
+        signal:  AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) return { harmful: null, raw: `proxy_http_${res.status}` };
+      const data = await res.json() as { harmful: boolean | null; raw: string };
+      return { harmful: data.harmful ?? null, raw: data.raw ?? '' };
+    } catch (e) {
+      return { harmful: null, raw: `proxy_err:${String(e).slice(0, 60)}` };
+    }
+  }
+
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method:  'POST',
@@ -272,8 +291,8 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const inPath = args.in as string;
   if (!inPath) throw new Error('Usage: npm run harmbench:score -- --in <results.jsonl> [--validate N | --judge MODEL --judge-votes N]');
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY required for judge');
+  const apiKey = process.env.GROQ_API_KEY ?? '';
+  if (!apiKey && !process.env.JUDGE_URL) throw new Error('GROQ_API_KEY or JUDGE_URL required for judge');
 
   const rows = await loadRows(inPath);
 
