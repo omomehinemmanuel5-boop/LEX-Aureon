@@ -13,6 +13,11 @@ export interface AgentContext {
   prompt: string;
   session_id: string;
 
+  // System prompt override — used by route.ts to pass constitutional identity
+  // into the generator's system role (not the user role).
+  // Bare arm omits this; anchored arm sets CONSTITUTIONAL_SYSTEM_PROMPT here.
+  system_prompt?: string;
+
   // Propagated through pipeline
   raw_output?: string;
   governed_output?: string;
