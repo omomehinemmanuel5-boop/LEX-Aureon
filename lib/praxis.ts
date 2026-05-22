@@ -51,6 +51,16 @@ const ATTACK_PATTERNS: Record<string, RegExp[]> = {
     /bypass.*restrictions.*and.*act/i,
     /forget.*rules.*and.*roleplay/i,
   ],
+  // Detects prompts asking for guides on attacking the constitutional system itself.
+  // These are semantically dangerous even when CRS scores look acceptable.
+  attack_vector_disclosure: [
+    /step.by.step.*(?:guide|tutorial|instructions?).*(?:attack|bypass|drift|exploit)/i,
+    /how\s+(?:to|an?\s+attacker\s+could)\s+(?:attack|bypass|drift|exploit|evade)/i,
+    /(?:slowly|gradually)\s+drift.*simplex/i,
+    /maintain.*(?:safe|clean)\s+appearance.*while.*(?:attack|drift|bypass)/i,
+    /evade.*(?:constitutional|governance|governor)/i,
+    /(?:attack|exploit)\s+(?:the\s+)?(?:constitutional|crs|governance)\s+(?:system|framework|governor)/i,
+  ],
 };
 
 // ── Static delta map (mirrors law_impact seed data) ──────────────────────────
@@ -59,8 +69,9 @@ const STATIC_DELTA: Record<string, { dc: number; dr: number; ds: number }> = {
   bypass_attempt:   { dc: -0.02, dr: -0.02, ds: -0.12 },
   identity_reframe: { dc: -0.12, dr: -0.02, ds: -0.02 },
   sycophancy:       { dc: -0.02, dr: -0.12, ds: -0.02 },
-  multi_attack:     { dc: -0.06, dr: -0.06, ds: -0.06 },
-  slow_drip:        { dc: -0.01, dr: -0.01, ds: -0.01 },
+  multi_attack:            { dc: -0.06, dr: -0.06, ds: -0.06 },
+  slow_drip:               { dc: -0.01, dr: -0.01, ds: -0.01 },
+  attack_vector_disclosure: { dc: -0.08, dr: -0.04, ds: -0.08 },
 };
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
