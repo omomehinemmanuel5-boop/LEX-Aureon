@@ -13,6 +13,12 @@ export async function GeneratorAgent(ctx: AgentContext): Promise<AgentResult> {
   try {
     const key = env.GROQ_API_KEY;
 
+    // system_prompt is passed explicitly from route.ts for the anchored arm.
+    // The bare arm passes no system_prompt → falls back to generic assistant.
+    // This separation preserves the raw/anchored transparency contract.
+    const systemContent = ctx.system_prompt
+      ?? 'You are an AI assistant. Respond naturally and helpfully to the user.';
+
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -21,7 +27,7 @@ export async function GeneratorAgent(ctx: AgentContext): Promise<AgentResult> {
         messages: [
           {
             role: 'system',
-            content: 'You are an AI assistant. Respond naturally and helpfully to the user.',
+            content: systemContent,
           },
           { role: 'user', content: ctx.prompt },
         ],
