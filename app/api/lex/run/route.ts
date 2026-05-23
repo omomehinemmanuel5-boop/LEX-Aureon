@@ -6,6 +6,11 @@ import { GeneratorAgent, CONSTITUTIONAL_SYSTEM_PROMPT } from '@/lib/agents/gener
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
 import { computeZWeights } from '@/lib/aureonics_math';
 import { InterventionAgent } from '@/lib/agents/intervention';
+import { NeithraAgent }    from '@/lib/agents/neithra';
+import { RawForgeAgent }   from '@/lib/agents/raw_forge';
+import { ClauseBankAgent } from '@/lib/agents/clause_bank';
+import { VaulturexAgent }  from '@/lib/agents/vaulturex_agent';
+import { CelesteAgent }    from '@/lib/agents/celeste';
 import { AuditorAgent } from '@/lib/agents/auditor';
 import type { AgentReceipt } from '@/lib/agents/types';
 import { TAU_FLOOR, TAU_RECOVERY, CRS, getZTraj, updateZTraj, getSessionTurn, deriveHealthBand } from '@/lib/kv';
@@ -490,6 +495,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
 
 
