@@ -22,6 +22,9 @@ type EnvShape = {
   TURSO_DATABASE_URL:           string;
   TURSO_AUTH_TOKEN:             string;
   ADMIN_PASSWORD:               string;
+  GEMINI_API_KEY:               string | undefined;
+  GITHUB_TOKEN:                 string | undefined;
+  VERCEL_TOKEN:                 string | undefined;
   CRON_SECRET:                  string;
   NEXT_PUBLIC_SITE_URL:         string;
   ANTHROPIC_API_KEY:            string | undefined;
@@ -53,3 +56,4 @@ export const env = new Proxy({} as EnvShape, {
     return optional(sourceKey);
   },
 }) as EnvShape;
+
