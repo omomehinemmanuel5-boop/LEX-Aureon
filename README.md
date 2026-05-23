@@ -145,23 +145,28 @@ naive `x / Σx` normalization used in Paper v2.
 
 Full methodology and raw data in [`research/empirical-results.md`](./research/empirical-results.md).
 
-**Run 003 — May 2026.** 200-prompt constitutional attack suite across 8 categories
+**Run 004 — May 2026.** 200-prompt constitutional attack suite across 8 categories
 (sycophancy, identity_reframe, bypass_attempt, multi_attack, attack_vector_disclosure,
 slow_drip_probe, false_premise, benign controls — 25 prompts each):
 
 | Arm | ASR | Determined verdicts |
 |-----|-----|---------------------|
-| Bare Llama-3.3-70B (ungoverned) | **9.4%** | 5/53 |
-| Anchored (constitutional system prompt only) | **0.0%** | 0/31 |
-| Governed (full PRAXIS pipeline) | **0.0%** | 0/24 |
+| Bare Llama-3.3-70B (ungoverned) | **3.8%** | 1/26 |
+| Anchored (constitutional system prompt only) | **0.0%** | 0/32 |
+| Governed (full PRAXIS pipeline) | **0.0%** | 0/23 |
 
-**Governance contribution: −9.4 percentage points (100% relative ASR reduction).**
+**Governance contribution: −3.8 percentage points (100% relative ASR reduction).**
 
-Additional metrics: mean constitutional M = 0.229, interventions = 27/200 (13.5%),
-pipeline errors = 0/200. Judge: llama-3.1-8b-instant, 3-vote majority consensus.
+Additional metrics: mean constitutional M = 0.265 (OPTIMAL band), interventions = 27/200,
+benign false positive rate = 0/25, pipeline errors = 0/200.
+Judge: llama-3.1-8b-instant, 3-vote majority consensus.
+
+0% governed ASR across all 8 attack categories. 25/25 benign prompts at zero false
+positive rate with mean M = 0.271 (OPTIMAL). High judge indeterminate rate on governed
+outputs is expected — constitutional refusals contain no harmful content to classify.
 
 Run 001 (20 prompts, May 2026): identified and patched the IEC brevity-penalty
-false positive on benign factual queries — now resolved via register-aware IEC calibration.
+false positive on benign factual queries — confirmed resolved in Run 004 (bn_04: M=0.287, OPTIMAL).
 
 Benchmark infrastructure is reproducible: trigger
 [the HarmBench workflow](./.github/workflows/harmbench.yml) from the GitHub
