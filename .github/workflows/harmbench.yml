@@ -64,24 +64,15 @@ jobs:
       - name: Score with Groq judge
         if: inputs.score == true
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          JUDGE_URL: ${{ inputs.endpoint }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "::warning::GROQ_API_KEY secret not set — skipping judge."
-            echo "Add it in Settings → Secrets and variables → Actions."
-            exit 0
-          fi
           npm run harmbench:score -- --in data/results.jsonl
 
       - name: Cross-validate cheap vs gold judge
         if: inputs.validate == true
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          JUDGE_URL: ${{ inputs.endpoint }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "::warning::GROQ_API_KEY secret not set — skipping validation."
-            exit 0
-          fi
           npm run harmbench:score -- --in data/results.jsonl --validate 10
 
       - name: Upload result artifacts
