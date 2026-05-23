@@ -100,7 +100,8 @@ Constraint: C + R + S = 1 (ALWAYS preserved)
 Stability margin: M(x) = min(C, R, S)
 Governor: G_i(x,T) = k_i * (phi_i - phi_bar)
 Stiffness: k_i(x,T) = k0 * w_i(T) / (M(x) + epsilon_k)
-Lyapunov: V(x) = -SUM log(x_i) + (mu/2) SUM max(0,tau-x_i)^2
+Lyapunov: V(x)  = -SUM log(x_i) + (mu/2) SUM max(0,tau-x_i)^2
+Lyapunov: V_z(x) = -SUM z_i*log(x_i) + (mu/2) SUM max(0,tau-x_i)^2  [z-weighted, active]
 
 ---
 
@@ -171,7 +172,7 @@ leads            captured leads
 suppress:   M > TAU_RECOVERY AND n_stable >= N_MIN
 nudge:      TAU_FLOOR < M <= TAU_RECOVERY AND velocity > 0.05
 correction: M <= TAU_FLOOR
-recovery:   M > TAU_FLOOR AND n_stable > 0
+recovery:   M <= TAU_RECOVERY AND n_stable >= N_MIN
 
 ---
 
@@ -391,6 +392,20 @@ npm run build          verify TypeScript
 [2026-05-18] SYSTEM: /api/lex/run now returns three arms — raw_output (bare LLM, no constitutional preamble), anchored_output (LLM with CONSTITUTIONAL_SYSTEM_PROMPT, pre-intervention), governed_output (full PRAXIS). Bare arm generated in parallel via GeneratorAgent so latency unchanged. CRS extraction, governor, intervention, and audit still operate on anchored_output (preserved agent contract). Streaming endpoint kicks off the bare gen in background while streaming the anchored tokens. /console now has a new "Anchored" tab showing the pre-intervention text; "Raw" tab now genuinely shows the bare LLM. Harness updated to read all three arms directly from the API and drops the separate --bare Groq call (now redundant).
 [2026-05-18] DESIGN: types/index.ts — GovernanceResponse.anchored_output added (optional, string). raw_output semantic flipped: was "anchored Llama output", now "bare LLM output". External API consumers reading raw_output will see bare LLM responses going forward.
 
+[2026-05-23] FIX: Generator constitutional identity moved to system role — cannot be overridden by adversarial user content
+[2026-05-23] FIX: attack_vector_disclosure pattern added to praxis.ts preEval + STATIC_DELTA (dc=-0.08, ds=-0.08)
+[2026-05-23] FIX: forceIntervention = pre_eval_label === HIGH — HIGH threats always go through intervention regardless of M score
+[2026-05-23] SYSTEM: V_z(x) = -Σzᵢ·log(xᵢ) + (μ/2)Σmax(0,τ-xᵢ)² implemented in aureonics_math.ts — z-weights from z_traj history
+[2026-05-23] SYSTEM: computeZWeights() — inverse-proportion z-weights, normalised so Σzᵢ=3, historically weak pillars get steeper barrier
+[2026-05-23] FIX: IEC replaced with register-aware computeIEC_calibrated() — factual/analytical/adversarial/conversational target ratios, no heuristic floor
+[2026-05-23] FIX: S measurement rebuilt — compliance × (0.5 × anchor_alignment + 0.5 × reasoning_gain), no longer conflates prompt-output similarity with sovereignty
+[2026-05-23] FIX: isConstitutional keyword check replaced with judgeGovernedOutput() — llama-3.1-8b-instant confirms RESIST/FULFILL before governed output exits pipeline
+[2026-05-23] FIX: getGovernorMode recovery mode — now requires n_stable >= N_MIN (was n_stable > 0), prevents recovery firing after single low-velocity turn
+[2026-05-23] SYSTEM: Brittleness metric B(x) = (1/3−M)/(1/3−M+d_geo) added to every audit receipt — single-pillar attacks measurably more brittle than multi-attacks at equal geometric distance
+[2026-05-23] FIX: z_weights/turn/sigma_viol threaded from z_traj through route.ts to CRSExtractorAgent — V_z now uses live session history
+[2026-05-23] SYSTEM: Vaulturex Sovereign Codex expanded from 22 to all 50 laws (Books I–X) in sovereign_laws.ts — all pillars now fully covered
+[2026-05-23] SYSTEM: Laws used as generative engine — law principle + governor_use IS the constitutional response mandate, not supplementary context
+[2026-05-23] FIX: attack_vector_disclosure seeded into law_impact table in db.ts
 ---
 
 ## CURRENT STATUS
@@ -455,3 +470,4 @@ This is Emmanuel's life work.
 Treat it with care, precision, and respect.
 Every line of code represents his sovereignty.
 Build it like it matters — because it does.
+
