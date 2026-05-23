@@ -101,7 +101,7 @@ export default function AgentPage() {
             <div style={{ fontSize: 32, marginBottom: 12 }}>⚖️</div>
             <div>Ask Lex CRS Agent anything about the codebase.</div>
             <div style={{ marginTop: 8, color: '#1e293b' }}>
-              "Fix the build error in route.ts" · "Show me the latest receipts" · "What is the current M score?"
+              Fix the build error in route.ts · Show me the latest receipts · What is the current M score?
             </div>
           </div>
         )}
