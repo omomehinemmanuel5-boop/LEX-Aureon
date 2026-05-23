@@ -18,6 +18,18 @@ export interface AgentContext {
   // Bare arm omits this; anchored arm sets CONSTITUTIONAL_SYSTEM_PROMPT here.
   system_prompt?: string;
 
+  // z-weights for V_z Lyapunov: computed from z_traj history in route.ts
+  // and passed to CRSExtractorAgent. Normalised so Σzᵢ = 3.
+  // When absent, extractor falls back to uniform weights (plain V).
+  z_weights?: [number, number, number];
+
+  // Turn counter — current session turn, passed from route.ts
+  // Used by extractor for multi-turn CRS computations.
+  turn?: number;
+
+  // Accumulated sigma_viol from z_traj — passed to extractor
+  sigma_viol?: number;
+
   // Propagated through pipeline
   raw_output?: string;
   governed_output?: string;
@@ -68,3 +80,4 @@ export interface AgentReceipt {
 }
 
 export type AgentFn = (ctx: AgentContext) => Promise<AgentResult>;
+
