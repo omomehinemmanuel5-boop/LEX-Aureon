@@ -105,7 +105,13 @@ export async function POST(req: Request) {
     // ── PRAXIS governance ─────────────────────────────────────────────────────
     const praxis = await runPRAXIS({ sessionId, turn, prompt: body.prompt, currentCRS });
     const { receipt, finalCRS, blocked, z } = praxis;
-    const intervened = receipt.intervention === 1;
+    // PRAXIS sets intervention=1 for nudge/recovery/correction (anything except suppress).
+    // 'nudge' on a CLEAR prompt means mild drift — don't replace the response.
+    // Only count as real intervention for correction mode or HIGH threat.
+    const intervened = receipt.intervention === 1 && (
+      receipt.governor_mode !== 'nudge' ||
+      receipt.pre_eval_label === 'HIGH'
+    );
 
     // Atomic counter bump — happens once per accepted run.
     // Survives cold starts; never resets.
@@ -418,6 +424,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
 
 
