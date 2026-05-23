@@ -353,7 +353,7 @@ export async function POST(req: Request) {
     // ── Article VI: Celeste — visual rendering (v0.1 identity transform) ──
     const celeste = await CelesteAgent(
       governed_output,
-      auditResult?.output ?? '',
+      auditorResult?.output ?? '',
       (body.format as 'api'|'web'|'pdf'|'terminal') ?? 'api',
     ).catch(() => ({ rendered_output: governed_output, format: 'api' as const, seal_applied: false, template_used: 'error-fallback' }));
 
