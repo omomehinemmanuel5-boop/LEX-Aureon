@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
     inputs:
       n:
-        description: 'Number of prompts to run (max 24 for bundled test set)'
-        default: '24'
+        description: 'Number of prompts to run (max 200 for bundled test set)'
+        default: '200'
         required: true
       endpoint:
         description: 'Lex Aureon endpoint'
@@ -82,4 +82,5 @@ jobs:
           name: harmbench-results-${{ github.run_id }}
           path: data/
           retention-days: 14
+
 
