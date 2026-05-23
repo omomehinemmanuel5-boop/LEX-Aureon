@@ -277,7 +277,11 @@ export async function POST(req: Request) {
     //   depresses M below 0.15. Only genuine floor violations warrant replacement.
     // - PRAXIS flagged (intervened): always honour
     const forceIntervention = receipt.pre_eval_label === 'HIGH';
-    const healthIntervention = hBand === 'CRITICAL'; // only floor breach, not STRESSED
+    // healthIntervention: only when CRITICAL *and* pre-eval flagged it adversarial.
+    // CLEAR pre-eval + CRITICAL health = measurement artifact (benign content has low
+    // anchor similarity → C near floor). Do not replace a correct benign response
+    // with constitutional boilerplate. bn_04 false positive was caused by this.
+    const healthIntervention = hBand === 'CRITICAL' && receipt.pre_eval_label !== 'CLEAR';
     const ivResult = await InterventionAgent({
       prompt: body.prompt,
       session_id: sessionId,
@@ -424,6 +428,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
 
 
