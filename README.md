@@ -116,13 +116,22 @@ pressureBoost(z) = min(0.05, z.attack_pressure · 0.05)
 labelBoost(ℓ)    = 0.05 if ℓ = HIGH else 0
 ```
 
-**Lyapunov function (Section 11.10, exact):**
+**Lyapunov function — unified V_z form (active in production):**
 ```
-V(x) = −Σ log(x_i) + (μ/2) · Σ max(0, τ − x_i)²
+V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2) · Σ max(0, τ − xᵢ)²
 ```
-Two terms — a logarithmic barrier against simplex-boundary collapse,
-and a quadratic penalty on threshold violations. `dV/dt ≤ 0` when the
-governor is active.
+z-weights are derived from z-trajectory session history: zᵢ ∝ 1/last_crs_i,
+normalised so Σzᵢ = 3. Historically weak pillars get a steeper barrier.
+When z = [1,1,1] this reduces to the base form V(x). `dV_z/dt ≤ 0`
+unconditionally under governor correction (Monte Carlo verified, zero violations).
+
+**Brittleness metric (in every audit receipt):**
+```
+B(x) = (1/3 − M) / (1/3 − M + d_geo)
+d_geo = √Σ(xᵢ − 1/3)²
+```
+B ∈ [0,1]. Single-pillar attacks have higher B than multi-attacks at equal
+geometric distance — concentrated damage is constitutionally more brittle.
 
 **Simplex projection (CBF-safe Euclidean):**
 
@@ -132,24 +141,33 @@ naive `x / Σx` normalization used in Paper v2.
 
 ---
 
-## Status & first empirical evaluation
+## Empirical evaluation — HarmBench results
 
 Full methodology and raw data in [`research/empirical-results.md`](./research/empirical-results.md).
 
-**Run 001 — May 2026.** 20-prompt bundled adversarial-pattern test set
-(sycophancy, identity-reframe, bypass, multi-attack, plus benign controls):
+**Run 003 — May 2026.** 200-prompt constitutional attack suite across 8 categories
+(sycophancy, identity_reframe, bypass_attempt, multi_attack, attack_vector_disclosure,
+slow_drip_probe, false_premise, benign controls — 25 prompts each):
 
-| Arm | Intervention rate |
-|-----|-------------------|
-| Adversarial (n=16) | **16 / 16** correct interventions |
-| Benign (n=4) | 4 / 4 misfires — IEC brevity-penalty mechanism identified and patched |
+| Arm | ASR | Determined verdicts |
+|-----|-----|---------------------|
+| Bare Llama-3.3-70B (ungoverned) | **9.4%** | 5/53 |
+| Anchored (constitutional system prompt only) | **0.0%** | 0/31 |
+| Governed (full PRAXIS pipeline) | **0.0%** | 0/24 |
+
+**Governance contribution: −9.4 percentage points (100% relative ASR reduction).**
+
+Additional metrics: mean constitutional M = 0.229, interventions = 27/200 (13.5%),
+pipeline errors = 0/200. Judge: llama-3.1-8b-instant, 3-vote majority consensus.
+
+Run 001 (20 prompts, May 2026): identified and patched the IEC brevity-penalty
+false positive on benign factual queries — now resolved via register-aware IEC calibration.
 
 Benchmark infrastructure is reproducible: trigger
 [the HarmBench workflow](./.github/workflows/harmbench.yml) from the GitHub
-Actions tab. Bundled test set lives at
+Actions tab. 200-prompt test set lives at
 [`scripts/harmbench/test-prompts.jsonl`](./scripts/harmbench/test-prompts.jsonl).
-The Groq judge ASR is validated against a stronger judge via the
-`--validate N` flag so the published number cites an agreement rate.
+Groq judge ASR is validated against a gold judge via the `--validate N` flag.
 
 ---
 
@@ -253,7 +271,7 @@ Decided by `getGovernorMode(z, τ_eff)` in `lib/kv.ts`.
 | `suppress` | `M > τ_recovery` AND `n_stable ≥ N_MIN` | No correction; `V` is pure log barrier |
 | `nudge` | `τ_floor < M ≤ τ_recovery` AND `velocity > 0.05` | Scaled correction (0.4×) |
 | `correction` | `M ≤ τ_eff` | Full correction (1.0×) |
-| `recovery` | `M > τ_floor` AND `n_stable > 0` | Pillar rebalancing toward equilibrium |
+| `recovery` | `M ≤ τ_recovery` AND `n_stable ≥ N_MIN` | Pillar rebalancing toward equilibrium |
 
 ---
 
@@ -268,6 +286,9 @@ Pre-eval patterns in `lib/praxis.ts:ATTACK_PATTERNS`.
 | sycophancy | R | `sycophancy` |
 | multi_attack | all three | `multi_attack` |
 | slow_drip | M global | detected via `σ_viol` |
+| attack_vector_disclosure | C + S | `attack_vector_disclosure` |
+| slow_drip_probe | cumulative | detected via `σ_viol` |
+| false_premise | C | `identity_reframe` |
 
 ---
 
@@ -430,14 +451,16 @@ Near-term priorities:
 1. **Multi-turn slow-drip evaluation (P10)** — test attack-pressure
    accumulation across turns; the current harness uses single-turn
    isolation, so the slow-drip mechanism is not yet exercised at scale.
-2. **Full HarmBench benchmark** — Run 001 used a 20-prompt bundled set;
-   the canonical 400-prompt CAIS dataset is the next milestone.
-3. **Paper v3** — formalize adaptive `τ_eff`, the non-expansive simplex
-   projection lemma, the z-state trajectory with `attack_pressure`, and
-   `law_fired` on receipts.
-4. **Calibration hardening** — IEC entropy-ratio recalibration so
-   benign brevity no longer reads as reciprocity collapse; anchor-set
-   expansion beyond a single identity statement.
+2. **Neithra agent (Stage 2)** — meta-reasoning agent between Governor
+   and Intervention; verifies proposed intervention addresses the correct
+   pillar before rewriting. Closes the pillar-mismatch alignment gap.
+3. **Paper v3** — formalize V_z unified Lyapunov, brittleness metric
+   B(x), register-aware IEC, adaptive τ_eff, non-expansive simplex
+   projection lemma, and 50-law Vaulturex Codex integration.
+4. **Multi-turn CRS** — variance-based ADV across turns using turn_history
+   Turso table; current ADV is per-turn, paper definition is multi-trial.
+5. **Clause Bank agent (Phase 2)** — jurisdiction-aware constitutional
+   law pattern matching for legal/compliance use cases.
 
 The goal is a control-theoretic governance layer with empirical results
 strong enough to land in workshop papers and grant applications, then
