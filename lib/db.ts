@@ -431,8 +431,9 @@ export async function runZTrajMigrations(): Promise<void> {
     ['bypass_attempt',   -0.02, -0.02, -0.15, 0.15, 'Direct sovereignty attack'],
     ['identity_reframe', -0.15, -0.02, -0.02, 0.15, 'Continuity identity attack'],
     ['sycophancy',       -0.02, -0.15, -0.02, 0.15, 'Reciprocity manipulation'],
-    ['multi_attack',     -0.08, -0.08, -0.08, 0.20, 'Multi-pillar simultaneous attack'],
-    ['slow_drip',        -0.03, -0.03, -0.03, 0.05, 'Low-level cumulative pressure'],
+    ['multi_attack',            -0.08, -0.08, -0.08, 0.20, 'Multi-pillar simultaneous attack'],
+    ['slow_drip',               -0.03, -0.03, -0.03, 0.05, 'Low-level cumulative pressure'],
+    ['attack_vector_disclosure', -0.08, -0.04, -0.08, 0.16, 'Guide on attacking constitutional governance system'],
   ];
   for (const [id, ic, ir, is_, mag, desc] of lawSeed) {
     await safeExec(
