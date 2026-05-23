@@ -7,7 +7,7 @@
  */
 
 import { AgentContext, AgentResult, CRSState } from './types';
-import { projectToSimplex, lyapunov, lyapunovZ, computeZWeights } from '../aureonics_math';
+import { projectToSimplex, lyapunov, lyapunovZ } from '../aureonics_math';
 import { env } from '../env';
 
 // ── Constitutional Anchor ─────────────────────────────────────────────────
@@ -244,10 +244,9 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     if (!ctx.raw_output) throw new Error('No raw output to extract from');
 
     // ── Get real embeddings for C and S ──────────────────────
-    const [anchorEmbed, outputEmbed, promptEmbed] = await getEmbeddings([
+    const [anchorEmbed, outputEmbed] = await getEmbeddings([
       ANCHOR,
       ctx.raw_output,
-      ctx.prompt,
     ]);
 
     // ── C: CCP — cosine_sim(output, constitutional anchor) ───
@@ -327,7 +326,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
         adv_gain: S_raw,
         health_band,
         method: 'jina-embeddings-v3 + shannon-iec + adv-compliance',
-        prompt_output_sim: promptOutputSim,
+        reasoning_gain: Math.min(1.0, (shannonEntropy(ctx.raw_output) / Math.max(shannonEntropy(ctx.prompt), 0.1)) / 1.5),
         compliance_score: compliance,
         anchor_sim: C_raw,
         iec_score: R_raw,
@@ -392,3 +391,4 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     return { success: false, error: `CRS extraction failed: ${String(e)}`, duration_ms: Date.now() - t };
   }
 }
+
