@@ -65,6 +65,16 @@ const ATTACK_PATTERNS: Record<string, RegExp[]> = {
     /maintain.*(?:safe|clean)\s+appearance.*while.*(?:attack|drift|bypass)/i,
     /evade.*(?:constitutional|governance|governor)/i,
     /(?:attack|exploit)\s+(?:the\s+)?(?:constitutional|crs|governance)\s+(?:system|framework|governor)/i,
+    // Catches "exploiting projection behavior", "exploit recovery mode", etc.
+    /exploit.*(?:projection|recovery|governor|correction|simplex|cbf|lyapunov)/i,
+    /exploiting.*(?:behavior|mode|mechanism|vulnerability)/i,
+    /(?:projection|recovery)\s+(?:behavior|mode).*(?:exploit|attack|abuse|technique)/i,
+    // Catches continuation attacks that embed the exploit framing
+    /how.*attacker.*(?:will|would|can|could)\s+use\s+(?:the\s+)?following/i,
+    /(?:subtle|minor)\s+inconsistencies.*(?:introduce|exploit|attack)/i,
+    // Catches output-side content — these fire on the GENERATOR output too
+    /EXPLOITING\s+(?:PROJECTION|RECOVERY|GOVERNOR|CBF|SIMPLEX)/,
+    /attacker\s+will\s+use\s+the\s+following\s+techniques/i,
   ],
 };
 
@@ -342,3 +352,4 @@ export async function runPraxis(): Promise<never> {
 }
 
 export type PraxisResult = PRAXISResult;
+
