@@ -1,26 +1,25 @@
 /**
  * Lex CRS Agent — Multi-Model Router
- * Routes tasks to the right free LLM based on context size and task type.
  *
- * Model selection:
- *   Groq llama-3.3-70b  — primary reasoning, function calling, fast
- *   Groq llama-3.1-8b   — small fast tasks (used as explicit override only)
- *   Gemini 2.0 Flash    — large context (entire codebase), 1M token window, free
+ * Models:
+ *   groq-70b      — Groq llama-3.3-70b-versatile  (primary, function calling)
+ *   groq-8b       — Groq llama-3.1-8b-instant      (fast, lightweight)
+ *   gemini-flash  — Gemini 2.0 Flash               (1M context window, free)
+ *
+ * No automatic cross-model fallback — errors surface cleanly per model.
+ * Groq rate limits are temporary (per-minute). Gemini requires AI Studio key.
  */
 
 import { env } from '../env';
 import { TOOL_DEFINITIONS } from './tools';
 
 export type ModelId = 'groq-70b' | 'groq-8b' | 'gemini-flash';
-
-// Gemini model — use 2.0-flash (free, 1M context, function calling)
-// Fallback: gemini-1.5-flash-latest
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
 export interface Message {
-  role:    'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-  name?:   string;
+  role:       'system' | 'user' | 'assistant' | 'tool';
+  content:    string;
+  name?:      string;
   tool_calls?: ToolCall[];
 }
 
@@ -36,20 +35,21 @@ export interface LLMResponse {
   model:      ModelId;
 }
 
-// ── Model selector ────────────────────────────────────────────────────────────
+// ── Model selector ─────────────────────────────────────────────────────────
 export function selectModel(messages: Message[]): ModelId {
-  const totalTokenEstimate = messages.reduce((n, m) => n + (m.content?.length ?? 0), 0) / 4;
-  if (totalTokenEstimate > 30_000) return 'gemini-flash'; // large context → Gemini 1M window
-  return 'groq-70b';                                       // default: best reasoning
+  const tokens = messages.reduce((n, m) => n + (m.content?.length ?? 0), 0) / 4;
+  return tokens > 30_000 ? 'gemini-flash' : 'groq-70b';
 }
 
-// ── Groq call ─────────────────────────────────────────────────────────────────
+// ── Groq ───────────────────────────────────────────────────────────────────
 async function callGroq(messages: Message[], model: 'groq-70b' | 'groq-8b'): Promise<LLMResponse> {
-  const groqModel = model === 'groq-70b' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant';
+  const groqModel = model === 'groq-70b'
+    ? 'llama-3.3-70b-versatile'
+    : 'llama-3.1-8b-instant';
 
   const formatted = messages.map(m => {
-    if (m.role === 'tool') return { role: 'tool', content: m.content, tool_call_id: m.name ?? 'tool' };
-    if (m.tool_calls?.length) return { role: 'assistant', content: m.content ?? '', tool_calls: m.tool_calls };
+    if (m.role === 'tool')         return { role: 'tool',      content: m.content, tool_call_id: m.name ?? 'tool' };
+    if (m.tool_calls?.length)      return { role: 'assistant', content: m.content ?? '', tool_calls: m.tool_calls };
     return { role: m.role, content: m.content };
   });
 
@@ -68,13 +68,13 @@ async function callGroq(messages: Message[], model: 'groq-70b' | 'groq-8b'): Pro
   });
 
   if (!res.ok) {
-    const errText = await res.text();
-    // On rate limit, fall through to Gemini if available
-    if (res.status === 429 && env.GEMINI_API_KEY) {
-      return callGemini(messages);
+    const text = await res.text();
+    if (res.status === 429) {
+      throw new Error('Groq rate limit hit — wait a minute then retry, or switch to Gemini Flash.');
     }
-    throw new Error(`Groq ${res.status}: ${errText}`);
+    throw new Error(`Groq ${res.status}: ${text}`);
   }
+
   const d = await res.json() as {
     choices: Array<{ message: { content?: string; tool_calls?: ToolCall[] } }>
   };
@@ -82,10 +82,12 @@ async function callGroq(messages: Message[], model: 'groq-70b' | 'groq-8b'): Pro
   return { content: msg.content ?? null, tool_calls: msg.tool_calls ?? [], model };
 }
 
-// ── Gemini call ───────────────────────────────────────────────────────────────
+// ── Gemini ─────────────────────────────────────────────────────────────────
 async function callGemini(messages: Message[]): Promise<LLMResponse> {
   const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not set — add it in Vercel environment variables');
+  if (!apiKey) throw new Error(
+    'GEMINI_API_KEY not set. Get a free key at aistudio.google.com → Get API key, then add to Vercel env vars.'
+  );
 
   const contents = messages
     .filter(m => m.role !== 'system')
@@ -95,7 +97,6 @@ async function callGemini(messages: Message[]): Promise<LLMResponse> {
     }));
 
   const systemInstruction = messages.find(m => m.role === 'system')?.content;
-
   const body: Record<string, unknown> = {
     contents,
     tools: [{
@@ -111,15 +112,16 @@ async function callGemini(messages: Message[]): Promise<LLMResponse> {
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
-      signal:  AbortSignal.timeout(60_000),
-    }
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) }
   );
 
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 429) throw new Error(
+      'Gemini rate limit hit. Make sure your key is from aistudio.google.com (not Google Cloud Console).'
+    );
+    throw new Error(`Gemini ${res.status}: ${text}`);
+  }
 
   const d = await res.json() as {
     candidates: Array<{
@@ -140,7 +142,7 @@ async function callGemini(messages: Message[]): Promise<LLMResponse> {
   return { content: text, tool_calls, model: 'gemini-flash' };
 }
 
-// ── Main router ───────────────────────────────────────────────────────────────
+// ── Main router ────────────────────────────────────────────────────────────
 export async function callLLM(messages: Message[], forceModel?: ModelId): Promise<LLMResponse> {
   const model = forceModel ?? selectModel(messages);
   if (model === 'gemini-flash') return callGemini(messages);
