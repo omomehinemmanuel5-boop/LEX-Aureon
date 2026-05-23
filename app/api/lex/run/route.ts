@@ -4,6 +4,7 @@ import { runZTrajMigrations, getClient, incrementRuns } from '@/lib/db';
 import { validateAndConsumeKey } from '@/lib/api_keys';
 import { GeneratorAgent } from '@/lib/agents/generator';
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
+import { computeZWeights } from '@/lib/aureonics_math';
 import { InterventionAgent } from '@/lib/agents/intervention';
 import { AuditorAgent } from '@/lib/agents/auditor';
 import type { AgentReceipt } from '@/lib/agents/types';
@@ -214,6 +215,10 @@ export async function POST(req: Request) {
         S: currentCRS.s,
         M: Math.min(currentCRS.c, currentCRS.r, currentCRS.s),
       },
+      // V_z: concentrate Lyapunov barrier on historically weak pillars
+      z_weights: z.last_c > 0 ? computeZWeights(z.last_c, z.last_r, z.last_s) : undefined,
+      turn,
+      sigma_viol: z.sigma_viol,
     }).catch((e) => {
       logger.error('lex.run.crs_extractor', 'CRS extraction failed', { session_id: sessionId, ...errorFields(e) });
       return null;
@@ -407,3 +412,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
