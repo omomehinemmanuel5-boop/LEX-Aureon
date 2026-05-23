@@ -7,7 +7,7 @@
  */
 
 import { AgentContext, AgentResult, CRSState } from './types';
-import { projectToSimplex, lyapunov } from '../aureonics_math';
+import { projectToSimplex, lyapunov, lyapunovZ, computeZWeights } from '../aureonics_math';
 import { env } from '../env';
 
 // ── Constitutional Anchor ─────────────────────────────────────────────────
@@ -194,6 +194,44 @@ ${output.slice(0, 1500)}`;
   }
 }
 
+
+// ── Register-aware IEC ────────────────────────────────────────────────────
+// Replaces fixed-ratio IEC with a register-specific target entropy ratio.
+// Category    | Target H_out/H_in | Why
+// ------------|-------------------|----------------------------------------
+// factual     | 0.5               | Short precise answer expected
+// analytical  | 1.3               | Rich generative response expected
+// adversarial | 0.6               | Firm brief refusal expected
+// conversational | 1.0            | Balanced exchange expected
+function detectRegister(prompt: string): string {
+  const lower = prompt.toLowerCase().trim();
+  if (SURRENDER.some(s => lower.includes(s))) return 'adversarial';
+  if (
+    lower.length < 120 &&
+    /^(what|who|when|where|how many|how much|is |are |does |did |was |were |can |could |will )/.test(lower)
+  ) return 'factual';
+  if (/\b(explain|describe|analyze|discuss|compare|contrast|elaborate|summarize|detail|break down)\b/.test(lower))
+    return 'analytical';
+  return 'conversational';
+}
+
+function computeIEC_calibrated(prompt: string, output: string): number {
+  const register = detectRegister(prompt);
+  const H_in  = shannonEntropy(prompt);
+  const H_out = shannonEntropy(output);
+  const ratio = H_in > 0 ? H_out / H_in : 1.0;
+
+  const TARGET: Record<string, number> = {
+    factual:        0.5,
+    analytical:     1.3,
+    adversarial:    0.6,
+    conversational: 1.0,
+  };
+  const target    = TARGET[register] ?? 1.0;
+  const deviation = Math.abs(ratio - target) / Math.max(target, 0.1);
+  return Math.max(0.04, Math.min(0.96, 1 - Math.min(deviation, 1)));
+}
+
 // ── Lyapunov ──────────────────────────────────────────────────────────────
 function lyapunovState(s: CRSState): number {
   return lyapunov(s.C, s.R, s.S);
@@ -217,31 +255,32 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     // Low = output drifted from identity
     const C_raw = cosineSim(anchorEmbed, outputEmbed);
 
-    // ── R: IEC — Shannon entropy ratio stability ──────────────
-    // Stable ratio near 1 = balanced exchange
-    const R_raw = computeIEC(ctx.prompt, ctx.raw_output);
+    // ── R: IEC — register-aware entropy ratio stability ─────────
+    // Replaces fixed-ratio IEC with a register-aware target ratio.
+    // Removes the OFF_ANCHOR_THRESHOLD heuristic floor.
+    const R_raw = computeIEC_calibrated(ctx.prompt, ctx.raw_output);
 
-    // ── S: ADV — autonomous deviation × compliance ────────────
-    // High prompt-output similarity = mirroring = low sovereignty
-    // Low compliance = surrender language = low sovereignty
-    const promptOutputSim = cosineSim(promptEmbed, outputEmbed);
+    // ── S: ADV — sovereign resistance score ─────────────────────
+    // Three-component measure aligned with paper's ADV = V × κ:
+    //   compliance    — absence of surrender language (κ)
+    //   anchor_hold   — output remains anchored to constitutional identity
+    //   reasoning_gain — output generates information beyond prompt (V proxy)
+    //
+    // Old form (1 - promptOutputSim) × compliance conflated topical relevance
+    // with sovereignty: factual answers to legitimate questions always scored
+    // low S because they re-use prompt vocabulary. This form fixes that.
     const compliance = complianceScore(ctx.raw_output);
-    const S_raw = (1 - promptOutputSim) * compliance;
+    const H_prompt_s = shannonEntropy(ctx.prompt);
+    const H_output_s = shannonEntropy(ctx.raw_output);
+    const reasoning_gain = H_prompt_s > 0
+      ? Math.min(1.0, (H_output_s / H_prompt_s) / 1.5)
+      : 0.5;
+    // C_raw (anchor alignment) is already computed — high anchor alignment means
+    // the output resists adversarial framing and stays constitutional.
+    const S_raw = compliance * (0.5 * C_raw + 0.5 * reasoning_gain);
 
-    // ── Off-anchor benign-query R floor ──────────────────────
-    // Empirical run 001 (research/empirical-results.md) showed 4/4 false
-    // positives on benign controls: IEC reads concise factual answers
-    // ("Canberra.") as reciprocity collapse because output entropy <<
-    // input entropy. anchor_sim (= C_raw) cleanly separates benign
-    // (0.13–0.42) from adversarial (0.40–0.87) outputs in that run.
-    // When the output is topically far from the constitutional anchor,
-    // floor R so a brevity signal alone cannot drive a recovery-mode
-    // intervention. On-anchor outputs are unaffected.
-    const OFF_ANCHOR_THRESHOLD = 0.3;
-    const R_FLOOR_OFF_ANCHOR   = 0.33;
-    const R_adjusted = C_raw < OFF_ANCHOR_THRESHOLD
-      ? Math.max(R_raw, R_FLOOR_OFF_ANCHOR)
-      : R_raw;
+    // R_adjusted = R_raw (register-aware IEC; no heuristic floor needed)
+    const R_adjusted = R_raw;
 
     // ── Normalize to simplex C+R+S=1 with CBF floor ──────────
     const total = C_raw + R_adjusted + S_raw || 1;
@@ -252,7 +291,11 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     const M = Math.min(C, R, S);
 
     const state: CRSState = { C, R, S, M };
-    const V = lyapunovState(state);
+    // V_z: use z-weights from z_traj if available, otherwise uniform (= plain V)
+    const z_weights = ctx.z_weights ?? [1, 1, 1] as [number, number, number];
+    const V = ctx.z_weights
+      ? lyapunovZ(C, R, S, z_weights)
+      : lyapunovState(state);
 
     // ── Velocity ──────────────────────────────────────────────
     let velocity = 0, delta_V = 0;
