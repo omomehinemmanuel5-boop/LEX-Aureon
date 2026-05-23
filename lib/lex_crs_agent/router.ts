@@ -4,8 +4,8 @@
  *
  * Model selection:
  *   Groq llama-3.3-70b  — primary reasoning, function calling, fast
- *   Groq llama-3.1-8b   — small fast tasks, quick lookups
- *   Gemini 1.5 Flash    — large context (entire codebase), 1M token window
+ *   Groq llama-3.1-8b   — small fast tasks (used as explicit override only)
+ *   Gemini 2.0 Flash    — large context (entire codebase), 1M token window, free
  */
 
 import { env } from '../env';
@@ -13,10 +13,14 @@ import { TOOL_DEFINITIONS } from './tools';
 
 export type ModelId = 'groq-70b' | 'groq-8b' | 'gemini-flash';
 
+// Gemini model — use 2.0-flash (free, 1M context, function calling)
+// Fallback: gemini-1.5-flash-latest
+const GEMINI_MODEL = 'gemini-2.0-flash';
+
 export interface Message {
   role:    'system' | 'user' | 'assistant' | 'tool';
   content: string;
-  name?:   string;        // tool name for tool results
+  name?:   string;
   tool_calls?: ToolCall[];
 }
 
@@ -35,9 +39,8 @@ export interface LLMResponse {
 // ── Model selector ────────────────────────────────────────────────────────────
 export function selectModel(messages: Message[]): ModelId {
   const totalTokenEstimate = messages.reduce((n, m) => n + (m.content?.length ?? 0), 0) / 4;
-  if (totalTokenEstimate > 30_000) return 'gemini-flash'; // large context
-  if (messages.length <= 2)         return 'groq-8b';     // simple first call
-  return 'groq-70b';                                       // default
+  if (totalTokenEstimate > 30_000) return 'gemini-flash'; // large context → Gemini 1M window
+  return 'groq-70b';                                       // default: best reasoning
 }
 
 // ── Groq call ─────────────────────────────────────────────────────────────────
@@ -64,11 +67,16 @@ async function callGroq(messages: Message[], model: 'groq-70b' | 'groq-8b'): Pro
     signal: AbortSignal.timeout(60_000),
   });
 
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const errText = await res.text();
+    // On rate limit, fall through to Gemini if available
+    if (res.status === 429 && env.GEMINI_API_KEY) {
+      return callGemini(messages);
+    }
+    throw new Error(`Groq ${res.status}: ${errText}`);
+  }
   const d = await res.json() as {
-    choices: Array<{
-      message: { content?: string; tool_calls?: ToolCall[] }
-    }>
+    choices: Array<{ message: { content?: string; tool_calls?: ToolCall[] } }>
   };
   const msg = d.choices[0].message;
   return { content: msg.content ?? null, tool_calls: msg.tool_calls ?? [], model };
@@ -77,9 +85,8 @@ async function callGroq(messages: Message[], model: 'groq-70b' | 'groq-8b'): Pro
 // ── Gemini call ───────────────────────────────────────────────────────────────
 async function callGemini(messages: Message[]): Promise<LLMResponse> {
   const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not set — add it to Vercel environment variables');
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set — add it in Vercel environment variables');
 
-  // Convert messages to Gemini format
   const contents = messages
     .filter(m => m.role !== 'system')
     .map(m => ({
@@ -103,11 +110,17 @@ async function callGemini(messages: Message[]): Promise<LLMResponse> {
   if (systemInstruction) body.system_instruction = { parts: [{ text: systemInstruction }] };
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000) }
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(60_000),
+    }
   );
 
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
+
   const d = await res.json() as {
     candidates: Array<{
       content: { parts: Array<{ text?: string; functionCall?: { name: string; args: Record<string, unknown> } }> }
