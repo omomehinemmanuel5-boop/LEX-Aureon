@@ -30,6 +30,19 @@ export interface AgentContext {
   // Accumulated sigma_viol from z_traj — passed to extractor
   sigma_viol?: number;
 
+  // Neithra (III.5) — alignment verification
+  proposed_law_id?:    number;
+  neithra_verified?:   boolean;
+  neithra_re_routed?:  boolean;
+
+  // Clause Bank (III.6) — jurisdiction context
+  jurisdiction?:       string;
+  output_domain?:      string;
+  clause_id?:          string;
+
+  // Celeste (VI) — output format
+  output_format?:      'api' | 'web' | 'pdf' | 'terminal';
+
   // Propagated through pipeline
   raw_output?: string;
   governed_output?: string;
@@ -80,4 +93,5 @@ export interface AgentReceipt {
 }
 
 export type AgentFn = (ctx: AgentContext) => Promise<AgentResult>;
+
 
