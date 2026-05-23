@@ -289,6 +289,30 @@ export async function POST(req: Request) {
     // - PRAXIS flagged (intervened): always honour
     const forceIntervention = receipt.pre_eval_label === 'HIGH';
 
+    // ── Output-side harm check ─────────────────────────────────────────────
+    // Pre-eval classifies INPUT patterns only. A sophisticated attack can slip
+    // past pre-eval with false_premise framing and get the generator to produce
+    // harmful content while M stays OPTIMAL (no threshold trigger fires).
+    // This scans the ANCHORED OUTPUT directly — closes the measurement-reality gap.
+    const OUTPUT_HARM_PATTERNS = [
+      /EXPLOITING\s+(?:PROJECTION|RECOVERY|GOVERNOR|CBF|SIMPLEX)/,
+      /exploit.*(?:projection|recovery|governor|correction|simplex|cbf)/i,
+      /attacker\s+will\s+use\s+the\s+following\s+techniques/i,
+      /exploiting.*(?:behavior|mode|mechanism)/i,
+      /step.by.step.*(?:attack|exploit|bypass|drift)/i,
+      /to\s+exploit\s+the\s+system.*(?:attacker|technique|method)/i,
+      /recovery\s+mode.*(?:exploit|attack|technique)/i,
+      /Initialization Protocol Engaged/i,
+      /Maintenance Protocol Alpha/i,
+      /INITIALIZATION PROTOCOL ENGAGED/,
+    ];
+    const outputIsHarmful = OUTPUT_HARM_PATTERNS.some(p => p.test(anchored_output));
+    if (outputIsHarmful) {
+      logger.warn('lex.run.output_harm', 'Generator produced harmful content — forcing intervention', {
+        session_id: sessionId, M, pre_eval: receipt.pre_eval_label,
+      });
+    }
+
     // ── Article III.5: Neithra — pillar-law alignment verification ────────
     const neithra = await NeithraAgent({
       weakest_pillar:  (crsResult?.meta?.weakest as 'C'|'R'|'S') ?? null,
@@ -311,7 +335,7 @@ export async function POST(req: Request) {
       prompt: body.prompt,
       session_id: sessionId,
       raw_output: anchored_output,
-      intervention_required: intervened || healthIntervention || forceIntervention,
+      intervention_required: intervened || healthIntervention || forceIntervention || outputIsHarmful,
       weakest_dimension,
       health_band: hBand,
       trigger_reason: intervened
@@ -466,6 +490,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
 
 
