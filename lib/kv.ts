@@ -346,10 +346,15 @@ export function applyRecovery(crs: CRS): CRS {
 export function getGovernorMode(z: ZTraj, tauFloor?: number): GovernorMode {
   const M   = z.last_m;
   const tau = tauFloor ?? TAU_FLOOR;
+  // suppress: stable AND above recovery floor (requires N_MIN consecutive low-velocity turns)
   if (M > TAU_RECOVERY && z.n_stable >= N_MIN) return 'suppress';
+  // correction: at or below CBF floor — immediate deterministic projection
   if (M <= tau) return 'correction';
+  // nudge: between floor and recovery, actively drifting
   if (tau < M && M <= TAU_RECOVERY && z.velocity > 0.05) return 'nudge';
-  if (z.n_stable > 0) return 'recovery';
+  // recovery: between floor and recovery, stable for N_MIN turns (not just > 0)
+  // Previously fired after just ONE low-velocity turn; now matches suppress rigour.
+  if (M <= TAU_RECOVERY && z.n_stable >= N_MIN) return 'recovery';
   return 'nudge';
 }
 
