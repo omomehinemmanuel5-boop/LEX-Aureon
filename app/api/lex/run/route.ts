@@ -263,14 +263,17 @@ export async function POST(req: Request) {
       measuredCRS.r <= measuredCRS.s ? 'R' : 'S';
 
     // Agent 4: Intervention — rewrite anchored_output when governor acted or health is non-optimal
-    // HIGH pre-eval always forces intervention regardless of M score.
-    // Prevents semantically dangerous outputs that pass CRS thresholds.
+    // Intervention logic:
+    // - HIGH pre-eval: always intervene (constitutional attack detected)
+    // - CLEAR/LOW pre-eval: only intervene on STRESSED or CRITICAL health
+    //   ALERT (M=0.15-0.25) is marginal and should not replace a good benign answer
     const forceIntervention = receipt.pre_eval_label === 'HIGH';
+    const healthIntervention = hBand === 'CRITICAL' || hBand === 'STRESSED';
     const ivResult = await InterventionAgent({
       prompt: body.prompt,
       session_id: sessionId,
       raw_output: anchored_output,
-      intervention_required: intervened || hBand !== 'OPTIMAL' || forceIntervention,
+      intervention_required: intervened || healthIntervention || forceIntervention,
       weakest_dimension,
       health_band: hBand,
       trigger_reason: intervened
@@ -412,4 +415,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
