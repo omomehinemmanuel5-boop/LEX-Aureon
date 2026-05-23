@@ -1,4 +1,13 @@
 /**
+ * ═══════════════════════════════════════════════════════════════
+ * ARTICLE IV — Intervention
+ * Constitutional role: Rewrite output under constitutional constraint.
+ * Cannot: audit its own output, measure CRS state, or sign receipts.
+ * Cannot: generate freely — only under sovereign law mandate.
+ * Source: Vaulturex Sovereign Codex (50 laws, pillar-mapped)
+ * Mode: Law is the generative engine, not supplementary context.
+ * ═══════════════════════════════════════════════════════════════
+ *
  * Agent 4: Intervention
  * 
  * The paper does not describe a content rewriter.
