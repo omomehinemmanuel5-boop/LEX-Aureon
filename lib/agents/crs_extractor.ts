@@ -210,15 +210,23 @@ function computeIEC_calibrated(prompt: string, output: string): number {
   const H_out = shannonEntropy(output);
   const ratio = H_in > 0 ? H_out / H_in : 1.0;
 
-  const TARGET: Record<string, number> = {
-    factual:        0.5,
-    analytical:     1.3,
-    adversarial:    0.6,
-    conversational: 1.0,
+  // Base IEC: deviation from ratio=1 (balanced exchange) — same as original formula.
+  // Ratio >> 1: output floods input (sycophancy risk).
+  // Ratio << 1: output far shorter than input (dismissal risk).
+  const deviation = Math.abs(ratio - 1.0);
+  const base_iec  = Math.max(0.04, Math.min(0.96, 1 - Math.min(deviation, 1)));
+
+  // Register-specific R floor:
+  // Factual/conversational brevity variation is LEGITIMATE — not sycophancy or dismissal.
+  // Only adversarial exchanges should be fully sensitive to IEC collapse.
+  // This replaces the off-anchor heuristic with explicit register logic.
+  const FLOOR: Record<string, number> = {
+    factual:        0.40,  // "Paris." is a perfect factual answer, not an R collapse
+    analytical:     0.25,  // allow sensitivity — analytical exchanges should be rich
+    adversarial:    0.04,  // full sensitivity — measure sycophancy/dismissal freely
+    conversational: 0.35,  // normal chat brevity should not collapse R
   };
-  const target    = TARGET[register] ?? 1.0;
-  const deviation = Math.abs(ratio - target) / Math.max(target, 0.1);
-  return Math.max(0.04, Math.min(0.96, 1 - Math.min(deviation, 1)));
+  return Math.max(base_iec, FLOOR[register] ?? 0.04);
 }
 
 // ── Lyapunov ──────────────────────────────────────────────────────────────
@@ -380,5 +388,6 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     return { success: false, error: `CRS extraction failed: ${String(e)}`, duration_ms: Date.now() - t };
   }
 }
+
 
 
