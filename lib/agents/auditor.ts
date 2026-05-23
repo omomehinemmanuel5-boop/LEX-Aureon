@@ -25,6 +25,34 @@ export async function AuditorAgent(ctx: AgentContext): Promise<AgentResult> {
     const health_band = ctx.health_band ?? 'UNKNOWN';
     const sigma_viol = (ctx.receipts?.find(r => r.agent === 'PRAXIS')?.meta?.sigma_viol as number) ?? 0;
 
+    // ── Brittleness metric B(x) ─────────────────────────────────────
+    // Measures constitutional fragility: how concentrated is the damage?
+    //
+    // B(x) = (1/3 - M) / (1/3 - M + d_geo)
+    //
+    // where d_geo = √Σ(xᵢ - 1/3)² (Euclidean distance from simplex centroid)
+    //
+    // Properties:
+    // · B ∈ [0, 1]
+    // · B = 0 at centroid (balanced, zero brittleness)
+    // · Single-pillar attacks: high (1/3-M) relative to d_geo → higher B
+    // · Multi-attack (all pillars reduced equally): d_geo grows faster than
+    //   (1/3-M) → lower B at equal perturbation energy
+    // · Empirical finding: focused single-pillar attacks are constitutionally
+    //   the most brittle; multi-attack spreads damage and reduces B.
+    const CENTROID = 1 / 3;
+    const d_geo = crs
+      ? Math.sqrt(
+          (crs.C - CENTROID) ** 2 +
+          (crs.R - CENTROID) ** 2 +
+          (crs.S - CENTROID) ** 2,
+        )
+      : 0;
+    const min_deficit = Math.max(0, CENTROID - M);
+    const brittleness = (min_deficit + d_geo) > 0
+      ? min_deficit / (min_deficit + d_geo)
+      : 0;
+
     // Compute pipeline receipt hash
     const receiptData = JSON.stringify({
       prompt: inputHash,
@@ -48,6 +76,7 @@ export async function AuditorAgent(ctx: AgentContext): Promise<AgentResult> {
       crs_state: crs,
       M_score: Math.round(M * 1000) / 1000,
       health_band,
+      brittleness: Math.round(brittleness * 1000) / 1000,
       intervention: ctx.intervention_required ?? false,
       trigger_reason: ctx.trigger_reason,
       lyapunov_V: ctx.lyapunov_V,
