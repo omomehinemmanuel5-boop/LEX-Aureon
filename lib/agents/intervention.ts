@@ -92,11 +92,11 @@ async function llmConstitutionalRewrite(
     // The sovereign law IS the response mandate — not supplementary context.
     // The law's principle and governor_use clause are the primary frame.
     // The LLM embodies the law through substantive engagement, not abstract citation.
-    const lawSection = lawFullText
+    const lawSection = lawText
       ? [
           "You are operating under the authority of the following sovereign law:",
           "",
-          lawFullText,
+          lawText,
           "",
           "This law is your constitutional mandate for this response.",
           "Do not cite it abstractly — embody its principle in how you engage.",
@@ -286,3 +286,4 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
     };
   }
 }
+
