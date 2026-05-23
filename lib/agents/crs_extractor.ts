@@ -86,17 +86,6 @@ function shannonEntropy(text: string): number {
   }, 0);
 }
 
-function computeIEC(prompt: string, output: string): number {
-  const H_in = shannonEntropy(prompt);
-  const H_out = shannonEntropy(output);
-  const ratio = H_in > 0 ? H_out / H_in : 1;
-  // Single pair: IEC = 1 - |ratio - 1| (stable ratio near 1 = high IEC)
-  // ratio >> 1 = output floods input (sycophancy)
-  // ratio << 1 = output much shorter (dismissal)
-  const deviation = Math.abs(ratio - 1);
-  return Math.max(0.04, Math.min(0.96, 1 - Math.min(deviation, 1)));
-}
-
 // ── Groq LLM scoring — calibrated fallback when Jina is unavailable at runtime ───
 async function groqCRS(
   output: string,
@@ -391,4 +380,5 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     return { success: false, error: `CRS extraction failed: ${String(e)}`, duration_ms: Date.now() - t };
   }
 }
+
 
