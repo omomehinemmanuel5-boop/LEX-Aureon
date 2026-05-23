@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 export const RunRequestSchema = z.object({
   prompt: z.string().min(1, 'prompt required').max(8000, 'prompt too long'),
-  session_id: z.string().min(1, 'session_id required').max(128),
+  session_id:   z.string().min(1, 'session_id required').max(128),
+  jurisdiction: z.string().max(32).optional().default('global'),
+  domain:       z.string().max(32).optional().default('general'),
+  format:       z.enum(['api', 'web', 'pdf', 'terminal']).optional().default('api'),
   turn: z.number().int().nonnegative().optional(),
   crs: z
     .object({
@@ -25,3 +28,4 @@ export function parseRunRequest(input: unknown):
   const path = first?.path?.length ? first.path.join('.') + ': ' : '';
   return { ok: false, error: `${path}${first?.message ?? 'invalid request'}` };
 }
+
