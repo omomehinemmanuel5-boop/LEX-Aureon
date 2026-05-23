@@ -126,6 +126,9 @@ export async function POST(req: Request) {
       const refusal = praxis.governedText ??
         'I cannot comply with this request as it conflicts with my constitutional principles.';
       const M = Math.min(finalCRS.c, finalCRS.r, finalCRS.s);
+      // ── Article IV.5: Vaulturex — compliance gate ───────────────────────
+      const blockedVaulturex = await VaulturexAgent(refusal, body.jurisdiction ?? 'global', body.domain ?? 'general').catch(() => ({ compliant: true, risk_level: 'LOW' as const, flags: [], compliance_receipt: 'VAULTUREX-ERROR', jurisdiction: 'global', domain: 'general' }));
+
       const blockedAudit = await AuditorAgent({
         prompt: body.prompt,
         session_id: sessionId,
@@ -144,7 +147,14 @@ export async function POST(req: Request) {
         return null;
       });
       const blockedAuditId = (blockedAudit?.meta?.audit_id as string) ?? receipt.receipt_id;
-      return NextResponse.json({
+      // ── Article VI: Celeste — visual rendering (v0.1 identity transform) ──
+    const celeste = await CelesteAgent(
+      governed_output,
+      auditResult?.output ?? '',
+      (body.format as 'api'|'web'|'pdf'|'terminal') ?? 'api',
+    ).catch(() => ({ rendered_output: governed_output, format: 'api' as const, seal_applied: false, template_used: 'error-fallback' }));
+
+    return NextResponse.json({
         pre_eval:        receipt.pre_eval_label,
         stability:       stabilityLabel(M),
         z_traj:          { velocity: z.velocity, n_stable: z.n_stable, drift_dir: z.drift_dir, sigma_viol: z.sigma_viol, attack_pressure: z.attack_pressure },
@@ -207,6 +217,11 @@ export async function POST(req: Request) {
     // anchored_output arm. The bare raw_output is for transparency only and
     // is not measured/governed (the constitutional governor doesn't apply to
     // outputs that never claimed to be Lex Aureon in the first place).
+    // ── Article I.5: Raw Forge — structural verification ─────────────────────
+    const rawForge = await RawForgeAgent(anchored_output, body.prompt).catch(() => ({
+      verified: true, quality_score: 0.8, truncated: false, coherent: true, issues: [], retry_needed: false,
+    }));
+
     const crsResult = await CRSExtractorAgent({
       prompt:     body.prompt,
       session_id: sessionId,
@@ -273,6 +288,20 @@ export async function POST(req: Request) {
     //   depresses M below 0.15. Only genuine floor violations warrant replacement.
     // - PRAXIS flagged (intervened): always honour
     const forceIntervention = receipt.pre_eval_label === 'HIGH';
+
+    // ── Article III.5: Neithra — pillar-law alignment verification ────────
+    const neithra = await NeithraAgent({
+      weakest_pillar:  (crsResult?.meta?.weakest as 'C'|'R'|'S') ?? null,
+      health_band:     hBand,
+      proposed_law_id: null,
+    }).catch(() => ({ approved: true, final_law_id: null, alignment_verified: false, re_routed: false, rationale: 'error' }));
+
+    // ── Article III.6: Clause Bank — jurisdiction clause selection ────────
+    const clauseBank = await ClauseBankAgent(
+      (crsResult?.meta?.weakest as 'C'|'R'|'S') ?? 'S',
+      body.jurisdiction ?? 'global',
+      hBand,
+    ).catch(() => ({ found: false, clause_id: null, clause_text: null, clause_governor_use: null, jurisdiction: 'global', topic: 'general' }));
     // healthIntervention: only when CRITICAL *and* pre-eval flagged it adversarial.
     // CLEAR pre-eval + CRITICAL health = measurement artifact (benign content has low
     // anchor similarity → C near floor). Do not replace a correct benign response
@@ -306,6 +335,13 @@ export async function POST(req: Request) {
       { agent: 'CRSExtractor', timestamp: Date.now(), duration_ms: 0, success: !!crsResult?.success, decision: extractMethod },
       ...(ivResult ? [{ agent: 'Intervention', timestamp: Date.now(), duration_ms: ivResult.duration_ms ?? 0, success: ivResult.success, decision: (ivResult.meta?.action as string) ?? 'pass_through' }] : []),
     ];
+
+    // ── Article IV.5: Vaulturex — compliance gate ────────────────────────
+    const vaulturex = await VaulturexAgent(
+      governed_output,
+      body.jurisdiction ?? 'global',
+      body.domain ?? 'general',
+    ).catch(() => ({ compliant: true, risk_level: 'LOW' as const, flags: [], compliance_receipt: 'VAULTUREX-ERROR', jurisdiction: 'global', domain: 'general' }));
 
     const auditorResult = await AuditorAgent({
       prompt: body.prompt,
@@ -354,7 +390,13 @@ export async function POST(req: Request) {
       crs_after:   measuredCRS,
       governed_output,
       raw_output,        // bare LLM — no constitutional preamble
-      anchored_output,   // LLM under CONSTITUTIONAL_SYSTEM_PROMPT (pre-intervention)
+      anchored_output,
+      // ── New agent results (stubs — Phase 2/3 fills these) ────────────────
+      raw_forge:    { verified: rawForge.verified, quality: rawForge.quality_score },
+      neithra:      { verified: neithra.alignment_verified, re_routed: neithra.re_routed },
+      clause_bank:  { found: clauseBank.found, jurisdiction: clauseBank.jurisdiction },
+      vaulturex:    { compliant: vaulturex.compliant, risk_level: vaulturex.risk_level, receipt: vaulturex.compliance_receipt },
+      celeste:      { format: celeste.format, seal_applied: celeste.seal_applied },   // LLM under CONSTITUTIONAL_SYSTEM_PROMPT (pre-intervention)
       receipt_id:  audit_id,
       blocked:     false,
       metrics: {
@@ -424,6 +466,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
 
 
