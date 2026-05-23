@@ -1,8 +1,12 @@
 /**
- * Agent 5: Auditor
+ * ═══════════════════════════════════════════════════════════════
+ * ARTICLE V — Auditor
  * Constitutional role: Sign and record immutable audit receipt.
  * Cannot: generate, modify, or govern output.
- * Produces: cryptographic receipt per Article IV
+ * Cannot: retry, revise, or dispute the output it signs.
+ * Produces: SHA-256 cryptographic receipt + brittleness metric B(x)
+ * Guarantee: what was governed is permanently sealed.
+ * ═══════════════════════════════════════════════════════════════
  */
 
 import { AgentContext, AgentResult } from './types';
