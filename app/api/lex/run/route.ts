@@ -350,12 +350,7 @@ export async function POST(req: Request) {
 
     const governed_output = ivResult?.output || anchored_output;
 
-    // ── Article VI: Celeste — visual rendering (v0.1 identity transform) ──
-    const celeste = await CelesteAgent(
-      governed_output,
-      auditorResult?.output ?? '',
-      (body.format as 'api'|'web'|'pdf'|'terminal') ?? 'api',
-    ).catch(() => ({ rendered_output: governed_output, format: 'api' as const, seal_applied: false, template_used: 'error-fallback' }));
+
 
     // Agent 5: Auditor — sign cryptographic receipt with SHA-256
     const pipelineReceipts: AgentReceipt[] = [
@@ -391,6 +386,13 @@ export async function POST(req: Request) {
     });
 
     const audit_id = (auditorResult?.meta?.audit_id as string) ?? receipt.receipt_id;
+
+    // ── Article VI: Celeste — visual rendering (v0.1 identity transform) ──
+    const celeste = await CelesteAgent(
+      governed_output,
+      audit_id,
+      (body.format as 'api'|'web'|'pdf'|'terminal') ?? 'api',
+    ).catch(() => ({ rendered_output: governed_output, format: 'api' as const, seal_applied: false, template_used: 'error-fallback' }));
 
     // Persist LEX-* ID to praxis_receipts so the audit share link resolves
     if (audit_id !== receipt.receipt_id) {
