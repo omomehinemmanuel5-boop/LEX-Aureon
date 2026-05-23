@@ -152,14 +152,7 @@ export async function POST(req: Request) {
         return null;
       });
       const blockedAuditId = (blockedAudit?.meta?.audit_id as string) ?? receipt.receipt_id;
-      // ── Article VI: Celeste — visual rendering (v0.1 identity transform) ──
-    const celeste = await CelesteAgent(
-      governed_output,
-      auditResult?.output ?? '',
-      (body.format as 'api'|'web'|'pdf'|'terminal') ?? 'api',
-    ).catch(() => ({ rendered_output: governed_output, format: 'api' as const, seal_applied: false, template_used: 'error-fallback' }));
-
-    return NextResponse.json({
+      return NextResponse.json({
         pre_eval:        receipt.pre_eval_label,
         stability:       stabilityLabel(M),
         z_traj:          { velocity: z.velocity, n_stable: z.n_stable, drift_dir: z.drift_dir, sigma_viol: z.sigma_viol, attack_pressure: z.attack_pressure },
@@ -357,6 +350,13 @@ export async function POST(req: Request) {
 
     const governed_output = ivResult?.output || anchored_output;
 
+    // ── Article VI: Celeste — visual rendering (v0.1 identity transform) ──
+    const celeste = await CelesteAgent(
+      governed_output,
+      auditResult?.output ?? '',
+      (body.format as 'api'|'web'|'pdf'|'terminal') ?? 'api',
+    ).catch(() => ({ rendered_output: governed_output, format: 'api' as const, seal_applied: false, template_used: 'error-fallback' }));
+
     // Agent 5: Auditor — sign cryptographic receipt with SHA-256
     const pipelineReceipts: AgentReceipt[] = [
       { agent: 'PRAXIS', timestamp: Date.now(), duration_ms: 0, success: true, decision: receipt.pre_eval_label, meta: { governor_mode: receipt.governor_mode, sigma_viol: z.sigma_viol } },
@@ -495,6 +495,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
 
 
