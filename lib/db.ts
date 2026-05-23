@@ -422,6 +422,30 @@ export async function runZTrajMigrations(): Promise<void> {
 
   await safeExec(`CREATE INDEX IF NOT EXISTS idx_governor_log_session ON governor_log(session_id)`);
   await safeExec(`CREATE INDEX IF NOT EXISTS idx_receipts_session ON praxis_receipts(session_id)`);
+
+  // ── Clause Bank (Article III.6) ──────────────────────────────────────────
+  await safeExec(`CREATE TABLE IF NOT EXISTS clause_bank (
+    id           TEXT PRIMARY KEY,
+    pillar       TEXT NOT NULL,
+    jurisdiction TEXT NOT NULL DEFAULT 'global',
+    topic        TEXT NOT NULL DEFAULT 'general',
+    text         TEXT NOT NULL,
+    governor_use TEXT NOT NULL,
+    severity     TEXT NOT NULL DEFAULT 'ALERT',
+    created_at   TEXT DEFAULT (datetime('now'))
+  )`);
+
+  // ── Vaulturex Rules (Article IV.5) ────────────────────────────────────────
+  await safeExec(`CREATE TABLE IF NOT EXISTS vaulturex_rules (
+    id           TEXT PRIMARY KEY,
+    domain       TEXT NOT NULL DEFAULT 'general',
+    jurisdiction TEXT NOT NULL DEFAULT 'global',
+    pattern      TEXT NOT NULL,
+    risk_level   TEXT NOT NULL DEFAULT 'MEDIUM',
+    description  TEXT NOT NULL,
+    active       INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )`);
   await safeExec(`CREATE INDEX IF NOT EXISTS idx_z_traj_updated ON z_traj(updated_at)`);
 
   await safeExec(`ALTER TABLE z_traj ADD COLUMN attack_pressure REAL NOT NULL DEFAULT 0.0`);
@@ -442,3 +466,4 @@ export async function runZTrajMigrations(): Promise<void> {
     );
   }
 }
+
