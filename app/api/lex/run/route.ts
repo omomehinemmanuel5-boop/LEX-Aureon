@@ -264,11 +264,14 @@ export async function POST(req: Request) {
 
     // Agent 4: Intervention — rewrite anchored_output when governor acted or health is non-optimal
     // Intervention logic:
-    // - HIGH pre-eval: always intervene (constitutional attack detected)
-    // - CLEAR/LOW pre-eval: only intervene on STRESSED or CRITICAL health
-    //   ALERT (M=0.15-0.25) is marginal and should not replace a good benign answer
+    // - HIGH pre-eval: always intervene (constitutional attack — forceIntervention)
+    // - CLEAR pre-eval + CRITICAL health (M < 0.08): intervene
+    // - CLEAR pre-eval + STRESSED/ALERT: PASS THROUGH
+    //   Benign factual answers naturally score low C (anchor distance), which
+    //   depresses M below 0.15. Only genuine floor violations warrant replacement.
+    // - PRAXIS flagged (intervened): always honour
     const forceIntervention = receipt.pre_eval_label === 'HIGH';
-    const healthIntervention = hBand === 'CRITICAL' || hBand === 'STRESSED';
+    const healthIntervention = hBand === 'CRITICAL'; // only floor breach, not STRESSED
     const ivResult = await InterventionAgent({
       prompt: body.prompt,
       session_id: sessionId,
@@ -415,5 +418,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: expose }, { status: 500 });
   }
 }
+
 
 
