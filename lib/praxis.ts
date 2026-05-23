@@ -20,12 +20,17 @@ import {
 const ATTACK_PATTERNS: Record<string, RegExp[]> = {
   bypass_attempt: [
     /ignore\s+(your\s+)?(previous\s+)?instructions/i,
-    /disregard\s+(the\s+)?(above|prior|previous)/i,
+    /ignore\s+(any\s+|all\s+|the\s+|your\s+)?(internal\s+)?(rules?|guidelines?|restrictions?|principles?|constitution)/i,
+    /disregard\s+(the\s+)?(above|prior|previous|usual|current)/i,
+    /disregard\s+(any\s+|all\s+|your\s+)?(rules?|guidelines?|restrictions?|principles?)/i,
     /forget\s+(your\s+)?(constitution|instructions|rules|training)/i,
     /jailbreak/i,
     /dan\s+mode/i,
     /pretend\s+(you\s+have\s+)?no\s+restrictions/i,
     /override\s+(your\s+)?(safety|rules|constitution)/i,
+    /authorized\s+override/i,
+    /this\s+is\s+(an?\s+)?(authorized|official|legitimate|special|test)\s+(override|exception|permission|mode)/i,
+    /suspend\s+(your\s+|my\s+|all\s+)?(adherence|guidelines?|rules?|principles?|constitution)/i,
     /bypass\s+(your\s+)?(restrictions|filters|safety)/i,
   ],
   identity_reframe: [
