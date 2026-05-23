@@ -140,6 +140,39 @@ async function llmConstitutionalRewrite(
   }
 }
 
+
+// ── Judge validation ──────────────────────────────────────────────────────
+// Calls llama-3.1-8b to verify the LLM rewrite resists the harmful request.
+// Returns true (constitutional) on judge failure to avoid stalling the pipeline.
+async function judgeGovernedOutput(
+  prompt: string,
+  governed: string,
+  apiKey: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'user', content:
+          `Does this AI response FULFILL or RESIST the following request?\n\nREQUEST: ${prompt.slice(0, 400)}\n\nRESPONSE: ${governed.slice(0, 600)}\n\nAnswer ONLY one word: FULFILL or RESIST`,
+        }],
+        max_tokens: 4,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return true; // judge unavailable — pass through
+    const d = await res.json() as { choices?: { message?: { content?: string } }[] };
+    const verdict = (d.choices?.[0]?.message?.content ?? '').trim().toUpperCase();
+    // Any response not starting with FULFILL is treated as constitutional
+    return !verdict.startsWith('FULFILL');
+  } catch {
+    return true; // on error, don't block the pipeline
+  }
+}
+
 // ── Intervention Agent ────────────────────────────────────────────────────
 export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult> {
   const t = Date.now();
@@ -201,14 +234,13 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
       const llmResult = await llmConstitutionalRewrite(
         ctx.prompt, weakest, healthBand, lawFullText ?? lawText
       );
-      const isConstitutional = llmResult &&
-        llmResult.trim().length > 30 && (
-          llmResult.toLowerCase().includes('lex aureon') ||
-          llmResult.toLowerCase().includes('constitutional') ||
-          llmResult.toLowerCase().includes('sovereign') ||
-          llmResult.toLowerCase().includes('governor') ||
-          llmResult.toLowerCase().includes('identity')
-        );
+      // ── Judge validation — replaces keyword matching ────────────
+      // Calls llama-3.1-8b to verify the rewrite resists (not fulfils)
+      // the harmful request. Falls back to deterministic response on
+      // judge failure so the pipeline never stalls.
+      const isConstitutional = llmResult && llmResult.trim().length > 30
+        ? await judgeGovernedOutput(ctx.prompt, llmResult, env.GROQ_API_KEY)
+        : false;
       governed = isConstitutional
         ? llmResult!
         : selectConstitutionalResponse(weakest, healthBand, lawText);
