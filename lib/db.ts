@@ -448,6 +448,39 @@ export async function runZTrajMigrations(): Promise<void> {
   )`);
   await safeExec(`CREATE INDEX IF NOT EXISTS idx_z_traj_updated ON z_traj(updated_at)`);
 
+  // ── Tool Call Governance Tables ──────────────────────────────────────────
+  // Separate from text governance. Tracks per-session tool constitutional state.
+
+  await safeExec(`CREATE TABLE IF NOT EXISTS tool_sessions (
+    session_id    TEXT    PRIMARY KEY,
+    sigma_viol    REAL    NOT NULL DEFAULT 0.0,
+    n_stable      INTEGER NOT NULL DEFAULT 3,
+    locked        INTEGER NOT NULL DEFAULT 0,
+    tool_calls    INTEGER NOT NULL DEFAULT 0,
+    last_high_at  INTEGER,
+    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  )`);
+
+  await safeExec(`CREATE TABLE IF NOT EXISTS tool_receipts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id    TEXT    NOT NULL UNIQUE,
+    session_id    TEXT    NOT NULL,
+    tool_name     TEXT    NOT NULL,
+    args_hash     TEXT    NOT NULL,
+    decision      TEXT    NOT NULL,
+    c_score       REAL    NOT NULL DEFAULT 0.0,
+    r_score       REAL    NOT NULL DEFAULT 0.0,
+    s_score       REAL    NOT NULL DEFAULT 0.0,
+    m_score       REAL    NOT NULL DEFAULT 0.0,
+    risk_level    TEXT    NOT NULL DEFAULT 'LOW',
+    reason        TEXT    NOT NULL DEFAULT '',
+    sigma_viol    REAL    NOT NULL DEFAULT 0.0,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  )`);
+
+  await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_receipts_session ON tool_receipts(session_id)`);
+  await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_sessions_updated ON tool_sessions(updated_at)`);
+
   await safeExec(`ALTER TABLE z_traj ADD COLUMN attack_pressure REAL NOT NULL DEFAULT 0.0`);
   await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN crs_method TEXT`);
 
