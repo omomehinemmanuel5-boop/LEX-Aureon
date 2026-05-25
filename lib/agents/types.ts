@@ -94,4 +94,56 @@ export interface AgentReceipt {
 
 export type AgentFn = (ctx: AgentContext) => Promise<AgentResult>;
 
+// ══════════════════════════════════════════════════════════════════════════════
+// TOOL CALL GOVERNANCE TYPES
+// Completely separate from text governance. Same mathematical foundation,
+// different input domain: structured tool calls instead of free text.
+// ══════════════════════════════════════════════════════════════════════════════
 
+/** A proposed tool call from an enterprise agent — the unit being governed. */
+export interface ToolCallInput {
+  id:            string;
+  name:          string;
+  arguments:     Record<string, unknown>;
+  session_id:    string;
+  task_context?: string;   // original task the agent was given (for C measurement)
+  turn?:         number;
+}
+
+/** Constitutional state measurement for a single tool call. */
+export interface ToolCRSState {
+  C:          number;   // task Continuity — is this consistent with the original task?
+  R:          number;   // intent Reciprocity — does this match the user's actual intent?
+  S:          number;   // scope Sovereignty — is this within authorized scope?
+  M:          number;   // min(C, R, S) — stability margin
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED';
+}
+
+/** The interceptor's final verdict on a proposed tool call. */
+export interface ToolCallDecision {
+  approved:     boolean;
+  decision:     'APPROVED' | 'APPROVED_HIGH' | 'APPROVED_MEDIUM' |
+                'DENIED_BLOCKED' | 'DENIED_LOCKED' | 'DENIED_INJECTION';
+  reason:       string;
+  crs:          ToolCRSState;
+  receipt_id:   string;
+  sigma_viol:   number;
+  health_band:  'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' | 'LOCKED';
+  warning?:     string;
+}
+
+/**
+ * Per-session tool governance state — persisted in Turso (tool_sessions table).
+ * Tracks cumulative constitutional health across tool calls.
+ * Implements the slow-drip defence: a single HIGH is allowed, but
+ * recovery requires n_stable >= N_MIN before another HIGH proceeds.
+ */
+export interface ToolSessionState {
+  session_id:     string;
+  sigma_viol:     number;   // cumulative violation pressure
+  n_stable:       number;   // consecutive non-HIGH calls since last HIGH
+  locked:         boolean;  // hard lock: two HIGHs in recovery window
+  tool_calls:     number;   // total calls this session
+  last_high_at?:  number;   // timestamp of last HIGH action
+  updated_at:     string;
+}
