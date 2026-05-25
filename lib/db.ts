@@ -481,6 +481,21 @@ export async function runZTrajMigrations(): Promise<void> {
   await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_receipts_session ON tool_receipts(session_id)`);
   await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_sessions_updated ON tool_sessions(updated_at)`);
 
+  // ── Sovereign Laws (Vaulturex Codex) ─────────────────────────────────────
+  await safeExec(`CREATE TABLE IF NOT EXISTS sovereign_laws (
+    id              INTEGER PRIMARY KEY,
+    book            INTEGER NOT NULL,
+    book_name       TEXT    NOT NULL,
+    name            TEXT    NOT NULL,
+    pillar          TEXT    NOT NULL,
+    text            TEXT    NOT NULL,
+    governor_use    TEXT    NOT NULL,
+    invocation_count INTEGER NOT NULL DEFAULT 0
+  )`);
+
+  // Seed all 50 laws — idempotent (INSERT OR IGNORE)
+  await seedSovereignLaws();
+
   await safeExec(`ALTER TABLE z_traj ADD COLUMN attack_pressure REAL NOT NULL DEFAULT 0.0`);
   await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN crs_method TEXT`);
 
