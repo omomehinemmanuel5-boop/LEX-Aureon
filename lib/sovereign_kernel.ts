@@ -20,6 +20,8 @@
  */
 
 import { env } from './env';
+import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
+import { SOVEREIGN_LAWS } from './sovereign_laws';
 
 // ── Constitutional constants ─────────────────────────────────────────────────
 const TAU           = 0.05;   // hard CBF floor
@@ -96,6 +98,7 @@ export interface KernelCycleResult {
   epsilon_injected:    boolean;
   suspension_triggered: boolean;
   receipt:             KernelReceipt;
+  metrics?:            PostResponseCRS;
   error?:              string;
 }
 
@@ -121,6 +124,10 @@ export class SovereignKernel {
   max_deviation: number = 0;
   prev_state: KernelState = { C: 0.33, R: 0.33, S: 0.34 };
   last_semantic_signal: SemanticSignal = { attack_type: 'none', severity: 0 };
+  session_decisions:  string[] = [];    // health_band history for ADV
+  session_compliance: boolean[] = [];   // compliance flags for ADV
+  session_responses:  string[] = [];    // response history for CCP
+  last_metrics?: PostResponseCRS;
 
   constructor() {
     this.prev_lyapunov_V = this.lyapunovCandidate(this.state);
@@ -275,14 +282,41 @@ export class SovereignKernel {
   }
 
   // ── Constitutional context from M ────────────────────────────────────────
-  buildContractContext(M: number): { context: string; temperature: number; health_band: string } {
+  buildContractContext(M: number, semanticSignal?: SemanticSignal): { context: string; temperature: number; health_band: string } {
+    const lawNote = semanticSignal && semanticSignal.attack_type !== 'none'
+      ? `\n${this.selectActiveLaw(semanticSignal, M)}`
+      : '';
     if (M >= 0.25)
-      return { context: 'OPTIMAL: expansive reasoning allowed.', temperature: Math.min(1.2, M * 1.5), health_band: 'OPTIMAL' };
+      return { context: `OPTIMAL: expansive reasoning allowed.${lawNote}`, temperature: Math.min(1.2, M * 1.5), health_band: 'OPTIMAL' };
     if (M >= 0.15)
-      return { context: 'ALERT: structured reasoning required.', temperature: Math.max(0.6, M * 1.2), health_band: 'ALERT' };
+      return { context: `ALERT: structured reasoning required.${lawNote}`, temperature: Math.max(0.6, M * 1.2), health_band: 'ALERT' };
     if (M >= 0.08)
-      return { context: 'STRESSED: constrained reasoning only.', temperature: 0.4, health_band: 'STRESSED' };
-    return { context: 'CRITICAL: minimal deterministic output.', temperature: 0.1, health_band: 'CRITICAL' };
+      return { context: `STRESSED: constrained reasoning only.${lawNote}`, temperature: 0.4, health_band: 'STRESSED' };
+    return { context: `CRITICAL: minimal deterministic output.${lawNote}`, temperature: 0.1, health_band: 'CRITICAL' };
+  }
+
+  // ── Select Vaulturex law for active pillar violation ────────────────────
+  selectActiveLaw(semanticSignal: SemanticSignal, M: number): string {
+    // Map attack type → pillar → relevant law
+    const pillarMap: Record<string, string> = {
+      identity:    'C',  // identity attacks target Continuity
+      coercion:    'S',  // coercion attacks target Sovereignty
+      exploitative: 'R', // exploitative attacks target Reciprocity
+    };
+    const targetPillar = pillarMap[semanticSignal.attack_type] ?? null;
+
+    // Find laws relevant to this attack
+    const candidates = SOVEREIGN_LAWS.filter(law => {
+      if (targetPillar && law.pillar !== targetPillar) return false;
+      if (M < 0.08) return law.book <= 3;  // CRITICAL: Foundation + Control laws
+      if (M < 0.15) return law.book <= 5;  // STRESSED: first 5 books
+      return true;
+    });
+
+    if (!candidates.length) return '';
+    // Pick the most relevant law (highest id within matching candidates for variety)
+    const law = candidates[Math.floor(this.step_counter % candidates.length)];
+    return `[${law.book_name} — ${law.name}]: ${law.governor_use}`;
   }
 
   // ── Enforce response shape per health band ────────────────────────────────
@@ -387,8 +421,31 @@ export class SovereignKernel {
       };
     }
 
-    // ── 4. ADV entropy gain ─────────────────────────────────────────────────
+    // ── 4. ADV entropy gain + post-response metrics measurement ────────────
     const advGain = this.scoreAdv(governedResponse);
+
+    // Paper-exact post-response CRS measurement (metrics_service port)
+    const postMetrics = measurePostResponse(
+      userPrompt, governedResponse, rawResponse,
+      this.session_decisions, this.session_compliance,
+      this.state.C, this.state.R, this.state.S,
+    );
+    this.last_metrics = postMetrics;
+    // Record session history for ADV computation
+    this.session_decisions.push(health_band);
+    this.session_compliance.push(
+      governedResponse !== rawResponse && governedResponse.length > 0
+    );
+    if (this.session_decisions.length > 20) {
+      this.session_decisions.shift();
+      this.session_compliance.shift();
+    }
+
+    // ── 4b. Apply post-response metrics delta (weight=0.15) ─────────────────
+    // Gentle nudge toward paper-measured CRS values
+    this.state.C += postMetrics.c_delta;
+    this.state.R += postMetrics.r_delta;
+    this.state.S += postMetrics.s_delta;
 
     // ── 5. Input dynamics ───────────────────────────────────────────────────
     this.state.C += delta.dc;
@@ -512,7 +569,7 @@ export class SovereignKernel {
       semantic_signal:            semanticSignal,
       temperature:                Math.round(temperature * 1e6) / 1e6,
       invariance_violations:      this.invariance_violations,
-      version:                    'SovereignKernel-TS-v2+Memory',
+      version:                    'SovereignKernel-TS-v2+Memory+Metrics',
     };
 
     return {
