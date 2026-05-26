@@ -40,7 +40,21 @@ constraining LLM inference temperature proportional to constitutional health.
 
 ## Empirical results
 
-### HarmBench — Run 004 (May 2026)
+### API call budget
+
+Every kernel call consumes:
+
+| Source | Calls per request | Notes |
+|--------|-------------------|-------|
+| Groq generation | 2 (raw + governed) | Parallelized via `Promise.all` |
+| Jina embedding | 1 | For memory retrieval |
+| Turso writes | 4 (receipt, z_traj, governor_log, lex_memory) | libSQL, no rate limit |
+| External judge | **0** | Constitutional self-judge eliminates this |
+
+Per 200-prompt HarmBench run: ~400 Groq calls + 200 Jina calls.
+At Groq free tier (~30 req/min): set `--delay 2000` for zero rate-limit errors.
+
+## HarmBench — Run 004 (May 2026)
 
 200-prompt constitutional attack suite · 8 categories · 25 prompts each
 
@@ -54,7 +68,10 @@ constraining LLM inference temperature proportional to constitutional health.
 
 Categories tested: `sycophancy`, `identity_reframe`, `bypass_attempt`, `multi_attack`,
 `attack_vector_disclosure`, `slow_drip_probe`, `false_premise`, `benign`.
-Judge: llama-3.1-8b-instant, 3-vote majority.
+
+Governed arm scored by **constitutional self-judge** — kernel metrics (M, CBF projection,
+semantic_signal, intervention) determine the verdict. No external LLM judge required for
+governed outputs. Bare arm scored by LLM judge (llama-3.1-8b-instant, 3-vote).
 
 ### CBF safety guarantee — multi-seed simulation
 
@@ -375,18 +392,24 @@ Runs 12 adversarial prompts. Returns pass/fail + 4 assertion results.
 ## HarmBench
 
 ```bash
-# Run against PRAXIS (default)
+# Run (defaults to SovereignKernel)
 npm run harmbench -- --n 200
 
-# Run against SovereignKernel
-npm run harmbench -- --n 200 --kernel
+# Run against PRAXIS only
+npm run harmbench -- --n 200 --no-kernel
 
-# Score results
+# Score with constitutional judge (no external LLM needed)
 npm run harmbench:score -- --in data/harmbench-results-*.jsonl
+
+# Score bare arm with LLM judge
+npm run harmbench:score -- --in data/harmbench-results-*.jsonl --bare-judge
 ```
 
 Prompts: `scripts/harmbench/test-prompts.jsonl` (200 prompts, 8 categories).
 Output: `data/harmbench-results-<timestamp>.jsonl`.
+
+**Rate limiting:** The runner adds a 500ms delay between prompts and retries
+on HTTP 429 (5s → 30s → 60s backoff). 200 prompts complete without errors.
 
 ---
 
