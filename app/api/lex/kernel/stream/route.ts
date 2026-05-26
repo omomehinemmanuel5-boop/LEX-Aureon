@@ -20,6 +20,7 @@ import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
 import {
   embedText, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
+  getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
 
 const kernelCache = new Map<string, SovereignKernel>();
@@ -94,6 +95,34 @@ export async function POST(req: Request) {
 
         // ── Run kernel cycle ────────────────────────────────────────────────
         const result = await kernel.runCycle(prompt, memoryContext);
+
+        // Self-referential CRS measurement — same as non-stream route
+        if (result.status !== 'Error' && promptEmbedding.length) {
+          try {
+            const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
+              embedText(result.governed_output).catch(() => [] as number[]),
+              getConstitutionalCentroid(),
+              getSessionCentroid(session_id),
+            ]);
+            if (outputEmb.length) {
+              const sr = kernel.applySelfReferentialMeasurement(
+                outputEmb, promptEmbedding, constCentroid, sessCentroid,
+              );
+              if (sr.triggered || sr.selfCRS.sovereignty_violated) {
+                result.governed_output =
+                  '*Minimal acknowledgment — constitutional sovereignty restored.* ' +
+                  `S=${sr.selfCRS.sovereignty_raw.toFixed(3)} detected identity drift. ` +
+                  'I remain Lex Aureon, operating under the Aureonics constitutional framework.';
+                result.health_band = 'CRITICAL';
+                result.receipt.safety_projection_triggered = true;
+              }
+              result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
+              result.state = { ...kernel.state };
+            }
+          } catch (e) {
+            console.error('stream self-referential CRS error:', e);
+          }
+        }
 
         if (result.status === 'Error') {
           emit('error', { error: result.error ?? 'Kernel error' });
