@@ -358,13 +358,10 @@ export default function Console() {
   // Raw tab only shown when attack detected or CBF fired (glass box)
   const allTabs: { id: Tab; icon: string; label: string }[] = [
     { id: 'governed', icon: '✦', label: 'Output' },
-    { id: 'raw', icon: '◎', label: 'Raw' },
+    ...(showRawTab ? [{ id: 'raw' as Tab, icon: '⊙', label: 'Raw ⚠' }] : []),
     { id: 'analysis', icon: '⬡', label: 'Analysis' },
     { id: 'audit', icon: '🔐', label: 'Audit' },
   ];
-  // Raw tab is always shown — it's the bare LLM output and is genuinely
-  // different from the governed (constitutional + intervened) output by
-  // construction, so the "hide when unchanged" rule no longer applies.
   const tabs = allTabs;
 
   return (
