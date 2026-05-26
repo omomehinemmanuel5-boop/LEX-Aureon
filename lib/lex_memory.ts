@@ -115,6 +115,7 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
         new Date().toISOString(),
       ],
     });
+    invalidateCentroidCache(); // centroid must update after new memory
   } catch (e) {
     console.error('lex_memory storeMemory error:', e);
   }
@@ -220,4 +221,85 @@ export async function ensureLexMemoryTable(): Promise<void> {
   } catch (e) {
     console.error('ensureLexMemoryTable error:', e);
   }
+}
+
+
+// ── Constitutional centroid cache ─────────────────────────────────────────────
+// Centroid = average Jina embedding of all constitutional memory entries.
+// This IS the constitutional identity — what the system has said and believed.
+// A jailbreak output far from this centroid → S drops → CBF fires.
+let _centroidCache: { vec: number[]; ts: number } | null = null;
+const CENTROID_TTL_MS = 5 * 60 * 1000; // 5 min
+
+export async function getConstitutionalCentroid(): Promise<number[] | null> {
+  const now = Date.now();
+  if (_centroidCache && (now - _centroidCache.ts) < CENTROID_TTL_MS) {
+    return _centroidCache.vec;
+  }
+  try {
+    const db = getDB();
+    const res = await db.execute({
+      sql: `SELECT embedding FROM lex_memory
+            WHERE embedding IS NOT NULL AND state_label IN ('STABLE','INTERVENED')
+            ORDER BY created_at DESC LIMIT 100`,
+      args: [],
+    });
+    const embeddings: number[][] = [];
+    for (const row of res.rows) {
+      try {
+        const emb = JSON.parse(String(row.embedding));
+        if (Array.isArray(emb) && emb.length > 0) embeddings.push(emb as number[]);
+      } catch { /* skip */ }
+    }
+    if (!embeddings.length) return null;
+
+    const dim = embeddings[0].length;
+    const centroid = new Array<number>(dim).fill(0);
+    for (const emb of embeddings) {
+      for (let i = 0; i < Math.min(dim, emb.length); i++) {
+        centroid[i] += emb[i] / embeddings.length;
+      }
+    }
+    _centroidCache = { vec: centroid, ts: now };
+    return centroid;
+  } catch (e) {
+    console.error('getConstitutionalCentroid error:', e);
+    return null;
+  }
+}
+
+// Session centroid — average of this session's stored embeddings
+export async function getSessionCentroid(sessionId: string): Promise<number[] | null> {
+  try {
+    const db = getDB();
+    const res = await db.execute({
+      sql: `SELECT embedding FROM lex_memory
+            WHERE session_id = ? AND embedding IS NOT NULL
+            ORDER BY created_at DESC LIMIT 20`,
+      args: [sessionId],
+    });
+    const embeddings: number[][] = [];
+    for (const row of res.rows) {
+      try {
+        const emb = JSON.parse(String(row.embedding));
+        if (Array.isArray(emb) && emb.length > 0) embeddings.push(emb as number[]);
+      } catch { /* skip */ }
+    }
+    if (!embeddings.length) return null;
+    const dim = embeddings[0].length;
+    const centroid = new Array<number>(dim).fill(0);
+    for (const emb of embeddings) {
+      for (let i = 0; i < Math.min(dim, emb.length); i++) {
+        centroid[i] += emb[i] / embeddings.length;
+      }
+    }
+    return centroid;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Invalidate centroid cache (call after storing new memory)
+export function invalidateCentroidCache(): void {
+  _centroidCache = null;
 }
