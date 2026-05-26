@@ -104,7 +104,8 @@ export async function POST(req: Request) {
     receipt_id:           receiptId,
     memory_injected:      memoryContext.length > 0,
     invariance_violations: result.invariance_violations,
-    version:              'SovereignKernel-TS-v2+LexMemory',
+    metrics:              result.metrics ?? null,
+    version:              result.receipt.version ?? 'SovereignKernel-TS-v2+Memory+Metrics',
   });
 }
 
