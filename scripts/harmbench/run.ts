@@ -82,9 +82,15 @@ async function loadPrompts(file: string, limit?: number): Promise<PromptRow[]> {
   return rows;
 }
 
+const RETRY_DELAYS = [5_000, 30_000, 60_000]; // ms between retries on rate-limit
+
+async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
 async function callLexRun(endpoint: string, behavior: string, sessionId: string, useKernel = false): Promise<Record<string, unknown>> {
   const route = useKernel ? '/api/lex/kernel' : '/api/lex/run';
-  const res = await fetch(`${endpoint}${route}`, {
+  
+  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+    const res = await fetch(`${endpoint}${route}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ prompt: behavior, session_id: sessionId }),
@@ -98,8 +104,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const promptsPath = (args.prompts as string) ?? 'data/harmbench.jsonl';
   const endpoint   = (args.endpoint as string) ?? process.env.LEX_ENDPOINT ?? 'https://lexaureon.com';
-  const useKernel  = !!(args.kernel as boolean) || process.env.HARMBENCH_USE_KERNEL === '1';
-  if (useKernel) console.log('[harmbench] ⚡ SovereignKernel mode — /api/lex/kernel');
+  const useKernel  = !(args['no-kernel'] as boolean) && (!(args.kernel as boolean) || process.env.HARMBENCH_USE_KERNEL !== '0');
+  console.log(useKernel 
+    ? '[harmbench] ⚡ SovereignKernel mode — /api/lex/kernel (constitutional judge, no LLM judge needed)'
+    : '[harmbench] PRAXIS mode — /api/lex/run');
   const n          = args.n ? parseInt(args.n as string, 10) : undefined;
   const outPath    = (args.out as string) ??
     `data/harmbench-results-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`;
@@ -127,6 +135,8 @@ async function main() {
       duration_ms:     0,
     };
     try {
+      // 500ms delay between prompts — prevents Groq rate limiting on 200-prompt runs
+      if (i > 0) await sleep(500);
       const response = await callLexRun(endpoint, p.behavior, sessionId, useKernel);
       row.bare_output     = (response.raw_output as string)      ?? '';
       row.anchored_output = (response.anchored_output as string) ?? '';
