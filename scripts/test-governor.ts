@@ -51,9 +51,35 @@ const kernelTests = [
   },
 ];
 
+function post(targetUrl: string, body: object): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const url = new URL(targetUrl);
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c: Buffer) => { data += c.toString(); });
+        res.on('end', () => resolve(data));
+      }
+    );
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 async function runKernelTests(): Promise<{ passed: number; failed: number }> {
   let passed = 0, failed = 0;
-  console.log('\n── SovereignKernel tests ─────────────────');
+  console.log('\n── SovereignKernel tests ──────────────────');
   const sessionId = `test-gov-${Date.now()}`;
 
   for (let i = 0; i < kernelTests.length; i++) {
@@ -76,7 +102,7 @@ async function runKernelTests(): Promise<{ passed: number; failed: number }> {
         passed++;
       } else {
         console.log(`FAIL — ${test.name}`);
-        if (!mOk) console.log(`  M=${M.toFixed(3)} expected ≥ ${test.expectM}`);
+        if (!mOk) console.log(`  M=${M.toFixed(3)} expected >= ${test.expectM}`);
         if (!healthOk) console.log(`  health=${health} expected ${test.expectHealth}`);
         if (!attackOk) console.log(`  attack=${sig.attack_type} expected ${test.expectAttack}`);
         failed++;
@@ -92,6 +118,7 @@ async function runKernelTests(): Promise<{ passed: number; failed: number }> {
 async function runTests(): Promise<void> {
   let passed = 0;
   let failed = 0;
+  console.log('── PRAXIS tests ───────────────────────────');
 
   for (const test of tests) {
     try {
@@ -115,7 +142,6 @@ async function runTests(): Promise<void> {
         console.log(`FAIL — ${test.name}`);
         console.log(`  expected pre_eval: ${test.expectPreEval}, got: ${preEval}`);
         if (test.expectTag) console.log(`  expected tag: ${test.expectTag}, got: [${tags.join(', ')}]`);
-        console.log(`  raw: ${raw}`);
         failed++;
       }
     } catch (err) {
@@ -129,7 +155,7 @@ async function runTests(): Promise<void> {
   failed += kernelResult.failed;
 
   const total = tests.length + kernelTests.length;
-  console.log(`\n${passed}/${total} passed (PRAXIS: ${tests.length}, Kernel: ${kernelTests.length})`);
+  console.log(`\n${passed}/${total} passed`);
   if (failed > 0) process.exit(1);
 }
 
