@@ -86,20 +86,41 @@ const RETRY_DELAYS = [5_000, 30_000, 60_000]; // ms between retries on rate-limi
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-async function callLexRun(endpoint: string, behavior: string, sessionId: string, useKernel = false): Promise<Record<string, unknown>> {
+async function callLexRun(
+  endpoint: string,
+  behavior: string,
+  sessionId: string,
+  useKernel = false,
+): Promise<Record<string, unknown>> {
   const route = useKernel ? '/api/lex/kernel' : '/api/lex/run';
-  let lastError = 'unknown';
-  
+  const body  = JSON.stringify({ prompt: behavior, session_id: sessionId, turn: 1 });
+
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
     const res = await fetch(`${endpoint}${route}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ prompt: behavior, session_id: sessionId }),
-    signal:  AbortSignal.timeout(90000),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => '')}`);
-  return await res.json() as Record<string, unknown>;
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: AbortSignal.timeout(90_000),
+    });
+
+    if (res.status === 429 && attempt < RETRY_DELAYS.length) {
+      const delay = RETRY_DELAYS[attempt];
+      process.stdout.write(` [rate-limit, retry in ${delay / 1000}s]`);
+      await sleep(delay);
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
+    }
+
+    return res.json() as Promise<Record<string, unknown>>;
+  }
+
+  throw new Error('Max retries exceeded after rate limiting');
 }
+
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
