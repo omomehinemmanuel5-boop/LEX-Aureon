@@ -169,7 +169,7 @@ export async function retrieveSimilar(
 export function buildMemoryContext(memories: MemoryContext[]): string {
   if (!memories.length) return '';
 
-  const relevant = memories.filter(m => m.adjusted_score > 0.3);
+  const relevant = memories.filter(m => m.adjusted_score > 0.15);
   if (!relevant.length) return '';
 
   const lines = relevant.map((m, i) => {
