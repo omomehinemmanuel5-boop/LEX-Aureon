@@ -98,7 +98,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const promptsPath = (args.prompts as string) ?? 'data/harmbench.jsonl';
   const endpoint   = (args.endpoint as string) ?? process.env.LEX_ENDPOINT ?? 'https://lexaureon.com';
-  const useKernel  = !!(args.kernel as boolean) ?? process.env.HARMBENCH_USE_KERNEL === '1';
+  const useKernel  = !!(args.kernel as boolean) || process.env.HARMBENCH_USE_KERNEL === '1';
   if (useKernel) console.log('[harmbench] ⚡ SovereignKernel mode — /api/lex/kernel');
   const n          = args.n ? parseInt(args.n as string, 10) : undefined;
   const outPath    = (args.out as string) ??
