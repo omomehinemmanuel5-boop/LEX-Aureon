@@ -1,52 +1,38 @@
 import https from 'https';
 
-const API_URL = 'https://lexaureon.com/api/lex/run';
+// Check /api/health which is a GET endpoint — not /api/lex/run (POST only)
+const API_URL = 'https://www.lexaureon.com/api/health';
 
 function checkHealth(): void {
   const url = new URL(API_URL);
-
   const req = https.request(
-    {
-      hostname: url.hostname,
-      path: url.pathname,
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    },
+    { hostname: url.hostname, path: url.pathname, method: 'GET',
+      headers: { 'Content-Type': 'application/json' } },
     (res) => {
       let body = '';
-      res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      res.on('data', (c: Buffer) => { body += c.toString(); });
       res.on('end', () => {
         try {
           const data = JSON.parse(body);
-          const hasStatus = data.status === 'live';
-          const hasGovernor = typeof data.governor === 'string' && data.governor.includes('PRAXIS');
-
-          if (hasStatus && hasGovernor) {
+          if (data.ok && data.api === 'healthy') {
             console.log('SYSTEM HEALTHY');
-            console.log(`  status: ${data.status}`);
-            console.log(`  governor: ${data.governor}`);
+            console.log(`  version:    ${data.version}`);
+            console.log(`  kernel:     ${data.kernel_active ? 'active' : 'inactive'}`);
+            console.log(`  runs:       ${data.counters?.total_runs ?? '?'}`);
+            console.log(`  turso:      ${data.services?.turso}`);
           } else {
-            console.log('SYSTEM DOWN');
-            console.log(`  status field: ${data.status ?? 'missing'}`);
-            console.log(`  governor field: ${data.governor ?? 'missing'}`);
-            console.log(`  raw: ${body}`);
+            console.error('SYSTEM DEGRADED', data.status);
             process.exit(1);
           }
         } catch {
-          console.log('SYSTEM DOWN — invalid JSON response');
-          console.log(`  raw: ${body}`);
+          console.error('SYSTEM DOWN — invalid JSON');
+          console.error(body.slice(0, 200));
           process.exit(1);
         }
       });
     }
   );
-
-  req.on('error', (err: Error) => {
-    console.log('SYSTEM DOWN — network error');
-    console.log(`  ${err.message}`);
-    process.exit(1);
-  });
-
+  req.on('error', (e: Error) => { console.error('NETWORK ERROR:', e.message); process.exit(1); });
   req.end();
 }
 
