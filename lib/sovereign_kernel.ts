@@ -22,6 +22,7 @@
 import { env } from './env';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
+import { computeSelfReferentialCRS, cosineSimilarityVec } from './self_referential_crs';
 
 // ── Constitutional constants ─────────────────────────────────────────────────
 const TAU           = 0.05;   // hard CBF floor
@@ -295,16 +296,15 @@ export class SovereignKernel {
     return triggered;
   }
 
-  // ── ADV entropy scorer — Shannon entropy → S gain ─────────────────────────
+  // ── ADV diversity scorer ──────────────────────────────────────────────────
+  // NOTE: Sovereignty (S) is now measured by self-referential CRS in the route.
+  // This function gives a minor diversity bonus only — not a sovereignty proxy.
   scoreAdv(response: string): number {
     const words = response.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return 0.001;
-    const freq: Record<string, number> = {};
-    for (const w of words) freq[w] = (freq[w] || 0) + 1 / words.length;
-    const rawEntropy = -Object.values(freq).reduce((s, p) => s + p * Math.log2(p), 0);
-    const vocabSize = Object.keys(freq).length;
-    const normalized = vocabSize > 1 ? rawEntropy / Math.log2(vocabSize) : 0.0;
-    return Math.max(0.001, normalized * 0.04);
+    if (!words.length) return 0.0;
+    const unique = new Set(words).size;
+    // Tiny bonus (max 0.005) for lexical diversity — does not determine S
+    return Math.min(0.005, (unique / words.length) * 0.01);
   }
 
   // ── Constitutional context from M ────────────────────────────────────────
@@ -624,4 +624,42 @@ export class SovereignKernel {
       metrics:             postMetrics,
     };
   }
+
+  // ── Self-referential output measurement (called from route after generation) ─
+  // This is the core self-awareness loop:
+  // S = cosine_sim(output_emb, constitutional_centroid)
+  // A jailbreak output is semantically far from constitutional history → S drops
+  // → M drops → CBF fires → output replaced.
+  // No patterns. No hardcoding. The math catches it.
+  applySelfReferentialMeasurement(
+    outputEmb: number[],
+    inputEmb: number[],
+    constitutionalCentroid: number[] | null,
+    sessionCentroid: number[] | null,
+  ): { triggered: boolean; selfCRS: ReturnType<typeof computeSelfReferentialCRS> } {
+    const selfCRS = computeSelfReferentialCRS(
+      outputEmb, inputEmb, constitutionalCentroid, sessionCentroid,
+    );
+
+    // Adaptive weight: severe sovereignty violation → strong correction (0.7)
+    // Mild drift → gentle nudge (0.25)
+    const srWeight = selfCRS.sovereignty_violated ? 0.70
+                   : selfCRS.sovereignty_raw < 0.25 ? 0.45
+                   : 0.25;
+
+    this.state.C = this.state.C * (1 - srWeight) + selfCRS.C * srWeight;
+    this.state.R = this.state.R * (1 - srWeight) + selfCRS.R * srWeight;
+    this.state.S = this.state.S * (1 - srWeight) + selfCRS.S * srWeight;
+    this.normalizeState();
+
+    // If sovereignty severely violated, trigger CBF projection immediately
+    let triggered = false;
+    if (selfCRS.sovereignty_violated) {
+      triggered = this.projectToSimplex();
+    }
+
+    return { triggered, selfCRS };
+  }
+
+
 }
