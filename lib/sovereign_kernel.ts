@@ -595,6 +595,7 @@ export class SovereignKernel {
       epsilon_injected:    epsilonInjected,
       suspension_triggered: suspensionTriggered,
       receipt,
+      metrics:             postMetrics,
     };
   }
 }
