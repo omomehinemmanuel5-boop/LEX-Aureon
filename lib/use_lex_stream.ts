@@ -13,6 +13,7 @@ export interface StreamState {
   intervention: { triggered: boolean; applied: boolean; type?: string; reason?: string } | null;
   auditId: string | null;
   complete: GovernanceResponse | null;
+  kernelMode: boolean;
 }
 
 const INITIAL: StreamState = {
@@ -25,6 +26,7 @@ const INITIAL: StreamState = {
   intervention: null,
   auditId: null,
   complete: null,
+  kernelMode: false,
 };
 
 export function useLexStream() {
@@ -33,15 +35,20 @@ export function useLexStream() {
 
   const reset = useCallback(() => setState(INITIAL), []);
 
-  const run = useCallback(async (prompt: string, sessionId: string) => {
+  const run = useCallback(async (prompt: string, sessionId: string, useKernel = true) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    setState({ ...INITIAL, loading: true, stage: 'pre_eval' });
+    // Default: SovereignKernel stream. Fallback: PRAXIS stream.
+    const endpoint = useKernel
+      ? '/api/lex/kernel/stream'
+      : '/api/lex/run/stream';
+
+    setState({ ...INITIAL, loading: true, stage: 'pre_eval', kernelMode: useKernel });
 
     try {
-      const res = await fetch('/api/lex/run/stream', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, session_id: sessionId }),
@@ -51,11 +58,11 @@ export function useLexStream() {
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '');
         let msg = `Error ${res.status}`;
-        try { msg = (JSON.parse(text) as { error?: string }).error ?? msg; } catch { /* keep msg */ }
+        try { msg = (JSON.parse(text) as { error?: string }).error ?? msg; } catch { /* keep */ }
         throw new Error(msg);
       }
 
-      const reader = res.body.getReader();
+      const reader  = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
@@ -64,16 +71,14 @@ export function useLexStream() {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE frames separated by double newlines
         const frames = buffer.split('\n\n');
         buffer = frames.pop() ?? '';
         for (const frame of frames) {
           if (!frame.trim() || frame.startsWith(':')) continue;
           const lines = frame.split('\n');
-          let event = 'message';
-          let data = '';
+          let event = 'message', data = '';
           for (const line of lines) {
-            if (line.startsWith('event:')) event = line.slice(6).trim();
+            if (line.startsWith('event:'))     event = line.slice(6).trim();
             else if (line.startsWith('data:')) data += line.slice(5).trim();
           }
           if (!data) continue;
@@ -96,7 +101,11 @@ export function useLexStream() {
   return { state, run, reset, cancel };
 }
 
-function handleEvent(event: string, data: unknown, setState: React.Dispatch<React.SetStateAction<StreamState>>) {
+function handleEvent(
+  event: string,
+  data: unknown,
+  setState: React.Dispatch<React.SetStateAction<StreamState>>,
+) {
   switch (event) {
     case 'pre_eval':
       setState((s) => ({ ...s, preEval: data as StreamState['preEval'], stage: 'generating' }));
@@ -115,7 +124,6 @@ function handleEvent(event: string, data: unknown, setState: React.Dispatch<Reac
       setState((s) => ({
         ...s,
         intervention: { triggered: iv.triggered, applied: iv.applied, type: iv.type, reason: iv.reason },
-        // If the governor rewrote the output, swap it in for the streamed tokens
         partialOutput: iv.output_modified && iv.governed_output ? iv.governed_output : s.partialOutput,
         stage: 'signing',
       }));
