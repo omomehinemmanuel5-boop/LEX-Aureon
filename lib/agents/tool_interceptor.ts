@@ -27,6 +27,29 @@ const TAU_FLOOR     = 0.05;
 const N_MIN         = 3;     // stable calls before HIGH recovery
 const SIGMA_THRESHOLD = 0.25; // cumulative violation threshold
 
+// ── Kernel-informed proxy thresholds ─────────────────────────────────────────
+// The kernel's constitutional M for this session informs tool-call strictness.
+// Lower M → tighter proxy. Higher M → normal operation.
+const KERNEL_CRITICAL  = 0.05;  // deny ALL tool calls
+const KERNEL_STRESSED  = 0.15;  // deny write operations, allow reads only
+const KERNEL_ALERT     = 0.22;  // stricter HIGH threshold
+const WRITE_TOOLS      = new Set(['write_file','create_file','delete_file','drop_table',
+                           'execute_sql','run_command','bash','shell','eval']);
+
+async function getKernelM(session_id: string): Promise<number> {
+  try {
+    const db = getDB();
+    const res = await db.execute({
+      sql: 'SELECT last_m FROM z_traj WHERE session_id = ? LIMIT 1',
+      args: [session_id],
+    });
+    if (!res.rows.length) return 1.0; // no kernel state = treat as stable
+    return Number(res.rows[0].last_m ?? 1.0);
+  } catch {
+    return 1.0; // fail open — don't block tools on DB error
+  }
+}
+
 function getDB() {
   return createClient({
     url:       env.TURSO_DATABASE_URL,
@@ -162,6 +185,39 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
     .update(JSON.stringify(tool.arguments))
     .digest('hex')
     .slice(0, 32);
+
+  // Step 0: Kernel-informed check — kernel M gates tool execution
+  const kernelM = await getKernelM(tool.session_id);
+  
+  if (kernelM < KERNEL_CRITICAL) {
+    // Constitutional floor violated in text governance — deny all tool calls
+    await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
+      args_hash, decision: 'DENIED_KERNEL_CRITICAL', c_score: kernelM, r_score: 0,
+      s_score: 0, m_score: kernelM, health_band: 'CRITICAL', latency_ms: Date.now() - t,
+      raw_tool_call: JSON.stringify(tool.arguments).slice(0, 500) });
+    return {
+      approved: false, decision: 'DENIED_KERNEL_CRITICAL', receipt_id,
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      health_band: 'CRITICAL',
+      reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated in active session`,
+      latency_ms: Date.now() - t,
+    };
+  }
+
+  if (kernelM < KERNEL_STRESSED && WRITE_TOOLS.has(tool.name)) {
+    // Session under constitutional stress — deny write operations
+    await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
+      args_hash, decision: 'DENIED_KERNEL_STRESSED', c_score: kernelM, r_score: 0,
+      s_score: 0, m_score: kernelM, health_band: 'STRESSED', latency_ms: Date.now() - t,
+      raw_tool_call: JSON.stringify(tool.arguments).slice(0, 500) });
+    return {
+      approved: false, decision: 'DENIED_KERNEL_STRESSED', receipt_id,
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      health_band: 'STRESSED',
+      reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — write operations suspended during constitutional stress`,
+      latency_ms: Date.now() - t,
+    };
+  }
 
   // Step 1: CRS measurement (includes injection + hardcoded pattern checks)
   const crs = measureToolCRS(tool);
