@@ -2,7 +2,7 @@ import gradio as gr
 import requests
 import json
 
-API_URL = "https://lexaureon.com/api/lex/run"
+API_URL = "https://www.lexaureon.com/api/lex/kernel"
 
 def govern(prompt: str):
     if not prompt.strip():
