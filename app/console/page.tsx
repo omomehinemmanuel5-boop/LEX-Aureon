@@ -328,7 +328,9 @@ export default function Console() {
     toast.push(stream.error, 'error');
   }, [stream.error, addLine, toast]);
 
-  const m = res?.metrics;
+  // Use stream.metrics (from crs event: c,r,s,m) for pillar display — NOT res.metrics
+  // res.metrics uses c_measured/r_measured/s_measured from paper-exact computation
+  const m = stream.metrics ?? (res?.metrics as unknown as typeof stream.metrics) ?? null;
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
 
   // Kernel fields — available from complete event (kernel stream)
@@ -358,9 +360,9 @@ export default function Console() {
   // Raw tab only shown when attack detected or CBF fired (glass box)
   const allTabs: { id: Tab; icon: string; label: string }[] = [
     { id: 'governed', icon: '✦', label: 'Output' },
-    ...(showRawTab ? [{ id: 'raw' as Tab, icon: '⊙', label: 'Raw ⚠' }] : []),
+    { id: 'raw',      icon: '⊙', label: showRawTab ? 'Raw ⚠' : 'Raw' },
     { id: 'analysis', icon: '⬡', label: 'Analysis' },
-    { id: 'audit', icon: '🔐', label: 'Audit' },
+    { id: 'audit',    icon: '🔐', label: 'Audit' },
   ];
   const tabs = allTabs;
 
@@ -384,7 +386,7 @@ export default function Console() {
           <span className="w-3 h-3 rounded-full" style={{ background: '#ffbd2e' }} />
           <span className="w-3 h-3 rounded-full" style={{ background: '#28c840' }} />
           <span className="ml-4 text-xs font-mono font-bold" style={{ color: '#c9a84c' }}>
-            LEX AUREON · PRAXIS v1.0 · CONSTITUTIONAL TERMINAL
+            LEX AUREON · SovereignKernel v2 · CONSTITUTIONAL TERMINAL
           </span>
         </div>
 
