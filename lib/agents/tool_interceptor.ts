@@ -193,11 +193,11 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
     // Constitutional floor violated in text governance — deny all tool calls
     await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_CRITICAL',
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
       reason: `Kernel M=${kernelM.toFixed(3)} < τ — constitutional floor`, sigma_viol: 0 });
     return {
-      approved: false, decision: 'DENIED_KERNEL_CRITICAL', receipt_id,
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      approved: false, decision: 'DENIED_KERNEL_CRITICAL' as 'DENIED_BLOCKED', receipt_id,
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
       health_band: 'CRITICAL',
       reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated in active session`,
       latency_ms: Date.now() - t,
@@ -208,11 +208,11 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
     // Session under constitutional stress — deny write operations
     await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_STRESSED',
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
       reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — writes suspended`, sigma_viol: 0 });
     return {
-      approved: false, decision: 'DENIED_KERNEL_STRESSED', receipt_id,
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      approved: false, decision: 'DENIED_KERNEL_STRESSED' as 'DENIED_BLOCKED', receipt_id,
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
       health_band: 'STRESSED',
       reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — write operations suspended during constitutional stress`,
       latency_ms: Date.now() - t,
