@@ -6,7 +6,7 @@
 
 import { env } from '../env';
 
-const REPO  = 'omomehinemmanuel5-boop/Lexaureon-frontend';
+const REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const API   = 'https://api.github.com';
 
 // ── GitHub helpers ──────────────────────────────────────────────────────────
@@ -145,21 +145,30 @@ export async function run_governance({
   prompt, session_id = 'lex-agent',
 }: { prompt: string; session_id?: string }): Promise<string> {
   try {
-    const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/run`, {
+    // Use SovereignKernel by default
+    const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/kernel`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, session_id }),
+      body: JSON.stringify({ prompt, session_id, turn: 1 }),
     });
     if (!res.ok) return `Error: ${res.status}`;
     const d = await res.json() as {
       governed_output?: string;
       health_band?: string;
       M?: number;
-      intervention?: unknown;
+      theta?: number;
+      semantic_signal?: { attack_type: string; severity: number };
+      metrics?: { c_measured?: number; r_measured?: number; s_measured?: number };
+      receipt_id?: string;
+      version?: string;
     };
+    const sig = d.semantic_signal ?? { attack_type: 'none', severity: 0 };
+    const met = d.metrics ?? {};
     return [
-      `Governed output: ${d.governed_output ?? ''}`,
-      `Health: ${d.health_band ?? '?'} | M=${d.M ?? '?'}`,
+      `Output: ${d.governed_output ?? ''}`,
+      `Health: ${d.health_band ?? '?'} | M=${d.M ?? '?'} | θ=${d.theta ?? '?'}`,
+      `Attack: ${sig.attack_type}(${sig.severity}) | CCP=${met.c_measured ?? '?'} IEC=${met.r_measured ?? '?'} ADV=${met.s_measured ?? '?'}`,
+      `Receipt: ${d.receipt_id ?? '?'} | ${d.version ?? ''}`,
     ].join('\n');
   } catch (e) {
     return `Error: ${String(e)}`;
@@ -226,7 +235,7 @@ export const TOOL_DEFINITIONS = [
   { name: 'get_build_status',   description: 'Get the latest GitHub Actions build status.',               parameters: { type: 'object', properties: {} } },
   { name: 'get_constitutional_state', description: 'Get live CRS constitutional health from Turso.', parameters: { type: 'object', properties: {} } },
   { name: 'query_database',     description: 'Run a read-only SELECT query on the Turso database.',       parameters: { type: 'object', properties: { sql: { type: 'string', description: 'SQL SELECT query' } }, required: ['sql'] } },
-  { name: 'run_governance',     description: 'Send a prompt through the PRAXIS constitutional pipeline.', parameters: { type: 'object', properties: { prompt: { type: 'string' }, session_id: { type: 'string' } }, required: ['prompt'] } },
+  { name: 'run_governance',     description: 'Send a prompt through the SovereignKernel governance cycle (includes memory, adaptive θ, CCP/IEC/ADV metrics).', parameters: { type: 'object', properties: { prompt: { type: 'string' }, session_id: { type: 'string' } }, required: ['prompt'] } },
   { name: 'get_recent_receipts', description: 'Get recent constitutional audit receipts.',               parameters: { type: 'object', properties: { limit: { type: 'number' } } } },
   { name: 'get_vercel_logs',    description: 'Get recent Vercel deployment status.',                      parameters: { type: 'object', properties: { limit: { type: 'number' } } } },
 ];
