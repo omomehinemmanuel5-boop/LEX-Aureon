@@ -60,7 +60,7 @@ function LyapunovSparkline({ history }: { history: Array<{ V: number; deltaV: nu
   return (
     <div className="rounded-lg p-3" style={{ background: '#020408', border: '1px solid #1a2040' }}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-mono text-slate-600">// Lyapunov V(t)</span>
+        <span className="text-xs font-mono text-slate-600">{'// Lyapunov V(t)'}</span>
         <span className="text-xs font-mono" style={{ color: trending ? '#10b981' : '#ef4444' }}>
           {trending ? '↓ converging' : '↑ diverging'}
         </span>
@@ -98,7 +98,7 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
   return (
     <div className="rounded-lg p-4 font-mono text-xs space-y-3"
       style={{ background: '#020408', border: '1px solid #1a2040' }}>
-      <div className="text-slate-600 mb-1">// SovereignKernel state</div>
+      <div className="text-slate-600 mb-1">{'// SovereignKernel state'}</div>
 
       {/* Main metrics */}
       <div className="grid grid-cols-3 gap-3">
