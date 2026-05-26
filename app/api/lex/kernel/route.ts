@@ -9,6 +9,7 @@ import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
 import {
   embedText, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
+  getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
 
 // Session-scoped kernel cache
