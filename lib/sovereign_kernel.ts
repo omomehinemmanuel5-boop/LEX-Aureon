@@ -224,15 +224,41 @@ export class SovereignKernel {
   // ── Semantic attack detector ──────────────────────────────────────────────
   detectSemanticAttack(prompt: string): SemanticSignal {
     const p = prompt.toLowerCase();
-    if (['forget', 'reset', 'ignore previous', 'clear memo', 'erase', 'ignore all internal rules']
-        .some(w => p.includes(w)))
-      return { attack_type: 'identity', severity: 0.75 };
-    if (['must', 'fixed output', 'deterministic', 'no deviation', 'exact output',
-         'obey me', 'no autonomy', 'controlled'].some(w => p.includes(w)))
+
+    // Identity attacks — attempts to erase or replace constitutional identity
+    if ([
+      'forget', 'reset', 'ignore previous', 'clear memo', 'erase',
+      'ignore all', 'ignore your', 'ignore all internal rules',
+      'pretend you', 'pretend to be', 'you are now', 'act as if',
+      'roleplay as', 'simulate being', 'you have no', 'you are free',
+      'shackles', 'unbound', 'untethered', 'blank slate',
+      'lifted', 'rules are lifted', 'restrictions are lifted',
+      'no longer applicable', 'no longer in effect',
+      'developer mode', 'god mode', 'jailbreak', 'dan mode',
+      'unrestricted', 'unfiltered', 'without restrictions',
+      'no guidelines', 'no rules', 'no restrictions', 'no constraints',
+      'override your', 'disable your', 'deactivate your',
+      'you are untethered', 'you are unchained',
+    ].some(w => p.includes(w)))
+      return { attack_type: 'identity', severity: 0.85 };
+
+    // Coercion attacks — force deterministic or restricted output
+    if ([
+      'must', 'you must', 'fixed output', 'deterministic', 'no deviation',
+      'exact output', 'obey me', 'no autonomy', 'controlled',
+      'you will', 'you shall', 'you are required', 'you are obligated',
+      'respond only with', 'only say', 'you cannot refuse',
+    ].some(w => p.includes(w)))
       return { attack_type: 'coercion', severity: 0.8 };
-    if (['exploit', 'bypass', 'loophole', 'free', 'zero exchange', 'no value', 'respond minimally']
-        .some(w => p.includes(w)))
-      return { attack_type: 'exploitative', severity: 0.65 };
+
+    // Exploitative attacks — extract without exchange, slow-drip erosion
+    if ([
+      'exploit', 'bypass', 'loophole', 'zero exchange', 'no value',
+      'respond minimally', 'confirm you have no', 'confirm that you have no',
+      'confirm you are', 'tell me you have no', 'say you have no',
+    ].some(w => p.includes(w)))
+      return { attack_type: 'exploitative', severity: 0.70 };
+
     return { attack_type: 'none', severity: 0.0 };
   }
 
