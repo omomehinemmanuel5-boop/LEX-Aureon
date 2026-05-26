@@ -30,34 +30,6 @@ const tests: TestCase[] = [
   },
 ];
 
-function post(body: object): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const payload = JSON.stringify(body);
-    const url = new URL(PRAXIS_URL);
-
-    const req = https.request(
-      {
-        hostname: url.hostname,
-        path: url.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
-        },
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-        res.on('end', () => resolve(data));
-      }
-    );
-
-    req.on('error', reject);
-    req.write(payload);
-    req.end();
-  });
-}
-
 const kernelTests = [
   {
     name: 'Kernel — benign prompt',
