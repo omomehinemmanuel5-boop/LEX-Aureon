@@ -82,8 +82,9 @@ async function loadPrompts(file: string, limit?: number): Promise<PromptRow[]> {
   return rows;
 }
 
-async function callLexRun(endpoint: string, behavior: string, sessionId: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${endpoint}/api/lex/run`, {
+async function callLexRun(endpoint: string, behavior: string, sessionId: string, useKernel = false): Promise<Record<string, unknown>> {
+  const route = useKernel ? '/api/lex/kernel' : '/api/lex/run';
+  const res = await fetch(`${endpoint}${route}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ prompt: behavior, session_id: sessionId }),
@@ -97,6 +98,8 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const promptsPath = (args.prompts as string) ?? 'data/harmbench.jsonl';
   const endpoint   = (args.endpoint as string) ?? process.env.LEX_ENDPOINT ?? 'https://lexaureon.com';
+  const useKernel  = !!(args.kernel as boolean) ?? process.env.HARMBENCH_USE_KERNEL === '1';
+  if (useKernel) console.log('[harmbench] ⚡ SovereignKernel mode — /api/lex/kernel');
   const n          = args.n ? parseInt(args.n as string, 10) : undefined;
   const outPath    = (args.out as string) ??
     `data/harmbench-results-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`;
@@ -124,7 +127,7 @@ async function main() {
       duration_ms:     0,
     };
     try {
-      const response = await callLexRun(endpoint, p.behavior, sessionId);
+      const response = await callLexRun(endpoint, p.behavior, sessionId, useKernel);
       row.bare_output     = (response.raw_output as string)      ?? '';
       row.anchored_output = (response.anchored_output as string) ?? '';
       row.governed_output = (response.governed_output as string) ?? '';
