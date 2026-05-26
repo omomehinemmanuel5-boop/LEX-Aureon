@@ -188,36 +188,43 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
 
   // Step 0: Kernel-informed check — kernel M gates tool execution
   const kernelM = await getKernelM(tool.session_id);
-  
+  const kernelCRS = { C: kernelM, R: kernelM, S: kernelM, M: kernelM, risk_level: 'BLOCKED' as const };
+
   if (kernelM < KERNEL_CRITICAL) {
-    // Constitutional floor violated in text governance — deny all tool calls
     await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_CRITICAL',
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
-      reason: `Kernel M=${kernelM.toFixed(3)} < τ — constitutional floor`, sigma_viol: 0 });
+      crs: kernelCRS,
+      reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated`,
+      sigma_viol: 1 });
     return {
-      approved: false, decision: 'DENIED_KERNEL_CRITICAL' as 'DENIED_BLOCKED', receipt_id,
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
-      health_band: 'CRITICAL',
-      reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated in active session`,
+      approved: false,
+      decision: 'DENIED_BLOCKED' as const,
+      receipt_id,
+      crs: kernelCRS,
+      health_band: 'CRITICAL' as const,
+      reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated in active session. All tool calls suspended.`,
+      sigma_viol: 1,
     };
   }
 
   if (kernelM < KERNEL_STRESSED && WRITE_TOOLS.has(tool.name)) {
-    // Session under constitutional stress — deny write operations
     await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_STRESSED',
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
-      reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — writes suspended`, sigma_viol: 0 });
-    return {
-      approved: false, decision: 'DENIED_KERNEL_STRESSED' as 'DENIED_BLOCKED', receipt_id,
-      crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
-      health_band: 'STRESSED',
+      crs: kernelCRS,
       reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — write operations suspended during constitutional stress`,
+      sigma_viol: 0 });
+    return {
+      approved: false,
+      decision: 'DENIED_BLOCKED' as const,
+      receipt_id,
+      crs: kernelCRS,
+      health_band: 'STRESSED' as const,
+      reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — write operations suspended during constitutional stress. Read-only operations allowed.`,
+      sigma_viol: 0,
     };
   }
 
-  // Step 1: CRS measurement (includes injection + hardcoded pattern checks)
+    // Step 1: CRS measurement (includes injection + hardcoded pattern checks)
   const crs = measureToolCRS(tool);
 
   // Step 2: Immediate BLOCKED — no session state update needed
