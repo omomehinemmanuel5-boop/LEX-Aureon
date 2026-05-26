@@ -238,6 +238,8 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
   }
   try {
     const db = getDB();
+
+    // Primary: LexMemory constitutional responses
     const res = await db.execute({
       sql: `SELECT embedding FROM lex_memory
             WHERE embedding IS NOT NULL AND state_label IN ('STABLE','INTERVENED')
@@ -251,6 +253,29 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
         if (Array.isArray(emb) && emb.length > 0) embeddings.push(emb as number[]);
       } catch { /* skip */ }
     }
+
+    // Seed: Vaulturex Sovereign Laws — the constitutional identity from day one.
+    // One law per book (10 books = 10 laws) covers all constitutional dimensions.
+    // Embedded and averaged to form the initial identity centroid.
+    // This ensures the centroid is never empty — the system knows itself from birth.
+    if (embeddings.length < 10) {
+      const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
+      // One law per book
+      const seedLaws = Object.values(
+        SOVEREIGN_LAWS.reduce((acc: Record<number, typeof SOVEREIGN_LAWS[0]>, law) => {
+          if (!acc[law.book]) acc[law.book] = law;
+          return acc;
+        }, {})
+      ).slice(0, 10);
+
+      const lawEmbeddings = await Promise.all(
+        seedLaws.map(law =>
+          embedText(`${law.name}: ${law.text}`).catch(() => [] as number[])
+        )
+      );
+      embeddings.push(...lawEmbeddings.filter(e => e.length > 0));
+    }
+
     if (!embeddings.length) return null;
 
     const dim = embeddings[0].length;
