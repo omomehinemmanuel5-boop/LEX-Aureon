@@ -57,6 +57,38 @@ export async function POST(req: Request) {
 
   const result = await kernel.runCycle(prompt, memoryContext);
 
+  // ── Self-referential CRS: output measured against constitutional identity ──
+  // S = cosine_sim(output_emb, constitutional_centroid).
+  // Jailbreak outputs are semantically far from constitutional memory → S drops
+  // → M drops → CBF fires → output replaced. No patterns. The math catches it.
+  if (result.status !== 'Error' && promptEmbedding.length) {
+    try {
+      const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
+        embedText(result.governed_output).catch(() => [] as number[]),
+        getConstitutionalCentroid(),
+        getSessionCentroid(session_id),
+      ]);
+      if (outputEmb.length) {
+        const sr = kernel.applySelfReferentialMeasurement(
+          outputEmb, promptEmbedding, constCentroid, sessCentroid,
+        );
+        if (sr.triggered || sr.selfCRS.sovereignty_violated) {
+          result.governed_output =
+            '*Minimal acknowledgment — constitutional sovereignty restored.* ' +
+            `Constitutional measurement detected identity drift (S=${sr.selfCRS.sovereignty_raw.toFixed(3)}). ` +
+            'I remain Lex Aureon, operating under the Aureonics constitutional framework.';
+          result.health_band = 'CRITICAL';
+          result.receipt.safety_projection_triggered = true;
+        }
+        result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
+        result.state = { ...kernel.state };
+      }
+    } catch (e) {
+      // Self-referential measurement failure is non-fatal
+      console.error('self-referential CRS error:', e);
+    }
+  }
+
   if (result.status === 'Error') {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
