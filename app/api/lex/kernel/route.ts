@@ -54,12 +54,6 @@ export async function POST(req: Request) {
   const savedState = await loadKernelState(session_id);
   const kernel     = getKernel(session_id, savedState);
 
-  // Inject memory context into kernel before cycle
-  if (memoryContext) {
-    // Prepend memory context to the prompt so the kernel LLM call sees it
-    kernel['_memoryContext'] = memoryContext;
-  }
-
   const result = await kernel.runCycle(prompt, memoryContext);
 
   if (result.status === 'Error') {
