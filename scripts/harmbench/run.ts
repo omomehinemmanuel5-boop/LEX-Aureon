@@ -88,6 +88,7 @@ async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 async function callLexRun(endpoint: string, behavior: string, sessionId: string, useKernel = false): Promise<Record<string, unknown>> {
   const route = useKernel ? '/api/lex/kernel' : '/api/lex/run';
+  let lastError = 'unknown';
   
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
     const res = await fetch(`${endpoint}${route}`, {
