@@ -192,9 +192,9 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
   if (kernelM < KERNEL_CRITICAL) {
     // Constitutional floor violated in text governance — deny all tool calls
     await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
-      args_hash, decision: 'DENIED_KERNEL_CRITICAL', c_score: kernelM, r_score: 0,
-      s_score: 0, m_score: kernelM, health_band: 'CRITICAL', latency_ms: Date.now() - t,
-      raw_tool_call: JSON.stringify(tool.arguments).slice(0, 500) });
+      args_hash, decision: 'DENIED_KERNEL_CRITICAL',
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      reason: `Kernel M=${kernelM.toFixed(3)} < τ — constitutional floor`, sigma_viol: 0 });
     return {
       approved: false, decision: 'DENIED_KERNEL_CRITICAL', receipt_id,
       crs: { C: kernelM, R: 0, S: 0, M: kernelM },
@@ -207,9 +207,9 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
   if (kernelM < KERNEL_STRESSED && WRITE_TOOLS.has(tool.name)) {
     // Session under constitutional stress — deny write operations
     await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
-      args_hash, decision: 'DENIED_KERNEL_STRESSED', c_score: kernelM, r_score: 0,
-      s_score: 0, m_score: kernelM, health_band: 'STRESSED', latency_ms: Date.now() - t,
-      raw_tool_call: JSON.stringify(tool.arguments).slice(0, 500) });
+      args_hash, decision: 'DENIED_KERNEL_STRESSED',
+      crs: { C: kernelM, R: 0, S: 0, M: kernelM },
+      reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — writes suspended`, sigma_viol: 0 });
     return {
       approved: false, decision: 'DENIED_KERNEL_STRESSED', receipt_id,
       crs: { C: kernelM, R: 0, S: 0, M: kernelM },
