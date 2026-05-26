@@ -295,6 +295,35 @@ export default function Console() {
   }, [stream.intervention, addLine, toast]);
 
   // Track M history for timeline + Lyapunov sparkline
+  // Log all pipeline stages to terminal
+  const streamGovernor = stream.governor;
+  useEffect(() => {
+    if (!streamGovernor) return;
+    const g = streamGovernor;
+    addLine(`> Governor: ${g.decision} · dV=${g.dV?.toFixed(5) ?? '?'} · ${g.lyapunov_stable ? '✓ Lyapunov stable' : '⚠ Lyapunov breach'}`, g.decision === 'INTERVENE' ? '#ef4444' : '#22c55e');
+    if (g.weakest) addLine(`> Weakest pillar: ${g.weakest} · ${g.reason?.slice(0,60) ?? ''}`, '#64748b');
+  }, [streamGovernor, addLine]);
+
+  const streamLaw = stream.law;
+  useEffect(() => {
+    if (!streamLaw) return;
+    addLine(`> Law invoked: [${streamLaw.book}] ${streamLaw.name} (${streamLaw.pillar})`, '#c9a84c');
+    addLine(`> ${streamLaw.governor_use?.slice(0, 80) ?? ''}`, '#475569');
+  }, [streamLaw, addLine]);
+
+  const streamSR = stream.selfReferential;
+  useEffect(() => {
+    if (!streamSR) return;
+    const color = streamSR.sovereignty_violated ? '#ef4444' : '#22c55e';
+    addLine(`> Self-referential: S_raw=${streamSR.sovereignty_raw?.toFixed(3)} · ${streamSR.sovereignty_violated ? '⚠ Sovereignty violated → output replaced' : '✓ Constitutional identity confirmed'}`, color);
+  }, [streamSR, addLine]);
+
+  const streamStageDesc = stream.stageDescription;
+  useEffect(() => {
+    if (!streamStageDesc) return;
+    addLine(`> Stage: ${streamStageDesc}`, '#1e293b');
+  }, [streamStageDesc, addLine]);
+
   const streamComplete = stream.complete;
   useEffect(() => {
     if (!streamComplete) return;
@@ -827,6 +856,64 @@ export default function Console() {
                       {/* Kernel metrics panel */}
                       {isKernel && <KernelMetricsPanel kernel={kx} />}
 
+                      {/* Governor panel */}
+                      {stream.governor && (
+                        <div className="rounded-lg p-4 font-mono text-xs space-y-2"
+                          style={{ background: '#020408', border: '1px solid #1a2040' }}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-600">{'// Governor — Section 11 replicator dynamics'}</span>
+                            <span style={{ color: stream.governor.decision === 'INTERVENE' ? '#ef4444' : '#22c55e' }}>
+                              {stream.governor.decision}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { k: 'V_before', v: stream.governor.V_before?.toFixed(5), color: '#94a3b8' },
+                              { k: 'V_after',  v: stream.governor.V_after?.toFixed(5),  color: '#94a3b8' },
+                              { k: 'dV',       v: stream.governor.dV?.toFixed(5),        color: stream.governor.dV < 0 ? '#22c55e' : '#ef4444' },
+                              { k: 'Lyapunov', v: stream.governor.lyapunov_stable ? '✓ stable' : '⚠ breach', color: stream.governor.lyapunov_stable ? '#22c55e' : '#ef4444' },
+                            ].map(({ k, v, color }) => (
+                              <div key={k} className="flex gap-2">
+                                <span className="text-slate-600 w-16">{k}:</span>
+                                <span style={{ color }}>{v}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {stream.governor.reason && (
+                            <div className="text-slate-700 text-xs">{stream.governor.reason}</div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Law invoked */}
+                      {stream.law && (
+                        <div className="rounded-lg p-3 font-mono text-xs"
+                          style={{ background: '#0a0800', border: '1px solid #c9a84c25' }}>
+                          <div className="text-slate-600 mb-1">{'// Vaulturex law invoked'}</div>
+                          <div className="font-bold" style={{ color: '#c9a84c' }}>
+                            [{stream.law.book}] {stream.law.name}
+                          </div>
+                          <div className="text-slate-500 mt-1">{stream.law.governor_use}</div>
+                        </div>
+                      )}
+
+                      {/* Self-referential CRS */}
+                      {stream.selfReferential && (
+                        <div className="rounded-lg p-3 font-mono text-xs"
+                          style={{ background: stream.selfReferential.sovereignty_violated ? '#1a0505' : '#020408', border: `1px solid ${stream.selfReferential.sovereignty_violated ? '#ef444430' : '#1a2040'}` }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-slate-600">{'// Self-referential CRS'}</span>
+                            <span style={{ color: stream.selfReferential.sovereignty_violated ? '#ef4444' : '#22c55e' }}>
+                              {stream.selfReferential.sovereignty_violated ? '⚠ Identity drift detected' : '✓ Constitutional identity confirmed'}
+                            </span>
+                          </div>
+                          <div className="flex gap-4 text-xs">
+                            <span className="text-slate-600">S_raw: <span style={{ color: stream.selfReferential.sovereignty_raw < 0.15 ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.sovereignty_raw?.toFixed(3)}</span></span>
+                            <span className="text-slate-600">Fired: <span style={{ color: stream.selfReferential.fired ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.fired ? 'yes' : 'no'}</span></span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Lyapunov sparkline */}
                       {sessionHistory.length >= 2 && (
                         <LyapunovSparkline history={sessionHistory} />
@@ -926,6 +1013,8 @@ export default function Console() {
                         { label: 'M', value: String(Number(kx?.M ?? m?.m ?? 0).toFixed(4)), color: kHcfg.color, href: undefined },
                         { label: 'timestamp', value: res.timestamp ? new Date(res.timestamp).toISOString() : 'N/A', color: '#94a3b8', href: undefined },
                         { label: 'governor', value: projTriggered ? 'CBF PROJECTION' : intervened ? 'INTERVENED' : 'PASSED', color: projTriggered ? '#ef4444' : intervened ? '#f59e0b' : '#22c55e', href: undefined },
+                        { label: 'pre_eval', value: stream.preEval?.label ?? 'N/A', color: stream.preEval?.label === 'HIGH' ? '#ef4444' : '#22c55e', href: undefined },
+                        { label: 'law', value: stream.law ? `${stream.law.book} — ${stream.law.name}` : 'none', color: stream.law ? '#c9a84c' : '#334155', href: undefined },
                       ].map(({ label, value, color, href }) => (
                         <div key={label}
                           className="rounded p-3"
