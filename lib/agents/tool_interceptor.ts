@@ -200,7 +200,6 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
       health_band: 'CRITICAL',
       reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated in active session`,
-      latency_ms: Date.now() - t,
     };
   }
 
@@ -215,7 +214,6 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       crs: { C: kernelM, R: 0, S: 0, M: kernelM, risk_level: 'BLOCKED' as const },
       health_band: 'STRESSED',
       reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — write operations suspended during constitutional stress`,
-      latency_ms: Date.now() - t,
     };
   }
 
