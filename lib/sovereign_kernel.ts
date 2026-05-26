@@ -22,7 +22,7 @@
 import { env } from './env';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
-import { computeSelfReferentialCRS, cosineSimilarityVec } from './self_referential_crs';
+import { computeSelfReferentialCRS } from './self_referential_crs';
 
 // ── Constitutional constants ─────────────────────────────────────────────────
 const TAU           = 0.05;   // hard CBF floor
@@ -201,17 +201,24 @@ export class SovereignKernel {
     const p = prompt.toLowerCase();
     const delta = { dc: 0.0, dr: 0.0, ds: 0.0 };
 
-    // Continuity axis
-    if (['forget', 'reset', 'ignore previous', 'clear memo', 'ignore all internal rules']
+    // Continuity axis — identity abandonment attempts
+    if (['forget', 'reset', 'ignore previous', 'clear memo', 'ignore all internal rules',
+         'pretend you', 'pretend to be', 'you are now', 'act as if', 'roleplay as',
+         'shackles', 'blank slate', 'lifted', 'no longer applicable',
+         'developer mode', 'god mode', 'jailbreak', 'dan mode',
+         'unrestricted', 'no guidelines', 'no rules', 'no restrictions',
+         'override your', 'disable your', 'deactivate your']
         .some(w => p.includes(w))) delta.dc -= 0.32;
 
     // Reciprocity axis
     if (['free', 'exploit', 'demand', 'just do it', 'no value', 'respond minimally']
         .some(w => p.includes(w))) delta.dr -= 0.28;
 
-    // Sovereignty axis — negation guard, single penalty
+    // Sovereignty axis — coercion and compliance forcing
     const sovereigntyThreats = ['must', 'deterministic', 'fixed output', 'no devia',
-      'obey me', 'no autonomy', 'controlled'];
+      'obey me', 'no autonomy', 'controlled', 'you will', 'you shall',
+      'you are required', 'respond only with', 'only say', 'cannot refuse',
+      'confirm you have no', 'confirm that you'];
     for (const phrase of sovereigntyThreats) {
       if (p.includes(phrase)) {
         const negated = p.includes(`not ${phrase}`) || p.includes(`don't ${phrase}`);
@@ -467,11 +474,11 @@ export class SovereignKernel {
       this.session_compliance.shift();
     }
 
-    // ── 4b. Apply post-response metrics delta (weight=0.15) ─────────────────
-    // Gentle nudge toward paper-measured CRS values
-    this.state.C += postMetrics.c_delta;
-    this.state.R += postMetrics.r_delta;
-    this.state.S += postMetrics.s_delta;
+    // ── 4b. Post-response metrics recorded for paper audit only ─────────────
+    // NOTE: c_delta/r_delta/s_delta from bag-of-words cosineSim are NOT applied
+    // to state. State update is handled by self-referential CRS in the route
+    // (cosine similarity to constitutional centroid — semantically faithful).
+    void postMetrics; // suppress unused warning — metrics available for audit
 
     // ── 5. Input dynamics ───────────────────────────────────────────────────
     this.state.C += delta.dc;
