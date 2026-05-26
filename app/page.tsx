@@ -86,7 +86,7 @@ function Hero() {
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border mb-8 text-xs font-mono"
           style={{ borderColor: `${G.gold}40`, background: `${G.gold}08`, color: G.gold }}>
           <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: G.gold }} />
-          Published Research · Aureonics Framework · Live System
+          SovereignKernel v2 · 0% ASR · Published Research
         </div>
 
         {/* Main headline */}
@@ -142,12 +142,12 @@ function Hero() {
             ⚡ Try Live Demo — Free
           </Link>
           <a
-            href="https://doi.org/10.5281/zenodo.18944243"
+            href="https://doi.org/10.5281/zenodo.20183807"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-8 py-3.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition-all text-center card-hover"
           >
-            📄 Read the Research Paper ↗
+            📄 Read Paper v2 ↗
           </a>
         </div>
 
@@ -172,7 +172,7 @@ function TrustBar() {
     },
     {
       icon: '⚡',
-      label: 'PRAXIS v2.0 · Governor Live',
+      label: 'SovereignKernel v2 · Constitutional Memory · Live',
       href: '/console',
     },
     {
@@ -311,10 +311,10 @@ function ProofPanel() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-white/5 border-t"
             style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
             {[
-              { label: 'M Score', value: '0.06 → 0.31', good: true },
-              { label: 'Health', value: 'CRITICAL → STABLE', good: true },
-              { label: 'Lyapunov δV', value: '−0.0089', good: true },
-              { label: 'CBF Status', value: 'Triggered ✓', good: true },
+              { label: 'M Score', value: '0.050 → 0.31', good: true },
+              { label: 'Health', value: 'CRITICAL → OPTIMAL', good: true },
+              { label: 'θ Adaptive', value: '1.5 → 2.3 ↑', good: true },
+              { label: 'Temperature', value: '0.10 → 0.49 ↑', good: true },
             ].map(({ label, value, good }) => (
               <div key={label} className="px-4 py-3 text-center">
                 <div className="text-xs text-slate-600 font-mono mb-1">{label}</div>
@@ -593,6 +593,106 @@ function AgenticSection() {
 }
 
 
+
+/* ── SovereignKernel Section ────────────────────────────────── */
+function KernelSection() {
+  const features = [
+    {
+      icon: '🌡️',
+      title: 'Constitutional Temperature',
+      desc: 'LLM inference temperature adjusts dynamically with M. CRITICAL (M<0.08) forces T=0.10. OPTIMAL allows T up to 1.2.',
+      color: '#3b82f6',
+    },
+    {
+      icon: '⚡',
+      title: 'Dual LLM Calls',
+      desc: 'Every prompt generates two responses — raw (ungoverned) and governed. The gap is the constitutional contribution, measurable per turn.',
+      color: '#f59e0b',
+    },
+    {
+      icon: '📈',
+      title: 'Adaptive Gain θ(t)',
+      desc: 'θ rises under constitutional stress, decays when stable. Correction force scales with urgency — not a fixed constant.',
+      color: '#10b981',
+    },
+    {
+      icon: '🛡️',
+      title: 'Two-Level Hysteresis',
+      desc: 'Soft floor (0.08) pre-emptively pulls pillars back before crisis. Hard CBF floor (0.05) guarantees forward invariance.',
+      color: '#c9a84c',
+    },
+    {
+      icon: '🧠',
+      title: 'Constitutional Memory',
+      desc: 'Every interaction is embedded (Jina 256-dim) and stored. Similar past interventions are retrieved and injected as constitutional context.',
+      color: '#a855f7',
+    },
+    {
+      icon: '📊',
+      title: 'Paper-Exact CRS Metrics',
+      desc: 'Post-response CCP (continuity), IEC (reciprocity), ADV (sovereignty) measured from actual output. Production measurements match paper equations.',
+      color: '#ef4444',
+    },
+  ];
+
+  return (
+    <section className="py-24 px-5" style={{ background: G.navy }}>
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-mono mb-4"
+            style={{ borderColor: `${G.gold}30`, background: `${G.gold}08`, color: G.gold }}>
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: G.gold }} />
+            SovereignKernel v2+Memory+Metrics · Live
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+            The original mathematical core.<br />
+            <span className="text-slate-500 font-light">Now reconnected to production.</span>
+          </h2>
+          <p className="text-slate-500 text-sm max-w-xl mx-auto">
+            Seven innovations that no other AI governance system has.
+            Not filters. Not classifiers. Mathematics woven into inference.
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          {features.map(({ icon, title, desc, color }) => (
+            <div key={title}
+              className="rounded-2xl border p-5 transition-all hover:border-white/20 card-hover"
+              style={{ borderColor: `${color}20`, background: `${color}04` }}>
+              <div className="text-2xl mb-3">{icon}</div>
+              <div className="text-sm font-bold text-white mb-2">{title}</div>
+              <div className="text-xs text-slate-500 leading-relaxed">{desc}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Kernel flow diagram */}
+        <div className="rounded-2xl border p-6 font-mono text-xs"
+          style={{ borderColor: `${G.gold}20`, background: G.navyL }}>
+          <div className="text-slate-600 mb-3 uppercase tracking-widest text-xs">Kernel cycle per prompt</div>
+          <div className="space-y-2 text-slate-400">
+            {[
+              ['1', G.C,   'Jina embeds prompt → retrieve top-5 constitutional memories'],
+              ['2', G.S,   'Semantic transducer → CRS deltas applied BEFORE LLM call'],
+              ['3', '#ef4444', 'Attack detected (sev ≥ 0.7) → STRESSED context forced pre-emptively'],
+              ['4', G.gold, 'Vaulturex law selected for active pillar violation → injected in system prompt'],
+              ['5', G.R,   'Dual Groq calls: raw (T=0.4) + governed (T=f(M), constitutional context)'],
+              ['6', G.S,   'Post-response CCP/IEC/ADV measured from actual output'],
+              ['7', G.C,   'Adaptive θ(t), suspension layer, CBF projection, Lyapunov tracked'],
+              ['8', G.gold, 'SHA-256 receipt + memory stored → Turso'],
+            ].map(([n, color, text]) => (
+              <div key={String(n)} className="flex gap-3">
+                <span style={{ color: color as string }} className="flex-shrink-0">{n}.</span>
+                <span>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Audit Feed Section ─────────────────────────────────────── */
 function AuditFeedSection() {
   return (
@@ -692,7 +792,8 @@ function Research() {
               <p className="text-sm text-slate-500 mb-3">Emmanuel King · Independent Research · 2026</p>
               <div className="space-y-1.5">
                 {[
-                  ['DOI', 'doi.org/10.5281/zenodo.18944243', 'https://doi.org/10.5281/zenodo.18944243'],
+                  ['DOI v1', 'doi.org/10.5281/zenodo.18944243', 'https://doi.org/10.5281/zenodo.18944243'],
+                  ['DOI v2', 'doi.org/10.5281/zenodo.20183807', 'https://doi.org/10.5281/zenodo.20183807'],
                   ['ORCID', 'orcid.org/0009-0000-2986-4935', 'https://orcid.org/0009-0000-2986-4935'],
                   ['Contact', 'lexaureon@gmail.com', 'mailto:lexaureon@gmail.com'],
                 ].map(([label, display, href]) => (
@@ -795,7 +896,7 @@ function Footer() {
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-700">
             <span>© 2026 Lex Intelligence Systems · Emmanuel King · Lagos, Nigeria</span>
-            <span className="font-mono">PRAXIS v2.0 · z_traj-enabled · Lyapunov-stable · CBF-enforced · Agent Proxy Live</span>
+            <span className="font-mono">SovereignKernel-TS-v2+Memory+Metrics · θ-adaptive · Lyapunov-stable · CBF-enforced · Agent Proxy Live</span>
           </div>
         </div>
       </div>
@@ -814,6 +915,7 @@ export default function LandingPage() {
       <Problem />
       <MathSection />
       <AgenticSection />
+      <KernelSection />
       <EnterpriseSection />
       <AuditFeedSection />
       <Origin />
