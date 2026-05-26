@@ -77,6 +77,22 @@ describe('API integration', () => {
     expect(data.api).toBe('healthy');
     expect(data.services.turso).toBe('connected');
     expect(data.frontend_contract.routes.lex_run).toBe('/api/lex/run');
+    expect(data.frontend_contract.routes.kernel).toBe('/api/lex/kernel');
+    expect(data.frontend_contract.routes.kernel_stream).toBe('/api/lex/kernel/stream');
+    expect(data.version).toContain('SovereignKernel');
+  });
+
+  it('POST /api/lex/kernel rejects missing prompt', async () => {
+    const { POST } = await import('../app/api/lex/kernel/route');
+    const req = new Request('http://localhost/api/lex/kernel', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: 'test-session' }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/prompt/i);
   });
 
   it('GET /api/audits/recent returns empty receipts when no rows', async () => {
