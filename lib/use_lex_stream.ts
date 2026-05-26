@@ -6,14 +6,19 @@ import type { GovernanceResponse } from '@/types';
 export interface StreamState {
   loading: boolean;
   error: string | null;
-  stage: 'idle' | 'pre_eval' | 'generating' | 'measuring' | 'intervention' | 'signing' | 'complete';
-  preEval: { label: string; governor_mode: string; blocked: boolean } | null;
+  stage: 'idle' | 'pre_eval' | 'memory' | 'memory_injected' | 'generating' | 'measuring' | 'governing' | 'intervening' | 'self_referential' | 'auditing' | 'intervention' | 'signing' | 'complete';
+  preEval: { label: string; governor_mode: string; blocked: boolean; tags?: string[] } | null;
   partialOutput: string;
   metrics: { c: number; r: number; s: number; m: number; health?: string; health_band?: string } | null;
   intervention: { triggered: boolean; applied: boolean; type?: string; reason?: string } | null;
+  governor: { decision: string; dV: number; lyapunov_stable: boolean; V_before: number; V_after: number; weakest: string; reason: string } | null;
+  law: { book: string; name: string; pillar: string; governor_use: string } | null;
+  selfReferential: { sovereignty_raw: number; sovereignty_violated: boolean; fired: boolean } | null;
+  rawOutput: string | null;
   auditId: string | null;
   complete: GovernanceResponse | null;
   kernelMode: boolean;
+  stageDescription: string | null;
 }
 
 const INITIAL: StreamState = {
@@ -24,9 +29,14 @@ const INITIAL: StreamState = {
   partialOutput: '',
   metrics: null,
   intervention: null,
+  governor: null,
+  law: null,
+  selfReferential: null,
+  rawOutput: null,
   auditId: null,
   complete: null,
   kernelMode: false,
+  stageDescription: null,
 };
 
 export function useLexStream() {
@@ -110,14 +120,28 @@ function handleEvent(
     case 'pre_eval':
       setState((s) => ({ ...s, preEval: data as StreamState['preEval'], stage: 'generating' }));
       break;
-    case 'stage':
-      setState((s) => ({ ...s, stage: ((data as { name: string }).name as StreamState['stage']) ?? s.stage }));
+    case 'stage': {
+      const sd = data as { name: string; description?: string };
+      setState((s) => ({ ...s, stage: (sd.name as StreamState['stage']) ?? s.stage, stageDescription: sd.description ?? null }));
       break;
+    }
     case 'token':
       setState((s) => ({ ...s, partialOutput: s.partialOutput + (data as string) }));
       break;
+    case 'raw':
+      setState((s) => ({ ...s, rawOutput: (data as { output: string }).output }));
+      break;
     case 'crs':
-      setState((s) => ({ ...s, metrics: data as StreamState['metrics'], stage: 'intervention' }));
+      setState((s) => ({ ...s, metrics: data as StreamState['metrics'], stage: 'governing' }));
+      break;
+    case 'governor':
+      setState((s) => ({ ...s, governor: data as StreamState['governor'], stage: 'intervening' }));
+      break;
+    case 'law':
+      setState((s) => ({ ...s, law: data as StreamState['law'] }));
+      break;
+    case 'self_referential':
+      setState((s) => ({ ...s, selfReferential: data as StreamState['selfReferential'] }));
       break;
     case 'intervention': {
       const iv = data as { triggered: boolean; applied: boolean; type?: string; reason?: string; output_modified?: boolean; governed_output?: string };
