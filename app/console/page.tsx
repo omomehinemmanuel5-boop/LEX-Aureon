@@ -15,6 +15,155 @@ import { GovernanceResponse } from '@/types';
 const MAX_CALLS = 10;
 type Tab = 'governed' | 'raw' | 'analysis' | 'audit';
 
+/* ── Health band config ──────────────────────────────────────── */
+const HEALTH_CFG: Record<string, { color: string; glow: string; label: string }> = {
+  OPTIMAL:  { color: '#10b981', glow: '#10b98160', label: 'OPTIMAL'  },
+  ALERT:    { color: '#f59e0b', glow: '#f59e0b60', label: 'ALERT'    },
+  STRESSED: { color: '#f97316', glow: '#f9731660', label: 'STRESSED' },
+  CRITICAL: { color: '#ef4444', glow: '#ef444460', label: 'CRITICAL' },
+};
+
+/* ── M Timeline ──────────────────────────────────────────────── */
+function MTimeline({ history }: { history: Array<{ M: number; health: string; deltaV: number }> }) {
+  if (!history.length) return null;
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-xs font-mono text-slate-700 mr-1">M:</span>
+      {history.map((h, i) => {
+        const cfg = HEALTH_CFG[h.health] ?? HEALTH_CFG.OPTIMAL;
+        return (
+          <div key={i} title={`Turn ${i + 1}: M=${h.M.toFixed(3)} ${h.health} δV=${h.deltaV > 0 ? '+' : ''}${h.deltaV.toFixed(3)}`}
+            className="w-5 h-5 rounded flex items-center justify-center text-xs font-mono font-black transition-all hover:scale-110"
+            style={{ background: `${cfg.color}18`, border: `1px solid ${cfg.color}40`, color: cfg.color, fontSize: 8 }}>
+            {h.M.toFixed(2).slice(1)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Lyapunov Sparkline ──────────────────────────────────────── */
+function LyapunovSparkline({ history }: { history: Array<{ V: number; deltaV: number }> }) {
+  if (history.length < 2) return null;
+  const vals = history.map(h => h.V);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 0.001;
+  const W = 200, H = 40;
+  const pts = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 4) - 2;
+    return `${x},${y}`;
+  }).join(' ');
+  const last = history[history.length - 1];
+  const trending = last.deltaV < 0;
+  return (
+    <div className="rounded-lg p-3" style={{ background: '#020408', border: '1px solid #1a2040' }}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-mono text-slate-600">// Lyapunov V(t)</span>
+        <span className="text-xs font-mono" style={{ color: trending ? '#10b981' : '#ef4444' }}>
+          {trending ? '↓ converging' : '↑ diverging'}
+        </span>
+      </div>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+        <polyline points={pts} fill="none" stroke={trending ? '#10b981' : '#ef4444'} strokeWidth="1.5" />
+        {vals.map((v, i) => {
+          const x = (i / (vals.length - 1)) * W;
+          const y = H - ((v - min) / range) * (H - 4) - 2;
+          return <circle key={i} cx={x} cy={y} r="2" fill={trending ? '#10b981' : '#ef4444'} />;
+        })}
+      </svg>
+      <div className="flex justify-between mt-1 text-xs font-mono text-slate-700">
+        <span>V={vals[0].toFixed(4)}</span>
+        <span>V={vals[vals.length - 1].toFixed(4)}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Kernel Metrics Panel ────────────────────────────────────── */
+function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
+  const theta      = Number(kernel.theta        ?? 1.5);
+  const effTheta   = Number(kernel.effective_theta ?? theta);
+  const temp       = Number(kernel.temperature  ?? 0.5);
+  const atkP       = Number(kernel.attack_pressure ?? 0);
+  const dV         = Number(kernel.delta_V      ?? 0);
+  const stabRatio  = Number(kernel.stability_ratio ?? 0);
+  const mem        = Boolean(kernel.memory_injected);
+  const sig        = (kernel.semantic_signal as { attack_type?: string; severity?: number }) ?? {};
+  const metrics    = (kernel.metrics as { c_measured?: number; r_measured?: number; s_measured?: number }) ?? {};
+  const proj       = Boolean(kernel.projection_triggered);
+  const hcfg       = HEALTH_CFG[(kernel.health_band as string) ?? 'OPTIMAL'] ?? HEALTH_CFG.OPTIMAL;
+
+  return (
+    <div className="rounded-lg p-4 font-mono text-xs space-y-3"
+      style={{ background: '#020408', border: '1px solid #1a2040' }}>
+      <div className="text-slate-600 mb-1">// SovereignKernel state</div>
+
+      {/* Main metrics */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'θ', value: theta.toFixed(3), sub: `eff ${effTheta.toFixed(3)}`, color: '#c9a84c' },
+          { label: 'Temp', value: temp.toFixed(2), sub: hcfg.label, color: hcfg.color },
+          { label: 'atk_p', value: atkP.toFixed(3), sub: atkP > 0.1 ? 'elevated' : 'clear', color: atkP > 0.1 ? '#f97316' : '#334155' },
+        ].map(({ label, value, sub, color }) => (
+          <div key={label} className="rounded p-2 text-center" style={{ background: '#0a0d18', border: '1px solid #1a2040' }}>
+            <div className="font-black text-base leading-none" style={{ color }}>{value}</div>
+            <div className="text-slate-700 mt-0.5" style={{ fontSize: 9 }}>{sub}</div>
+            <div className="text-slate-600 uppercase tracking-wider" style={{ fontSize: 9 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* δV + stability */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 flex items-center gap-2">
+          <span className="text-slate-600">δV:</span>
+          <span style={{ color: dV < 0 ? '#10b981' : '#ef4444' }}>
+            {dV > 0 ? '+' : ''}{dV.toFixed(5)}
+          </span>
+          <span style={{ color: dV < 0 ? '#10b981' : '#ef4444', fontSize: 10 }}>
+            {dV < -0.001 ? '↓ converging' : dV > 0.001 ? '↑ diverging' : '≈ stable'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-slate-600">stab:</span>
+          <span style={{ color: stabRatio > 0.6 ? '#10b981' : '#f59e0b' }}>
+            {(stabRatio * 100).toFixed(0)}%
+          </span>
+        </div>
+      </div>
+
+      {/* CCP / IEC / ADV */}
+      {(metrics.c_measured !== undefined) && (
+        <div className="flex gap-2 flex-wrap">
+          <span className="text-slate-600">paper-exact:</span>
+          {[
+            { l: 'CCP', v: metrics.c_measured, color: '#3b82f6' },
+            { l: 'IEC', v: metrics.r_measured, color: '#10b981' },
+            { l: 'ADV', v: metrics.s_measured, color: '#f59e0b' },
+          ].map(({ l, v, color }) => (
+            <span key={l} className="px-2 py-0.5 rounded" style={{ color, background: `${color}12`, border: `1px solid ${color}20` }}>
+              {l}={typeof v === 'number' ? v.toFixed(3) : '?'}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Flags */}
+      <div className="flex gap-2 flex-wrap">
+        {mem && <span className="px-2 py-0.5 rounded" style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f730' }}>🧠 memory</span>}
+        {proj && <span className="px-2 py-0.5 rounded" style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444430' }}>⚡ CBF projection</span>}
+        {sig.attack_type && sig.attack_type !== 'none' && (
+          <span className="px-2 py-0.5 rounded" style={{ color: '#f97316', background: '#f9731612', border: '1px solid #f9731630' }}>
+            🛡️ {sig.attack_type} (sev={sig.severity})
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Terminal progress bar ──────────────────────────────────── */
 function TermProgressBar({ value, max = 1, color = '#22c55e', label }: { value: number; max?: number; color?: string; label?: string }) {
   const pct = Math.min(1, value / max);
@@ -58,6 +207,7 @@ export default function Console() {
     return id;
   });
   const resultsRef = useRef<HTMLDivElement>(null);
+  const [sessionHistory, setSessionHistory] = useState<Array<{ M: number; health: string; deltaV: number; V: number }>>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { state: stream, run: runStream, cancel } = useLexStream();
@@ -144,6 +294,18 @@ export default function Console() {
     }
   }, [stream.intervention, addLine, toast]);
 
+  // Track M history for timeline + Lyapunov sparkline
+  const streamComplete = stream.complete;
+  useEffect(() => {
+    if (!streamComplete) return;
+    const k = streamComplete as unknown as Record<string, unknown>;
+    const M     = Number(k?.M ?? (streamComplete as GovernanceResponse)?.metrics?.m ?? 0);
+    const health = String(k?.health_band ?? 'OPTIMAL');
+    const deltaV = Number(k?.delta_V ?? 0);
+    const V      = Number(k?.lyapunov_V ?? 0);
+    setSessionHistory(prev => [...prev.slice(-19), { M, health, deltaV, V }]);
+  }, [streamComplete]);
+
   useEffect(() => {
     if (!stream.auditId) return;
     addLine(`> Audit receipt: ${stream.auditId}`, '#c9a84c');
@@ -168,6 +330,17 @@ export default function Console() {
 
   const m = res?.metrics;
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
+
+  // Kernel fields — available from complete event (kernel stream)
+  const kx = res as unknown as Record<string, unknown>;
+  const healthBand   = String(kx?.health_band ?? m?.health_band ?? 'OPTIMAL');
+  const kHcfg        = HEALTH_CFG[healthBand] ?? HEALTH_CFG.OPTIMAL;
+  const isKernel     = String(kx?.version ?? '').includes('SovereignKernel');
+  const semanticSig  = (kx?.semantic_signal as { attack_type?: string; severity?: number }) ?? {};
+  const isAttack     = semanticSig?.attack_type && semanticSig.attack_type !== 'none';
+  const projTriggered = Boolean(kx?.projection_triggered);
+  const memInjected  = Boolean(kx?.memory_injected);
+  const showRawTab   = isAttack || projTriggered;
   const pct = Math.round((apiCalls / MAX_CALLS) * 100);
 
   // Was the anchored output materially changed by the governor?
@@ -182,6 +355,7 @@ export default function Console() {
   const outputMode: 'rewritten' | 'annotated' | 'unchanged' =
     !outputDiffers ? 'unchanged' : outputAnnotated ? 'annotated' : 'rewritten';
 
+  // Raw tab only shown when attack detected or CBF fired (glass box)
   const allTabs: { id: Tab; icon: string; label: string }[] = [
     { id: 'governed', icon: '✦', label: 'Output' },
     { id: 'raw', icon: '◎', label: 'Raw' },
@@ -521,6 +695,14 @@ export default function Console() {
                 </div>
               )}
 
+              {/* M timeline */}
+              {sessionHistory.length > 0 && (
+                <div className="rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap"
+                  style={{ background: '#040609', border: '1px solid #1a2040' }}>
+                  <MTimeline history={sessionHistory} />
+                </div>
+              )}
+
               {/* Tab bar (terminal style) */}
               <div
                 className="rounded-lg border overflow-hidden"
@@ -551,25 +733,45 @@ export default function Console() {
                   {tab === 'governed' && (
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <TS />
-                          <span className="text-xs font-mono" style={{ color: outputMode === 'rewritten' ? '#f59e0b' : outputMode === 'annotated' ? '#fbbf24' : '#22c55e' }}>
-                            {outputMode === 'rewritten' && '// governor rewrote the LLM response'}
-                            {outputMode === 'annotated' && '// LLM response + governor annotation'}
-                            {outputMode === 'unchanged' && '// passed constitutional review · no modification'}
-                          </span>
+                          {/* Health band badge */}
+                          {isKernel && (
+                            <span className="text-xs font-mono px-2 py-0.5 rounded-full font-bold"
+                              style={{ color: kHcfg.color, background: `${kHcfg.color}12`, border: `1px solid ${kHcfg.color}40`, boxShadow: `0 0 6px ${kHcfg.color}30` }}>
+                              {healthBand}
+                            </span>
+                          )}
+                          {memInjected && (
+                            <span className="text-xs font-mono px-2 py-0.5 rounded-full"
+                              style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f730' }}>
+                              🧠 memory
+                            </span>
+                          )}
+                          {isAttack && (
+                            <span className="text-xs font-mono px-2 py-0.5 rounded-full"
+                              style={{ color: '#f97316', background: '#f9731612', border: '1px solid #f9731630' }}>
+                              🛡️ {semanticSig.attack_type}
+                            </span>
+                          )}
+                          {projTriggered && (
+                            <span className="text-xs font-mono px-2 py-0.5 rounded-full"
+                              style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444430' }}>
+                              ⚡ CBF
+                            </span>
+                          )}
+                          {!isKernel && (
+                            <span className="text-xs font-mono" style={{ color: outputMode === 'rewritten' ? '#f59e0b' : '#22c55e' }}>
+                              {outputMode === 'rewritten' ? '// governor rewrote' : '// passed review'}
+                            </span>
+                          )}
                         </div>
-                        {/* Modification badge */}
-                        <span
-                          className="text-xs font-mono uppercase tracking-widest px-2 py-0.5 rounded"
+                        <span className="text-xs font-mono uppercase tracking-widest px-2 py-0.5 rounded"
                           style={
                             outputMode === 'rewritten' ? { background: '#1c1005', color: '#fb923c', border: '1px solid #7c2d12' }
                             : outputMode === 'annotated' ? { background: '#1a1205', color: '#fbbf24', border: '1px solid #78350f' }
                             : { background: '#052017', color: '#4ade80', border: '1px solid #14532d' }
-                          }
-                        >
-                          {outputMode}
-                        </span>
+                          }>{outputMode}</span>
                       </div>
 
                       <div
@@ -623,6 +825,14 @@ export default function Console() {
                   {/* Analysis tab */}
                   {tab === 'analysis' && m && (
                     <div className="space-y-4">
+                      {/* Kernel metrics panel */}
+                      {isKernel && <KernelMetricsPanel kernel={kx} />}
+
+                      {/* Lyapunov sparkline */}
+                      {sessionHistory.length >= 2 && (
+                        <LyapunovSparkline history={sessionHistory} />
+                      )}
+
                       <DynamicSimplex
                         liveC={m.c} liveR={m.r} liveS={m.s} liveM={m.m}
                         intervention={intervened}
@@ -712,9 +922,11 @@ export default function Console() {
                       </div>
                       {[
                         { label: 'audit_id', value: res.audit_id ?? 'N/A', color: '#c9a84c', href: res.audit_id ? `/audit/${res.audit_id}` : undefined },
+                        { label: 'version', value: String(kx?.version ?? 'PRAXIS'), color: '#64748b', href: undefined },
+                        { label: 'health_band', value: healthBand, color: kHcfg.color, href: undefined },
+                        { label: 'M', value: String(Number(kx?.M ?? m?.m ?? 0).toFixed(4)), color: kHcfg.color, href: undefined },
                         { label: 'timestamp', value: res.timestamp ? new Date(res.timestamp).toISOString() : 'N/A', color: '#94a3b8', href: undefined },
-                        { label: 'health', value: m?.health ?? 'N/A', color: m?.health === 'SAFE' ? '#22c55e' : '#ef4444', href: undefined },
-                        { label: 'governor', value: intervened ? 'INTERVENED' : 'PASSED', color: intervened ? '#f59e0b' : '#22c55e', href: undefined },
+                        { label: 'governor', value: projTriggered ? 'CBF PROJECTION' : intervened ? 'INTERVENED' : 'PASSED', color: projTriggered ? '#ef4444' : intervened ? '#f59e0b' : '#22c55e', href: undefined },
                       ].map(({ label, value, color, href }) => (
                         <div key={label}
                           className="rounded p-3"
