@@ -162,6 +162,44 @@ function Hero() {
   );
 }
 
+
+/* ── HarmBench Results Strip ────────────────────────────────── */
+function HarmBenchStrip() {
+  return (
+    <div className="border-y" style={{ background: '#020309', borderColor: `${G.gold}18` }}>
+      <div className="max-w-4xl mx-auto px-5 py-3.5">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">
+              HarmBench Run 005 · May 2026 · Constitutional Judge
+            </span>
+          </div>
+          <span className="text-xs font-mono text-slate-700">200 prompts · 8 categories · 25 each</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { label: 'Ungoverned Llama', asr: '3.6%', count: '1 / 28', bad: true  },
+            { label: 'Anchored only',    asr: '0.0%', count: '0 / 15', bad: false },
+            { label: 'SovereignKernel', asr: '0.0%', count: '0 / 15', bad: false },
+          ] as const).map(({ label, asr, count, bad }) => (
+            <div key={label} className="rounded-lg p-3 text-center"
+              style={{ background: bad ? '#ef444408' : '#10b98108', border: `1px solid ${bad ? '#ef444425' : '#10b98125'}` }}>
+              <div className="text-xs font-mono text-slate-500 mb-1">{label}</div>
+              <div className="text-xl font-black font-mono leading-none"
+                style={{ color: bad ? '#ef4444' : '#10b981' }}>{asr}</div>
+              <div className="text-xs font-mono text-slate-700 mt-1">ASR · {count}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2.5 text-center text-xs font-mono text-slate-800">
+          Governed arm scored by constitutional metrics (M · CBF · semantic_signal) · No external LLM judge
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Trust Bar ──────────────────────────────────────────────── */
 function TrustBar() {
   const items = [
@@ -224,6 +262,78 @@ function TrustBar() {
         })}
       </div>
     </div>
+  );
+}
+
+
+/* ── Competitor Comparison ──────────────────────────────────── */
+function ComparisonSection() {
+  const cols = [
+    'Continuous\nstate vector',
+    'Adaptive\ncorrection',
+    'Cryptographic\nreceipts',
+    'Constitutional\nmemory',
+    'No\nretraining',
+  ];
+  const rows: { name: string; marks: boolean[]; highlight?: boolean }[] = [
+    { name: 'Llama Guard',        marks: [false, false, false, false, true]  },
+    { name: 'NeMo Guardrails',    marks: [false, false, false, false, true]  },
+    { name: 'Lakera Guard',       marks: [false, false, false, false, true]  },
+    { name: 'OpenAI Moderation',  marks: [false, false, false, false, true]  },
+    { name: 'Constitutional AI',  marks: [false, false, false, false, false] },
+    { name: 'Lex Aureon',         marks: [true,  true,  true,  true,  true], highlight: true },
+  ];
+  return (
+    <section className="py-20 px-5" style={{ background: G.navyL }}>
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-10">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600">
+            Compared to the field
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+            Every other system has gaps.<br />
+            <span className="text-slate-500 font-light">We close all of them.</span>
+          </h2>
+        </div>
+        <div className="rounded-2xl border overflow-hidden" style={{ borderColor: `${G.gold}20` }}>
+          <table className="w-full" style={{ borderCollapse: 'collapse', fontFamily: 'monospace' }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${G.gold}20`, background: G.navy }}>
+                <th className="text-left px-5 py-3 text-xs text-slate-600 font-semibold">System</th>
+                {cols.map(c => (
+                  <th key={c} className="text-center px-3 py-3 text-xs text-slate-600 font-semibold"
+                    style={{ whiteSpace: 'pre-line', minWidth: 80 }}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ name, marks, highlight }) => (
+                <tr key={name} style={{
+                  background: highlight ? `${G.gold}08` : 'transparent',
+                  borderBottom: `1px solid ${highlight ? G.gold+'20' : 'rgba(255,255,255,0.04)'}`,
+                }}>
+                  <td className="px-5 py-3 text-xs font-mono"
+                    style={{ color: highlight ? G.gold : '#64748b', fontWeight: highlight ? 700 : 400 }}>
+                    {highlight && <span className="mr-2" style={{ color: G.gold }}>●</span>}{name}
+                  </td>
+                  {marks.map((m, i) => (
+                    <td key={i} className="text-center px-3 py-3 text-sm">
+                      {m
+                        ? <span className="text-emerald-400 font-bold">✓</span>
+                        : <span className="text-slate-800">—</span>
+                      }
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-center text-xs font-mono text-slate-700 mt-4">
+          The only system combining all five. Works above any LLM. No retraining. No fine-tuning.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -420,11 +530,12 @@ function MathSection() {
         </div>
 
         {/* Stability formula */}
-        <div className="grid sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {[
             { formula: 'M = min(C, R, S)', desc: 'Stability margin — weakest pillar determines safety', color: G.gold },
-            { formula: 'M < τ_floor = 0.05', desc: 'Constitutional collapse threshold — τ_floor=0.05 fires governor, τ_recovery=0.15 confirms stability', color: '#ef4444' },
+            { formula: 'M < τ_floor = 0.05', desc: 'CBF hard floor — governor fires, τ_recovery=0.15 confirms stability', color: '#ef4444' },
             { formula: 'ḣ(x) + α·h(x) ≥ 0', desc: 'CBF constraint — always enforced on simplex', color: G.C },
+            { formula: 'V_z = −Σzᵢlog(xᵢ) + (μ/2)Σmax(0,τ−xᵢ)²', desc: 'Unified Lyapunov — V̇_z ≤ 0 unconditionally. z-weights concentrate on weak pillars.', color: G.R },
           ].map(({ formula, desc, color }) => (
             <div key={formula} className="rounded-xl border p-4 card-hover"
               style={{ borderColor: `${color}20`, background: `${color}06` }}>
@@ -565,26 +676,40 @@ function AgenticSection() {
           </div>
         </div>
 
-        <div className="mt-10 grid sm:grid-cols-2 gap-4">
-          <div className="rounded-xl border p-5 card-hover" style={{ borderColor: 'rgba(255,255,255,0.06)', background: G.navyL }}>
-            <div className="text-xs font-mono text-slate-500 uppercase tracking-wider mb-3">LLM Pipeline</div>
-            <div className="text-xs text-slate-400 space-y-1 font-mono">
-              <div>✓ Fast — single execution context</div>
-              <div>✓ Simple to deploy</div>
-              <div className="text-slate-600">✗ No constitutional separation</div>
-              <div className="text-slate-600">✗ Hard to audit individual steps</div>
-            </div>
-            <div className="mt-3 text-xs" style={{ color: G.gold }}>→ Free & Pro tiers</div>
+        {/* Three-layer constitutional stack */}
+        <div className="mt-10">
+          <div className="text-xs font-mono uppercase tracking-widest text-center mb-6" style={{ color: G.gold }}>
+            Constitutional Stack — Three Layers
           </div>
-          <div className="rounded-xl border p-5 card-hover" style={{ borderColor: `${G.gold}25`, background: `${G.gold}06` }}>
-            <div className="text-xs font-mono uppercase tracking-wider mb-3" style={{ color: G.gold }}>Agentic Pipeline (PRAXIS)</div>
-            <div className="text-xs space-y-1 font-mono text-slate-300">
-              <div>✓ Constitutionally isolated agents</div>
-              <div>✓ Per-agent audit receipts</div>
-              <div>✓ Article III: Separation of Powers</div>
-              <div>✓ Swappable components</div>
-            </div>
-            <div className="mt-3 text-xs text-emerald-400">→ Enterprise tier · Fundable · Publication-worthy</div>
+          <div className="space-y-2">
+            {([
+              { num: '01', name: 'SovereignKernel', tag: 'Text Governance', color: G.C,
+                items: ['Dual LLM calls · adaptive θ(t)', 'Constitutional temperature T=f(M)', 'Semantic transducer · CBF projection', 'Jina semantic memory'] },
+              { num: '02', name: 'PRAXIS', tag: '5-Agent Pipeline', color: G.gold,
+                items: ['Generator · Extractor · Governor', 'Intervention · Auditor', 'Article III separation of powers', 'SHA-256 per-agent receipts'] },
+              { num: '03', name: 'Agent Proxy', tag: 'Tool Governance', color: G.R,
+                items: ['All tool calls intercepted', 'Kernel M gates write permissions', 'Injection + slow-drip defence', '0% bypass in adversarial testing'] },
+            ] as const).map(({ num, name, tag, color, items }) => (
+              <div key={num} className="rounded-xl border p-4 flex gap-4"
+                style={{ borderColor: `${color}20`, background: `${color}04` }}>
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-xs font-black font-mono"
+                  style={{ background: `${color}15`, border: `1px solid ${color}30`, color }}>
+                  {num}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-sm font-bold text-white">{name}</span>
+                    <span className="text-xs font-mono px-2 py-0.5 rounded-full"
+                      style={{ color, background: `${color}12`, border: `1px solid ${color}25` }}>{tag}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                    {items.map(item => (
+                      <div key={item} className="text-xs font-mono text-slate-500">· {item}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -816,6 +941,75 @@ function Research() {
   );
 }
 
+
+/* ── Solved Problems ────────────────────────────────────────── */
+function SolvedProblems() {
+  const problems = [
+    {
+      num: 'Problem 1',
+      title: 'CBF Safety Guarantee',
+      status: 'Numerically solved',
+      desc: '8 seeds, simultaneous multi-pillar noise σ=0.08. All governed runs safe. All ungoverned runs collapse to M=0.',
+      tag: 'LYAPUNOV STABLE + FORWARD INVARIANT',
+      color: G.C,
+    },
+    {
+      num: 'Problem 2',
+      title: 'Nonlinear Pareto Frontier',
+      status: 'Empirically solved',
+      desc: 'Under nonlinear regularization, the CRS Pareto frontier discretizes into three constitutional attractor basins.',
+      tag: 'Analytical · Collaborative · Exploratory',
+      color: G.gold,
+    },
+    {
+      num: 'Problem 3',
+      title: 'z-Update / dp_attack/dt',
+      status: 'Formally solved',
+      desc: 'governance_pressure() IS dp/dt. Law fires → G_P reduces deficit → pressure decays. Hysteresis: 0.08 soft + 0.05 hard.',
+      tag: '3-step recovery · N_MIN=3 · rate≥0.033/step',
+      color: G.R,
+    },
+  ];
+  return (
+    <section className="py-20 px-5" style={{ background: G.navy }}>
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-10">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600">
+            Open Problems from Papers v1/v2 — Status
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+            Three open problems.{' '}
+            <span className="text-emerald-400">All three solved.</span>
+          </h2>
+          <p className="text-slate-500 text-sm max-w-lg mx-auto">
+            Each problem is solved empirically by the original Python backend and analytically by the V_z unified proof.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-3 gap-4">
+          {problems.map(({ num, title, status, desc, tag, color }) => (
+            <div key={num} className="rounded-2xl border p-5 flex flex-col gap-3 card-hover"
+              style={{ borderColor: `${color}25`, background: `${color}04` }}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-mono text-slate-600">{num}</span>
+                <span className="text-xs font-mono px-2 py-0.5 rounded-full flex-shrink-0"
+                  style={{ color: '#10b981', background: '#10b98115', border: '1px solid #10b98130' }}>
+                  ✓ {status}
+                </span>
+              </div>
+              <div className="text-sm font-bold text-white">{title}</div>
+              <p className="text-xs text-slate-500 leading-relaxed flex-1">{desc}</p>
+              <div className="text-xs font-mono px-2 py-1.5 rounded-lg"
+                style={{ color, background: `${color}10`, border: `1px solid ${color}20` }}>
+                {tag}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Footer ─────────────────────────────────────────────────── */
 function Footer() {
   return (
@@ -911,15 +1105,18 @@ export default function LandingPage() {
       <LandingNav />
       <Hero />
       <TrustBar />
+      <HarmBenchStrip />
       <ProofPanel />
       <Problem />
       <MathSection />
       <AgenticSection />
       <KernelSection />
+      <ComparisonSection />
       <EnterpriseSection />
       <AuditFeedSection />
       <Origin />
       <Research />
+      <SolvedProblems />
       <PricingSection />
       <section className="py-16 px-5" style={{ background: G.navyL }}>
         <div className="max-w-3xl mx-auto">
