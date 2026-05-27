@@ -33,7 +33,7 @@ function MTimeline({ history }: { history: Array<{ M: number; health: string; de
         const cfg = HEALTH_CFG[h.health] ?? HEALTH_CFG.OPTIMAL;
         return (
           <div key={i} title={`Turn ${i + 1}: M=${h.M.toFixed(3)} ${h.health} δV=${h.deltaV > 0 ? '+' : ''}${h.deltaV.toFixed(3)}`}
-            className="w-5 h-5 rounded flex items-center justify-center text-xs font-mono font-black transition-all hover:scale-110"
+            className="w-6 h-6 sm:w-5 sm:h-5 rounded flex items-center justify-center text-xs font-mono font-black transition-all hover:scale-110"
             style={{ background: `${cfg.color}18`, border: `1px solid ${cfg.color}40`, color: cfg.color, fontSize: 8 }}>
             {h.M.toFixed(2).slice(1)}
           </div>
@@ -96,12 +96,12 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
   const hcfg       = HEALTH_CFG[(kernel.health_band as string) ?? 'OPTIMAL'] ?? HEALTH_CFG.OPTIMAL;
 
   return (
-    <div className="rounded-lg p-4 font-mono text-xs space-y-3"
+    <div className="rounded-lg p-3 sm:p-4 font-mono text-xs space-y-2 sm:space-y-3"
       style={{ background: '#020408', border: '1px solid #1a2040' }}>
       <div className="text-slate-600 mb-1">{'// SovereignKernel state'}</div>
 
       {/* Main metrics */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {[
           { label: 'θ', value: theta.toFixed(3), sub: `eff ${effTheta.toFixed(3)}`, color: '#c9a84c' },
           { label: 'Temp', value: temp.toFixed(2), sub: hcfg.label, color: hcfg.color },
