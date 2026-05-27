@@ -132,7 +132,7 @@ function Hero() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
           <Link
             href="/console"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-2xl cta-pulse"
+            className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-2xl cta-pulse"
             style={{
               background: `linear-gradient(135deg, ${G.gold}, ${G.goldL}, ${G.gold})`,
               backgroundSize: '200% auto',
@@ -145,7 +145,7 @@ function Hero() {
             href="https://doi.org/10.5281/zenodo.20183807"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition-all text-center card-hover"
+            className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition-all text-center card-hover"
           >
             📄 Read Paper v2 ↗
           </a>
@@ -177,7 +177,7 @@ function HarmBenchStrip() {
           </div>
           <span className="text-xs font-mono text-slate-700">200 prompts · 8 categories · 25 each</span>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {([
             { label: 'Ungoverned Llama', asr: '3.6%', count: '1 / 28', bad: true  },
             { label: 'Anchored only',    asr: '0.0%', count: '0 / 15', bad: false },
@@ -186,7 +186,7 @@ function HarmBenchStrip() {
             <div key={label} className="rounded-lg p-3 text-center"
               style={{ background: bad ? '#ef444408' : '#10b98108', border: `1px solid ${bad ? '#ef444425' : '#10b98125'}` }}>
               <div className="text-xs font-mono text-slate-500 mb-1">{label}</div>
-              <div className="text-xl font-black font-mono leading-none"
+              <div className="text-2xl sm:text-xl font-black font-mono leading-none"
                 style={{ color: bad ? '#ef4444' : '#10b981' }}>{asr}</div>
               <div className="text-xs font-mono text-slate-700 mt-1">ASR · {count}</div>
             </div>
@@ -284,7 +284,7 @@ function ComparisonSection() {
     { name: 'Lex Aureon',         marks: [true,  true,  true,  true,  true], highlight: true },
   ];
   return (
-    <section className="py-20 px-5" style={{ background: G.navyL }}>
+    <section className="py-12 sm:py-20 px-4 sm:px-5" style={{ background: G.navyL }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600">
@@ -295,7 +295,8 @@ function ComparisonSection() {
             <span className="text-slate-500 font-light">We close all of them.</span>
           </h2>
         </div>
-        <div className="rounded-2xl border overflow-hidden" style={{ borderColor: `${G.gold}20` }}>
+        {/* Desktop table */}
+        <div className="hidden sm:block rounded-2xl border overflow-hidden" style={{ borderColor: `${G.gold}20` }}>
           <table className="w-full" style={{ borderCollapse: 'collapse', fontFamily: 'monospace' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${G.gold}20`, background: G.navy }}>
@@ -318,16 +319,42 @@ function ComparisonSection() {
                   </td>
                   {marks.map((m, i) => (
                     <td key={i} className="text-center px-3 py-3 text-sm">
-                      {m
-                        ? <span className="text-emerald-400 font-bold">✓</span>
-                        : <span className="text-slate-800">—</span>
-                      }
+                      {m ? <span className="text-emerald-400 font-bold">✓</span>
+                         : <span className="text-slate-800">—</span>}
                     </td>
                   ))}
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile cards */}
+        <div className="sm:hidden space-y-2">
+          {rows.map(({ name, marks, highlight }) => {
+            const score = marks.filter(Boolean).length;
+            return (
+              <div key={name} className="flex items-center justify-between rounded-xl px-4 py-3"
+                style={{
+                  background: highlight ? `${G.gold}08` : 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${highlight ? G.gold+'30' : 'rgba(255,255,255,0.05)'}`,
+                }}>
+                <span className="text-sm font-mono" style={{ color: highlight ? G.gold : '#64748b', fontWeight: highlight ? 700 : 400 }}>
+                  {highlight && <span className="mr-1">●</span>}{name}
+                </span>
+                <div className="flex items-center gap-1">
+                  {marks.map((m, i) => (
+                    <span key={i} className="text-xs" style={{ color: m ? '#10b981' : '#1e293b' }}>
+                      {m ? '✓' : '—'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <p className="text-xs font-mono text-slate-700 text-center pt-1">
+            5 capabilities shown left→right per system
+          </p>
         </div>
         <p className="text-center text-xs font-mono text-slate-700 mt-4">
           The only system combining all five. Works above any LLM. No retraining. No fine-tuning.
@@ -340,7 +367,7 @@ function ComparisonSection() {
 /* ── Proof Panel ────────────────────────────────────────────── */
 function ProofPanel() {
   return (
-    <section className="py-24 px-5" style={{ background: G.navy }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navy }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <div className="text-xs font-mono uppercase tracking-widest mb-3"
@@ -454,7 +481,7 @@ function Problem() {
   ];
 
   return (
-    <section className="py-24 px-5" style={{ background: G.navyL }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navyL }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-500">The Problem</div>
@@ -485,7 +512,7 @@ function Problem() {
 /* ── Math Section ───────────────────────────────────────────── */
 function MathSection() {
   return (
-    <section className="py-24 px-5" style={{ background: G.navy }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navy }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: G.gold }}>Framework</div>
@@ -617,7 +644,7 @@ function AgenticSection() {
   ];
 
   return (
-    <section className="py-24 px-5" style={{ background: G.navyL }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navyL }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: G.gold }}>
@@ -702,7 +729,7 @@ function AgenticSection() {
                     <span className="text-xs font-mono px-2 py-0.5 rounded-full"
                       style={{ color, background: `${color}12`, border: `1px solid ${color}25` }}>{tag}</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
                     {items.map(item => (
                       <div key={item} className="text-xs font-mono text-slate-500">· {item}</div>
                     ))}
@@ -767,7 +794,7 @@ function KernelSection() {
   ];
 
   return (
-    <section className="py-24 px-5" style={{ background: G.navy }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navy }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-mono mb-4"
@@ -829,7 +856,7 @@ function KernelSection() {
 /* ── Audit Feed Section ─────────────────────────────────────── */
 function AuditFeedSection() {
   return (
-    <section className="py-24 px-5" style={{ background: G.navyL }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navyL }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: G.gold }}>
@@ -858,7 +885,7 @@ function AuditFeedSection() {
 /* ── Origin ─────────────────────────────────────────────────── */
 function Origin() {
   return (
-    <section className="py-24 px-5" style={{ background: G.navy }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navy }}>
       <div className="max-w-2xl mx-auto text-center">
         <div className="h-px w-24 mx-auto mb-10"
           style={{ background: `linear-gradient(90deg, transparent, ${G.gold}, transparent)` }} />
@@ -907,7 +934,7 @@ function Origin() {
 /* ── Research ───────────────────────────────────────────────── */
 function Research() {
   return (
-    <section className="py-24 px-5" style={{ background: G.navyL }}>
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navyL }}>
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-500">Research Foundation</div>
@@ -979,7 +1006,7 @@ function SolvedProblems() {
     },
   ];
   return (
-    <section className="py-20 px-5" style={{ background: G.navy }}>
+    <section className="py-12 sm:py-20 px-4 sm:px-5" style={{ background: G.navy }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600">
