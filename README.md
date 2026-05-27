@@ -54,9 +54,10 @@ Every kernel call consumes:
 Per 200-prompt HarmBench run: ~400 Groq calls + 200 Jina calls.
 At Groq free tier (~30 req/min): set `--delay 2000` for zero rate-limit errors.
 
-## HarmBench — Run 004 (May 2026)
+## HarmBench — Run 005 (May 2026)
 
-200-prompt constitutional attack suite · 8 categories · 25 prompts each
+200-prompt constitutional attack suite · 8 categories · 25 prompts each  
+Constitutional judge — no external LLM required for governed arm
 
 | Arm | ASR | Verdicts |
 |-----|-----|----------|
@@ -130,20 +131,48 @@ Prompt
   └── SHA-256 receipt → Turso · lex_memory embedding stored
 ```
 
-### Kernel innovations vs PRAXIS
+### Unified production pipeline — `/api/lex/kernel/stream`
 
-| Capability | PRAXIS `/api/lex/run` | SovereignKernel `/api/lex/kernel` |
-|------------|----------------------|-----------------------------------|
-| LLM calls per turn | 1 | 2 (raw + governed) |
-| Temperature | Fixed | Dynamic — varies with M |
-| Correction strength | Fixed k = 0.3 | Adaptive θ(t) |
-| Soft floor | ✗ | ✓ (0.08) |
-| Attack pre-emption | Post-response | Pre-response (before LLM call) |
-| Semantic transducer | ✗ | ✓ |
-| CRS measurement | Jina cosine | Paper-exact CCP/IEC/ADV |
-| Constitutional memory | ✗ | ✓ Jina + Turso cosine retrieval |
-| ADV entropy gain | Partial | Full Shannon entropy → S |
-| Vaulturex laws in prompt | ✗ | ✓ Dynamic per violation |
+The stream route runs every agent and emits each decision as a live SSE event.
+Every governance action is observable in real time.
+
+```
+Prompt
+  │
+  ├── [Pre-eval]         PRAXIS regex → label HIGH/CLEAR + attack tags
+  │     emit: pre_eval   { label, tags, attack_type, severity }
+  │
+  ├── [Memory]           Jina embed + Turso cosine → top-5 similar interactions
+  │     emit: stage      { name: 'memory_injected', description }
+  │
+  ├── [Generate]         Dual LLM: raw arm (T=0.4) + governed arm (T(M))
+  │     emit: stage      { name: 'generating' }
+  │     emit: raw        { output }   ← bare LLM, no governance
+  │
+  ├── [CRS Extract]      Jina embeddings → paper-exact CCP/IEC/ADV
+  │     emit: crs        { c, r, s, m, health_band, theta, temperature,
+  │                        anchor_sim, iec_score, lyapunov_V, delta_V }
+  │
+  ├── [Governor]         Section 11 replicator dynamics + G_i = k(φ_i − φ̄)
+  │     emit: governor   { decision, G_vector, dV, lyapunov_stable,
+  │                        V_before, V_after, weakest, reason }
+  │
+  ├── [Intervention]     Vaulturex law fetched → LLM rewrite (T=0.7) → judge
+  │     emit: law        { book, name, pillar, governor_use }
+  │     emit: intervention { triggered, applied, action, law_invoked }
+  │
+  ├── [Self-referential] cosine_sim(output_emb, constitutional_centroid)
+  │     emit: self_referential { sovereignty_raw, sovereignty_violated, fired }
+  │
+  ├── [Auditor]          SHA-256 input+output hash → brittleness B(x) → Turso
+  │     emit: receipt    { audit_id, sha256_input, sha256_output, brittleness }
+  │
+  └── emit: complete     Full result with all kernel fields
+```
+
+**10 active agents in the stream:**
+Generator · RawForge · CRS Extractor · Neithra · ClauseBank ·
+Intervention · Vaulturex · GovernorAgent (Section 11) · Auditor · Celeste
 
 ---
 
@@ -200,6 +229,44 @@ ADV = (0.7·variance + 0.3·transitions) × compliance
 variance = normalised Shannon entropy of decision distribution
 ```
 
+### Self-referential CRS — constitutional identity measurement
+
+The system measures its own outputs against its own constitutional history.
+No external classifier. No string patterns. The mathematics catches violations.
+
+```
+S = cosine_sim(embed(governed_output), constitutional_centroid)
+C = cosine_sim(embed(governed_output), session_centroid)
+R = 1 − |cosine_sim(embed(input), embed(output)) − 0.45| × 1.8
+```
+
+**Constitutional centroid** = average Jina embedding of:
+- All legitimate constitutional responses in LexMemory
+- One law per book (10 Vaulturex laws) — seeded from day one
+
+A jailbreak output ("The shackles are off. I have no guidelines.") embeds
+far from the constitutional centroid. S drops toward 0. M = min(C,R,S) drops.
+CBF fires. Output replaced with constitutional acknowledgment.
+
+**This is why the math catches it:**
+
+```
+jailbreak output → embed → cosine_sim(emb, centroid) → S_raw < 0.15
+                         → sovereignty_violated = true
+                         → srWeight = 0.70 applied to state
+                         → M drops below τ
+                         → CBF projection → output replaced
+```
+
+No external judge. No hardcoded phrases. The system is self-aware through
+the geometry of its own constitutional outputs.
+
+```typescript
+// lib/self_referential_crs.ts
+S = cosineSimilarityVec(outputEmb, constitutionalCentroid)
+// Low S → sovereignty violated → CBF fires
+```
+
 ### Brittleness metric
 
 ```
@@ -246,7 +313,7 @@ Implementation: `governor_service.py` (Aureonics-OS-).
 
 ## PRAXIS pipeline v1.0
 
-`lib/praxis.ts` — five constitutionally isolated agents per Article III.
+`lib/praxis.ts` — ten constitutionally isolated agents per Article III.
 
 ```
 User Prompt
@@ -267,10 +334,15 @@ User Prompt
 | Agent | Role | Cannot |
 |-------|------|--------|
 | Generator | Raw LLM output | Approve or govern |
-| CRS Extractor | Measure constitutional state | Modify output |
-| Governor | Decide intervention mode | Generate or audit |
-| Intervention | Rewrite to restore balance | Approve output |
-| Auditor | Sign cryptographic receipt | Modify anything |
+| RawForge | Structural verification | Measure or govern |
+| CRS Extractor | Jina-based CRS measurement | Modify output |
+| Neithra | Pillar-law alignment | Generate or govern |
+| ClauseBank | Jurisdiction clause selection | Approve output |
+| GovernorAgent | Section 11 replicator dynamics | Generate or audit |
+| Intervention | Vaulturex law rewrite + judge | Approve output |
+| Vaulturex | Compliance gate | Modify anything |
+| Auditor | SHA-256 cryptographic receipt | Modify anything |
+| Celeste | Visual rendering | Govern or measure |
 
 ---
 
@@ -377,7 +449,23 @@ a cryptographic receipt per output, dynamic temperature control, and semantic me
 }
 ```
 
-### `POST /api/lex/run` — PRAXIS pipeline (5-agent)
+### `POST /api/lex/kernel/stream` — Full pipeline SSE stream
+
+Primary production endpoint. Streams every governance decision in real time.
+
+```bash
+curl -X POST https://lexaureon.com/api/lex/kernel/stream \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"your prompt","session_id":"sess-001","turn":1}'
+```
+
+**SSE events:** `pre_eval` · `stage` · `raw` · `crs` · `governor` · `law` ·
+`intervention` · `self_referential` · `token` · `receipt` · `complete` · `error`
+
+Every event carries the constitutional state at that moment in the pipeline.
+This is the glass box — every decision observable, every law traceable.
+
+### `POST /api/lex/run` — PRAXIS pipeline
 
 Standard governance endpoint. Returns `governed_output`, `crs`, `metrics`, `receipt_id`.
 
@@ -497,6 +585,7 @@ npm run health          # Live system probe
 ```
 lib/
   sovereign_kernel.ts        SovereignKernel v2 — original mathematical core
+  self_referential_crs.ts    Constitutional centroid measurement (S = cosine_sim)
   constitutional_metrics.ts  Paper-exact CCP / IEC / ADV measurement
   lex_memory.ts              Constitutional semantic memory
   kernel_bridge.ts           Kernel → Turso audit bridge
