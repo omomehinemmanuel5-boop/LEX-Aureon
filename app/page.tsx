@@ -685,8 +685,8 @@ function AgenticSection() {
             {([
               { num: '01', name: 'SovereignKernel', tag: 'Text Governance', color: G.C,
                 items: ['Dual LLM calls · adaptive θ(t)', 'Constitutional temperature T=f(M)', 'Semantic transducer · CBF projection', 'Jina semantic memory'] },
-              { num: '02', name: 'PRAXIS', tag: '5-Agent Pipeline', color: G.gold,
-                items: ['Generator · Extractor · Governor', 'Intervention · Auditor', 'Article III separation of powers', 'SHA-256 per-agent receipts'] },
+              { num: '02', name: 'PRAXIS', tag: '10-Agent Unified Stream', color: G.gold,
+                items: ['Generator · CRS Extractor · Governor', 'Intervention · Auditor · Vaulturex', 'RawForge · Neithra · ClauseBank · Celeste', 'Every decision streamed as live SSE event'] },
               { num: '03', name: 'Agent Proxy', tag: 'Tool Governance', color: G.R,
                 items: ['All tool calls intercepted', 'Kernel M gates write permissions', 'Injection + slow-drip defence', '0% bypass in adversarial testing'] },
             ] as const).map(({ num, name, tag, color, items }) => (
