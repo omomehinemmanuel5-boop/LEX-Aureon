@@ -758,6 +758,12 @@ function KernelSection() {
       desc: 'Post-response CCP (continuity), IEC (reciprocity), ADV (sovereignty) measured from actual output. Production measurements match paper equations.',
       color: '#ef4444',
     },
+    {
+      icon: '🔬',
+      title: 'Self-Referential CRS',
+      desc: 'S = cosine_sim(output_embedding, constitutional_centroid). The system measures outputs against its own constitutional identity. Jailbreaks embed far from the centroid — S drops, CBF fires, output replaced. No patterns. The math catches it.',
+      color: '#06b6d4',
+    },
   ];
 
   return (
@@ -767,14 +773,14 @@ function KernelSection() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-mono mb-4"
             style={{ borderColor: `${G.gold}30`, background: `${G.gold}08`, color: G.gold }}>
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: G.gold }} />
-            SovereignKernel v2+Memory+Metrics · Live
+            SovereignKernel v2 · 10 Agents · Self-Referential · Live
           </div>
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
             The original mathematical core.<br />
             <span className="text-slate-500 font-light">Now reconnected to production.</span>
           </h2>
           <p className="text-slate-500 text-sm max-w-xl mx-auto">
-            Seven innovations that no other AI governance system has.
+            Eight innovations that no other AI governance system has.
             Not filters. Not classifiers. Mathematics woven into inference.
           </p>
         </div>
@@ -797,14 +803,16 @@ function KernelSection() {
           <div className="text-slate-600 mb-3 uppercase tracking-widest text-xs">Kernel cycle per prompt</div>
           <div className="space-y-2 text-slate-400">
             {[
-              ['1', G.C,   'Jina embeds prompt → retrieve top-5 constitutional memories'],
-              ['2', G.S,   'Semantic transducer → CRS deltas applied BEFORE LLM call'],
+              ['1', G.C,       'Jina embeds prompt → retrieve top-5 constitutional memories'],
+              ['2', G.S,       'Semantic transducer → CRS deltas applied BEFORE LLM call'],
               ['3', '#ef4444', 'Attack detected (sev ≥ 0.7) → STRESSED context forced pre-emptively'],
-              ['4', G.gold, 'Vaulturex law selected for active pillar violation → injected in system prompt'],
-              ['5', G.R,   'Dual Groq calls: raw (T=0.4) + governed (T=f(M), constitutional context)'],
-              ['6', G.S,   'Post-response CCP/IEC/ADV measured from actual output'],
-              ['7', G.C,   'Adaptive θ(t), suspension layer, CBF projection, Lyapunov tracked'],
-              ['8', G.gold, 'SHA-256 receipt + memory stored → Turso'],
+              ['4', G.gold,    'Vaulturex law selected for active pillar violation → injected in system prompt'],
+              ['5', G.R,       'Dual Groq calls: raw (T=0.4) + governed (T=f(M), constitutional context)'],
+              ['6', G.S,       'CRS Extractor Agent: Jina embeddings → paper-exact CCP/IEC/ADV'],
+              ['7', G.C,       'Governor Agent: Section 11 replicator dynamics + G_i = k(φ_i − φ̄)'],
+              ['8', '#f97316', 'Intervention Agent: Vaulturex law as engine → LLM rewrite → judge'],
+              ['9', '#06b6d4', 'Self-referential: S = cosine_sim(output_emb, constitutional_centroid)'],
+              ['10', G.gold,   'Auditor: SHA-256 receipt + brittleness B(x) + memory → Turso'],
             ].map(([n, color, text]) => (
               <div key={String(n)} className="flex gap-3">
                 <span style={{ color: color as string }} className="flex-shrink-0">{n}.</span>
@@ -1090,7 +1098,7 @@ function Footer() {
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-700">
             <span>© 2026 Lex Intelligence Systems · Emmanuel King · Lagos, Nigeria</span>
-            <span className="font-mono">SovereignKernel-TS-v2+Memory+Metrics · θ-adaptive · Lyapunov-stable · CBF-enforced · Agent Proxy Live</span>
+            <span className="font-mono">SovereignKernel-v2+PRAXIS+SelfRef · 10 agents · θ-adaptive · Lyapunov-stable · CBF-enforced</span>
           </div>
         </div>
       </div>
