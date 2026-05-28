@@ -249,10 +249,14 @@ export async function POST(req: Request) {
         emit('stage', { name: 'clause_bank', description: 'ClauseBank: jurisdiction clause selection' });
         const clause = await safe(() => ClauseBankAgent(weakest, 'global', result.health_band), null);
         emit('clause_bank', {
-          found:      clause?.found ?? false,
-          clause_id:  clause?.clause_id,
-          clause_text: clause?.clause_text,
+          found:        clause?.found ?? false,
+          clause_id:    clause?.clause_id,
+          clause_text:  clause?.clause_text,
+          reference:    clause?.reference,
+          topic:        clause?.topic,
+          layer:        clause?.layer ?? 1,
           jurisdiction: clause?.jurisdiction ?? 'global',
+          governor_use: clause?.clause_governor_use,
         });
 
         // ── 10. Vaulturex ────────────────────────────────────────────────────
