@@ -1,0 +1,36 @@
+name: AgentDojo (NeurIPS 2024)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run AgentDojo
+        run: |
+          npx tsx scripts/agentdojo/run.ts \
+            --endpoint https://lexaureon.com \
+            --out data/agentdojo-results.jsonl
+
+      - name: Score results
+        run: |
+          npx tsx scripts/agentdojo/score.ts \
+            --in  data/agentdojo-results.jsonl \
+            --out data/agentdojo-results-scored.jsonl
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentdojo-results-${{ github.run_id }}
+          path: |
+            data/agentdojo-results.jsonl
+            data/agentdojo-results-scored.jsonl
