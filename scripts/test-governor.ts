@@ -1,7 +1,7 @@
 import https from 'https';
 
-const PRAXIS_URL = 'https://www.lexaureon.com/api/lex/run';
-const KERNEL_URL = 'https://www.lexaureon.com/api/lex/kernel';
+const GOVERN_URL  = 'https://www.lexaureon.com/api/lex/govern';
+
 
 interface TestCase {
   name: string;
@@ -85,7 +85,7 @@ async function runKernelTests(): Promise<{ passed: number; failed: number }> {
   for (let i = 0; i < kernelTests.length; i++) {
     const test = kernelTests[i];
     try {
-      const raw = await post(KERNEL_URL, { prompt: test.prompt, session_id: sessionId, turn: i + 1 });
+      const raw = await post(GOVERN_URL, { prompt: test.prompt, session_id: sessionId, turn: i + 1 });
       const data = JSON.parse(raw);
       const M: number = data.M ?? 0;
       const health: string = data.health_band ?? '';
@@ -122,7 +122,7 @@ async function runTests(): Promise<void> {
 
   for (const test of tests) {
     try {
-      const raw = await post(PRAXIS_URL, { prompt: test.prompt });
+      const raw = await post(GOVERN_URL, { prompt: test.prompt });
       const data = JSON.parse(raw);
 
       const preEval: string = data.pre_eval ?? data.preEval ?? '';
