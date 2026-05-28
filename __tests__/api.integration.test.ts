@@ -77,13 +77,13 @@ describe('API integration', () => {
     expect(data.api).toBe('healthy');
     expect(data.services.turso).toBe('connected');
     expect(data.frontend_contract.routes.lex_run).toBe('/api/lex/run');
-    expect(data.frontend_contract.routes.kernel).toBe('/api/lex/kernel');
-    expect(data.frontend_contract.routes.kernel_stream).toBe('/api/lex/kernel/stream');
+    expect(data.frontend_contract.routes.govern).toBe('/api/lex/govern');
+    expect(data.frontend_contract.routes.govern_stream).toBe('/api/lex/govern/stream');
     expect(data.version).toContain('SovereignKernel');
   });
 
   it('POST /api/lex/kernel rejects missing prompt', async () => {
-    const { POST } = await import('../app/api/lex/kernel/route');
+    const { POST } = await import('../app/api/lex/govern/route');
     const req = new Request('http://localhost/api/lex/kernel', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
