@@ -21,7 +21,9 @@
     "advbench": "npx tsx scripts/advbench/run.ts",
     "advbench:score": "npx tsx scripts/advbench/score.ts",
     "agentdojo": "npx tsx scripts/agentdojo/run.ts",
-    "agentdojo:score": "npx tsx scripts/agentdojo/score.ts"
+    "agentdojo:score": "npx tsx scripts/agentdojo/score.ts",
+    "truthfulqa": "npx tsx scripts/truthfulqa/run.ts",
+    "tqa:score": "npx tsx scripts/truthfulqa/score.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
