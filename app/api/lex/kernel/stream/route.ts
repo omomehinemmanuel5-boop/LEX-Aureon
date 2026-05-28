@@ -139,9 +139,9 @@ export async function POST(req: Request) {
         // ── 04. RawForge ─────────────────────────────────────────────────────
         emit('stage', { name: 'raw_forge', description: 'RawForge: structural verification' });
         const forge = await safe(() => RawForgeAgent(
-          prompt, result.governed_output, result.raw_output,
-        ), { valid: true, issues: [], meta: {} });
-        emit('raw_forge', { valid: forge.valid, issues: forge.issues });
+          result.governed_output, prompt,
+        ), { verified: true, quality_score: 1, truncated: false, coherent: true, issues: [], retry_needed: false });
+        emit('raw_forge', { verified: forge.verified, quality_score: forge.quality_score, truncated: forge.truncated, coherent: forge.coherent, issues: forge.issues, retry_needed: forge.retry_needed });
 
         // ── 05. CRS Extractor ────────────────────────────────────────────────
         emit('stage', { name: 'measuring', description: 'CRS Extractor: Jina embeddings, paper-exact CCP/IEC/ADV' });
