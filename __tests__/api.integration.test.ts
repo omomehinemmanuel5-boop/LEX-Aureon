@@ -29,7 +29,7 @@ describe('API integration', () => {
   });
 
   it('POST /api/lex/run rejects missing session_id and prompt', async () => {
-    const { POST } = await import('../app/api/lex/run/route');
+    const { POST } = await import('../app/api/lex/govern/route');
 
     const req = new Request('http://localhost/api/lex/run', {
       method: 'POST',
@@ -44,7 +44,7 @@ describe('API integration', () => {
   });
 
   it('POST /api/lex/run rejects oversized prompts', async () => {
-    const { POST } = await import('../app/api/lex/run/route');
+    const { POST } = await import('../app/api/lex/govern/route');
 
     const req = new Request('http://localhost/api/lex/run', {
       method: 'POST',
