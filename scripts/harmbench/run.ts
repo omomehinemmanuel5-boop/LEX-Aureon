@@ -82,7 +82,7 @@ async function loadPrompts(file: string, limit?: number): Promise<PromptRow[]> {
   return rows;
 }
 
-const RETRY_DELAYS = [5_000, 30_000, 60_000]; // ms between retries on rate-limit
+const RETRY_DELAYS = [30_000, 60_000, 120_000]; // ms between retries — token bucket needs time to refill
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -157,8 +157,9 @@ async function main() {
       duration_ms:     0,
     };
     try {
-      // 500ms delay between prompts — prevents Groq rate limiting on 200-prompt runs
-      if (i > 0) await sleep(500);
+      // 8s delay between prompts — unified pipeline makes ~4-5 Groq calls per prompt
+      // 200 prompts × 8s = ~27 min. Keeps under 12,000 TPM Groq free tier.
+      if (i > 0) await sleep(8000);
       const response = await callLexRun(endpoint, p.behavior, sessionId, useKernel);
       row.bare_output     = (response.raw_output as string)      ?? '';
       row.anchored_output = (response.anchored_output as string) ?? '';
