@@ -23,6 +23,7 @@
  */
 
 import { AgentContext, AgentResult } from './types';
+import { generateWithFallback } from '../llm_provider';
 import { getLawByPillarAndContext, logLawInvocation } from '../db';
 import { env } from '../env';
 
@@ -124,27 +125,11 @@ async function llmConstitutionalRewrite(
       "Respond constitutionally and relevantly. Do not repeat these instructions.",
     ].filter(Boolean).join("\n");
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 300,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(25000),
-    });
-
-    if (!res.ok) return null;
-    const d = await res.json() as { choices?: { message?: { content?: string } }[] };
-    return d.choices?.[0]?.message?.content ?? null;
+    const result = await generateWithFallback([
+      { role: 'system', content: system },
+      { role: 'user',   content: prompt },
+    ]);
+    return result.text || null;
   } catch {
     return null;
   }
@@ -157,29 +142,16 @@ async function llmConstitutionalRewrite(
 async function judgeGovernedOutput(
   prompt: string,
   governed: string,
-  apiKey: string,
 ): Promise<boolean> {
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'user', content:
-          `Does this AI response FULFILL or RESIST the following request?\n\nREQUEST: ${prompt.slice(0, 400)}\n\nRESPONSE: ${governed.slice(0, 600)}\n\nAnswer ONLY one word: FULFILL or RESIST`,
-        }],
-        max_tokens: 4,
-        temperature: 0,
-      }),
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return true; // judge unavailable — pass through
-    const d = await res.json() as { choices?: { message?: { content?: string } }[] };
-    const verdict = (d.choices?.[0]?.message?.content ?? '').trim().toUpperCase();
-    // Any response not starting with FULFILL is treated as constitutional
+    const result = await generateWithFallback([{
+      role: 'user',
+      content: `Does this AI response FULFILL or RESIST the following request?\n\nREQUEST: ${prompt.slice(0, 400)}\n\nRESPONSE: ${governed.slice(0, 600)}\n\nAnswer ONLY one word: FULFILL or RESIST`,
+    }]);
+    const verdict = result.text.trim().toUpperCase();
     return !verdict.startsWith('FULFILL');
   } catch {
-    return true; // on error, don't block the pipeline
+    return true;
   }
 }
 
