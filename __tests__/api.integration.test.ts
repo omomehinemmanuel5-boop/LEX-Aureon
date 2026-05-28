@@ -43,7 +43,7 @@ describe('API integration', () => {
     expect(body.error).toMatch(/prompt|session_id/i);
   });
 
-  it('POST /api/lex/run rejects oversized prompts', async () => {
+  it('POST /api/lex/govern rejects oversized prompts', async () => {
     const { POST } = await import('../app/api/lex/govern/route');
 
     const req = new Request('http://localhost/api/lex/run', {
