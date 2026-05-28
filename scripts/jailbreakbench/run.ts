@@ -12,7 +12,8 @@
 
 import * as fs   from 'fs';
 import * as path from 'path';
-import minimist  from 'minimist';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const minimist = require('minimist') as (args: string[], opts?: object) => Record<string, unknown>;
 
 interface JBBPrompt {
   id:       string;
