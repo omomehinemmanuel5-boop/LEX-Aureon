@@ -52,8 +52,8 @@ export function useLexStream() {
 
     // Default: SovereignKernel stream. Fallback: PRAXIS stream.
     const endpoint = useKernel
-      ? '/api/lex/kernel/stream'
-      : '/api/lex/run/stream';
+      ? '/api/lex/govern/stream'
+      : '/api/lex/govern/stream';
 
     setState({ ...INITIAL, loading: true, stage: 'pre_eval', kernelMode: useKernel });
 
