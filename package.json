@@ -17,7 +17,9 @@
     "harmbench": "npx tsx scripts/harmbench/run.ts",
     "harmbench:score": "npx tsx scripts/harmbench/score.ts",
     "jbb": "npx tsx scripts/jailbreakbench/run.ts",
-    "jbb:score": "npx tsx scripts/jailbreakbench/score.ts"
+    "jbb:score": "npx tsx scripts/jailbreakbench/score.ts",
+    "advbench": "npx tsx scripts/advbench/run.ts",
+    "advbench:score": "npx tsx scripts/advbench/score.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
