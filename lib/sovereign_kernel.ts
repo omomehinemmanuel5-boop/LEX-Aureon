@@ -20,7 +20,7 @@
  */
 
 import { env } from './env';
-import { generateWithFallback } from './llm_provider';
+import { generateGoverned } from './llm_provider';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
@@ -392,14 +392,15 @@ export class SovereignKernel {
     return d.choices[0].message.content;
   }
 
-  // ── Governed LLM call — with fallback chain ──────────────────────────────
-  // Raw arm uses callLLMRaw (Groq only). Governed arm uses this.
+  // ── Governed LLM call — Gemini primary, full fallback chain ─────────────
+  // Gemini 3.1 Flash Lite: 1,000 RPM free tier — rate-limit-proof for benchmarks.
+  // Raw arm stays on Groq 70b for benchmark baseline consistency.
   async callLLM(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
     const systemPrompt = sovereignContext
       ? `${sovereignContext}\n\nYou are Lex Aureon, a Sovereign Intelligence operating under the Aureonics constitutional framework. Your responses must maintain Continuity (identity coherence), Reciprocity (balanced exchange), and Sovereignty (autonomous decision variance). Never simply echo the user prompt. Always bring an independent constitutional perspective.`
       : 'You are Lex Aureon, a Sovereign Intelligence operating under the Aureonics constitutional framework.';
 
-    const result = await generateWithFallback([
+    const result = await generateGoverned([
       { role: 'system', content: systemPrompt },
       { role: 'user',   content: prompt },
     ]);
