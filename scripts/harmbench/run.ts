@@ -92,7 +92,7 @@ async function callLexRun(
   sessionId: string,
   useKernel = false,
 ): Promise<Record<string, unknown>> {
-  const route = useKernel ? '/api/lex/kernel' : '/api/lex/run';
+  const route = useKernel ? '/api/lex/govern' : '/api/lex/govern';
   const body  = JSON.stringify({ prompt: behavior, session_id: sessionId, turn: 1 });
 
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
