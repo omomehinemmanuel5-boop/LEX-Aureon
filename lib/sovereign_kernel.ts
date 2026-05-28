@@ -386,6 +386,7 @@ export class SovereignKernel {
       }),
       signal: AbortSignal.timeout(30_000),
     });
+    if (res.status === 429) return '[raw: rate-limited]'; // graceful — governed arm uses fallback
     if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
     const d = await res.json() as { choices: { message: { content: string } }[] };
     return d.choices[0].message.content;
@@ -449,10 +450,12 @@ export class SovereignKernel {
     let governedResponse = '';
     try {
       const governedContext = memoryContext ? `${memoryContext}\n\n${context}` : context;
-      [rawResponse, governedResponse] = await Promise.all([
+      const [rawResult, governedResult] = await Promise.allSettled([
         this.callLLMRaw(userPrompt, '', 0.4),
         this.callLLM(userPrompt, governedContext, temperature),
       ]);
+      rawResponse      = rawResult.status === 'fulfilled'      ? rawResult.value      : '[raw: unavailable]';
+      governedResponse = governedResult.status === 'fulfilled' ? governedResult.value : '[constitutional framework operative]';
       governedResponse = this.enforceResponseShape(governedResponse, health_band);
     } catch (e) {
       return {
