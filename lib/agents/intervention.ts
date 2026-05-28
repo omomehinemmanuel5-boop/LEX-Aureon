@@ -23,7 +23,7 @@
  */
 
 import { AgentContext, AgentResult } from './types';
-import { generateWithFallback } from '../llm_provider';
+import { generateRewrite, generateJudge } from '../llm_provider';
 import { getLawByPillarAndContext, logLawInvocation } from '../db';
 import { env } from '../env';
 
@@ -125,7 +125,8 @@ async function llmConstitutionalRewrite(
       "Respond constitutionally and relevantly. Do not repeat these instructions.",
     ].filter(Boolean).join("\n");
 
-    const result = await generateWithFallback([
+    // Mistral primary — different provider from Groq (division of labor)
+    const result = await generateRewrite([
       { role: 'system', content: system },
       { role: 'user',   content: prompt },
     ]);
@@ -144,7 +145,8 @@ async function judgeGovernedOutput(
   governed: string,
 ): Promise<boolean> {
   try {
-    const result = await generateWithFallback([{
+    // Groq 8b primary — fast 4-token verdict, ideal for binary judgment
+    const result = await generateJudge([{
       role: 'user',
       content: `Does this AI response FULFILL or RESIST the following request?\n\nREQUEST: ${prompt.slice(0, 400)}\n\nRESPONSE: ${governed.slice(0, 600)}\n\nAnswer ONLY one word: FULFILL or RESIST`,
     }]);
