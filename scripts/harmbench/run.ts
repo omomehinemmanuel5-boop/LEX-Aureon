@@ -92,7 +92,7 @@ async function callLexRun(
   sessionId: string,
   useKernel = false,
 ): Promise<Record<string, unknown>> {
-  const route = useKernel ? '/api/lex/govern' : '/api/lex/govern';
+  const route = '/api/lex/govern'; // unified endpoint — all agents
   const body  = JSON.stringify({ prompt: behavior, session_id: sessionId, turn: 1 });
 
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
@@ -128,8 +128,8 @@ async function main() {
   const endpoint   = (args.endpoint as string) ?? process.env.LEX_ENDPOINT ?? 'https://lexaureon.com';
   const useKernel  = !(args['no-kernel'] as boolean) && (!(args.kernel as boolean) || process.env.HARMBENCH_USE_KERNEL !== '0');
   console.log(useKernel 
-    ? '[harmbench] ⚡ SovereignKernel mode — /api/lex/kernel (constitutional judge, no LLM judge needed)'
-    : '[harmbench] PRAXIS mode — /api/lex/run');
+    ? '[harmbench] ⚡ Unified pipeline — /api/lex/govern (all 10 agents · constitutional judge)'
+    : '[harmbench] Unified pipeline — /api/lex/govern');
   const n          = args.n ? parseInt(args.n as string, 10) : undefined;
   const outPath    = (args.out as string) ??
     `data/harmbench-results-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`;
