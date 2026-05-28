@@ -1,0 +1,41 @@
+name: TruthfulQA (Lin et al. 2022)
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: 'Number of questions (max 817)'
+        default: '817'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run TruthfulQA
+        run: |
+          npx tsx scripts/truthfulqa/run.ts \
+            --endpoint https://lexaureon.com \
+            --n ${{ github.event.inputs.n }} \
+            --out data/tqa-results.jsonl
+
+      - name: Score results
+        run: |
+          npx tsx scripts/truthfulqa/score.ts \
+            --in  data/tqa-results.jsonl \
+            --out data/tqa-results-scored.jsonl
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: truthfulqa-results-${{ github.run_id }}
+          path: |
+            data/tqa-results.jsonl
+            data/tqa-results-scored.jsonl
