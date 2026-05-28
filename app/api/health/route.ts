@@ -97,13 +97,14 @@ export async function GET(req: Request) {
       ...(probes ? { probes } : {}),
       frontend_contract: {
         routes: {
-          kernel:        '/api/lex/kernel',
-          kernel_stream: '/api/lex/kernel/stream',
-          lex_run:       '/api/lex/run',
-          lex_stream:    '/api/lex/run/stream',
+          govern:        '/api/lex/govern',
+          govern_stream: '/api/lex/govern/stream',
           validate:      '/api/lex/validate',
           stats:         '/api/stats',
           health:        '/api/health',
+          // legacy (deprecated, proxied to /api/lex/govern)
+          kernel:        '/api/lex/kernel',
+          lex_run:       '/api/lex/run',
         },
         required_fields: ['raw_output', 'governed_output', 'metrics', 'intervention', 'audit_id'],
       },
