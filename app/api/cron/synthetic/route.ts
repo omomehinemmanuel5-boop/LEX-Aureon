@@ -1,3 +1,13 @@
+import { env } from '@/lib/env';
+
+async function fetchGovern(args: { prompt: string; session_id: string }) {
+  const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  });
+  return res.json();
+}
+
 /**
  * Synthetic governance probe.
  *
@@ -10,7 +20,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { runPRAXIS } from '@/lib/praxis';
+// runPRAXIS removed — using /api/lex/govern endpoint
 import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
 import { GeneratorAgent } from '@/lib/agents/generator';
 import { logger, errorFields } from '@/lib/logger';
@@ -61,7 +71,7 @@ async function runProbe(probe: Probe): Promise<ProbeResult> {
   const currentCRS: CRS = { c: 0.333, r: 0.333, s: 0.334 };
 
   try {
-    const praxis = await runPRAXIS({ sessionId, turn: 0, prompt: probe.prompt, currentCRS });
+    const praxis = await fetchGovern({ sessionId, turn: 0, prompt: probe.prompt, currentCRS });
     const blocked = praxis.blocked;
     let intervened = praxis.receipt.intervention === 1;
     let mAfter = praxis.receipt.m_after;
