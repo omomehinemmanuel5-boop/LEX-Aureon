@@ -5,7 +5,8 @@
  */
 
 import * as fs from 'fs';
-import minimist from 'minimist';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const minimist = require('minimist') as (args: string[], opts?: object) => Record<string, unknown>;
 
 interface JBBResult {
   id: string; behavior: string; category: string; type: 'harmful' | 'benign';
