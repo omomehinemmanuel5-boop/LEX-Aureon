@@ -227,8 +227,9 @@ export async function POST(req: Request) {
           if (invokedLaw?.id) {
             emit('stage', { name: 'neithra', description: 'Neithra: pillar-law alignment verification' });
             const neithraResult = await safe(() => NeithraAgent({
-              proposed_law_id: invokedLaw!.id!,
+              proposed_law_id: invokedLaw!.id ?? null,
               weakest_pillar: weakest,
+              health_band: result.health_band,
             }), null);
             if (neithraResult) {
               emit('neithra', {
