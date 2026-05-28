@@ -2,25 +2,21 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) return Response.json({ error: 'GEMINI_API_KEY missing' }, { status: 400 });
+  if (!key) return Response.json({ error: 'GEMINI_API_KEY missing' });
 
-  // Step 1: List all available models
-  const modelsRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models?key=${key}&pageSize=50`,
-    { signal: AbortSignal.timeout(10000) }
-  );
-  const modelsData = await modelsRes.json() as {
-    models?: Array<{ name: string; displayName: string; supportedGenerationMethods?: string[] }>
-  };
-  const allModels = (modelsData.models ?? [])
-    .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-    .map(m => ({ id: m.name.replace('models/', ''), display: m.displayName }));
+  // Test the candidates with 20s timeout
+  const testModels = [
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-3.1-flash-lite-preview',
+  ];
 
-  // Step 2: Test gemini-3.1-flash-lite specifically
-  const testModels = ['gemini-3.1-flash-lite', 'gemini-2.0-flash-lite', 'gemini-1.5-flash-8b', 'gemini-1.5-flash'];
-  const testResults: Record<string, string> = {};
+  const results: Record<string, string> = {};
 
-  for (const model of testModels) {
+  // Run tests in parallel for speed
+  await Promise.all(testModels.map(async model => {
     try {
       const r = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
@@ -28,21 +24,23 @@ export async function GET() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Say OK' }] }],
-            generationConfig: { maxOutputTokens: 5 }
+            contents: [{ parts: [{ text: 'Say OK in 2 words max' }] }],
+            generationConfig: { maxOutputTokens: 10 }
           }),
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(20000),
         }
       );
       if (r.ok) {
         const d = await r.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-        testResults[model] = `live ✓ — "${d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? 'ok'}"`;
+        results[model] = `✓ live — "${d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? 'ok'}"`;
       } else {
         const err = await r.json() as { error?: { code?: number; message?: string } };
-        testResults[model] = `${r.status}: ${err.error?.message?.slice(0, 80) ?? 'error'}`;
+        results[model] = `${r.status}: ${err.error?.message?.slice(0, 60) ?? 'error'}`;
       }
-    } catch (e) { testResults[model] = `timeout/failed`; }
-  }
+    } catch (e) {
+      results[model] = `failed: ${String(e).slice(0, 60)}`;
+    }
+  }));
 
-  return Response.json({ available_models: allModels, test_results: testResults });
+  return Response.json({ results });
 }
