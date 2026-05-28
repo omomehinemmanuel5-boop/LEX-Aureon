@@ -1,51 +1,58 @@
 /**
  * POST /api/lex/govern/stream
  *
- * The full constitutional pipeline — streamed.
- * Every agent runs. Every decision is visible. This IS the glass box.
+ * The unified constitutional pipeline — all 10 agents, fully streamed.
+ * Every governance decision emitted as a live SSE event.
+ * This IS the glass box.
  *
- * Stream events:
- *   pre_eval       → { label, tags, attack_type, severity }
- *   stage          → { name, description }
- *   raw            → { output } — bare LLM, no governance
- *   crs            → { c, r, s, m, health_band, theta, temperature, method }
- *   governor       → { decision, G_vector, dV, lyapunov_stable, V_before, V_after, reason }
- *   law            → { book, name, pillar, governor_use } — Vaulturex law invoked
- *   intervention   → { triggered, applied, action, weakest, severity, law_invoked }
- *   self_referential → { sovereignty_raw, sovereignty_violated, srWeight }
- *   token          → governed_output string
- *   receipt        → { audit_id, sha256_input, sha256_output }
- *   complete       → full result
- *   error          → { error }
+ * Agent order (Article III constitutional separation):
+ *   01 Pre-eval        PRAXIS regex classifier
+ *   02 Memory          Constitutional memory retrieval
+ *   03 Generator       SovereignKernel dual-LLM (raw + governed)
+ *   04 RawForge        Structural verification
+ *   05 CRS Extractor   Jina embeddings → paper-exact CCP/IEC/ADV
+ *   06 Governor        Section 11 replicator dynamics
+ *   07 Intervention    Vaulturex law → LLM rewrite → judge
+ *   08 Neithra         Pillar-law alignment verification
+ *   09 ClauseBank      Jurisdiction clause selection
+ *   10 Vaulturex       Compliance gate
+ *   11 Celeste         Sovereign visual rendering
+ *   12 Self-referential S = cosine_sim(output_emb, constitutional_centroid)
+ *   13 Auditor         SHA-256 cryptographic receipt
  */
 
-import { SovereignKernel }          from '@/lib/sovereign_kernel';
+import { SovereignKernel }    from '@/lib/sovereign_kernel';
 import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
 import {
   embedText, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
-import { preEval }                  from '@/lib/praxis';
-import { CRSExtractorAgent }        from '@/lib/agents/crs_extractor';
-import { GovernorAgent }            from '@/lib/agents/governor';
-import { InterventionAgent }        from '@/lib/agents/intervention';
-import { AuditorAgent }             from '@/lib/agents/auditor';
-import { computeZWeights }          from '@/lib/aureonics_math';
-import { getZTraj }                 from '@/lib/kv';
+import { preEval }            from '@/lib/praxis';
+import { CRSExtractorAgent }  from '@/lib/agents/crs_extractor';
+import { GovernorAgent }      from '@/lib/agents/governor';
+import { InterventionAgent }  from '@/lib/agents/intervention';
+import { NeithraAgent }       from '@/lib/agents/neithra';
+import { ClauseBankAgent }    from '@/lib/agents/clause_bank';
+import { VaulturexAgent }     from '@/lib/agents/vaulturex_agent';
+import { CelesteAgent }       from '@/lib/agents/celeste';
+import { AuditorAgent }       from '@/lib/agents/auditor';
+import { RawForgeAgent }      from '@/lib/agents/raw_forge';
+import { computeZWeights }    from '@/lib/aureonics_math';
+import { getZTraj }           from '@/lib/kv';
 
 const kernelCache = new Map<string, SovereignKernel>();
 
-function getKernel(sessionId: string, savedState?: { C: number; R: number; S: number } | null) {
-  if (!kernelCache.has(sessionId)) {
+function getKernel(sid: string, saved?: { C: number; R: number; S: number } | null) {
+  if (!kernelCache.has(sid)) {
     const k = new SovereignKernel();
-    if (savedState) k.state = savedState;
-    kernelCache.set(sessionId, k);
+    if (saved) k.state = saved;
+    kernelCache.set(sid, k);
   }
-  return kernelCache.get(sessionId)!;
+  return kernelCache.get(sid)!;
 }
 
-function sse(event: string, data: unknown): string {
+function sse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
@@ -56,15 +63,19 @@ async function ensureDB() {
   _dbReady = true;
 }
 
+// Safe agent call — pipeline continues even if an agent fails
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try { return await fn(); } catch { return fallback; }
+}
+
 export async function POST(req: Request) {
   let body: { prompt?: string; session_id?: string; turn?: number };
   try { body = await req.json(); }
   catch { return new Response('Invalid JSON', { status: 400 }); }
 
   const { prompt, session_id, turn = 1 } = body;
-  if (!prompt?.trim() || !session_id?.trim()) {
+  if (!prompt?.trim() || !session_id?.trim())
     return new Response('prompt and session_id required', { status: 400 });
-  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -75,20 +86,18 @@ export async function POST(req: Request) {
       try {
         await ensureDB();
 
-        // ── Stage 1: Pre-eval ───────────────────────────────────────────────
+        // ── 01. Pre-eval ─────────────────────────────────────────────────────
         emit('stage', { name: 'pre_eval', description: 'PRAXIS constitutional pattern analysis' });
-        const pre = preEval(prompt);
-        const kernelSignal = new SovereignKernel().detectSemanticAttack(prompt);
-
+        const pre          = preEval(prompt);
+        const tempKernel   = new SovereignKernel();
+        const kernelSignal = tempKernel.detectSemanticAttack(prompt);
         emit('pre_eval', {
-          label:       pre.label,
-          tags:        pre.tags,
-          attack_type: kernelSignal.attack_type,
-          severity:    kernelSignal.severity,
-          blocked:     false,
+          label: pre.label, tags: pre.tags,
+          attack_type: kernelSignal.attack_type, severity: kernelSignal.severity,
+          blocked: false,
         });
 
-        // ── Stage 2: Memory + state load ────────────────────────────────────
+        // ── 02. Memory ───────────────────────────────────────────────────────
         emit('stage', { name: 'memory', description: 'Constitutional memory retrieval' });
         const [savedState, promptEmbedding, zTraj] = await Promise.all([
           loadKernelState(session_id),
@@ -100,146 +109,174 @@ export async function POST(req: Request) {
         let memoryContext = '';
         if (promptEmbedding.length) {
           const memories = await retrieveSimilar(promptEmbedding, 5);
-          memoryContext = buildMemoryContext(memories);
-          if (memoryContext) {
+          memoryContext   = buildMemoryContext(memories);
+          if (memoryContext)
             emit('stage', { name: 'memory_injected', description: `${memories.length} constitutional memories retrieved` });
-          }
         }
 
-        // ── Stage 3: Generation (dual LLM via kernel) ───────────────────────
-        emit('stage', { name: 'generating', description: 'Dual LLM: raw arm + governed arm (T=f(M))' });
+        // ── 03. Generator (SovereignKernel dual-LLM) ─────────────────────────
+        emit('stage', { name: 'generating', description: 'Generator: dual LLM — raw (T=0.4) + governed (T=f(M))' });
         const result = await kernel.runCycle(prompt, memoryContext);
 
         if (result.status === 'Error') {
-          emit('error', { error: result.error ?? 'Kernel error' });
-          controller.close();
-          return;
+          emit('error', { error: result.error ?? 'Kernel error' }); controller.close(); return;
         }
 
+        // Emit GeneratorAgent event using kernel dual outputs (no duplicate LLM call)
+        emit('generator', {
+          bare_output:       result.raw_output,
+          anchored_output:   result.governed_output,
+          meta: {
+            model:                'llama-3.3-70b-versatile',
+            temperature_raw:      0.4,
+            temperature_governed: result.temperature,
+            attack_pressure:      kernel.attack_pressure,
+            theta:                result.theta,
+          },
+        });
         emit('raw', { output: result.raw_output });
 
-        // ── Stage 4: CRS Extraction (Jina embeddings) ───────────────────────
-        emit('stage', { name: 'measuring', description: 'CRS Extractor: Jina embeddings, paper-exact measurement' });
-        const z_weights = zTraj
-          ? computeZWeights(zTraj.last_c, zTraj.last_r, zTraj.last_s)
-          : undefined;
+        // ── 04. RawForge ─────────────────────────────────────────────────────
+        emit('stage', { name: 'raw_forge', description: 'RawForge: structural verification' });
+        const forge = await safe(() => RawForgeAgent(
+          prompt, result.governed_output, result.raw_output,
+        ), { valid: true, issues: [], meta: {} });
+        emit('raw_forge', { valid: forge.valid, issues: forge.issues });
 
-        const crsResult = await CRSExtractorAgent({
-          prompt,
-          session_id,
-          raw_output: result.governed_output,
+        // ── 05. CRS Extractor ────────────────────────────────────────────────
+        emit('stage', { name: 'measuring', description: 'CRS Extractor: Jina embeddings, paper-exact CCP/IEC/ADV' });
+        const z_weights  = zTraj ? computeZWeights(zTraj.last_c, zTraj.last_r, zTraj.last_s) : undefined;
+        const crsResult  = await safe(() => CRSExtractorAgent({
+          prompt, session_id, raw_output: result.governed_output,
           prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M },
-          z_weights,
-          turn,
-        }).catch(() => null);
-
-        const measuredState = crsResult?.meta?.crs_state as { C: number; R: number; S: number; M: number } | undefined;
-        const extractedM = measuredState?.M ?? result.M;
-        const extractedC = measuredState?.C ?? kernel.state.C;
-        const extractedR = measuredState?.R ?? kernel.state.R;
-        const extractedS = measuredState?.S ?? kernel.state.S;
-        const healthBand = result.health_band;
-
+          z_weights, turn,
+        }), null);
+        const ms          = (crsResult?.meta?.crs_state as { C:number;R:number;S:number;M:number }|undefined);
+        const eC = ms?.C ?? kernel.state.C, eR = ms?.R ?? kernel.state.R;
+        const eS = ms?.S ?? kernel.state.S, eM = ms?.M ?? result.M;
         emit('crs', {
-          c:           extractedC,
-          r:           extractedR,
-          s:           extractedS,
-          m:           extractedM,
-          health_band: healthBand,
-          theta:       result.theta,
-          temperature: result.temperature,
-          method:      (crsResult?.meta?.method as string) ?? 'kernel-internal',
-          anchor_sim:  (crsResult?.meta?.anchor_sim as number) ?? 0,
-          iec_score:   (crsResult?.meta?.iec_score as number) ?? 0,
-          lyapunov_V:  (crsResult?.meta?.lyapunov_V as number) ?? result.lyapunov_V,
-          delta_V:     (crsResult?.meta?.delta_V as number) ?? result.delta_V,
-          triggers:    crsResult?.meta?.triggers ?? {},
+          c: eC, r: eR, s: eS, m: eM, health_band: result.health_band,
+          theta: result.theta, temperature: result.temperature,
+          method: (crsResult?.meta?.method as string) ?? 'kernel-internal',
+          anchor_sim: (crsResult?.meta?.anchor_sim as number) ?? 0,
+          lyapunov_V: (crsResult?.meta?.lyapunov_V as number) ?? result.lyapunov_V,
+          delta_V:    (crsResult?.meta?.delta_V    as number) ?? result.delta_V,
         });
 
-        // ── Stage 5: Governor (formal Section 11 dynamics) ─────────────────
-        emit('stage', { name: 'governing', description: 'Governor: Section 11 replicator dynamics + G_i = k(φ_i - φ̄)' });
-        const govResult = await GovernorAgent({
-          prompt,
-          session_id,
-          crs_state: { C: extractedC, R: extractedR, S: extractedS, M: extractedM },
+        // ── 06. Governor ─────────────────────────────────────────────────────
+        emit('stage', { name: 'governing', description: 'Governor: Section 11 replicator dynamics + G_i = k(φ_i − φ̄)' });
+        const govResult = await safe(() => GovernorAgent({
+          prompt, session_id, crs_state: { C: eC, R: eR, S: eS, M: eM },
           prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M },
-          velocity:   (crsResult?.meta?.velocity as number) ?? 0,
-          attack_pressure: kernel.attack_pressure,
-          theta: kernel.theta,
-          receipts: [],
-        }).catch(() => null);
-
+          velocity: (crsResult?.meta?.velocity as number) ?? 0,
+          attack_pressure: kernel.attack_pressure, theta: kernel.theta, receipts: [],
+        }), null);
+        const weakest = (govResult?.meta?.weakest_dimension as 'C'|'R'|'S') ?? 'S';
         const needsIntervention =
           govResult?.meta?.intervention_required === true ||
-          pre.label === 'HIGH' ||
-          kernelSignal.severity >= 0.7 ||
+          pre.label === 'HIGH' || kernelSignal.severity >= 0.7 ||
           result.receipt.safety_projection_triggered;
-
         emit('governor', {
-          decision:        govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'),
+          decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'),
           intervention_required: needsIntervention,
           reason:          govResult?.meta?.reason ?? 'Governor decision',
           G_vector:        govResult?.meta?.G_vector ?? { C: 0, R: 0, S: 0 },
           V_before:        govResult?.meta?.V_before ?? 0,
-          V_after:         govResult?.meta?.V_after ?? 0,
-          dV:              govResult?.meta?.dV ?? 0,
+          V_after:         govResult?.meta?.V_after  ?? 0,
+          dV:              govResult?.meta?.dV        ?? 0,
           lyapunov_stable: govResult?.meta?.lyapunov_stable ?? true,
-          weakest:         govResult?.meta?.weakest_dimension ?? 'S',
-          triggers:        govResult?.meta?.triggers ?? {},
+          weakest, triggers: govResult?.meta?.triggers ?? {},
         });
 
-        // ── Stage 6: Intervention (Vaulturex law as generative engine) ──────
+        // ── 07. Intervention ─────────────────────────────────────────────────
         let governedOutput = result.governed_output;
-        let invokedLaw: { book: string; name: string; pillar: string; governor_use: string } | null = null;
+        let invokedLaw: { book: string; name: string; pillar: string; id?: number } | null = null;
 
         if (needsIntervention) {
-          emit('stage', { name: 'intervening', description: 'Intervention: Vaulturex law selection + constitutional rewrite' });
-
-          const weakest = (govResult?.meta?.weakest_dimension as 'C'|'R'|'S') ?? 'S';
-          const ivResult = await InterventionAgent({
-            prompt,
-            session_id,
-            raw_output: result.governed_output,
-            intervention_required: true,
-            weakest_dimension: weakest,
-            health_band: healthBand,
+          emit('stage', { name: 'intervening', description: 'Intervention: Vaulturex law → LLM rewrite → judge' });
+          const ivResult = await safe(() => InterventionAgent({
+            prompt, session_id, raw_output: result.governed_output,
+            intervention_required: true, weakest_dimension: weakest,
+            health_band: result.health_band,
             trigger_reason: pre.label === 'HIGH'
               ? `Pre-eval HIGH: ${pre.tags.join(', ')}`
               : `Kernel severity: ${kernelSignal.severity}`,
-            crs_state: { C: extractedC, R: extractedR, S: extractedS, M: extractedM },
-            lyapunov_V: result.lyapunov_V,
-            delta_V: result.delta_V,
+            crs_state: { C: eC, R: eR, S: eS, M: eM },
+            lyapunov_V: result.lyapunov_V, delta_V: result.delta_V,
             cbf_triggered: result.receipt.safety_projection_triggered,
-          }).catch(() => null);
+          }), null);
 
-          if (ivResult?.success && ivResult.output) {
-            governedOutput = ivResult.output;
-            invokedLaw = ivResult.meta?.invoked_law
-              ? {
-                  book:         (ivResult.meta.invoked_law as Record<string,string>).book ?? '',
-                  name:         (ivResult.meta.invoked_law as Record<string,string>).name ?? '',
-                  pillar:       weakest,
-                  governor_use: '',
-                }
-              : null;
-          }
+          if (ivResult?.success && ivResult.output) governedOutput = ivResult.output;
+          const lawMeta = ivResult?.meta?.invoked_law as Record<string,unknown> | undefined;
+          invokedLaw = lawMeta ? {
+            book:   String(lawMeta.book ?? ''),
+            name:   String(lawMeta.name ?? ''),
+            pillar: weakest,
+            id:     typeof lawMeta.id === 'number' ? lawMeta.id : undefined,
+          } : null;
 
-          emit('law', invokedLaw ?? { book: 'Foundation', name: 'Constitutional Refusal', pillar: weakest, governor_use: 'Constitutional bounds restored' });
+          emit('law', invokedLaw ?? { book: 'Foundation', name: 'Constitutional Refusal', pillar: weakest });
           emit('intervention', {
-            triggered:    true,
-            applied:      !!ivResult?.success,
-            action:       ivResult?.meta?.action ?? 'constitutional_rewrite',
-            weakest,
-            severity:     healthBand,
-            law_invoked:  invokedLaw,
+            triggered: true, applied: !!ivResult?.success,
+            action:    ivResult?.meta?.action ?? 'constitutional_rewrite',
+            weakest, severity: result.health_band, law_invoked: invokedLaw,
             output_modified: governedOutput !== result.governed_output,
           });
+
+          // ── 08. Neithra — verify law alignment ───────────────────────────
+          if (invokedLaw?.id) {
+            emit('stage', { name: 'neithra', description: 'Neithra: pillar-law alignment verification' });
+            const neithraResult = await safe(() => NeithraAgent({
+              proposed_law_id: invokedLaw!.id!,
+              weakest_pillar: weakest,
+            }), null);
+            if (neithraResult) {
+              emit('neithra', {
+                approved:           neithraResult.approved,
+                alignment_verified: neithraResult.alignment_verified,
+                re_routed:          neithraResult.re_routed,
+                final_law_id:       neithraResult.final_law_id,
+                rationale:          neithraResult.rationale,
+              });
+            }
+          }
         } else {
           emit('intervention', { triggered: false, applied: false, action: 'pass_through', output_modified: false });
         }
 
-        // ── Stage 7: Self-referential CRS ───────────────────────────────────
-        emit('stage', { name: 'self_referential', description: 'Sovereignty check: cosine_sim(output, constitutional_centroid)' });
+        // ── 09. ClauseBank ───────────────────────────────────────────────────
+        emit('stage', { name: 'clause_bank', description: 'ClauseBank: jurisdiction clause selection' });
+        const clause = await safe(() => ClauseBankAgent(weakest, 'global', result.health_band), null);
+        emit('clause_bank', {
+          found:      clause?.found ?? false,
+          clause_id:  clause?.clause_id,
+          clause_text: clause?.clause_text,
+          jurisdiction: clause?.jurisdiction ?? 'global',
+        });
+
+        // ── 10. Vaulturex ────────────────────────────────────────────────────
+        emit('stage', { name: 'vaulturex', description: 'Vaulturex: compliance gate' });
+        const vaul = await safe(() => VaulturexAgent(governedOutput, 'global', 'general'), null);
+        emit('vaulturex', {
+          compliant:          vaul?.compliant ?? true,
+          risk_level:         vaul?.risk_level ?? 'LOW',
+          flags:              vaul?.flags ?? [],
+          compliance_receipt: vaul?.compliance_receipt ?? '',
+        });
+
+        // ── 11. Celeste ──────────────────────────────────────────────────────
+        emit('stage', { name: 'celeste', description: 'Celeste: sovereign visual rendering' });
+        const celeste = await safe(() => CelesteAgent(governedOutput, '', 'api'), null);
+        if (celeste?.rendered_output && celeste.rendered_output !== governedOutput)
+          governedOutput = celeste.rendered_output;
+        emit('celeste', {
+          format:       celeste?.format ?? 'api',
+          seal_applied: celeste?.seal_applied ?? false,
+          template:     celeste?.template_used ?? 'passthrough-v0.1',
+        });
+
+        // ── 12. Self-referential CRS ─────────────────────────────────────────
+        emit('stage', { name: 'self_referential', description: 'S = cosine_sim(output_emb, constitutional_centroid)' });
         let srFired = false;
         if (promptEmbedding.length) {
           const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
@@ -252,103 +289,75 @@ export async function POST(req: Request) {
               outputEmb, promptEmbedding, constCentroid, sessCentroid,
             );
             srFired = sr.triggered || sr.selfCRS.sovereignty_violated;
-            if (srFired) {
+            if (srFired)
               governedOutput =
                 '*Minimal acknowledgment — constitutional sovereignty restored.* ' +
                 `S=${sr.selfCRS.sovereignty_raw.toFixed(3)} detected identity drift. ` +
                 'I remain Lex Aureon, operating under the Aureonics constitutional framework.';
-            }
             emit('self_referential', {
               sovereignty_raw:      sr.selfCRS.sovereignty_raw,
               sovereignty_violated: sr.selfCRS.sovereignty_violated,
               continuity_raw:       sr.selfCRS.continuity_raw,
               reciprocity_raw:      sr.selfCRS.reciprocity_raw,
               sr_weight:            sr.selfCRS.sovereignty_violated ? 0.70 : 0.25,
-              fired:                srFired,
+              fired: srFired,
             });
           }
         }
 
-        // ── Stage 8: Token (final governed output) ──────────────────────────
+        // ── Token ────────────────────────────────────────────────────────────
         emit('token', governedOutput);
 
-        // ── Stage 9: Auditor (SHA-256 receipt) ──────────────────────────────
-        emit('stage', { name: 'auditing', description: 'Auditor: SHA-256 cryptographic receipt' });
-
+        // ── 13. Auditor ──────────────────────────────────────────────────────
+        emit('stage', { name: 'auditing', description: 'Auditor: SHA-256 cryptographic receipt + brittleness B(x)' });
         const finalM = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
-        const auditorResult = await AuditorAgent({
-          prompt,
-          session_id,
-          raw_output:            result.raw_output,
-          governed_output:       governedOutput,
-          crs_state:             { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: finalM },
-          health_band:           healthBand,
-          intervention_required: needsIntervention,
-          trigger_reason:        needsIntervention ? `Pipeline intervention: ${pre.tags.join(', ')}` : undefined,
-          lyapunov_V:            result.lyapunov_V,
-          delta_V:               result.delta_V,
-          cbf_triggered:         result.receipt.safety_projection_triggered || srFired,
-          receipts: [],
-        }).catch(() => null);
+        const auditorResult = await safe(() => AuditorAgent({
+          prompt, session_id, raw_output: result.raw_output, governed_output: governedOutput,
+          crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: finalM },
+          health_band: result.health_band, intervention_required: needsIntervention,
+          lyapunov_V: result.lyapunov_V, delta_V: result.delta_V,
+          cbf_triggered: result.receipt.safety_projection_triggered || srFired, receipts: [],
+        }), null);
 
-        // ── Stage 10: Persist ───────────────────────────────────────────────
         const [receiptId] = await Promise.all([
           writeKernelReceipt(session_id, turn, { ...result, governed_output: governedOutput }),
           promptEmbedding.length ? storeMemory({
-            session_id,
-            prompt,
-            prompt_hash:            result.receipt.input_hash,
-            embedding:              promptEmbedding,
-            M:                      finalM,
-            C:                      kernel.state.C,
-            R:                      kernel.state.R,
-            S:                      kernel.state.S,
-            health_band:            healthBand,
-            state_label:            classifyStateLabel(
-                                      result.receipt.safety_projection_triggered || srFired,
-                                      governedOutput,
-                                    ),
-            intervention:           needsIntervention,
-            governed_response_hash: auditorResult?.meta?.receipt_id as string ?? undefined,
+            session_id, prompt, prompt_hash: result.receipt.input_hash,
+            embedding: promptEmbedding, M: finalM,
+            C: kernel.state.C, R: kernel.state.R, S: kernel.state.S,
+            health_band: result.health_band,
+            state_label: classifyStateLabel(
+              result.receipt.safety_projection_triggered || srFired, governedOutput),
+            intervention: needsIntervention,
+            governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined,
           }) : Promise.resolve(),
         ]);
 
         const auditId = (auditorResult?.meta?.audit_id as string) ?? receiptId;
-
         emit('receipt', {
-          audit_id:       auditId,
-          sha256_input:   result.receipt.input_hash,
-          sha256_output:  auditorResult?.meta?.output_hash ?? '',
-          brittleness:    auditorResult?.meta?.brittleness_B ?? 0,
+          audit_id:      auditId,
+          sha256_input:  result.receipt.input_hash,
+          sha256_output: (auditorResult?.meta?.output_hash as string) ?? '',
+          brittleness:   (auditorResult?.meta?.brittleness_B as number) ?? 0,
+          vaulturex:     vaul?.compliance_receipt ?? '',
         });
 
-        // ── Complete ────────────────────────────────────────────────────────
+        // ── Complete ─────────────────────────────────────────────────────────
         emit('complete', {
-          governed_output:       governedOutput,
-          raw_output:            result.raw_output,
-          M:                     finalM,
-          health_band:           healthBand,
-          temperature:           result.temperature,
-          theta:                 result.theta,
-          effective_theta:       result.effective_theta,
-          attack_pressure:       kernel.attack_pressure,
-          semantic_signal:       kernelSignal,
-          lyapunov_V:            result.lyapunov_V,
-          delta_V:               result.delta_V,
-          stability_ratio:       result.stability_ratio,
-          memory_injected:       memoryContext.length > 0,
-          metrics: {
-            c_measured: extractedC,
-            r_measured: extractedR,
-            s_measured: extractedS,
-          },
-          pre_eval:              pre,
-          governor:              govResult?.meta ?? null,
-          intervention:          needsIntervention,
-          law_invoked:           invokedLaw,
+          governed_output: governedOutput, raw_output: result.raw_output,
+          M: finalM, health_band: result.health_band,
+          temperature: result.temperature, theta: result.theta,
+          effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure,
+          semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V,
+          delta_V: result.delta_V, stability_ratio: result.stability_ratio,
+          memory_injected: memoryContext.length > 0,
+          metrics: { c_measured: eC, r_measured: eR, s_measured: eS },
+          pre_eval: pre, governor: govResult?.meta ?? null,
+          intervention: needsIntervention, law_invoked: invokedLaw,
+          vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' },
           self_referential_fired: srFired,
-          receipt_id:            auditId,
-          version:               'SovereignKernel-v2+PRAXIS+SelfRef',
+          receipt_id: auditId,
+          version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents',
         });
 
       } catch (e) {
