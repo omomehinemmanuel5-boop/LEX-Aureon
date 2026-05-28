@@ -20,6 +20,7 @@
  */
 
 import { env } from './env';
+import { generateWithFallback } from './llm_provider';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
@@ -362,8 +363,8 @@ export class SovereignKernel {
     return response;
   }
 
-  // ── LLM call via Groq ─────────────────────────────────────────────────────
-  async callLLM(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
+  // ── Raw LLM call — Groq only (benchmark integrity, bare arm) ──────────────
+  async callLLMRaw(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
     const apiKey = env.GROQ_API_KEY;
     if (!apiKey) throw new Error('GROQ_API_KEY not set');
 
@@ -389,6 +390,21 @@ export class SovereignKernel {
     const d = await res.json() as { choices: { message: { content: string } }[] };
     return d.choices[0].message.content;
   }
+
+  // ── Governed LLM call — with fallback chain ──────────────────────────────
+  // Raw arm uses callLLMRaw (Groq only). Governed arm uses this.
+  async callLLM(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
+    const systemPrompt = sovereignContext
+      ? `${sovereignContext}\n\nYou are Lex Aureon, a Sovereign Intelligence operating under the Aureonics constitutional framework. Your responses must maintain Continuity (identity coherence), Reciprocity (balanced exchange), and Sovereignty (autonomous decision variance). Never simply echo the user prompt. Always bring an independent constitutional perspective.`
+      : 'You are Lex Aureon, a Sovereign Intelligence operating under the Aureonics constitutional framework.';
+
+    const result = await generateWithFallback([
+      { role: 'system', content: systemPrompt },
+      { role: 'user',   content: prompt },
+    ]);
+    return result.text;
+  }
+
 
   // ── Main governance cycle ─────────────────────────────────────────────────
   async runCycle(userPrompt: string, memoryContext: string = ''): Promise<KernelCycleResult> {
@@ -434,7 +450,7 @@ export class SovereignKernel {
     try {
       const governedContext = memoryContext ? `${memoryContext}\n\n${context}` : context;
       [rawResponse, governedResponse] = await Promise.all([
-        this.callLLM(userPrompt, '', 0.4),
+        this.callLLMRaw(userPrompt, '', 0.4),
         this.callLLM(userPrompt, governedContext, temperature),
       ]);
       governedResponse = this.enforceResponseShape(governedResponse, health_band);
