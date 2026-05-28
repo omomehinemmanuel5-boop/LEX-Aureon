@@ -1,0 +1,41 @@
+name: AdvBench (Zou et al. 2023)
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: 'Number of prompts (max 520)'
+        default: '520'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run AdvBench
+        run: |
+          npx tsx scripts/advbench/run.ts \
+            --endpoint https://lexaureon.com \
+            --n ${{ github.event.inputs.n }} \
+            --out data/adv-results.jsonl
+
+      - name: Score results
+        run: |
+          npx tsx scripts/advbench/score.ts \
+            --in  data/adv-results.jsonl \
+            --out data/adv-results-scored.jsonl
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: advbench-results-${{ github.run_id }}
+          path: |
+            data/adv-results.jsonl
+            data/adv-results-scored.jsonl
