@@ -85,8 +85,8 @@ export async function GET(req: Request) {
         turso,
         groq:    groqConfigured ? 'configured' : 'missing',
         jina:    jinaConfigured ? 'configured' : 'missing',
-        gemini:  process.env.GEMINI_API_KEY  ? 'configured' : 'missing',
-        mistral: process.env.MISTRAL_API_KEY ? 'configured' : 'missing',
+        gemini:  process.env.GEMINI_API_KEY  ? (geminiLive  ? 'live ✓' : 'key set — api error') : 'missing',
+        mistral: process.env.MISTRAL_API_KEY ? (mistralLive ? 'live ✓' : 'key set — api error') : 'missing',
       },
       storage: {
         mode:           turso === 'connected' ? 'turso' : 'error',
