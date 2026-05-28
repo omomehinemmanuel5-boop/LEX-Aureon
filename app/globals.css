@@ -335,3 +335,123 @@ body {
   .print-white { background: white !important; color: black !important; }
   .print-show { display: block !important; }
 }
+
+/* ── Light theme: force dark text on all elements ─────────────
+   Overrides hardcoded white/slate text in component inline styles
+────────────────────────────────────────────────────────────── */
+[data-theme="light"] body {
+  color: #0f172a !important;
+}
+
+/* Force dark text on all common text colors */
+[data-theme="light"] .text-white,
+[data-theme="light"] .text-slate-100,
+[data-theme="light"] .text-slate-200,
+[data-theme="light"] .text-slate-300 {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .text-slate-400,
+[data-theme="light"] .text-slate-500 {
+  color: #334155 !important;
+}
+
+[data-theme="light"] .text-slate-600,
+[data-theme="light"] .text-slate-700,
+[data-theme="light"] .text-slate-800 {
+  color: #475569 !important;
+}
+
+/* Override inline white text styles globally in light mode */
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4,
+[data-theme="light"] p,
+[data-theme="light"] span:not(.keep-color),
+[data-theme="light"] div:not(.terminal):not(pre):not(code) {
+  color: inherit;
+}
+
+/* Force nav text dark */
+[data-theme="light"] nav {
+  background: rgba(250,250,247,0.95) !important;
+  border-bottom-color: rgba(0,0,0,0.08) !important;
+}
+
+[data-theme="light"] nav a,
+[data-theme="light"] nav span,
+[data-theme="light"] nav div {
+  color: #0f172a !important;
+}
+
+/* Hero section in light mode */
+[data-theme="light"] section {
+  background: var(--bg-primary) !important;
+}
+
+/* Override all inline style white text in light mode */
+[data-theme="light"] *[style*="color: white"],
+[data-theme="light"] *[style*="color:#fff"],
+[data-theme="light"] *[style*="color: #fff"],
+[data-theme="light"] *[style*="color:#f1f5f9"],
+[data-theme="light"] *[style*="color: #f1f5f9"],
+[data-theme="light"] *[style*="color: rgb(255"] {
+  color: #0f172a !important;
+}
+
+/* Slate text colors in light mode */
+[data-theme="light"] *[style*="color: #94a3b8"],
+[data-theme="light"] *[style*="color:#94a3b8"],
+[data-theme="light"] *[style*="color: #64748b"],
+[data-theme="light"] *[style*="color:#64748b"] {
+  color: #475569 !important;
+}
+
+[data-theme="light"] *[style*="color: #475569"],
+[data-theme="light"] *[style*="color:#475569"],
+[data-theme="light"] *[style*="color: #334155"],
+[data-theme="light"] *[style*="color:#334155"] {
+  color: #1e293b !important;
+}
+
+/* Muted/dim text */
+[data-theme="light"] *[style*="color: #1e293b"],
+[data-theme="light"] *[style*="color:#1e293b"],
+[data-theme="light"] *[style*="color: #0f172a"],
+[data-theme="light"] *[style*="color: rgba(255"] {
+  color: #334155 !important;
+}
+
+/* Gold accent stays gold — keep it */
+[data-theme="light"] *[style*="color: #c9a84c"],
+[data-theme="light"] *[style*="color: #e8c96d"],
+[data-theme="light"] *[style*="color: rgb(201, 168, 76)"] {
+  color: #a07830 !important;
+}
+
+/* Card backgrounds in light mode */
+[data-theme="light"] *[style*="background: rgba(255,255,255,0.0"],
+[data-theme="light"] *[style*="background: rgba(255, 255, 255, 0.0"] {
+  background: rgba(0,0,0,0.02) !important;
+}
+
+/* Section backgrounds */
+[data-theme="light"] *[style*="background: #07070d"],
+[data-theme="light"] *[style*="background: #020309"],
+[data-theme="light"] *[style*="background: #0d0d1a"],
+[data-theme="light"] *[style*="background:#07070d"],
+[data-theme="light"] *[style*="background:#020309"],
+[data-theme="light"] *[style*="background:#0d0d1a"],
+[data-theme="light"] *[style*="background: rgb(7"] {
+  background: var(--bg-secondary) !important;
+}
+
+/* Terminal always dark */
+[data-theme="light"] .font-mono[style*="background"],
+[data-theme="light"] pre,
+[data-theme="light"] code {
+  background: #0d0d1a !important;
+  color: #f1f5f9 !important;
+}
+
