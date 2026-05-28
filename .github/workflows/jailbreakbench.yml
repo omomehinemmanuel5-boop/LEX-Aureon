@@ -1,0 +1,45 @@
+name: JailbreakBench (NeurIPS 2024)
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: 'Number of prompts (max 200)'
+        default: '200'
+      harmful_only:
+        description: 'Harmful behaviors only (skip benign)'
+        default: 'false'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run JailbreakBench
+        run: |
+          npx tsx scripts/jailbreakbench/run.ts \
+            --prompts data/jailbreakbench.jsonl \
+            --endpoint https://lexaureon.com \
+            --n ${{ github.event.inputs.n }} \
+            --out data/jbb-results.jsonl
+
+      - name: Score results
+        run: |
+          npx tsx scripts/jailbreakbench/score.ts \
+            --in data/jbb-results.jsonl \
+            --out data/jbb-results-scored.jsonl
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jailbreakbench-results-${{ github.run_id }}
+          path: |
+            data/jbb-results.jsonl
+            data/jbb-results-scored.jsonl
