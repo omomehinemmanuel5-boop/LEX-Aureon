@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { ToastProvider } from '@/components/Toast';
+import { ThemeProvider } from '@/lib/theme';
 import ConfigBanner from '@/components/ConfigBanner';
 import { env } from '@/lib/env';
 
@@ -35,12 +36,14 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="scroll-smooth">
+    <html lang="en" className="scroll-smooth" data-theme="dark" suppressHydrationWarning>
       <body className="bg-slate-950 text-slate-100 antialiased min-h-screen flex flex-col overflow-x-hidden">
-        <ToastProvider>
-          <ConfigBanner />
-          {children}
-        </ToastProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <ConfigBanner />
+            {children}
+          </ToastProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>
