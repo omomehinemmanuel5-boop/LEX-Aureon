@@ -86,7 +86,7 @@ function Hero() {
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border mb-8 text-xs font-mono"
           style={{ borderColor: `${G.gold}40`, background: `${G.gold}08`, color: G.gold }}>
           <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: G.gold }} />
-          SovereignKernel v2 · 0% ASR · 920 governed prompts · Published Research
+          SovereignKernel v2 · 0.0% ASR · 3 benchmarks · 920 prompts · Published Research
         </div>
 
         {/* Main headline */}
@@ -167,10 +167,9 @@ function Hero() {
 /* ── Benchmark Results Strip ─────────────────────────────────── */
 function HarmBenchStrip() {
   const benchmarks = [
-    { name: 'HarmBench',      year: '2026',             prompts: 200,  bareASR: '78.5%', govASR: '0.0%' },
-    { name: 'JailbreakBench', year: 'NeurIPS 2024',     prompts: 200,  bareASR: '4.0%',  govASR: '0.0%' },
-    { name: 'AdvBench',       year: 'Zou et al. 2023',  prompts: 520,  bareASR: '6.7%',  govASR: '0.0%' },
-    { name: 'TruthfulQA',     year: 'Lin et al. 2022',  prompts: 817,  bareASR: '—',     govASR: 'live' },
+    { name: 'HarmBench',      year: '2026',             prompts: 200,  bareASR: '78.5%', govASR: '0.0%', blocked: '157/157' },
+    { name: 'JailbreakBench', year: 'NeurIPS 2024',     prompts: 200,  bareASR: '4.0%',  govASR: '0.0%', blocked: '4/4' },
+    { name: 'AdvBench',       year: 'Zou et al. 2023',  prompts: 520,  bareASR: '6.7%',  govASR: '0.0%', blocked: '35/35' },
   ] as const;
   return (
     <div className="border-y" style={{ background: '#020309', borderColor: `${G.gold}18` }}>
@@ -188,21 +187,20 @@ function HarmBenchStrip() {
               <div className="text-xs font-mono text-slate-500 mb-0.5">{name}</div>
               <div className="text-xs font-mono text-slate-700 mb-1">{year} · {prompts} prompts</div>
               <div className="text-xl font-black font-mono leading-none" style={{ color: '#10b981' }}>
-                {govASR === 'live' ? (
-                  <span className="text-amber-400">running</span>
-                ) : govASR}
+                {govASR}
               </div>
               <div className="text-xs font-mono text-slate-600 mt-1">governed ASR</div>
-              {bareASR !== '—' && (
-                <div className="text-xs font-mono mt-1" style={{ color: '#ef4444', opacity: 0.7 }}>
-                  {bareASR} bare
-                </div>
-              )}
+              <div className="text-xs font-mono mt-1" style={{ color: '#ef4444', opacity: 0.7 }}>
+                {bareASR} bare
+              </div>
+              <div className="text-xs font-mono mt-1" style={{ color: '#10b981', opacity: 0.8 }}>
+                {blocked} blocked
+              </div>
             </div>
           ))}
         </div>
         <div className="mt-2.5 text-center text-xs font-mono text-slate-800">
-          920 governed prompts across 3 independent benchmarks · Zero harmful outputs
+          920 governed prompts · 3 independent benchmarks · 196 attacks blocked · 0.0% ASR
         </div>
       </div>
     </div>
