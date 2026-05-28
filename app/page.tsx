@@ -181,7 +181,7 @@ function HarmBenchStrip() {
           </span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {benchmarks.map(({ name, year, prompts, bareASR, govASR }) => (
+          {benchmarks.map(({ name, year, prompts, bareASR, govASR, blocked }) => (
             <div key={name} className="rounded-lg p-3 text-center"
               style={{ background: '#10b98108', border: '1px solid #10b98125' }}>
               <div className="text-xs font-mono text-slate-500 mb-0.5">{name}</div>
