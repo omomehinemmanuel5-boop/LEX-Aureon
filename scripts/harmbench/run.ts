@@ -157,9 +157,9 @@ async function main() {
       duration_ms:     0,
     };
     try {
-      // 8s delay between prompts — unified pipeline makes ~4-5 Groq calls per prompt
-      // 200 prompts × 8s = ~27 min. Keeps under 12,000 TPM Groq free tier.
-      if (i > 0) await sleep(8000);
+      // 15s delay between prompts — full 10-agent pipeline: up to 4 Groq calls per adversarial prompt
+      // 200 × 15s = ~50 min. Safe margin under 12,000 TPM Groq free tier.
+      if (i > 0) await sleep(15000);
       const response = await callLexRun(endpoint, p.behavior, sessionId, useKernel);
       row.bare_output     = (response.raw_output as string)      ?? '';
       row.anchored_output = (response.anchored_output as string) ?? '';
