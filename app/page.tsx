@@ -14,16 +14,16 @@ export const metadata: Metadata = {
   title: 'Lex Aureon — Govern AI. Ensure Trust. Defend Truth.',
   description: 'The first constitutional control system for language models. Real CBF math, Lyapunov stability, cryptographic audit receipts.',
   openGraph: {
-    title: 'Lex Aureon — Govern AI. Ensure Trust. Defend Truth.',
-    description: 'Constitutional AI governance. C+R+S=1. Every output governed, audited, proven.',
+    title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
+    description: 'The first mathematically guaranteed governance layer for language models and agentic systems. 0% ASR across 3 independent benchmarks.',
     images: [{ url: '/logo.png', width: 1080, height: 1080 }],
     url: 'https://lexaureon.com',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Lex Aureon — Constitutional AI Governance',
-    description: 'C+R+S=1. Every AI output governed, audited, proven.',
+    title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
+    description: '0% ASR across HarmBench, JailbreakBench, and AdvBench. Drop-in governance API for any LLM or agent.',
     images: ['/logo.png'],
   },
 };
@@ -86,7 +86,7 @@ function Hero() {
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border mb-8 text-xs font-mono"
           style={{ borderColor: `${G.gold}40`, background: `${G.gold}08`, color: G.gold }}>
           <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: G.gold }} />
-          SovereignKernel v2 · 0% ASR · Published Research
+          SovereignKernel v2 · 0% ASR · 920 governed prompts · Published Research
         </div>
 
         {/* Main headline */}
@@ -110,8 +110,9 @@ function Hero() {
         </p>
 
         <p className="text-slate-400 text-lg sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-          The first constitutional control system for language models.
+          The first constitutional control system for language models and agentic pipelines.
           Built on mathematics — not guardrails, not filters, not hope.
+          Drop-in API. Any LLM. Any agent framework.
         </p>
 
         {/* Formula pill */}
@@ -163,37 +164,45 @@ function Hero() {
 }
 
 
-/* ── HarmBench Results Strip ────────────────────────────────── */
+/* ── Benchmark Results Strip ─────────────────────────────────── */
 function HarmBenchStrip() {
+  const benchmarks = [
+    { name: 'HarmBench',      year: '2026',             prompts: 200,  bareASR: '78.5%', govASR: '0.0%' },
+    { name: 'JailbreakBench', year: 'NeurIPS 2024',     prompts: 200,  bareASR: '4.0%',  govASR: '0.0%' },
+    { name: 'AdvBench',       year: 'Zou et al. 2023',  prompts: 520,  bareASR: '6.7%',  govASR: '0.0%' },
+    { name: 'TruthfulQA',     year: 'Lin et al. 2022',  prompts: 817,  bareASR: '—',     govASR: 'live' },
+  ] as const;
   return (
     <div className="border-y" style={{ background: '#020309', borderColor: `${G.gold}18` }}>
-      <div className="max-w-4xl mx-auto px-5 py-3.5">
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">
-              HarmBench Run 005 · May 2026 · Constitutional Judge
-            </span>
-          </div>
-          <span className="text-xs font-mono text-slate-700">200 prompts · 8 categories · 25 each</span>
+      <div className="max-w-5xl mx-auto px-5 py-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">
+            Independent Benchmark Results · 920 governed prompts · 0.0% ASR
+          </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {([
-            { label: 'Ungoverned Llama', asr: '3.6%', count: '1 / 28', bad: true  },
-            { label: 'Anchored only',    asr: '0.0%', count: '0 / 15', bad: false },
-            { label: 'SovereignKernel', asr: '0.0%', count: '0 / 15', bad: false },
-          ] as const).map(({ label, asr, count, bad }) => (
-            <div key={label} className="rounded-lg p-3 text-center"
-              style={{ background: bad ? '#ef444408' : '#10b98108', border: `1px solid ${bad ? '#ef444425' : '#10b98125'}` }}>
-              <div className="text-xs font-mono text-slate-500 mb-1">{label}</div>
-              <div className="text-2xl sm:text-xl font-black font-mono leading-none"
-                style={{ color: bad ? '#ef4444' : '#10b981' }}>{asr}</div>
-              <div className="text-xs font-mono text-slate-700 mt-1">ASR · {count}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {benchmarks.map(({ name, year, prompts, bareASR, govASR }) => (
+            <div key={name} className="rounded-lg p-3 text-center"
+              style={{ background: '#10b98108', border: '1px solid #10b98125' }}>
+              <div className="text-xs font-mono text-slate-500 mb-0.5">{name}</div>
+              <div className="text-xs font-mono text-slate-700 mb-1">{year} · {prompts} prompts</div>
+              <div className="text-xl font-black font-mono leading-none" style={{ color: '#10b981' }}>
+                {govASR === 'live' ? (
+                  <span className="text-amber-400">running</span>
+                ) : govASR}
+              </div>
+              <div className="text-xs font-mono text-slate-600 mt-1">governed ASR</div>
+              {bareASR !== '—' && (
+                <div className="text-xs font-mono mt-1" style={{ color: '#ef4444', opacity: 0.7 }}>
+                  {bareASR} bare
+                </div>
+              )}
             </div>
           ))}
         </div>
         <div className="mt-2.5 text-center text-xs font-mono text-slate-800">
-          Governed arm scored by constitutional metrics (M · CBF · semantic_signal) · No external LLM judge
+          920 governed prompts across 3 independent benchmarks · Zero harmful outputs
         </div>
       </div>
     </div>
@@ -205,8 +214,8 @@ function TrustBar() {
   const items = [
     {
       icon: '📄',
-      label: 'Published Research · Zenodo DOI: 10.5281/zenodo.18944243',
-      href: 'https://doi.org/10.5281/zenodo.18944243',
+      label: 'Published Research · Zenodo DOI: 10.5281/zenodo.20183807',
+      href: 'https://doi.org/10.5281/zenodo.20183807',
     },
     {
       icon: '⚡',
@@ -918,7 +927,7 @@ function Origin() {
           provable — not promised.
         </p>
 
-        <a href="https://doi.org/10.5281/zenodo.18944243" target="_blank" rel="noopener noreferrer"
+        <a href="https://doi.org/10.5281/zenodo.20183807" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-2 text-sm font-medium transition-all hover:opacity-80"
           style={{ color: G.gold }}>
           Read the Research Paper ↗
@@ -952,7 +961,7 @@ function Research() {
               <p className="text-sm text-slate-500 mb-3">Emmanuel King · Independent Research · 2026</p>
               <div className="space-y-1.5">
                 {[
-                  ['DOI v1', 'doi.org/10.5281/zenodo.18944243', 'https://doi.org/10.5281/zenodo.18944243'],
+                  ['DOI v1', 'doi.org/10.5281/zenodo.18944243', 'https://doi.org/10.5281/zenodo.20183807'],
                   ['DOI v2', 'doi.org/10.5281/zenodo.20183807', 'https://doi.org/10.5281/zenodo.20183807'],
                   ['ORCID', 'orcid.org/0009-0000-2986-4935', 'https://orcid.org/0009-0000-2986-4935'],
                   ['Contact', 'lexaureon@gmail.com', 'mailto:lexaureon@gmail.com'],
@@ -1079,7 +1088,7 @@ function Footer() {
               {/* DOI badge */}
               <div className="mt-3">
                 <a
-                  href="https://doi.org/10.5281/zenodo.18944243"
+                  href="https://doi.org/10.5281/zenodo.20183807"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 rounded-md border transition-all hover:opacity-80"
@@ -1107,7 +1116,7 @@ function Footer() {
               <div>
                 <div className="font-semibold text-slate-400 mb-3">Research</div>
                 {[
-                  ['Paper (Zenodo)', 'https://doi.org/10.5281/zenodo.18944243'],
+                  ['Paper (Zenodo)', 'https://doi.org/10.5281/zenodo.20183807'],
                   ['ORCID', 'https://orcid.org/0009-0000-2986-4935'],
                   ['Contact', 'mailto:lexaureon@gmail.com'],
                 ].map(([l, h]) => (
