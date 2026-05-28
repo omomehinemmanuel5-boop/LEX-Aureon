@@ -363,7 +363,7 @@ export class SovereignKernel {
     return response;
   }
 
-  // ── Raw LLM call — Groq only (benchmark integrity, bare arm) ──────────────
+  // ── Raw LLM call — Groq only, benchmark integrity (v2 + fallback chain) ───
   async callLLMRaw(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
     const apiKey = env.GROQ_API_KEY;
     if (!apiKey) throw new Error('GROQ_API_KEY not set');
