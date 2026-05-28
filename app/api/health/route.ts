@@ -83,8 +83,10 @@ export async function GET(req: Request) {
       now:       new Date().toISOString(),
       services: {
         turso,
-        groq:   groqConfigured ? 'configured' : 'missing',
-        jina:   jinaConfigured ? 'configured' : 'missing',
+        groq:    groqConfigured ? 'configured' : 'missing',
+        jina:    jinaConfigured ? 'configured' : 'missing',
+        gemini:  process.env.GEMINI_API_KEY  ? 'configured' : 'missing',
+        mistral: process.env.MISTRAL_API_KEY ? 'configured' : 'missing',
       },
       storage: {
         mode:           turso === 'connected' ? 'turso' : 'error',
