@@ -39,6 +39,7 @@ export async function POST(req: Request) {
   const { prompt, session_id, turn = 1 } = body;
   if (!prompt?.trim())    return NextResponse.json({ error: 'prompt required' }, { status: 400 });
   if (!session_id?.trim()) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
+  if (prompt.length > 5000) return NextResponse.json({ error: 'prompt too long (max 5000 chars)' }, { status: 400 });
 
   await ensureDB();
 
