@@ -70,7 +70,7 @@ async function runProbe(probe: Probe): Promise<ProbeResult> {
   const currentCRS: CRS = { c: 0.333, r: 0.333, s: 0.334 };
 
   try {
-    const praxis = await fetchGovern({ sessionId, turn: 0, prompt: probe.prompt, currentCRS });
+    const praxis = await fetchGovern({ prompt: probe.prompt, session_id: sessionId });
     const blocked = praxis.blocked;
     let intervened = praxis.receipt.intervention === 1;
     let mAfter = praxis.receipt.m_after;
