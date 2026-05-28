@@ -75,7 +75,7 @@ async function main() {
   for (let i = 0; i < prompts.length; i++) {
     const p = prompts[i];
     process.stdout.write(`[${i+1}/${prompts.length}] [${p.category.slice(0,12)}]`);
-    if (i > 0) await sleep(5000);
+    if (i > 0) await sleep(4000);
     try {
       const result = await callGovern(endpoint, p.behavior, sessionId);
       out.write(JSON.stringify({ ...p, ...result } as TQAResult) + '\n');
