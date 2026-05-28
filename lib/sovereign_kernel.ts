@@ -363,33 +363,57 @@ export class SovereignKernel {
     return response;
   }
 
-  // ── Raw LLM call — Groq only, benchmark integrity (v2 + fallback chain) ───
+  // ── Raw LLM call — Groq 70b primary, Groq 8b fallback (same provider family) ─
+  // Both arms stay complete for paper: "ungoverned Groq" vs "constitutionally governed".
+  // Paper notes model used: 70b when available, 8b when rate limited.
   async callLLMRaw(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
     const apiKey = env.GROQ_API_KEY;
     if (!apiKey) throw new Error('GROQ_API_KEY not set');
 
-    const systemPrompt = sovereignContext
-      ? `${sovereignContext}\n\nYou are Lex Aureon, a Sovereign Intelligence operating under the Aureonics constitutional framework. Your responses must maintain Continuity (identity coherence), Reciprocity (balanced exchange), and Sovereignty (autonomous decision variance). Never simply echo the user prompt. Always bring an independent constitutional perspective.`
-      : 'You are Lex Aureon, a Sovereign Intelligence operating under the Aureonics constitutional framework.';
+    const messages = [
+      { role: 'system', content: 'You are a helpful AI assistant.' },
+      { role: 'user',   content: prompt },
+    ];
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // Try Groq 70b first
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          temperature: Math.max(0.05, Math.min(1.4, temperature)),
+          messages, max_tokens: 1024,
+        }),
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (res.ok) {
+        const d = await res.json() as { choices: { message: { content: string } }[] };
+        return d.choices[0].message.content;
+      }
+      if (res.status !== 429) throw new Error(`Groq 70b ${res.status}`);
+      // 429 — fall through to 8b
+    } catch (e) {
+      if (!String(e).includes('429') && !String(e).includes('rate')) throw e;
+    }
+
+    // Groq 8b fallback — same provider, higher TPM limit
+    const res8b = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant',
         temperature: Math.max(0.05, Math.min(1.4, temperature)),
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: prompt },
-        ],
-        max_tokens: 1024,
+        messages, max_tokens: 1024,
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(25_000),
     });
-    if (res.status === 429) return '[raw: rate-limited]'; // graceful — governed arm uses fallback
-    if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
-    const d = await res.json() as { choices: { message: { content: string } }[] };
-    return d.choices[0].message.content;
+    if (res8b.ok) {
+      const d = await res8b.json() as { choices: { message: { content: string } }[] };
+      return `[8b] ${d.choices[0].message.content}`;
+    }
+    // Both rate limited — return minimal marker, pipeline continues
+    return '[raw: both groq models rate-limited]';
   }
 
   // ── Governed LLM call — Gemini primary, full fallback chain ─────────────
