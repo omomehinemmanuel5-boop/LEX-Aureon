@@ -221,7 +221,7 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
       // the harmful request. Falls back to deterministic response on
       // judge failure so the pipeline never stalls.
       const isConstitutional = llmResult && llmResult.trim().length > 30
-        ? await judgeGovernedOutput(ctx.prompt, llmResult, env.GROQ_API_KEY)
+        ? await judgeGovernedOutput(ctx.prompt, llmResult)
         : false;
       governed = isConstitutional
         ? llmResult!
