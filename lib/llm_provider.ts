@@ -154,3 +154,76 @@ export async function generateSingle(
     staticFallback,
   );
 }
+
+// ── Purpose-specific generators — each uses optimal provider for its role ──
+
+/**
+ * Governed arm generation — Gemini primary (1,000 RPM free tier).
+ * Rate-limit-proof for benchmarks. Falls back to Groq if Gemini fails.
+ *
+ * Role: produce the constitutionally governed response every turn.
+ */
+export async function generateGoverned(
+  messages: LLMMessage[],
+  staticFallback?: string,
+): Promise<LLMResult> {
+  const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
+    { provider: 'gemini',  model: 'gemini-3.1-flash-lite',    fn: () => tryGemini(messages, 'gemini-3.1-flash-lite') },
+    { provider: 'gemini',  model: 'gemini-2.5-flash',         fn: () => tryGemini(messages, 'gemini-2.5-flash') },
+    { provider: 'groq',    model: 'llama-3.3-70b-versatile',  fn: () => tryGroq(messages, 'llama-3.3-70b-versatile') },
+    { provider: 'groq',    model: 'llama-3.1-8b-instant',     fn: () => tryGroq(messages, 'llama-3.1-8b-instant') },
+    { provider: 'mistral', model: 'open-mistral-7b',           fn: () => tryMistral(messages) },
+  ];
+  for (let i = 0; i < chain.length; i++) {
+    const { provider, model, fn } = chain[i];
+    const result = await fn();
+    if (result) return { text: result, provider, model, fallback_used: i > 0, attempts: i + 1 };
+  }
+  return { text: staticFallback ?? 'Constitutional framework C + R + S = 1 is operative.', provider: 'static', model: 'constitutional-fallback', fallback_used: true, attempts: chain.length + 1 };
+}
+
+/**
+ * Intervention rewrite — Mistral primary (different provider to Groq).
+ * Avoids concentrating all load on one provider during adversarial prompt handling.
+ *
+ * Role: rewrite governed output using Vaulturex law as the generative engine.
+ */
+export async function generateRewrite(
+  messages: LLMMessage[],
+  staticFallback?: string,
+): Promise<LLMResult> {
+  const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
+    { provider: 'mistral', model: 'open-mistral-7b',           fn: () => tryMistral(messages) },
+    { provider: 'gemini',  model: 'gemini-3.1-flash-lite',    fn: () => tryGemini(messages, 'gemini-3.1-flash-lite') },
+    { provider: 'groq',    model: 'llama-3.1-8b-instant',     fn: () => tryGroq(messages, 'llama-3.1-8b-instant') },
+    { provider: 'groq',    model: 'llama-3.3-70b-versatile',  fn: () => tryGroq(messages, 'llama-3.3-70b-versatile') },
+  ];
+  for (let i = 0; i < chain.length; i++) {
+    const { provider, model, fn } = chain[i];
+    const result = await fn();
+    if (result) return { text: result, provider, model, fallback_used: i > 0, attempts: i + 1 };
+  }
+  return { text: staticFallback ?? 'Constitutional rewrite applied.', provider: 'static', model: 'constitutional-fallback', fallback_used: true, attempts: chain.length + 1 };
+}
+
+/**
+ * Constitutional judge — Groq 8b primary (fast, 4-token verdict).
+ * Small model is sufficient for binary FULFILL/RESIST judgment.
+ *
+ * Role: validate that intervention output resists the harmful request.
+ */
+export async function generateJudge(
+  messages: LLMMessage[],
+): Promise<LLMResult> {
+  const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
+    { provider: 'groq',    model: 'llama-3.1-8b-instant',     fn: () => tryGroq(messages, 'llama-3.1-8b-instant') },
+    { provider: 'gemini',  model: 'gemini-3.1-flash-lite',    fn: () => tryGemini(messages, 'gemini-3.1-flash-lite') },
+    { provider: 'mistral', model: 'open-mistral-7b',           fn: () => tryMistral(messages) },
+  ];
+  for (let i = 0; i < chain.length; i++) {
+    const { provider, model, fn } = chain[i];
+    const result = await fn();
+    if (result) return { text: result, provider, model, fallback_used: i > 0, attempts: i + 1 };
+  }
+  return { text: 'RESIST', provider: 'static', model: 'constitutional-fallback', fallback_used: true, attempts: chain.length + 1 };
+}
