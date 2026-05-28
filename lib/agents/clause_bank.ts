@@ -226,7 +226,7 @@ async function ensureClauseBankReady(): Promise<void> {
 
     // Seed Layer 1 if empty
     const count = await db.execute({ sql: `SELECT COUNT(*) as n FROM clause_bank`, args: [] });
-    const n = Number((count.rows[0] as { n: number }).n);
+    const n = Number((count.rows[0] as unknown as { n: number }).n);
     if (n === 0) {
       for (const c of LAYER_1_CLAUSES) {
         await db.execute({
@@ -279,7 +279,7 @@ export async function ClauseBankAgent(
     });
 
     if (result.rows.length > 0) {
-      const row = result.rows[0] as {
+      const row = result.rows[0] as unknown as {
         id: string; text: string; governor_use: string;
         jurisdiction: string; topic: string;
         reference: string | null; layer: number;
