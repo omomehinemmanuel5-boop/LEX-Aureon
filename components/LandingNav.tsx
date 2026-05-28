@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import ThemeToggle from './ThemeToggle';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -54,6 +55,7 @@ export default function LandingNav() {
         </div>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <Link
             href="/console"
             className="hidden sm:block text-xs font-bold px-4 py-2 rounded-lg transition-all active:scale-95"
