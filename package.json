@@ -15,7 +15,9 @@
     "update-agents": "npx ts-node scripts/update-agents.ts",
     "brief": "npx ts-node scripts/brief.ts",
     "harmbench": "npx tsx scripts/harmbench/run.ts",
-    "harmbench:score": "npx tsx scripts/harmbench/score.ts"
+    "harmbench:score": "npx tsx scripts/harmbench/score.ts",
+    "jbb": "npx tsx scripts/jailbreakbench/run.ts",
+    "jbb:score": "npx tsx scripts/jailbreakbench/score.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
