@@ -14,8 +14,8 @@ describe('constitutional constants', () => {
     expect(CONSTITUTION.TAU_RECOVERY).toBe(0.15);
   });
 
-  test('TAU_GOVERNOR is 0.08', () => {
-    expect(CONSTITUTION.TAU_GOVERNOR).toBe(0.08);
+  test('TAU_LYAPUNOV is 0.08', () => {
+    expect(CONSTITUTION.TAU_LYAPUNOV).toBe(0.08);
   });
 
   test('SIMPLEX_SUM is 1.0', () => {
