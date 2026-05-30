@@ -110,7 +110,7 @@ import { CONSTITUTION } from './constitution';
 
 export const TAU_FLOOR       = CONSTITUTION.TAU_FLOOR;     // CBF floor (0.05)
 export const TAU_RECOVERY    = CONSTITUTION.TAU_RECOVERY;  // suppress mode floor (0.15)
-export const TAU_LYP         = CONSTITUTION.TAU_GOVERNOR;  // Lyapunov penalty threshold (0.08)
+export const TAU_LYP         = CONSTITUTION.TAU_LYAPUNOV;  // Lyapunov penalty threshold (0.08)
 export const N_MIN           = CONSTITUTION.N_MIN;
 export const RECOVERY_RATE   = CONSTITUTION.RECOVERY_RATE;
 export const SIGMA_WINDOW    = 10;
