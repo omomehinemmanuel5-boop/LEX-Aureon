@@ -219,10 +219,10 @@ export default function ConstitutionPage() {
               ))}
               <div className="flex gap-3">
                 <span className="text-slate-600 w-16 flex-shrink-0">doi</span>
-                <a href="https://doi.org/10.5281/zenodo.18944243"
+                <a href="https://doi.org/10.5281/zenodo.18944242"
                   target="_blank" rel="noopener noreferrer"
                   className="text-blue-400 hover:text-blue-300 transition-colors">
-                  10.5281/zenodo.18944243
+                  10.5281/zenodo.18944242
                 </a>
               </div>
             </div>
@@ -233,7 +233,7 @@ export default function ConstitutionPage() {
               className="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold rounded-xl hover:from-blue-500 hover:to-cyan-500 transition-all text-sm text-center">
               ⚡ Try the governed console
             </Link>
-            <a href="https://doi.org/10.5281/zenodo.18944243"
+            <a href="https://doi.org/10.5281/zenodo.18944242"
               target="_blank" rel="noopener noreferrer"
               className="px-6 py-3 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white font-medium rounded-xl transition-all text-sm text-center">
               📄 Read the research paper ↗
@@ -252,7 +252,7 @@ export default function ConstitutionPage() {
           <div className="flex items-center gap-4 text-xs text-slate-600">
             <Link href="/" className="hover:text-slate-400 transition-colors">Home</Link>
             <Link href="/console" className="hover:text-slate-400 transition-colors">Console</Link>
-            <a href="https://doi.org/10.5281/zenodo.18944243" target="_blank" rel="noopener noreferrer"
+            <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer"
               className="hover:text-slate-400 transition-colors">Research</a>
           </div>
           <span className="text-xs text-slate-700 font-mono">
