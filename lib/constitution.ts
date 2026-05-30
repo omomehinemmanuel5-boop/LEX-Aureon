@@ -1,10 +1,10 @@
 // lib/constitution.ts — frozen constitutional constants and simplex invariant.
-// The math here NEVER changes. C + R + S = 1. TAU_FLOOR = 0.05. TAU_GOVERNOR = 0.08.
+// The math here NEVER changes. C + R + S = 1. TAU_FLOOR = 0.05. TAU_LYAPUNOV = 0.08 (penalty threshold).
 
 export const CONSTITUTION = Object.freeze({
   TAU_FLOOR:       0.05,
   TAU_RECOVERY:    0.15,
-  TAU_GOVERNOR:    0.08,
+  TAU_LYAPUNOV:    0.08,   // Lyapunov barrier penalty threshold (was TAU_GOVERNOR; distinct from kernel TAU_GOV=0.22)
   N_MIN:           3,
   RECOVERY_RATE:   0.02,
   SIGMA_THRESHOLD: 0.25,
