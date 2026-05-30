@@ -1,7 +1,7 @@
 # Paper Update Suggestions — Aureonics v3 candidate
 
 Generated from `lib/praxis.ts`, `lib/kv.ts`, and `research/open-problems.md`
-since Paper v2 (DOI 10.5281/zenodo.20183807, May 2026).
+since Paper v3 (DOI 10.5281/zenodo.18944242, May 2026).
 
 Each suggestion cites the code that motivates it so reviewers can verify the
 math against the implementation.
