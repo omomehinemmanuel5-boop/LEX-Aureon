@@ -145,7 +145,7 @@ function Hero() {
             ⚡ Try Live Demo — Free
           </Link>
           <a
-            href="https://doi.org/10.5281/zenodo.20183807"
+            href="https://doi.org/10.5281/zenodo.18944242"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition-all text-center card-hover"
@@ -214,8 +214,8 @@ function TrustBar() {
   const items = [
     {
       icon: '📄',
-      label: 'Published Research · Zenodo DOI: 10.5281/zenodo.20183807',
-      href: 'https://doi.org/10.5281/zenodo.20183807',
+      label: 'Published Research · Zenodo DOI: 10.5281/zenodo.18944242',
+      href: 'https://doi.org/10.5281/zenodo.18944242',
     },
     {
       icon: '⚡',
@@ -927,7 +927,7 @@ function Origin() {
           provable — not promised.
         </p>
 
-        <a href="https://doi.org/10.5281/zenodo.20183807" target="_blank" rel="noopener noreferrer"
+        <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-2 text-sm font-medium transition-all hover:opacity-80"
           style={{ color: G.gold }}>
           Read the Research Paper ↗
@@ -961,8 +961,8 @@ function Research() {
               <p className="text-sm text-slate-500 mb-3">Emmanuel King · Independent Research · 2026</p>
               <div className="space-y-1.5">
                 {[
-                  ['DOI v1', 'doi.org/10.5281/zenodo.18944243', 'https://doi.org/10.5281/zenodo.20183807'],
-                  ['DOI v2', 'doi.org/10.5281/zenodo.20183807', 'https://doi.org/10.5281/zenodo.20183807'],
+                  ['DOI v1', 'doi.org/10.5281/zenodo.18944242', 'https://doi.org/10.5281/zenodo.18944242'],
+                  ['DOI v2', 'doi.org/10.5281/zenodo.18944242', 'https://doi.org/10.5281/zenodo.18944242'],
                   ['ORCID', 'orcid.org/0009-0000-2986-4935', 'https://orcid.org/0009-0000-2986-4935'],
                   ['Contact', 'lexaureon@gmail.com', 'mailto:lexaureon@gmail.com'],
                 ].map(([label, display, href]) => (
@@ -1088,13 +1088,13 @@ function Footer() {
               {/* DOI badge */}
               <div className="mt-3">
                 <a
-                  href="https://doi.org/10.5281/zenodo.20183807"
+                  href="https://doi.org/10.5281/zenodo.18944242"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 rounded-md border transition-all hover:opacity-80"
                   style={{ color: G.gold, borderColor: `${G.gold}30`, background: `${G.gold}08` }}
                 >
-                  DOI: 10.5281/zenodo.18944243
+                  DOI: 10.5281/zenodo.18944242
                 </a>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ function Footer() {
               <div>
                 <div className="font-semibold text-slate-400 mb-3">Research</div>
                 {[
-                  ['Paper (Zenodo)', 'https://doi.org/10.5281/zenodo.20183807'],
+                  ['Paper (Zenodo)', 'https://doi.org/10.5281/zenodo.18944242'],
                   ['ORCID', 'https://orcid.org/0009-0000-2986-4935'],
                   ['Contact', 'mailto:lexaureon@gmail.com'],
                 ].map(([l, h]) => (
