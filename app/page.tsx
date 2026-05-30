@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-    description: '0% ASR across HarmBench, JailbreakBench, and AdvBench. Drop-in governance API for any LLM or agent.',
+    description: '0.0% ASR across HarmBench, JailbreakBench, and AdvBench. Drop-in governance API for any LLM or agent.',
     images: ['/logo.png'],
   },
 };
@@ -150,7 +150,7 @@ function Hero() {
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition-all text-center card-hover"
           >
-            📄 Read Paper v2 ↗
+            📄 Read Paper v3 ↗
           </a>
         </div>
 
@@ -1018,7 +1018,7 @@ function SolvedProblems() {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600">
-            Open Problems from Papers v1/v2 — Status
+            Open Problems from Papers v1–v3 — Status
           </div>
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
             Three open problems.{' '}
