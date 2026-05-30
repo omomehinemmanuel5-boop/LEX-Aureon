@@ -10,7 +10,7 @@ import { CONSTITUTION } from './constitution';
 
 const EPSILON = 1e-9;
 const TAU_CBF = CONSTITUTION.TAU_FLOOR;     // CBF floor (0.05)
-const TAU_GOV = CONSTITUTION.TAU_GOVERNOR;  // Lyapunov penalty threshold (0.08)
+const TAU_GOV = CONSTITUTION.TAU_LYAPUNOV;  // Lyapunov penalty threshold (0.08)
 
 // ── Text utilities ─────────────────────────────────────────────────────────
 
