@@ -961,8 +961,7 @@ function Research() {
               <p className="text-sm text-slate-500 mb-3">Emmanuel King · Independent Research · 2026</p>
               <div className="space-y-1.5">
                 {[
-                  ['DOI v1', 'doi.org/10.5281/zenodo.18944242', 'https://doi.org/10.5281/zenodo.18944242'],
-                  ['DOI v2', 'doi.org/10.5281/zenodo.18944242', 'https://doi.org/10.5281/zenodo.18944242'],
+                  ['DOI (v3)', 'doi.org/10.5281/zenodo.18944242', 'https://doi.org/10.5281/zenodo.18944242'],
                   ['ORCID', 'orcid.org/0009-0000-2986-4935', 'https://orcid.org/0009-0000-2986-4935'],
                   ['Contact', 'lexaureon@gmail.com', 'mailto:lexaureon@gmail.com'],
                 ].map(([label, display, href]) => (
