@@ -83,10 +83,10 @@ function Hero() {
         </div>
 
         {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border mb-8 text-xs font-mono"
+        <div className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 max-w-[90vw] px-4 py-1.5 rounded-2xl sm:rounded-full border mb-8 text-[11px] sm:text-xs font-mono text-center"
           style={{ borderColor: `${G.gold}40`, background: `${G.gold}08`, color: G.gold }}>
-          <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: G.gold }} />
-          SovereignKernel v2 · 0.0% ASR · 3 benchmarks · 920 prompts · Published Research
+          <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: G.gold }} />
+          <span>SovereignKernel v2 · 0.0% ASR · 3 benchmarks · 920 prompts · Published Research</span>
         </div>
 
         {/* Main headline */}
@@ -116,17 +116,19 @@ function Hero() {
         </p>
 
         {/* Formula pill */}
-        <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full border mb-10 font-mono text-sm"
+        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-10 font-mono text-xs sm:text-sm"
           style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}>
-          <span style={{ color: G.C }} className="font-bold">C</span>
-          <span className="text-slate-600">+</span>
-          <span style={{ color: G.R }} className="font-bold">R</span>
-          <span className="text-slate-600">+</span>
-          <span style={{ color: G.S }} className="font-bold">S</span>
-          <span className="text-slate-600">=</span>
-          <span className="text-white font-bold">1</span>
-          <span className="text-slate-700 mx-1">·</span>
-          <span className="text-slate-500">M = min(C,R,S) &lt; τ → Governor fires</span>
+          <span className="inline-flex items-center gap-3 shrink-0">
+            <span style={{ color: G.C }} className="font-bold">C</span>
+            <span className="text-slate-600">+</span>
+            <span style={{ color: G.R }} className="font-bold">R</span>
+            <span className="text-slate-600">+</span>
+            <span style={{ color: G.S }} className="font-bold">S</span>
+            <span className="text-slate-600">=</span>
+            <span className="text-white font-bold">1</span>
+          </span>
+          <span className="text-slate-700 hidden sm:inline">·</span>
+          <span className="text-slate-500 whitespace-nowrap">M = min(C,R,S) &lt; τ → Governor fires</span>
         </div>
 
         {/* CTAs */}
