@@ -16,7 +16,7 @@ Email: omomehinemmanuel5@gmail.com
 X: @lexAureon
 Website: lexaureon.com
 GitHub: github.com/omomehinemmanuel5-boop
-Paper: doi.org/10.5281/zenodo.18944243
+Paper: doi.org/10.5281/zenodo.18944242
 
 Built entirely independently.
 No lab. No team. No funding. No institution.
@@ -30,7 +30,7 @@ AI governance system. It sits above any LLM and
 governs every output using the Aureonics framework.
 
 System LIVE: lexaureon.com
-Research PUBLISHED: doi.org/10.5281/zenodo.18944243
+Research PUBLISHED: doi.org/10.5281/zenodo.18944242
 Governor RUNNING: lexaureon.com/api/lex/run
 
 ---
@@ -244,8 +244,8 @@ Technical Writing            $200-500  Per piece
 
 ## RESEARCH STATUS
 
-Paper v1: doi.org/10.5281/zenodo.18944243 (March 2026)
-Paper v2: doi.org/10.5281/zenodo.20183807 (May 2026)
+Paper v1: doi.org/10.5281/zenodo.18944242 (March 2026)
+Paper v2: doi.org/10.5281/zenodo.18944242 (May 2026)
 SSS50: M declined 0.2895 to 0.0500 over 24 steps
 Predictions: P1-P9 (untested at scale)
 Grants: Schmidt Sciences submitted · LTFF in progress
@@ -415,7 +415,7 @@ Counter:    Turso atomic increment — never resets
 Governor:   PRAXIS v1.0 — Groq + Jina + Turso, all hard-required
 Cost:       Zero extra — no Vercel KV, no paid add-ons
 Locks:      Constants frozen · Zod on inputs · CI blocks broken merges
-Paper:      v2 — DOI 10.5281/zenodo.20183807
+Paper:      v3 — DOI 10.5281/zenodo.18944242
 Grants:     Schmidt Sciences submitted · LTFF in progress
 Revenue:    $500 audit · Upwork active
 Research:   P1-P9 untested · 3 open problems
