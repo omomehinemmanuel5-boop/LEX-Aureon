@@ -159,7 +159,7 @@ export default function UpgradeModal({ onClose, callsUsed }: UpgradeModalProps) 
         {/* Footer */}
         <div className="px-6 pb-5 pt-2 flex items-center justify-between gap-4">
           <p className="text-xs text-slate-600">
-            <a href="https://doi.org/10.5281/zenodo.18944243"
+            <a href="https://doi.org/10.5281/zenodo.18944242"
               target="_blank" rel="noopener noreferrer"
               className="text-slate-500 hover:text-slate-300 transition-colors">
               Powered by the Aureonics framework ↗
