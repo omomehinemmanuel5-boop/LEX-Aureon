@@ -237,9 +237,9 @@ export default function GovernanceDisplay({ response }: GovernanceDisplayProps) 
             <span className="text-slate-600 text-xs mt-0.5">📄</span>
             <div>
               <div className="text-xs text-slate-400">Aureonics: Constitutional AI Governance Framework</div>
-              <a href="https://doi.org/10.5281/zenodo.18944243" target="_blank" rel="noopener noreferrer"
+              <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer"
                 className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-mono">
-                doi.org/10.5281/zenodo.18944243
+                doi.org/10.5281/zenodo.18944242
               </a>
             </div>
           </div>
