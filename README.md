@@ -4,7 +4,7 @@
 
 **Live system:** [lexaureon.com](https://lexaureon.com)  
 **Governance API:** `POST https://lexaureon.com/api/lex/govern`  
-**Paper v2 (May 2026):** [doi.org/10.5281/zenodo.20183807](https://doi.org/10.5281/zenodo.20183807)  
+**Paper v3 (May 2026):** [doi.org/10.5281/zenodo.18944242](https://doi.org/10.5281/zenodo.18944242)  
 **Author:** Emmanuel King · [ORCID 0009-0000-2986-4935](https://orcid.org/0009-0000-2986-4935)
 
 ---
@@ -189,8 +189,8 @@ Live Turso (libSQL) database — eu-west-1:
   title   = {Aureonics: Constitutional Triadic Framework for Stable Adaptive Intelligence},
   author  = {Emmanuel King},
   year    = {2026},
-  doi     = {10.5281/zenodo.20183807},
-  url     = {https://doi.org/10.5281/zenodo.20183807},
+  doi     = {10.5281/zenodo.18944242},
+  url     = {https://doi.org/10.5281/zenodo.18944242},
   note    = {ORCID: 0009-0000-2986-4935}
 }
 ```
@@ -202,4 +202,4 @@ Live Turso (libSQL) database — eu-west-1:
 **Emmanuel King** — Principal Researcher, Lex Intelligence Systems  
 **Email:** lexaureon@gmail.com  
 **Live system:** [lexaureon.com](https://lexaureon.com)  
-**Publication:** [doi.org/10.5281/zenodo.20183807](https://doi.org/10.5281/zenodo.20183807)
+**Publication:** [doi.org/10.5281/zenodo.18944242](https://doi.org/10.5281/zenodo.18944242)
