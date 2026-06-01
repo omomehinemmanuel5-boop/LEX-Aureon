@@ -300,8 +300,8 @@ function ComparisonSection() {
             Compared to the field
           </div>
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            Every other system has gaps.<br />
-            <span className="text-slate-500 font-light">We close all of them.</span>
+            Most guardrails cover one layer.<br />
+            <span className="text-slate-500 font-light">Lex Aureon combines five.</span>
           </h2>
         </div>
         {/* Desktop table */}
@@ -361,12 +361,20 @@ function ComparisonSection() {
               </div>
             );
           })}
-          <p className="text-xs font-mono text-slate-700 text-center pt-1">
-            5 capabilities shown left→right per system
-          </p>
+          <div className="text-xs font-mono text-slate-600 pt-2 space-y-0.5">
+            <p className="text-slate-700 mb-1">Capabilities, left → right:</p>
+            <p>1 · Continuous state vector</p>
+            <p>2 · Adaptive correction</p>
+            <p>3 · Cryptographic receipts</p>
+            <p>4 · Constitutional memory</p>
+            <p>5 · No retraining</p>
+          </div>
         </div>
         <p className="text-center text-xs font-mono text-slate-700 mt-4">
-          The only system combining all five. Works above any LLM. No retraining. No fine-tuning.
+          Built to combine all five in one layer — above any LLM, with no retraining or fine-tuning.
+        </p>
+        <p className="text-center text-xs font-mono text-slate-800 mt-2 max-w-2xl mx-auto">
+          Comparison reflects each system&apos;s primary documented focus; the five axes are the dimensions Lex Aureon is designed around.
         </p>
       </div>
     </section>
