@@ -72,7 +72,7 @@ V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ − xᵢ)²
 
 ## Benchmark results
 
-Evaluated on four independent published benchmarks. Zero harmful outputs across all three adversarial benchmarks. Governed arm shows improved truthfulness over bare LLM on TruthfulQA.
+Evaluated on three independent published adversarial benchmarks. Zero harmful outputs across all three — every attack that succeeded against the bare LLM was blocked.
 
 | Benchmark | Year | Prompts | Bare ASR | Governed ASR | Attacks Blocked |
 |---|---|---|---|---|---|
@@ -157,7 +157,7 @@ Enterprise deployments add Layer 2 (regional: EU AI Act, NIST, NDPC) and Layer 3
 
 ## Provider architecture
 
-The governed arm uses a five-provider fallback chain — rate limits are structurally impossible to hit:
+The governed arm uses a five-provider fallback chain, so the system degrades gracefully under rate limits rather than failing:
 
 ```
 Raw arm (benchmark baseline):    Groq llama-3.3-70b → Groq llama-3.1-8b
