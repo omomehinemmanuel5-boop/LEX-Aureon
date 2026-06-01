@@ -275,112 +275,46 @@ function TrustBar() {
 }
 
 
-/* ── Competitor Comparison ──────────────────────────────────── */
+/* ── What Lex Aureon Combines ───────────────────────────────── */
 function ComparisonSection() {
-  const cols = [
-    'Continuous\nstate vector',
-    'Adaptive\ncorrection',
-    'Cryptographic\nreceipts',
-    'Constitutional\nmemory',
-    'No\nretraining',
-  ];
-  const rows: { name: string; marks: boolean[]; highlight?: boolean }[] = [
-    { name: 'Llama Guard',        marks: [false, false, false, false, true]  },
-    { name: 'NeMo Guardrails',    marks: [false, false, false, false, true]  },
-    { name: 'Lakera Guard',       marks: [false, false, false, false, true]  },
-    { name: 'OpenAI Moderation',  marks: [false, false, false, false, true]  },
-    { name: 'Constitutional AI',  marks: [false, false, false, false, false] },
-    { name: 'Lex Aureon',         marks: [true,  true,  true,  true,  true], highlight: true },
+  const caps = [
+    { n: 'Continuous state vector', d: 'Tracks (C, R, S) as a live constitutional state across the whole exchange — not a single pass/fail flag on one message.' },
+    { n: 'Adaptive correction',     d: 'When the safety margin M = min(C, R, S) drops toward the floor, outputs are projected back toward the safe interior of the simplex.' },
+    { n: 'Cryptographic receipts',  d: 'Every governed decision is signed (SHA-256) and permanently auditable — the documentation regulators and risk teams ask for.' },
+    { n: 'Constitutional memory',   d: 'z-trajectory memory tracks which pillars are under sustained pressure across turns, so protection strengthens the longer an attack runs.' },
+    { n: 'No retraining',           d: 'Runs as a layer above any LLM — GPT, Claude, Gemini, Llama, Mistral — with no fine-tuning and no model changes.' },
   ];
   return (
     <section className="py-12 sm:py-20 px-4 sm:px-5" style={{ background: G.navyL }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600">
-            Compared to the field
+            What Lex Aureon combines
           </div>
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            Most guardrails cover one layer.<br />
-            <span className="text-slate-500 font-light">Lex Aureon combines five.</span>
+            Five capabilities,<br />
+            <span className="text-slate-500 font-light">one governance layer.</span>
           </h2>
         </div>
-        {/* Desktop table */}
-        <div className="hidden sm:block rounded-2xl border overflow-hidden" style={{ borderColor: `${G.gold}20` }}>
-          <table className="w-full" style={{ borderCollapse: 'collapse', fontFamily: 'monospace' }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${G.gold}20`, background: G.navy }}>
-                <th className="text-left px-5 py-3 text-xs text-slate-600 font-semibold">System</th>
-                {cols.map(c => (
-                  <th key={c} className="text-center px-3 py-3 text-xs text-slate-600 font-semibold"
-                    style={{ whiteSpace: 'pre-line', minWidth: 80 }}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ name, marks, highlight }) => (
-                <tr key={name} style={{
-                  background: highlight ? `${G.gold}08` : 'transparent',
-                  borderBottom: `1px solid ${highlight ? G.gold+'20' : 'rgba(255,255,255,0.04)'}`,
-                }}>
-                  <td className="px-5 py-3 text-xs font-mono"
-                    style={{ color: highlight ? G.gold : '#64748b', fontWeight: highlight ? 700 : 400 }}>
-                    {highlight && <span className="mr-2" style={{ color: G.gold }}>●</span>}{name}
-                  </td>
-                  {marks.map((m, i) => (
-                    <td key={i} className="text-center px-3 py-3 text-sm">
-                      {m ? <span className="text-emerald-400 font-bold">✓</span>
-                         : <span className="text-slate-800">—</span>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile cards */}
-        <div className="sm:hidden space-y-2">
-          {rows.map(({ name, marks, highlight }) => {
-            const score = marks.filter(Boolean).length;
-            return (
-              <div key={name} className="flex items-center justify-between rounded-xl px-4 py-3"
-                style={{
-                  background: highlight ? `${G.gold}08` : 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${highlight ? G.gold+'30' : 'rgba(255,255,255,0.05)'}`,
-                }}>
-                <span className="text-sm font-mono" style={{ color: highlight ? G.gold : '#64748b', fontWeight: highlight ? 700 : 400 }}>
-                  {highlight && <span className="mr-1">●</span>}{name}
-                </span>
-                <div className="flex items-center gap-1">
-                  {marks.map((m, i) => (
-                    <span key={i} className="text-xs" style={{ color: m ? '#10b981' : '#1e293b' }}>
-                      {m ? '✓' : '—'}
-                    </span>
-                  ))}
-                </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {caps.map(({ n, d }) => (
+            <div key={n} className="rounded-2xl border p-4 sm:p-5"
+              style={{ borderColor: `${G.gold}20`, background: `${G.gold}06` }}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-emerald-400 font-bold">✓</span>
+                <span className="text-sm font-mono font-bold" style={{ color: G.gold }}>{n}</span>
               </div>
-            );
-          })}
-          <div className="text-xs font-mono text-slate-600 pt-2 space-y-0.5">
-            <p className="text-slate-700 mb-1">Capabilities, left → right:</p>
-            <p>1 · Continuous state vector</p>
-            <p>2 · Adaptive correction</p>
-            <p>3 · Cryptographic receipts</p>
-            <p>4 · Constitutional memory</p>
-            <p>5 · No retraining</p>
-          </div>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">{d}</p>
+            </div>
+          ))}
         </div>
-        <p className="text-center text-xs font-mono text-slate-700 mt-4">
-          Built to combine all five in one layer — above any LLM, with no retraining or fine-tuning.
-        </p>
-        <p className="text-center text-xs font-mono text-slate-800 mt-2 max-w-2xl mx-auto">
-          Comparison reflects each system&apos;s primary documented focus; the five axes are the dimensions Lex Aureon is designed around.
+        <p className="text-center text-xs font-mono text-slate-700 mt-6">
+          Combined in one layer — above any LLM, with no retraining or fine-tuning.
         </p>
       </div>
     </section>
   );
 }
-
 /* ── Proof Panel ────────────────────────────────────────────── */
 function ProofPanel() {
   return (
