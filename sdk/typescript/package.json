@@ -1,0 +1,29 @@
+{
+  "name": "@lex-aureon/sdk",
+  "version": "1.0.0",
+  "description": "Official TypeScript SDK for Lex Aureon Constitutional Governance API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "prepublish": "npm run build"
+  },
+  "keywords": [
+    "lex-aureon",
+    "constitutional-ai",
+    "governance",
+    "llm-safety",
+    "lyapunov"
+  ],
+  "author": "Emmanuel King",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^1.6.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/omomehinemmanuel5-boop/LEX-Aureon.git"
+  }
+}

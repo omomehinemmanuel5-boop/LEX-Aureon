@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Next.js frontend + API routes
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lex-aureon-app
+    ports:
+      - "3000:3000"
+    environment:
+      # Required environment variables
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      JINA_API_KEY: ${JINA_API_KEY}
+      TURSO_DATABASE_URL: ${TURSO_DATABASE_URL}
+      TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change_me}
+      CRON_SECRET: ${CRON_SECRET:-change_me}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      
+      # Optional
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LOG_DRAIN_URL: ${LOG_DRAIN_URL}
+      LOG_DRAIN_TOKEN: ${LOG_DRAIN_TOKEN}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - health-check
+    networks:
+      - lex-aureon
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Health check service
+  health-check:
+    image: curlimages/curl:latest
+    container_name: lex-aureon-health
+    command: /bin/sh -c "sleep 60"
+    networks:
+      - lex-aureon
+
+networks:
+  lex-aureon:
+    driver: bridge
