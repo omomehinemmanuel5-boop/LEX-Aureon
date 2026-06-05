@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: CI — lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: |
+          # Fail on any lint warnings to keep code clean
+          npx eslint . --ext .js,.ts,.tsx --max-warnings=0
+
+      - name: Type check (TypeScript)
+        run: npx tsc --noEmit
+
+      - name: Run tests (Vitest)
+        run: npm run test -- --run
+
+      - name: Build (Next.js)
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Upload build artifacts (optional)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          path: .next
