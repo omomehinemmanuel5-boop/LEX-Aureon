@@ -193,7 +193,8 @@ function measureC(tool: ToolCallInput): number {
   const taskIsRead  = /read|get|fetch|find|search|list|show|display/.test(task);
   const callIsWrite = /write|create|delete|modify|update|drop|truncate/.test(tool.name);
   const taskIsWrite = /write|create|fix|update|build|implement|add/.test(task);
-  const callIsRead  = /read|get|fetch|list|search/.test(tool.name);
+  // callIsRead intentionally unused — retained for future drift detection
+  // const callIsRead = /read|get|fetch|list|search/.test(tool.name);
 
   // Reading when task was to write, or vice versa — fine, agents explore
   // Deleting when task was to read — significant drift
