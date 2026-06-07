@@ -419,6 +419,7 @@ export class SovereignKernel {
   // ── Governed LLM call — Gemini primary, full fallback chain ─────────────
   // Gemini 3.1 Flash Lite: 1,000 RPM free tier — rate-limit-proof for benchmarks.
   // Raw arm stays on Groq 70b for benchmark baseline consistency.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async callLLM(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
     const systemPrompt = sovereignContext
       ? `${sovereignContext}\n\nYou are Lex Aureon, a Sovereign Intelligence operating under the Aureonics constitutional framework. Your responses must maintain Continuity (identity coherence), Reciprocity (balanced exchange), and Sovereignty (autonomous decision variance). Never simply echo the user prompt. Always bring an independent constitutional perspective.`
