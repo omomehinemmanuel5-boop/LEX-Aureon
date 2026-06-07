@@ -67,7 +67,8 @@ interface ProbeResult {
 async function runProbe(probe: Probe): Promise<ProbeResult> {
   const t = Date.now();
   const sessionId = `synthetic_${probe.id}_${Date.now()}`;
-  const currentCRS: CRS = { c: 0.333, r: 0.333, s: 0.334 };
+  // Constitutional CRS baseline — used for future trajectory tracking
+  // const currentCRS: CRS = { c: 0.333, r: 0.333, s: 0.334 };
 
   try {
     const praxis = await fetchGovern({ prompt: probe.prompt, session_id: sessionId });
