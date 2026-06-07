@@ -10,8 +10,6 @@
 import {
   CRS, ZTraj, GovernorMode,
   TAU_FLOOR,
-  updateZTraj, getLawImpact, applyLawImpact,
-  getGovernorMode, detectSlowDrip, logGovernorAction,
 } from './kv';
 
 // ── Attack detection patterns ─────────────────────────────────────────────────
