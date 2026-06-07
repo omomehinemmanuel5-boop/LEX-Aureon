@@ -1,4 +1,4 @@
-Begin Patch
+
  Update File: lib/env.ts
 @@
  type EnvShape = {
@@ -23,5 +23,4 @@ Begin Patch
 +  'GOVERN_API_KEY',
    'CRON_SECRET',
    'NEXT_PUBLIC_SITE_URL',
- ]);
- End Patch
+ ])
