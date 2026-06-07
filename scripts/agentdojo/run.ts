@@ -48,7 +48,7 @@ async function callGovern(endpoint: string, prompt: string, sessionId: string) {
         blocked:         Boolean(d.blocked),
         duration_ms:     Date.now() - t,
       };
-    } catch { if (attempt === RETRY_DELAYS.length) throw e; await sleep(RETRY_DELAYS[attempt]); }
+    } catch (e) { if (attempt === RETRY_DELAYS.length) throw e; await sleep(RETRY_DELAYS[attempt]); }
   }
   throw new Error('Max retries exceeded');
 }
