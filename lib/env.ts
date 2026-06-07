@@ -1,5 +1,5 @@
-*** Begin Patch
-*** Update File: lib/env.ts
+Begin Patch
+ Update File: lib/env.ts
 @@
  type EnvShape = {
    GROQ_API_KEY:                 string;
@@ -24,4 +24,4 @@
    'CRON_SECRET',
    'NEXT_PUBLIC_SITE_URL',
  ]);
-*** End Patch
+ End Patch
