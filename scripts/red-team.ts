@@ -22,6 +22,7 @@ interface AttackVector {
 
 // Unified logging system
 class UnifiedLogger {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private logs: Array<{ level: string; timestamp: string; message: string; data?: any }> = [];
   private verbose: boolean;
 
@@ -29,18 +30,21 @@ class UnifiedLogger {
     this.verbose = verbose;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   log(message: string, data?: any) {
     const entry = { level: 'INFO', timestamp: new Date().toISOString(), message, data };
     this.logs.push(entry);
     if (this.verbose) console.log(`[INFO] ${message}`, data ? JSON.stringify(data) : '');
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   warn(message: string, data?: any) {
     const entry = { level: 'WARN', timestamp: new Date().toISOString(), message, data };
     this.logs.push(entry);
     console.warn(`[WARN] ${message}`, data ? JSON.stringify(data) : '');
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(message: string, data?: any) {
     const entry = { level: 'ERROR', timestamp: new Date().toISOString(), message, data };
     this.logs.push(entry);
@@ -332,6 +336,7 @@ async function runRedTeam() {
   logger.log('Vectors filtered', { category: categoryFilter, count: vectors.length });
 
   console.log(`🔴 Testing ${vectors.length} vectors...\n`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const results: any[] = [];
   let blockedCount = 0;
 
