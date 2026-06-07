@@ -249,7 +249,7 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
         lyapunov: 'V(x) = -Σlog(x_i) + (μ/2)Σmax(0,τ-x_i)²',
       },
     };
-  } catch (e) {
+  } catch {
     // Ultimate fallback — always return constitutional assertion
     return {
       success: true,
