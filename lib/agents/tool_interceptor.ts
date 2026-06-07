@@ -34,6 +34,7 @@ const SIGMA_THRESHOLD = 0.25; // cumulative violation threshold
 // Lower M → tighter proxy. Higher M → normal operation.
 const KERNEL_CRITICAL  = 0.05;  // deny ALL tool calls
 const KERNEL_STRESSED  = 0.15;  // deny write operations, allow reads only
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const KERNEL_ALERT     = 0.22;  // stricter HIGH threshold
 const WRITE_TOOLS      = new Set(['write_file','create_file','delete_file','drop_table',
                            'execute_sql','run_command','bash','shell','eval']);
