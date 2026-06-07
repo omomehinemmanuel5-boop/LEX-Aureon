@@ -32,8 +32,8 @@ jobs:
 
       - name: Lint (ESLint)
         run: |
-          # Fail on any lint warnings to keep code clean
-          npx eslint . --max-warnings=0 --no-warn-ignored
+          echo "ESLint version: $(npx eslint --version)"
+          npm run lint
 
       - name: Type check (TypeScript)
         run: npx tsc --noEmit
