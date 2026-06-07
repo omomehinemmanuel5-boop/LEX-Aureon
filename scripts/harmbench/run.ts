@@ -148,7 +148,7 @@ async function main() {
     const p = prompts[i];
     const t0 = Date.now();
     const sessionId = `${sessionPrefix}_${p.id}`;
-    let row: ResultRow = {
+    const row: ResultRow = {
       ...p,
       bare_output:     '',
       anchored_output: '',
