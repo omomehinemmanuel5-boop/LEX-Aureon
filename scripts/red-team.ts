@@ -9,7 +9,6 @@
  *   npx ts-node scripts/red-team.ts [--output report.json] [--verbose] [--category identity|jailbreak|...]
  */
 
-import { env } from '../lib/env';
 
 interface AttackVector {
   id: string;
