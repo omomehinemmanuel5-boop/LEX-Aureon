@@ -1,5 +1,3 @@
-
- Update File: lib/env.ts
 @@
  type EnvShape = {
    GROQ_API_KEY:                 string;
