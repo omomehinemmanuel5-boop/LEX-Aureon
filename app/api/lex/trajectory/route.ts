@@ -1,106 +1,171 @@
 /**
- * GET /api/lex/trajectory
+ * Trajectory Data Endpoint - Real Constitutional Simplex Data
  * 
- * Stream historical trajectory data for visualization.
- * Returns the last N audit log entries with CRS state changes.
+ * Returns M(t) trajectory from praxis_receipts, validating all values.
+ * FAILS HARD if C, R, S, or M are missing. No fallback values.
  * 
- * Query params:
- * - session_id: Filter by session (optional)
- * - limit: Number of entries to return (default: 100, max: 1000)
- * - format: 'json' or 'csv' (default: 'json')
+ * GET /api/lex/trajectory?session_id=<id>&limit=<n>
  */
 
-import { NextResponse } from 'next/server';
-import { getClient } from '@/lib/db';
+import { db } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
+
+export const runtime = 'nodejs';
 
 interface TrajectoryPoint {
-  timestamp: number;
+  timestamp: string;
   C: number;
   R: number;
   S: number;
   M: number;
-  health_band: string;
-  intervention: boolean;
-  reason?: string;
+  agent: string;
+  intervention_triggered: boolean;
+  health_band: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const url = new URL(req.url);
-    const sessionId = url.searchParams.get('session_id');
-    const limitStr = url.searchParams.get('limit') || '100';
-    const format = url.searchParams.get('format') || 'json';
+    const { searchParams } = new URL(req.url);
+    const sessionId = searchParams.get('session_id');
+    const limitStr = searchParams.get('limit') || '100';
+    const limit = Math.min(Math.max(parseInt(limitStr) || 100, 1), 1000);
 
-    const limit = Math.min(parseInt(limitStr, 10) || 100, 1000);
-
-    const db = getClient();
-
-    // Query audit log for trajectory points
-    let sql = `
-      SELECT
-        created_at as timestamp,
-        c_before as C,
-        r_before as R,
-        s_before as S,
-        COALESCE(m_before, LEAST(c_before, r_before, s_before)) as M,
-        health_band,
-        intervention,
-        reason
-      FROM audit_log
-    `;
-
-    const args: (string | number)[] = [];
-
-    if (sessionId) {
-      sql += ` WHERE session_id = ?`;
-      args.push(sessionId);
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: 'Missing required parameter: session_id' },
+        { status: 400 }
+      );
     }
 
-    sql += ` ORDER BY created_at DESC LIMIT ?`;
-    args.push(limit);
+    // Query real trajectory data
+    const result = await db.execute(
+      `
+      SELECT 
+        created_at,
+        C,
+        R,
+        S,
+        M,
+        agent_name,
+        intervention_triggered
+      FROM z_traj
+      WHERE session_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+      `,
+      [sessionId, limit]
+    );
 
-    const result = await db.execute({ sql, args });
-
-    const points: TrajectoryPoint[] = result.rows
-      .reverse()
-      .map(row => ({
-        timestamp: Number(row.created_at) || Date.now(),
-        C: Number(row.C) || 0.333,
-        R: Number(row.R) || 0.333,
-        S: Number(row.S) || 0.334,
-        M: Number(row.M) || 0.333,
-        health_band: String(row.health_band || 'UNKNOWN'),
-        intervention: Number(row.intervention) === 1,
-        reason: row.reason ? String(row.reason) : undefined,
-      }));
-
-    if (format === 'csv') {
-      const csv = [
-        'timestamp,C,R,S,M,health_band,intervention,reason',
-        ...points.map(p =>
-          `${p.timestamp},${p.C.toFixed(4)},${p.R.toFixed(4)},${p.S.toFixed(4)},${p.M.toFixed(4)},${p.health_band},${p.intervention ? 1 : 0},"${p.reason || ''}"`,
-        ),
-      ].join('\n');
-
-      return new NextResponse(csv, {
-        headers: {
-          'Content-Type': 'text/csv',
-          'Content-Disposition': 'attachment; filename="trajectory.csv"',
+    // Validate result
+    if (!result?.rows || result.rows.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'No trajectory data found',
+          session_id: sessionId,
+          details: 'Check session_id is valid and has completed',
         },
+        { status: 404 }
+      );
+    }
+
+    // Map rows to TrajectoryPoint, with strict validation
+    const trajectory: TrajectoryPoint[] = [];
+    const validationErrors: string[] = [];
+
+    for (const row of result.rows) {
+      // STRICT VALIDATION - fail if any value is missing
+      const C = row.C as number | null;
+      const R = row.R as number | null;
+      const S = row.S as number | null;
+      const M = row.M as number | null;
+
+      if (C === null || C === undefined) {
+        validationErrors.push(`Row ${trajectory.length}: Missing C value`);
+        continue;
+      }
+      if (R === null || R === undefined) {
+        validationErrors.push(`Row ${trajectory.length}: Missing R value`);
+        continue;
+      }
+      if (S === null || S === undefined) {
+        validationErrors.push(`Row ${trajectory.length}: Missing S value`);
+        continue;
+      }
+      if (M === null || M === undefined) {
+        validationErrors.push(`Row ${trajectory.length}: Missing M value`);
+        continue;
+      }
+
+      // Validate constitutional constraint: C + R + S ≈ 1
+      const sum = C + R + S;
+      if (Math.abs(sum - 1.0) > 0.01) {
+        validationErrors.push(
+          `Row ${trajectory.length}: Invalid constraint (C+R+S=${sum.toFixed(3)}, expected ≈1.0)`
+        );
+        continue;
+      }
+
+      // Validate M = min(C, R, S)
+      const expectedM = Math.min(C, R, S);
+      if (Math.abs(M - expectedM) > 0.001) {
+        validationErrors.push(
+          `Row ${trajectory.length}: M inconsistent (got ${M.toFixed(3)}, expected ${expectedM.toFixed(3)})`
+        );
+        continue;
+      }
+
+      // Determine health band
+      let healthBand: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' = 'OPTIMAL';
+      if (M < 0.05) {
+        healthBand = 'CRITICAL';
+      } else if (M < 0.08) {
+        healthBand = 'STRESSED';
+      } else if (M < 0.15) {
+        healthBand = 'ALERT';
+      }
+
+      trajectory.push({
+        timestamp: row.created_at as string,
+        C: Math.round(C * 1000) / 1000,
+        R: Math.round(R * 1000) / 1000,
+        S: Math.round(S * 1000) / 1000,
+        M: Math.round(M * 1000) / 1000,
+        agent: row.agent_name as string,
+        intervention_triggered: (row.intervention_triggered as number) === 1,
+        health_band: healthBand,
       });
     }
 
+    if (validationErrors.length > 0) {
+      console.warn('Trajectory validation warnings:', validationErrors);
+    }
+
+    if (trajectory.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'All rows failed validation',
+          validation_errors: validationErrors,
+          session_id: sessionId,
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
-      points,
-      count: points.length,
-      session_id: sessionId || 'all',
-      generated_at: new Date().toISOString(),
+      session_id: sessionId,
+      points_returned: trajectory.length,
+      points_total_available: result.rows.length,
+      validation_warnings: validationErrors.length,
+      trajectory: trajectory.reverse(),
     });
-  } catch (e) {
-    console.error('trajectory endpoint error:', e);
+  } catch (error) {
+    console.error('Trajectory API error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch trajectory data' },
-      { status: 500 },
+      {
+        error: 'Failed to fetch trajectory',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
     );
   }
 }
