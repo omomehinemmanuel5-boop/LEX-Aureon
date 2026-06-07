@@ -85,6 +85,7 @@ async function llmConstitutionalRewrite(
   lawText?: string
 ): Promise<string | null> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const key = env.GROQ_API_KEY;
 
     // ── Law-as-generative-engine ─────────────────────────────────────────
