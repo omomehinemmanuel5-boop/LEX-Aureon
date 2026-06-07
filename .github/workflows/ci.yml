@@ -33,7 +33,7 @@ jobs:
       - name: Lint (ESLint)
         run: |
           # Fail on any lint warnings to keep code clean
-          npx eslint . --ext .js,.ts,.tsx --max-warnings=0
+          npx eslint . --max-warnings=0
 
       - name: Type check (TypeScript)
         run: npx tsc --noEmit
