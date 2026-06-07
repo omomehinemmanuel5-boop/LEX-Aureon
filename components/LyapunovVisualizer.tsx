@@ -79,6 +79,7 @@ export default function LyapunovVisualizer({
 
     const interval = setInterval(fetchTrajectory, refreshInterval);
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, autoRefresh, refreshInterval]);
 
   // Draw the ternary plot
