@@ -23,7 +23,7 @@ import { env } from '../env';
 import crypto from 'crypto';
 
 // Constitutional constants — same as text governance
-const TAU_FLOOR     = 0.05;
+const _TAU_FLOOR    = 0.05;  // Reserved — matches kernel CBF floor
 const N_MIN         = 3;     // stable calls before HIGH recovery
 const SIGMA_THRESHOLD = 0.25; // cumulative violation threshold
 
