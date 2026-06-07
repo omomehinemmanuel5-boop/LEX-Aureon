@@ -27,6 +27,10 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  // ESLint runs as a dedicated CI step — skip during build to avoid FlatCompat issue
+  eslint: { ignoreDuringBuilds: true },
+  // TypeScript errors are caught in the dedicated tsc --noEmit step
+  typescript: { ignoreBuildErrors: false },
   async headers() {
     return [
       { source: '/:path*', headers: securityHeaders },
