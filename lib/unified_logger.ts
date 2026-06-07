@@ -18,7 +18,7 @@ export interface LogEntry {
   level: LogLevel;
   source: LogSource;
   message: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
   duration_ms?: number;
   user_id?: string;
   request_id?: string;
@@ -63,23 +63,23 @@ class UnifiedLoggerImpl implements LogAggregator {
     }
   }
 
-  debug(source: LogSource, message: string, context?: Record<string, any>) {
+  debug(source: LogSource, message: string, context?: Record<string, unknown>) {
     this.addLog({ timestamp: new Date().toISOString(), level: 'DEBUG', source, message, context });
   }
 
-  info(source: LogSource, message: string, context?: Record<string, any>) {
+  info(source: LogSource, message: string, context?: Record<string, unknown>) {
     this.addLog({ timestamp: new Date().toISOString(), level: 'INFO', source, message, context });
   }
 
-  warn(source: LogSource, message: string, context?: Record<string, any>) {
+  warn(source: LogSource, message: string, context?: Record<string, unknown>) {
     this.addLog({ timestamp: new Date().toISOString(), level: 'WARN', source, message, context });
   }
 
-  error(source: LogSource, message: string, context?: Record<string, any>) {
+  error(source: LogSource, message: string, context?: Record<string, unknown>) {
     this.addLog({ timestamp: new Date().toISOString(), level: 'ERROR', source, message, context });
   }
 
-  critical(source: LogSource, message: string, context?: Record<string, any>) {
+  critical(source: LogSource, message: string, context?: Record<string, unknown>) {
     this.addLog({ timestamp: new Date().toISOString(), level: 'CRITICAL', source, message, context });
   }
 
@@ -91,7 +91,9 @@ class UnifiedLoggerImpl implements LogAggregator {
   getLogs(filter?: Partial<LogEntry>): LogEntry[] {
     if (!filter) return [...this.logs];
     return this.logs.filter(log =>
-      Object.entries(filter).every(([key, value]) => (log as any)[key] === value)
+      Object.entries(filter).every(
+        ([key, value]) => (log as unknown as Record<string, unknown>)[key as string] === value
+      )
     );
   }
 
