@@ -12,6 +12,7 @@
 import { createClient } from '@libsql/client';
 import { env } from './env';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface CachedEmbedding {
   text_hash: string;
   text: string;
@@ -93,7 +94,7 @@ export async function getCachedEmbedding(text: string): Promise<number[] | null>
     });
 
     return embedding;
-  } catch (e) {
+  } catch {
     // Cache miss or error — return null and let caller fetch fresh
     return null;
   }
