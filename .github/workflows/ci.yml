@@ -32,7 +32,25 @@ jobs:
 
       - name: Lint (ESLint)
         run: |
-          echo "ESLint version: $(npx eslint --version)"
+          # Diagnose ESLint config load before linting
+          node --input-type=module <<'EOF'
+          import { createRequire } from 'module';
+          const req = createRequire(import.meta.url);
+          try {
+            req('@eslint/eslintrc');
+            console.log('::notice::@eslint/eslintrc found ok');
+          } catch(e) {
+            console.log('::error::@eslint/eslintrc MISSING: ' + e.message);
+            process.exit(1);
+          }
+          try {
+            const mod = await import('./eslint.config.mjs');
+            console.log('::notice::eslint.config.mjs loaded, entries=' + mod.default?.length);
+          } catch(e) {
+            console.log('::error::eslint.config.mjs FAILED: ' + e.message);
+            process.exit(1);
+          }
+          EOF
           npm run lint
 
       - name: Type check (TypeScript)
