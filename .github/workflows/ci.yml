@@ -44,6 +44,7 @@ jobs:
       - name: Build (Next.js)
         env:
           NODE_ENV: production
+          ESLINT_USE_FLAT_CONFIG: 'false'
         run: npm run build
 
       - name: Upload build artifacts (optional)
