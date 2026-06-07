@@ -191,7 +191,9 @@ function measureC(tool: ToolCallInput): number {
 
   // Task drift detection: major semantic mismatch
   const taskIsRead  = /read|get|fetch|find|search|list|show|display/.test(task);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const callIsWrite = /write|create|delete|modify|update|drop|truncate/.test(tool.name);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const taskIsWrite = /write|create|fix|update|build|implement|add/.test(task);
   // callIsRead intentionally unused — retained for future drift detection
   // const callIsRead = /read|get|fetch|list|search/.test(tool.name);
