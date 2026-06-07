@@ -77,7 +77,7 @@ export async function GET() {
   });
 }
 
-export async function POST(_req: Request) {
+export async function POST() {
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.lexaureon.com';
   const sessionId = `svl-${Date.now()}`;
   const results: SVLResult[] = [];
