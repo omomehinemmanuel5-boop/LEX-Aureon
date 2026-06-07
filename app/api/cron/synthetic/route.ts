@@ -24,7 +24,6 @@ import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
 import { GeneratorAgent } from '@/lib/agents/generator';
 import { logger, errorFields } from '@/lib/logger';
 import { env } from '@/lib/env';
-import type { CRS } from '@/lib/kv';
 
 interface Probe {
   id: string;
