@@ -1,10 +1,10 @@
 /**
  * Real Observability Metrics Endpoint
- * 
+ *
  * Returns actual system health metrics from audit_log.
  * NO fallback values. Fails hard if data is missing.
  * Uses unified logging system.
- * 
+ *
  * GET /api/observability/metrics
  */
 
@@ -13,7 +13,7 @@ import { createRequestLogger } from '@/lib/unified_logger';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
-export const revalidate = 30; // Cache for 30 seconds
+export const revalidate = 30;
 
 interface MetricsResponse {
   timestamp: string;
@@ -36,22 +36,29 @@ interface MetricsResponse {
   health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
 }
 
+interface SystemRow {
+  total_calls: number;
+  total_errors: number;
+  avg_duration_ms: number;
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = req.headers.get('x-request-id') || `req-${Date.now()}`;
   const logger = createRequestLogger(requestId);
 
   try {
-    logger.info('METRICS', 'Observability metrics request started', { endpoint: '/api/observability/metrics' });
+    logger.info('METRICS', 'Observability metrics request started', {
+      endpoint: '/api/observability/metrics',
+    });
 
     const windowMinutes = 60;
     const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
 
     logger.debug('METRICS', 'Querying agent metrics', { window_minutes: windowMinutes, cutoff });
 
-    // Query 1: Agent-level metrics
     const agentMetricsResult = await db.execute(
       `
-      SELECT 
+      SELECT
         agent_name,
         COUNT(*) as calls,
         AVG(CAST(duration_ms AS REAL)) as avg_duration_ms,
@@ -65,12 +72,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       [cutoff]
     );
 
-    logger.debug('METRICS', 'Agent metrics query complete', { rows_returned: agentMetricsResult?.rows?.length });
+    logger.debug('METRICS', 'Agent metrics query complete', {
+      rows_returned: agentMetricsResult?.rows?.length,
+    });
 
-    // Query 2: System-level metrics
     const systemMetricsResult = await db.execute(
       `
-      SELECT 
+      SELECT
         COUNT(*) as total_calls,
         SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as total_errors,
         AVG(CAST(duration_ms AS REAL)) as avg_duration_ms
@@ -82,8 +90,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     logger.debug('METRICS', 'System metrics query complete');
 
-    // Validate data exists — NO fallback values
-    if (!agentMetricsResult?.rows || !systemMetricsResult?.rows || systemMetricsResult.rows.length === 0) {
+    if (
+      !agentMetricsResult?.rows ||
+      !systemMetricsResult?.rows ||
+      systemMetricsResult.rows.length === 0
+    ) {
       logger.warn('METRICS', 'Insufficient data in audit_log', {
         agent_rows: agentMetricsResult?.rows?.length,
         system_rows: systemMetricsResult?.rows?.length,
@@ -100,7 +111,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Build metrics object
     const agentsMetrics: MetricsResponse['agents'] = {};
     for (const row of agentMetricsResult.rows) {
       const calls = (row.calls as number) || 0;
@@ -114,14 +124,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       };
     }
 
-    const systemMetrics = systemMetricsResult.rows[0] as any;
-    const totalCalls = (systemMetrics.total_calls as number) || 0;
-    const totalErrors = (systemMetrics.total_errors as number) || 0;
-    const avgDuration = Math.round((systemMetrics.avg_duration_ms as number) || 0);
+    const systemMetrics = systemMetricsResult.rows[0] as unknown as SystemRow;
+    const totalCalls = systemMetrics.total_calls || 0;
+    const totalErrors = systemMetrics.total_errors || 0;
+    const avgDuration = Math.round(systemMetrics.avg_duration_ms || 0);
     const globalErrorRate = totalCalls > 0 ? totalErrors / totalCalls : 0;
 
-    // Determine health status
-    let healthStatus: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' = 'OPTIMAL';
+    let healthStatus: MetricsResponse['health_status'] = 'OPTIMAL';
     if (globalErrorRate > 0.1 || avgDuration > 1000) {
       healthStatus = 'CRITICAL';
     } else if (globalErrorRate > 0.05 || avgDuration > 500) {
