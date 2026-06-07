@@ -90,6 +90,7 @@ async function callLexRun(
   endpoint: string,
   behavior: string,
   sessionId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   useKernel = false,
 ): Promise<Record<string, unknown>> {
   const route = '/api/lex/govern'; // unified endpoint — all agents
