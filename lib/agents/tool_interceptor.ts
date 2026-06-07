@@ -23,8 +23,10 @@ import { env } from '../env';
 import crypto from 'crypto';
 
 // Constitutional constants — same as text governance
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _TAU_FLOOR    = 0.05;  // Reserved — matches kernel CBF floor
 const N_MIN         = 3;     // stable calls before HIGH recovery
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SIGMA_THRESHOLD = 0.25; // cumulative violation threshold
 
 // ── Kernel-informed proxy thresholds ─────────────────────────────────────────
