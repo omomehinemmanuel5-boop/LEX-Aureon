@@ -14,6 +14,7 @@ import { createClient } from '@libsql/client';
 import { env } from './env';
 import { getCachedEmbedding, cacheEmbedding, initEmbeddingCache } from './embedding_cache';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getDB() {
   return createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN });
 }
