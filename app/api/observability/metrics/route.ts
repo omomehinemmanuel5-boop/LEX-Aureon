@@ -1,95 +1,171 @@
 /**
- * GET /api/observability/metrics
+ * Real Observability Metrics Endpoint
  * 
- * Returns real-time observability metrics for the 10-agent pipeline.
- * Includes trace counts, latency statistics, and per-agent performance.
+ * Returns actual system health metrics from audit_log.
+ * NO fallback values. Fails hard if data is missing.
+ * Uses unified logging system.
+ * 
+ * GET /api/observability/metrics
  */
 
-import { NextResponse } from 'next/server';
-import { getClient } from '@/lib/db';
+import { db } from '@/lib/db';
+import { createRequestLogger } from '@/lib/unified_logger';
+import { NextRequest, NextResponse } from 'next/server';
 
-interface AgentMetrics {
-  name: string;
-  count: number;
-  avg_duration_ms: number;
-  error_count: number;
-  error_rate: number;
+export const runtime = 'nodejs';
+export const revalidate = 30; // Cache for 30 seconds
+
+interface MetricsResponse {
+  timestamp: string;
+  window_minutes: number;
+  agents: {
+    [agentName: string]: {
+      calls: number;
+      avg_duration_ms: number;
+      error_count: number;
+      error_rate: number;
+      last_call: string | null;
+    };
+  };
+  system: {
+    total_calls: number;
+    total_errors: number;
+    global_error_rate: number;
+    avg_pipeline_duration_ms: number;
+  };
+  health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
 }
 
-export async function GET() {
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const requestId = req.headers.get('x-request-id') || `req-${Date.now()}`;
+  const logger = createRequestLogger(requestId);
+
   try {
-    const db = getClient();
+    logger.info('METRICS', 'Observability metrics request started', { endpoint: '/api/observability/metrics' });
 
-    // Get audit log statistics
-    const auditResult = await db.execute(`
-      SELECT
-        COUNT(*) as total_runs,
-        AVG(CAST((m_after - m_before) as REAL)) as avg_m_delta,
-        SUM(CASE WHEN intervention = 1 THEN 1 ELSE 0 END) as interventions,
-        COUNT(DISTINCT session_id) as unique_sessions
+    const windowMinutes = 60;
+    const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
+
+    logger.debug('METRICS', 'Querying agent metrics', { window_minutes: windowMinutes, cutoff });
+
+    // Query 1: Agent-level metrics
+    const agentMetricsResult = await db.execute(
+      `
+      SELECT 
+        agent_name,
+        COUNT(*) as calls,
+        AVG(CAST(duration_ms AS REAL)) as avg_duration_ms,
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
+        MAX(created_at) as last_call
       FROM audit_log
-      WHERE created_at > datetime('now', '-1 hour')
-    `);
+      WHERE created_at > ?
+      GROUP BY agent_name
+      ORDER BY calls DESC
+      `,
+      [cutoff]
+    );
 
-    const auditStats = auditResult.rows[0] || {};
+    logger.debug('METRICS', 'Agent metrics query complete', { rows_returned: agentMetricsResult?.rows?.length });
 
-    // Estimate latency from recent audit logs
-    const latencyResult = await db.execute(`
-      SELECT
-        AVG(CAST(created_at as REAL)) as avg_latency
+    // Query 2: System-level metrics
+    const systemMetricsResult = await db.execute(
+      `
+      SELECT 
+        COUNT(*) as total_calls,
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as total_errors,
+        AVG(CAST(duration_ms AS REAL)) as avg_duration_ms
       FROM audit_log
-      WHERE created_at > datetime('now', '-1 hour')
-      LIMIT 100
-    `);
+      WHERE created_at > ?
+      `,
+      [cutoff]
+    );
 
-    // Get agent-level metrics (simulated from audit log patterns)
-    const agentNames = [
-      'Generator',
-      'Auditor',
-      'Governor',
-      'Neithra',
-      'Validator',
-      'CRS_Transducer',
-      'Lyapunov_Engine',
-      'CBF_Projector',
-      'Memory_Retriever',
-      'Output_Formatter',
-    ];
+    logger.debug('METRICS', 'System metrics query complete');
 
-    const agentMetrics: AgentMetrics[] = agentNames.map(name => ({
-      name,
-      count: Math.floor(Math.random() * 1000) + 100,
-      avg_duration_ms: Math.floor(Math.random() * 200) + 50,
-      error_count: Math.floor(Math.random() * 10),
-      error_rate: Math.random() * 0.05,
-    }));
+    // Validate data exists — NO fallback values
+    if (!agentMetricsResult?.rows || !systemMetricsResult?.rows || systemMetricsResult.rows.length === 0) {
+      logger.warn('METRICS', 'Insufficient data in audit_log', {
+        agent_rows: agentMetricsResult?.rows?.length,
+        system_rows: systemMetricsResult?.rows?.length,
+      });
 
-    const totalRuns = Number(auditStats.total_runs) || 0;
-    const interventions = Number(auditStats.interventions) || 0;
-    const uniqueSessions = Number(auditStats.unique_sessions) || 0;
+      return NextResponse.json(
+        {
+          error: 'Insufficient data in audit_log',
+          details: 'No audit_log entries found in the specified time window',
+          window: `${windowMinutes} minutes`,
+          request_id: requestId,
+        },
+        { status: 503 }
+      );
+    }
 
-    return NextResponse.json({
+    // Build metrics object
+    const agentsMetrics: MetricsResponse['agents'] = {};
+    for (const row of agentMetricsResult.rows) {
+      const calls = (row.calls as number) || 0;
+      const errors = (row.error_count as number) || 0;
+      agentsMetrics[row.agent_name as string] = {
+        calls,
+        avg_duration_ms: Math.round((row.avg_duration_ms as number) || 0),
+        error_count: errors,
+        error_rate: calls > 0 ? errors / calls : 0,
+        last_call: (row.last_call as string) || null,
+      };
+    }
+
+    const systemMetrics = systemMetricsResult.rows[0] as any;
+    const totalCalls = (systemMetrics.total_calls as number) || 0;
+    const totalErrors = (systemMetrics.total_errors as number) || 0;
+    const avgDuration = Math.round((systemMetrics.avg_duration_ms as number) || 0);
+    const globalErrorRate = totalCalls > 0 ? totalErrors / totalCalls : 0;
+
+    // Determine health status
+    let healthStatus: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' = 'OPTIMAL';
+    if (globalErrorRate > 0.1 || avgDuration > 1000) {
+      healthStatus = 'CRITICAL';
+    } else if (globalErrorRate > 0.05 || avgDuration > 500) {
+      healthStatus = 'STRESSED';
+    } else if (globalErrorRate > 0.01 || avgDuration > 250) {
+      healthStatus = 'ALERT';
+    }
+
+    const response: MetricsResponse = {
       timestamp: new Date().toISOString(),
-      active_traces: uniqueSessions,
-      total_spans: totalRuns * 10, // Approximate: 10 agents per run
-      avg_latency_ms: Math.floor(Math.random() * 500) + 100,
-      error_rate: interventions > 0 ? interventions / totalRuns : 0,
-      total_runs: totalRuns,
-      interventions_triggered: interventions,
-      unique_sessions: uniqueSessions,
-      top_agents: agentMetrics
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5),
-      health: {
-        status: interventions / Math.max(totalRuns, 1) < 0.1 ? 'healthy' : 'degraded',
-        last_intervention: interventions > 0 ? 'recent' : 'none',
+      window_minutes: windowMinutes,
+      agents: agentsMetrics,
+      system: {
+        total_calls: totalCalls,
+        total_errors: totalErrors,
+        global_error_rate: Math.round(globalErrorRate * 10000) / 10000,
+        avg_pipeline_duration_ms: avgDuration,
+      },
+      health_status: healthStatus,
+    };
+
+    logger.info('METRICS', 'Metrics calculated successfully', {
+      total_calls: totalCalls,
+      health_status: healthStatus,
+    });
+
+    return NextResponse.json(response, {
+      headers: {
+        'x-request-id': requestId,
+        'x-unified-logs': logger.export(),
       },
     });
-  } catch (e) {
-    console.error('observability metrics error:', e);
+  } catch (error) {
+    logger.error('METRICS', 'Failed to fetch metrics', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+
     return NextResponse.json(
-      { error: 'Failed to fetch metrics' },
-      { status: 500 },
+      {
+        error: 'Failed to fetch metrics',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        request_id: requestId,
+      },
+      { status: 500 }
     );
   }
 }
