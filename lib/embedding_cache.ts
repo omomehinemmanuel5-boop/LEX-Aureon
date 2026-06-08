@@ -1,7 +1,14 @@
-// REMOVED 2026-06-08 — only imported by lex_memory_enhanced.ts which is itself dead.
-// The embedding cache concept is valid and worth wiring in future:
-//   1. Wire getCachedEmbedding/cacheEmbedding into lib/lex_memory.ts embedText()
-//   2. Add EMBEDDING_CACHE_TTL_DAYS to env.ts
-//   3. Wire pruneEmbeddingCache into the cron job
-// Safe to delete this file entirely when the above is done.
+// lib/embedding_cache.ts — SUPERSEDED 2026-06-08
+//
+// The embedding cache is now wired directly inside lib/lex_memory.ts
+// at the embedText() call site. There is no separate module needed.
+//
+// Functions now in lib/lex_memory.ts:
+//   - embedText(text)          → cache-aside, Turso-backed
+//   - pruneEmbeddingCache(days) → called by cron (app/api/cron/synthetic/route.ts)
+//
+// The Turso table is: embedding_cache (text_hash PK, embedding, model, hits, created_at)
+// Created automatically by ensureLexMemoryTable().
+//
+// Safe to delete this file.
 export {};
