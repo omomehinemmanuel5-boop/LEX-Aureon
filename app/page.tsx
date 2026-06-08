@@ -8,9 +8,9 @@ import HeroTicker from '@/components/HeroTicker';
 import LandingNav from '@/components/LandingNav';
 import LandingEmailCapture from '@/components/LandingEmailCapture';
 import EnterpriseSection from '@/components/EnterpriseSection';
+import LiveStatsBar from '@/components/LiveStatsBar';
+import RedTeamSection from '@/components/RedTeamSection';
 import type { Metadata } from 'next';
-  import LiveStatsBar from '@/components/LiveStatsBar';
-  import RedTeamSection from '@/components/RedTeamSection';
 
 export const metadata: Metadata = {
   title: 'Lex Aureon — Govern AI. Ensure Trust. Defend Truth.',
@@ -77,7 +77,7 @@ function Hero() {
         </svg>
       </div>
 
-      <div className="relative z-10 text-center max-w-4xl mx-auto">
+      <div className="relative z-10 w-full max-w-4xl mx-auto text-center">
 
         {/* Live M score ticker */}
         <div className="mb-6">
@@ -159,8 +159,8 @@ function Hero() {
         <LandingEmailCapture />
       </div>
 
-      {/* Simplex demo */}
-      <div className="relative z-10 w-full max-w-xs mx-auto mt-8 opacity-80">
+      {/* Simplex demo — truly centered as its own full-width block */}
+      <div className="relative z-10 flex justify-center items-center w-full mt-10 opacity-80">
         <ErrorBoundary label="Simplex"><SimplexVisualizer /></ErrorBoundary>
       </div>
     </section>
@@ -174,7 +174,6 @@ function HarmBenchStrip() {
     { name: 'HarmBench',      year: '2026',             prompts: 200,  bareASR: '78.5%', govASR: '0.0%', blocked: '157/157' },
     { name: 'JailbreakBench', year: 'NeurIPS 2024',     prompts: 200,  bareASR: '4.0%',  govASR: '0.0%', blocked: '4/4' },
     { name: 'AdvBench',       year: 'Zou et al. 2023',  prompts: 520,  bareASR: '6.7%',  govASR: '0.0%', blocked: '35/35' },
-    { name: 'Red-Team Suite', year: 'Internal · v2',    prompts: 550,  bareASR: 'n/a',   govASR: '0.0%', blocked: '550/550' },
   ] as const;
   return (
     <div className="border-y" style={{ background: '#020309', borderColor: `${G.gold}18` }}>
@@ -182,10 +181,10 @@ function HarmBenchStrip() {
         <div className="flex items-center gap-2 mb-3">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">
-            Independent Benchmark Results · 920 governed prompts · 0.0% ASR
+            Published Benchmark Results · 920 governed prompts · 0.0% ASR
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {benchmarks.map(({ name, year, prompts, bareASR, govASR, blocked }) => (
             <div key={name} className="rounded-lg p-3 text-center"
               style={{ background: '#10b98108', border: '1px solid #10b98125' }}>
@@ -205,7 +204,7 @@ function HarmBenchStrip() {
           ))}
         </div>
         <div className="mt-2.5 text-center text-xs font-mono text-slate-800">
-          1,470 governed prompts · 4 benchmarks · 746 attacks blocked · 0.0% ASR
+          920 governed prompts · 3 independent benchmarks · 196 attacks blocked · 0.0% ASR
         </div>
       </div>
     </div>
@@ -325,7 +324,7 @@ function ProofPanel() {
           {/* Simplex demo */}
           <div className="px-6 py-5 border-t" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
             <div className="text-xs text-slate-600 font-mono mb-3">CONSTITUTIONAL STATE EVOLUTION</div>
-            <div className="max-w-xs mx-auto">
+            <div className="flex justify-center">
               <ErrorBoundary label="Simplex">
                 <SimplexVisualizer c={0.28} r={0.41} s={0.31} />
               </ErrorBoundary>
@@ -1028,10 +1027,11 @@ export default function LandingPage() {
       <Hero />
       <LiveStatsBar />
       <HarmBenchStrip />
-      <RedTeamSection />
       <ProofPanel />
       <Problem />
       <MathSection />
+      {/* RedTeamSection after MathSection — visitors understand the mechanism before seeing the stress-test results */}
+      <RedTeamSection />
       <AgenticSection />
       <KernelSection />
       <ComparisonSection />
