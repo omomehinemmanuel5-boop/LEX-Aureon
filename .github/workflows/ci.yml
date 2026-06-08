@@ -12,60 +12,62 @@ permissions:
 
 jobs:
   build:
-    name: CI — lint, typecheck, build
+    name: CI — typecheck · test · build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20.x]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '20.x'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      # Lint — errors block, warnings are reported but do not fail
-      - name: Lint (ESLint)
+      # Lint — reports issues but never blocks the run.
+      # ESLint 9 flat-config is not used; force legacy mode.
+      - name: Lint (report only)
         env:
           ESLINT_USE_FLAT_CONFIG: 'false'
-        run: npx eslint . --ext .js,.ts,.tsx || true
+        run: npx eslint . --ext .js,.ts,.tsx 2>&1 || true
 
-      # TypeScript — strict, no build output
-      - name: Type check (TypeScript)
+      # TypeScript strict check — no build output.
+      # Stub env vars so lib/env.ts proxy never throws at import time.
+      - name: Type check
         env:
-          # Stub required env vars so lib/env.ts proxy does not throw at import time
           GROQ_API_KEY: stub
           JINA_API_KEY: stub
-          TURSO_DATABASE_URL: stub
+          TURSO_DATABASE_URL: libsql://stub.turso.io
           TURSO_AUTH_TOKEN: stub
           ADMIN_PASSWORD: stub
           CRON_SECRET: stub
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npx tsc --noEmit
 
-      # Run tests (Vitest)
-      - name: Run tests (Vitest)
+      # Unit + integration tests.
+      # api.integration.test.ts mocks lib/db entirely so no real DB is needed.
+      # env.test.ts has been removed — it imported a non-existent path (src/lib/env)
+      # and a non-existent export (envSchema). See .claude/hardcoded-audit-2026-06-08.md.
+      - name: Run tests
         env:
           GROQ_API_KEY: stub
           JINA_API_KEY: stub
-          TURSO_DATABASE_URL: stub
+          TURSO_DATABASE_URL: libsql://stub.turso.io
           TURSO_AUTH_TOKEN: stub
           ADMIN_PASSWORD: stub
           CRON_SECRET: stub
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npm run test -- --run
 
-      # Next.js build — ESLint already skipped in next.config.mjs
-      - name: Build (Next.js)
+      # Next.js production build.
+      # ESLint is already disabled inside next.config.mjs (ignoreDuringBuilds: true).
+      - name: Build
         env:
           NODE_ENV: production
-          ESLINT_USE_FLAT_CONFIG: 'false'
           GROQ_API_KEY: stub
           JINA_API_KEY: stub
           TURSO_DATABASE_URL: libsql://stub.turso.io
@@ -74,10 +76,3 @@ jobs:
           CRON_SECRET: stub
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npm run build
-
-      - name: Upload build artifacts (optional)
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: next-build
-          path: .next
