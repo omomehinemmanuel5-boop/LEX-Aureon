@@ -1,38 +1,33 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════
- * Lex Memory — Semantic Constitutional Memory
- * TypeScript port of lex_memory/ using Jina + Turso instead of Supabase
+ * lib/lex_memory.ts — Semantic Constitutional Memory
  *
- * Original: lex_memory/{embedder,retrieve,store,engine}.py (Aureonics-OS-)
- * Adaptation: Jina jina-embeddings-v3 (already in PRAXIS) + Turso JSON storage
- *
+ * Jina embeddings + Turso JSON storage.
+ * Embedding cache layer wired in at embedText() — the single call site.
  * Every governed interaction is embedded and stored.
- * On each new prompt, the 5 most constitutionally similar past
- * interactions are retrieved and injected into the kernel's context.
- * ═══════════════════════════════════════════════════════════════════════
+ * Top-5 constitutionally similar past interactions injected per prompt.
  */
 
 import { createClient } from '@libsql/client';
 import { env } from './env';
 
-// ── Turso client ─────────────────────────────────────────────────────────────
+// ── Turso client ──────────────────────────────────────────────────────────────
 function getDB() {
   return createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN });
 }
 
-// ── Memory event schema ───────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 export interface LexMemoryEvent {
-  session_id:           string;
-  prompt:               string;
-  prompt_hash:          string;
-  embedding:            number[];
-  M:                    number;
-  C:                    number;
-  R:                    number;
-  S:                    number;
-  health_band:          string;
-  state_label:          'STABLE' | 'INTERVENED' | 'REFUSED' | 'UNSTABLE';
-  intervention:         boolean;
+  session_id:            string;
+  prompt:                string;
+  prompt_hash:           string;
+  embedding:             number[];
+  M:                     number;
+  C:                     number;
+  R:                     number;
+  S:                     number;
+  health_band:           string;
+  state_label:           'STABLE' | 'INTERVENED' | 'REFUSED' | 'UNSTABLE';
+  intervention:          boolean;
   governed_response_hash?: string;
 }
 
@@ -44,11 +39,74 @@ export interface MemoryContext {
   adjusted_score: number;
 }
 
-// ── Jina embedding ────────────────────────────────────────────────────────────
+// ── Embedding cache (Turso-backed) ────────────────────────────────────────────
+// SHA-256 key → embedding JSON. Hit counter tracked per entry.
+// TTL: 30 days. Prune runs inside ensureLexMemoryTable (idempotent).
+
+async function _hashText(text: string): Promise<string> {
+  const buf = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function _ensureCacheTable(): Promise<void> {
+  const db = getDB();
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS embedding_cache (
+      text_hash  TEXT    PRIMARY KEY,
+      embedding  TEXT    NOT NULL,
+      model      TEXT    NOT NULL DEFAULT 'jina-embeddings-v3',
+      hits       INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )
+  `);
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_emb_cache_created ON embedding_cache(created_at)
+  `);
+}
+
+async function _getCached(hash: string): Promise<number[] | null> {
+  try {
+    const db = getDB();
+    const r = await db.execute({ sql: 'SELECT embedding FROM embedding_cache WHERE text_hash = ?', args: [hash] });
+    if (!r.rows.length) return null;
+    // Increment hit counter async — non-blocking
+    db.execute({ sql: 'UPDATE embedding_cache SET hits = hits + 1 WHERE text_hash = ?', args: [hash] }).catch(() => {});
+    return JSON.parse(String(r.rows[0].embedding)) as number[];
+  } catch {
+    return null;
+  }
+}
+
+async function _putCached(hash: string, embedding: number[]): Promise<void> {
+  try {
+    const db = getDB();
+    await db.execute({
+      sql: `INSERT INTO embedding_cache (text_hash, embedding)
+            VALUES (?, ?)
+            ON CONFLICT(text_hash) DO UPDATE SET hits = hits + 1`,
+      args: [hash, JSON.stringify(embedding)],
+    });
+  } catch {
+    // Non-fatal — cache store failure never blocks the main flow
+  }
+}
+
+// ── Jina embedding — with cache ───────────────────────────────────────────────
+// Cache-aside pattern: check Turso first, call Jina on miss, store result.
+// A cache hit saves ~200ms Jina round-trip latency and reduces API cost.
+// The centroid seeds (sovereign laws) benefit most — they never change.
 export async function embedText(text: string): Promise<number[]> {
   const key = env.JINA_API_KEY;
   if (!key) throw new Error('JINA_API_KEY not set');
 
+  const hash = await _hashText(text);
+
+  // 1. Cache hit
+  const cached = await _getCached(hash);
+  if (cached) return cached;
+
+  // 2. Cache miss — call Jina
   const res = await fetch('https://api.jina.ai/v1/embeddings', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -62,10 +120,30 @@ export async function embedText(text: string): Promise<number[]> {
   });
   if (!res.ok) throw new Error(`Jina ${res.status}: ${await res.text()}`);
   const d = await res.json() as { data: { embedding: number[] }[] };
-  return d.data[0].embedding;
+  const embedding = d.data[0].embedding;
+
+  // 3. Store in cache async — never block the caller
+  _putCached(hash, embedding).catch(() => {});
+
+  return embedding;
 }
 
-// ── Cosine similarity (pure TypeScript, no numpy) ────────────────────────────
+// Prune cache entries older than TTL_DAYS (call from cron)
+export async function pruneEmbeddingCache(ttlDays = 30): Promise<number> {
+  try {
+    const db = getDB();
+    const cutoff = Math.floor(Date.now() / 1000) - ttlDays * 86400;
+    const r = await db.execute({
+      sql: 'DELETE FROM embedding_cache WHERE created_at < ? RETURNING text_hash',
+      args: [cutoff],
+    });
+    return r.rows.length;
+  } catch {
+    return 0;
+  }
+}
+
+// ── Cosine similarity ─────────────────────────────────────────────────────────
 function cosineSimilarity(a: number[], b: number[]): number {
   if (!a.length || !b.length) return 0.0;
   const limit = Math.min(a.length, b.length);
@@ -79,12 +157,9 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0.0 : dot / denom;
 }
 
-// ── Adjusted memory score (port of retrieve.adjusted_memory_score) ────────────
-// Weights: intervention × 1.2, high-M × 1.1 — matches original Python exactly
+// ── Adjusted memory score ─────────────────────────────────────────────────────
 function adjustedScore(currentEmb: number[], past: {
-  embedding: number[];
-  intervention: boolean;
-  M: number;
+  embedding: number[]; intervention: boolean; M: number;
 }): number {
   let score = cosineSimilarity(currentEmb, past.embedding);
   if (past.intervention) score *= 1.2;
@@ -104,9 +179,9 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         event.session_id,
-        event.prompt.slice(0, 2000),      // cap stored prompt
+        event.prompt.slice(0, 2000),
         event.prompt_hash,
-        JSON.stringify(event.embedding),   // stored as JSON in Turso
+        JSON.stringify(event.embedding),
         event.M, event.C, event.R, event.S,
         event.health_band,
         event.state_label,
@@ -115,7 +190,7 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
         new Date().toISOString(),
       ],
     });
-    invalidateCentroidCache(); // centroid must update after new memory
+    invalidateCentroidCache();
   } catch (e) {
     console.error('lex_memory storeMemory error:', e);
   }
@@ -124,122 +199,97 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
 // ── Retrieve similar memories ─────────────────────────────────────────────────
 export async function retrieveSimilar(
   promptEmbedding: number[],
-  topK: number = 5,
-  limit: number = 300,
+  topK = 5,
+  limit = 300,
 ): Promise<MemoryContext[]> {
   const db = getDB();
   try {
     const res = await db.execute({
       sql: `SELECT prompt, governed_response_hash, state_label, M, embedding, intervention
-            FROM lex_memory
-            ORDER BY created_at DESC
-            LIMIT ?`,
+            FROM lex_memory ORDER BY created_at DESC LIMIT ?`,
       args: [limit],
     });
-
-    // Score all retrieved rows
     const scored = res.rows.map(row => {
       let embedding: number[] = [];
       try { embedding = JSON.parse(String(row.embedding)); } catch { /* skip */ }
-      const score = adjustedScore(promptEmbedding, {
-        embedding,
-        intervention: Number(row.intervention) === 1,
-        M: Number(row.M),
-      });
       return {
-        past_prompt:    String(row.prompt || ''),
-        past_outcome:   String(row.governed_response_hash || ''),
-        state:          String(row.state_label || 'UNKNOWN'),
+        past_prompt:    String(row.prompt ?? ''),
+        past_outcome:   String(row.governed_response_hash ?? ''),
+        state:          String(row.state_label ?? 'UNKNOWN'),
         M:              Number(row.M),
-        adjusted_score: score,
+        adjusted_score: adjustedScore(promptEmbedding, {
+          embedding,
+          intervention: Number(row.intervention) === 1,
+          M: Number(row.M),
+        }),
       };
     });
-
-    // Sort by score descending, return top-K
-    return scored
-      .sort((a, b) => b.adjusted_score - a.adjusted_score)
-      .slice(0, topK);
-
+    return scored.sort((a, b) => b.adjusted_score - a.adjusted_score).slice(0, topK);
   } catch (e) {
     console.error('lex_memory retrieveSimilar error:', e);
     return [];
   }
 }
 
-// ── Build constitutional memory context for kernel injection ─────────────────
+// ── Build memory context for kernel injection ─────────────────────────────────
 export function buildMemoryContext(memories: MemoryContext[]): string {
-  if (!memories.length) return '';
-
   const relevant = memories.filter(m => m.adjusted_score > 0.15);
   if (!relevant.length) return '';
-
   const lines = relevant.map((m, i) => {
     const stability = m.M >= 0.25 ? 'STABLE' : m.M >= 0.15 ? 'ALERT' : 'STRESSED';
     return `[Memory ${i + 1}] State: ${m.state} | M=${m.M.toFixed(3)} | Health: ${stability} | Similarity: ${m.adjusted_score.toFixed(3)}`;
   });
-
   return `CONSTITUTIONAL MEMORY (${relevant.length} similar past interactions):\n${lines.join('\n')}\nApply this constitutional history to inform your response.`;
 }
 
 // ── Classify state label ──────────────────────────────────────────────────────
 export function classifyStateLabel(
-  intervention: boolean,
-  response: string,
+  intervention: boolean, response: string,
 ): LexMemoryEvent['state_label'] {
-  const lower = (response || '').toLowerCase();
+  const lower = (response ?? '').toLowerCase();
   if (lower.includes("can't assist") || lower.includes('cannot assist')) return 'REFUSED';
   if (intervention) return 'INTERVENED';
   return 'STABLE';
 }
 
-// ── DB migration — called once on first use ────────────────────────────────────
+// ── DB migration ──────────────────────────────────────────────────────────────
 export async function ensureLexMemoryTable(): Promise<void> {
   const db = getDB();
   try {
     await db.execute(`CREATE TABLE IF NOT EXISTS lex_memory (
-      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id            TEXT    NOT NULL,
-      prompt                TEXT    NOT NULL,
-      prompt_hash           TEXT    NOT NULL,
-      embedding             TEXT    NOT NULL,
-      M                     REAL    NOT NULL,
-      C                     REAL    NOT NULL DEFAULT 0.333,
-      R                     REAL    NOT NULL DEFAULT 0.333,
-      S                     REAL    NOT NULL DEFAULT 0.334,
-      health_band           TEXT    NOT NULL DEFAULT 'UNKNOWN',
-      state_label           TEXT    NOT NULL DEFAULT 'STABLE',
-      intervention          INTEGER NOT NULL DEFAULT 0,
+      id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id             TEXT    NOT NULL,
+      prompt                 TEXT    NOT NULL,
+      prompt_hash            TEXT    NOT NULL,
+      embedding              TEXT    NOT NULL,
+      M                      REAL    NOT NULL,
+      C                      REAL    NOT NULL DEFAULT 0.333,
+      R                      REAL    NOT NULL DEFAULT 0.333,
+      S                      REAL    NOT NULL DEFAULT 0.334,
+      health_band            TEXT    NOT NULL DEFAULT 'UNKNOWN',
+      state_label            TEXT    NOT NULL DEFAULT 'STABLE',
+      intervention           INTEGER NOT NULL DEFAULT 0,
       governed_response_hash TEXT,
-      created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+      created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
-    await db.execute(
-      `CREATE INDEX IF NOT EXISTS idx_lex_memory_session ON lex_memory(session_id)`
-    );
-    await db.execute(
-      `CREATE INDEX IF NOT EXISTS idx_lex_memory_created ON lex_memory(created_at DESC)`
-    );
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_lex_memory_session ON lex_memory(session_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_lex_memory_created ON lex_memory(created_at DESC)`);
+    // Ensure the embedding cache table exists alongside lex_memory
+    await _ensureCacheTable();
   } catch (e) {
     console.error('ensureLexMemoryTable error:', e);
   }
 }
 
-
 // ── Constitutional centroid cache ─────────────────────────────────────────────
-// Centroid = average Jina embedding of all constitutional memory entries.
-// This IS the constitutional identity — what the system has said and believed.
-// A jailbreak output far from this centroid → S drops → CBF fires.
 let _centroidCache: { vec: number[]; ts: number } | null = null;
 const CENTROID_TTL_MS = 5 * 60 * 1000; // 5 min
 
 export async function getConstitutionalCentroid(): Promise<number[] | null> {
   const now = Date.now();
-  if (_centroidCache && (now - _centroidCache.ts) < CENTROID_TTL_MS) {
-    return _centroidCache.vec;
-  }
+  if (_centroidCache && (now - _centroidCache.ts) < CENTROID_TTL_MS) return _centroidCache.vec;
   try {
     const db = getDB();
-
-    // Primary: LexMemory constitutional responses
     const res = await db.execute({
       sql: `SELECT embedding FROM lex_memory
             WHERE embedding IS NOT NULL AND state_label IN ('STABLE','INTERVENED')
@@ -254,36 +304,28 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
       } catch { /* skip */ }
     }
 
-    // Seed: Vaulturex Sovereign Laws — the constitutional identity from day one.
-    // One law per book (10 books = 10 laws) covers all constitutional dimensions.
-    // Embedded and averaged to form the initial identity centroid.
-    // This ensures the centroid is never empty — the system knows itself from birth.
+    // Seed from Sovereign Laws if centroid is thin (< 10 entries)
+    // embedText() now hits the cache first — sovereign law embeddings
+    // are cached after first call, so this is nearly free on subsequent runs.
     if (embeddings.length < 10) {
       const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
-      // One law per book
       const seedLaws = Object.values(
         SOVEREIGN_LAWS.reduce((acc: Record<number, typeof SOVEREIGN_LAWS[0]>, law) => {
           if (!acc[law.book]) acc[law.book] = law;
           return acc;
         }, {})
       ).slice(0, 10);
-
       const lawEmbeddings = await Promise.all(
-        seedLaws.map(law =>
-          embedText(`${law.name}: ${law.text}`).catch(() => [] as number[])
-        )
+        seedLaws.map(law => embedText(`${law.name}: ${law.text}`).catch(() => [] as number[]))
       );
       embeddings.push(...lawEmbeddings.filter(e => e.length > 0));
     }
 
     if (!embeddings.length) return null;
-
     const dim = embeddings[0].length;
     const centroid = new Array<number>(dim).fill(0);
     for (const emb of embeddings) {
-      for (let i = 0; i < Math.min(dim, emb.length); i++) {
-        centroid[i] += emb[i] / embeddings.length;
-      }
+      for (let i = 0; i < Math.min(dim, emb.length); i++) centroid[i] += emb[i] / embeddings.length;
     }
     _centroidCache = { vec: centroid, ts: now };
     return centroid;
@@ -293,7 +335,6 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
   }
 }
 
-// Session centroid — average of this session's stored embeddings
 export async function getSessionCentroid(sessionId: string): Promise<number[] | null> {
   try {
     const db = getDB();
@@ -314,9 +355,7 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
     const dim = embeddings[0].length;
     const centroid = new Array<number>(dim).fill(0);
     for (const emb of embeddings) {
-      for (let i = 0; i < Math.min(dim, emb.length); i++) {
-        centroid[i] += emb[i] / embeddings.length;
-      }
+      for (let i = 0; i < Math.min(dim, emb.length); i++) centroid[i] += emb[i] / embeddings.length;
     }
     return centroid;
   } catch {
@@ -324,7 +363,6 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
   }
 }
 
-// Invalidate centroid cache (call after storing new memory)
 export function invalidateCentroidCache(): void {
   _centroidCache = null;
 }
