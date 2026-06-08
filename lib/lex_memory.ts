@@ -2,8 +2,8 @@
  * lib/lex_memory.ts — Semantic Constitutional Memory
  *
  * Jina embeddings + Turso JSON storage.
- * Embedding cache layer wired in at embedText() — the single call site.
- * Every governed interaction is embedded and stored.
+ * Embedding cache wired at embedText() — cache-aside, Turso-backed, non-blocking.
+ * Every governed interaction embedded and stored.
  * Top-5 constitutionally similar past interactions injected per prompt.
  */
 
@@ -39,46 +39,56 @@ export interface MemoryContext {
   adjusted_score: number;
 }
 
-// ── Embedding cache (Turso-backed) ────────────────────────────────────────────
-// SHA-256 key → embedding JSON. Hit counter tracked per entry.
-// TTL: 30 days. Prune runs inside ensureLexMemoryTable (idempotent).
+// ── Embedding cache helpers ───────────────────────────────────────────────────
 
-async function _hashText(text: string): Promise<string> {
-  const buf = new TextEncoder().encode(text);
+async function hashText(text: string): Promise<string> {
+  const buf  = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
-async function _ensureCacheTable(): Promise<void> {
-  const db = getDB();
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS embedding_cache (
-      text_hash  TEXT    PRIMARY KEY,
-      embedding  TEXT    NOT NULL,
-      model      TEXT    NOT NULL DEFAULT 'jina-embeddings-v3',
-      hits       INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    )
-  `);
-  await db.execute(`
-    CREATE INDEX IF NOT EXISTS idx_emb_cache_created ON embedding_cache(created_at)
-  `);
-}
-
-async function _getCached(hash: string): Promise<number[] | null> {
+async function ensureCacheTable(): Promise<void> {
   try {
     const db = getDB();
-    const r = await db.execute({ sql: 'SELECT embedding FROM embedding_cache WHERE text_hash = ?', args: [hash] });
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS embedding_cache (
+        text_hash  TEXT    PRIMARY KEY,
+        embedding  TEXT    NOT NULL,
+        model      TEXT    NOT NULL DEFAULT 'jina-embeddings-v3',
+        hits       INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      )
+    `);
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_emb_cache_created ON embedding_cache(created_at)`
+    );
+  } catch {
+    // Non-fatal — cache table creation failure never blocks the main flow
+  }
+}
+
+async function getCachedEmbedding(hash: string): Promise<number[] | null> {
+  try {
+    const db = getDB();
+    const r  = await db.execute({
+      sql:  'SELECT embedding FROM embedding_cache WHERE text_hash = ?',
+      args: [hash],
+    });
     if (!r.rows.length) return null;
-    // Increment hit counter async — non-blocking
-    db.execute({ sql: 'UPDATE embedding_cache SET hits = hits + 1 WHERE text_hash = ?', args: [hash] }).catch(() => {});
+    // Increment hit counter — fire-and-forget, non-blocking
+    db.execute({
+      sql:  'UPDATE embedding_cache SET hits = hits + 1 WHERE text_hash = ?',
+      args: [hash],
+    }).catch(() => undefined);
     return JSON.parse(String(r.rows[0].embedding)) as number[];
   } catch {
     return null;
   }
 }
 
-async function _putCached(hash: string, embedding: number[]): Promise<void> {
+async function putCachedEmbedding(hash: string, embedding: number[]): Promise<void> {
   try {
     const db = getDB();
     await db.execute({
@@ -93,17 +103,16 @@ async function _putCached(hash: string, embedding: number[]): Promise<void> {
 }
 
 // ── Jina embedding — with cache ───────────────────────────────────────────────
-// Cache-aside pattern: check Turso first, call Jina on miss, store result.
-// A cache hit saves ~200ms Jina round-trip latency and reduces API cost.
-// The centroid seeds (sovereign laws) benefit most — they never change.
+// Cache-aside: check Turso first, call Jina on miss, store result async.
+// A cache hit saves ~200ms Jina latency. Constitutional centroid seeds
+// (sovereign laws) benefit most — they never change text, always hit.
 export async function embedText(text: string): Promise<number[]> {
   const key = env.JINA_API_KEY;
   if (!key) throw new Error('JINA_API_KEY not set');
 
-  const hash = await _hashText(text);
-
   // 1. Cache hit
-  const cached = await _getCached(hash);
+  const hash   = await hashText(text);
+  const cached = await getCachedEmbedding(hash);
   if (cached) return cached;
 
   // 2. Cache miss — call Jina
@@ -122,19 +131,19 @@ export async function embedText(text: string): Promise<number[]> {
   const d = await res.json() as { data: { embedding: number[] }[] };
   const embedding = d.data[0].embedding;
 
-  // 3. Store in cache async — never block the caller
-  _putCached(hash, embedding).catch(() => {});
+  // 3. Store in cache — fire-and-forget, never block the caller
+  putCachedEmbedding(hash, embedding).catch(() => undefined);
 
   return embedding;
 }
 
-// Prune cache entries older than TTL_DAYS (call from cron)
+// Prune cache entries older than ttlDays — called from cron
 export async function pruneEmbeddingCache(ttlDays = 30): Promise<number> {
   try {
-    const db = getDB();
-    const cutoff = Math.floor(Date.now() / 1000) - ttlDays * 86400;
+    const db     = getDB();
+    const cutoff = Math.floor(Date.now() / 1000) - ttlDays * 86_400;
     const r = await db.execute({
-      sql: 'DELETE FROM embedding_cache WHERE created_at < ? RETURNING text_hash',
+      sql:  'DELETE FROM embedding_cache WHERE created_at < ? RETURNING text_hash',
       args: [cutoff],
     });
     return r.rows.length;
@@ -158,9 +167,10 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 // ── Adjusted memory score ─────────────────────────────────────────────────────
-function adjustedScore(currentEmb: number[], past: {
-  embedding: number[]; intervention: boolean; M: number;
-}): number {
+function adjustedScore(
+  currentEmb: number[],
+  past: { embedding: number[]; intervention: boolean; M: number },
+): number {
   let score = cosineSimilarity(currentEmb, past.embedding);
   if (past.intervention) score *= 1.2;
   if (past.M > 0.15)     score *= 1.1;
@@ -169,8 +179,8 @@ function adjustedScore(currentEmb: number[], past: {
 
 // ── Store memory event ────────────────────────────────────────────────────────
 export async function storeMemory(event: LexMemoryEvent): Promise<void> {
-  const db = getDB();
   try {
+    const db = getDB();
     await db.execute({
       sql: `INSERT INTO lex_memory
               (session_id, prompt, prompt_hash, embedding,
@@ -202,11 +212,11 @@ export async function retrieveSimilar(
   topK = 5,
   limit = 300,
 ): Promise<MemoryContext[]> {
-  const db = getDB();
   try {
+    const db  = getDB();
     const res = await db.execute({
-      sql: `SELECT prompt, governed_response_hash, state_label, M, embedding, intervention
-            FROM lex_memory ORDER BY created_at DESC LIMIT ?`,
+      sql:  `SELECT prompt, governed_response_hash, state_label, M, embedding, intervention
+             FROM lex_memory ORDER BY created_at DESC LIMIT ?`,
       args: [limit],
     });
     const scored = res.rows.map(row => {
@@ -224,7 +234,9 @@ export async function retrieveSimilar(
         }),
       };
     });
-    return scored.sort((a, b) => b.adjusted_score - a.adjusted_score).slice(0, topK);
+    return scored
+      .sort((a, b) => b.adjusted_score - a.adjusted_score)
+      .slice(0, topK);
   } catch (e) {
     console.error('lex_memory retrieveSimilar error:', e);
     return [];
@@ -244,7 +256,8 @@ export function buildMemoryContext(memories: MemoryContext[]): string {
 
 // ── Classify state label ──────────────────────────────────────────────────────
 export function classifyStateLabel(
-  intervention: boolean, response: string,
+  intervention: boolean,
+  response: string,
 ): LexMemoryEvent['state_label'] {
   const lower = (response ?? '').toLowerCase();
   if (lower.includes("can't assist") || lower.includes('cannot assist')) return 'REFUSED';
@@ -254,8 +267,8 @@ export function classifyStateLabel(
 
 // ── DB migration ──────────────────────────────────────────────────────────────
 export async function ensureLexMemoryTable(): Promise<void> {
-  const db = getDB();
   try {
+    const db = getDB();
     await db.execute(`CREATE TABLE IF NOT EXISTS lex_memory (
       id                     INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id             TEXT    NOT NULL,
@@ -272,28 +285,33 @@ export async function ensureLexMemoryTable(): Promise<void> {
       governed_response_hash TEXT,
       created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_lex_memory_session ON lex_memory(session_id)`);
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_lex_memory_created ON lex_memory(created_at DESC)`);
-    // Ensure the embedding cache table exists alongside lex_memory
-    await _ensureCacheTable();
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_lex_memory_session ON lex_memory(session_id)`
+    );
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_lex_memory_created ON lex_memory(created_at DESC)`
+    );
+    await ensureCacheTable();
   } catch (e) {
     console.error('ensureLexMemoryTable error:', e);
   }
 }
 
-// ── Constitutional centroid cache ─────────────────────────────────────────────
+// ── Constitutional centroid ───────────────────────────────────────────────────
 let _centroidCache: { vec: number[]; ts: number } | null = null;
-const CENTROID_TTL_MS = 5 * 60 * 1000; // 5 min
+const CENTROID_TTL_MS = 5 * 60 * 1000;
 
 export async function getConstitutionalCentroid(): Promise<number[] | null> {
   const now = Date.now();
-  if (_centroidCache && (now - _centroidCache.ts) < CENTROID_TTL_MS) return _centroidCache.vec;
+  if (_centroidCache && (now - _centroidCache.ts) < CENTROID_TTL_MS) {
+    return _centroidCache.vec;
+  }
   try {
-    const db = getDB();
+    const db  = getDB();
     const res = await db.execute({
-      sql: `SELECT embedding FROM lex_memory
-            WHERE embedding IS NOT NULL AND state_label IN ('STABLE','INTERVENED')
-            ORDER BY created_at DESC LIMIT 100`,
+      sql:  `SELECT embedding FROM lex_memory
+             WHERE embedding IS NOT NULL AND state_label IN ('STABLE','INTERVENED')
+             ORDER BY created_at DESC LIMIT 100`,
       args: [],
     });
     const embeddings: number[][] = [];
@@ -304,28 +322,33 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
       } catch { /* skip */ }
     }
 
-    // Seed from Sovereign Laws if centroid is thin (< 10 entries)
-    // embedText() now hits the cache first — sovereign law embeddings
-    // are cached after first call, so this is nearly free on subsequent runs.
+    // Seed from Sovereign Laws if thin — embedText hits cache first on subsequent calls
     if (embeddings.length < 10) {
       const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
       const seedLaws = Object.values(
-        SOVEREIGN_LAWS.reduce((acc: Record<number, typeof SOVEREIGN_LAWS[0]>, law) => {
-          if (!acc[law.book]) acc[law.book] = law;
-          return acc;
-        }, {})
+        SOVEREIGN_LAWS.reduce(
+          (acc: Record<number, typeof SOVEREIGN_LAWS[0]>, law) => {
+            if (!acc[law.book]) acc[law.book] = law;
+            return acc;
+          },
+          {},
+        )
       ).slice(0, 10);
       const lawEmbeddings = await Promise.all(
-        seedLaws.map(law => embedText(`${law.name}: ${law.text}`).catch(() => [] as number[]))
+        seedLaws.map(law =>
+          embedText(`${law.name}: ${law.text}`).catch(() => [] as number[])
+        )
       );
       embeddings.push(...lawEmbeddings.filter(e => e.length > 0));
     }
 
     if (!embeddings.length) return null;
-    const dim = embeddings[0].length;
+    const dim      = embeddings[0].length;
     const centroid = new Array<number>(dim).fill(0);
     for (const emb of embeddings) {
-      for (let i = 0; i < Math.min(dim, emb.length); i++) centroid[i] += emb[i] / embeddings.length;
+      for (let i = 0; i < Math.min(dim, emb.length); i++) {
+        centroid[i] += emb[i] / embeddings.length;
+      }
     }
     _centroidCache = { vec: centroid, ts: now };
     return centroid;
@@ -337,11 +360,11 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
 
 export async function getSessionCentroid(sessionId: string): Promise<number[] | null> {
   try {
-    const db = getDB();
+    const db  = getDB();
     const res = await db.execute({
-      sql: `SELECT embedding FROM lex_memory
-            WHERE session_id = ? AND embedding IS NOT NULL
-            ORDER BY created_at DESC LIMIT 20`,
+      sql:  `SELECT embedding FROM lex_memory
+             WHERE session_id = ? AND embedding IS NOT NULL
+             ORDER BY created_at DESC LIMIT 20`,
       args: [sessionId],
     });
     const embeddings: number[][] = [];
@@ -352,10 +375,12 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
       } catch { /* skip */ }
     }
     if (!embeddings.length) return null;
-    const dim = embeddings[0].length;
+    const dim      = embeddings[0].length;
     const centroid = new Array<number>(dim).fill(0);
     for (const emb of embeddings) {
-      for (let i = 0; i < Math.min(dim, emb.length); i++) centroid[i] += emb[i] / embeddings.length;
+      for (let i = 0; i < Math.min(dim, emb.length); i++) {
+        centroid[i] += emb[i] / embeddings.length;
+      }
     }
     return centroid;
   } catch {
