@@ -8,7 +8,6 @@ on:
   workflow_dispatch: {}
 
 # Cancel any in-progress run for the same branch when a new commit arrives.
-# This eliminates duplicate runs and stale queued jobs.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -31,17 +30,20 @@ jobs:
           node-version: '20.x'
           cache: 'npm'
 
+      # Use npm install (not npm ci) so package.json version ranges are resolved
+      # fresh. This ensures pinned versions (e.g. zod ^3.24.0) take effect
+      # without requiring a lockfile commit from a local machine.
       - name: Install dependencies
-        run: npm ci
+        run: npm install --prefer-offline
 
-      # Lint — reports issues but never blocks the run.
+      # Lint — reports issues but never blocks CI.
       - name: Lint (report only)
         env:
           ESLINT_USE_FLAT_CONFIG: 'false'
         run: npx eslint . --ext .js,.ts,.tsx 2>&1 || true
 
       # TypeScript strict check — no build output.
-      # Stub env vars so lib/env.ts Proxy never throws at import time.
+      # scripts/ excluded in tsconfig.json (they run via tsx, not tsc).
       - name: Type check
         env:
           GROQ_API_KEY: stub
@@ -54,8 +56,8 @@ jobs:
         run: npx tsc --noEmit
 
       # Unit + integration tests.
-      # env.test.ts is stubbed (describe.skip) — was importing a non-existent path.
-      # All other tests are meaningful and must pass.
+      # env.test.ts is stubbed (describe.skip).
+      # lex_memory and rate_limit are mocked in api.integration.test.ts.
       - name: Run tests
         env:
           GROQ_API_KEY: stub
@@ -68,6 +70,7 @@ jobs:
         run: npm run test -- --run
 
       # Next.js production build.
+      # TypeScript errors caught above — ignoreBuildErrors: true in next.config.mjs.
       - name: Build
         env:
           NODE_ENV: production
