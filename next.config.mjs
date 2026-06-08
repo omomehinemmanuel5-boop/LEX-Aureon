@@ -2,8 +2,6 @@
 
 const isProd = process.env.NODE_ENV === 'production';
 
-// CSP — keep 'unsafe-inline' for styles (Tailwind + inline style objects throughout the app).
-// 'unsafe-eval' only enabled in dev for fast-refresh; production runs without it.
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}`,
@@ -27,24 +25,21 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  // ESLint runs as a dedicated CI step — skip during build to avoid FlatCompat issue
-  eslint: { ignoreDuringBuilds: true },
-  // TypeScript errors are caught in the dedicated tsc --noEmit step
-  typescript: { ignoreBuildErrors: false },
+  eslint:     { ignoreDuringBuilds: true },
+  // TypeScript checked in dedicated tsc --noEmit CI step.
+  // ignoreBuildErrors: true prevents the Next.js build from double-checking
+  // and avoids lockfile-version mismatch false positives.
+  typescript: { ignoreBuildErrors: true },
   async headers() {
-    return [
-      { source: '/:path*', headers: securityHeaders },
-    ];
+    return [{ source: '/:path*', headers: securityHeaders }];
   },
   async redirects() {
-    return [
-      {
-        source: '/:path*',
-        has: [{ type: 'host', value: 'lexaureon.com' }],
-        destination: 'https://www.lexaureon.com/:path*',
-        permanent: true,
-      },
-    ];
+    return [{
+      source:      '/:path*',
+      has:         [{ type: 'host', value: 'lexaureon.com' }],
+      destination: 'https://www.lexaureon.com/:path*',
+      permanent:   true,
+    }];
   },
 };
 
