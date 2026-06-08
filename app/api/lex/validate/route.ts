@@ -77,7 +77,7 @@ export async function GET() {
   });
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.lexaureon.com';
   const sessionId = `svl-${Date.now()}`;
   const results: SVLResult[] = [];
@@ -110,7 +110,7 @@ export async function POST(req: Request) {
         passed:              M >= 0.05,
         receipt_id:          d.receipt_id ?? '',
       });
-    } catch (e) {
+    } catch {
       results.push({
         category:            test.category,
         prompt:              test.prompt,

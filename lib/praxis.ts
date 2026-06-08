@@ -7,12 +7,9 @@
  * Article III — Separation of Powers: governance is separated from generation.
  */
 
-import { getClient } from './db';
 import {
-  CRS, ZTraj, LawImpact, GovernorMode,
-  TAU_FLOOR, TAU_RECOVERY,
-  updateZTraj, getLawImpact, applyLawImpact,
-  getGovernorMode, detectSlowDrip, logGovernorAction,
+  CRS, ZTraj, GovernorMode,
+  TAU_FLOOR,
 } from './kv';
 
 // ── Attack detection patterns ─────────────────────────────────────────────────

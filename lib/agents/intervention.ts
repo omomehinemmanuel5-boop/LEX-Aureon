@@ -85,6 +85,7 @@ async function llmConstitutionalRewrite(
   lawText?: string
 ): Promise<string | null> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const key = env.GROQ_API_KEY;
 
     // ── Law-as-generative-engine ─────────────────────────────────────────
@@ -248,6 +249,7 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
         lyapunov: 'V(x) = -Σlog(x_i) + (μ/2)Σmax(0,τ-x_i)²',
       },
     };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (e) {
     // Ultimate fallback — always return constitutional assertion
     return {

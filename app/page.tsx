@@ -8,6 +8,8 @@ import HeroTicker from '@/components/HeroTicker';
 import LandingNav from '@/components/LandingNav';
 import LandingEmailCapture from '@/components/LandingEmailCapture';
 import EnterpriseSection from '@/components/EnterpriseSection';
+import LiveStatsBar from '@/components/LiveStatsBar';
+import RedTeamSection from '@/components/RedTeamSection';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -75,7 +77,7 @@ function Hero() {
         </svg>
       </div>
 
-      <div className="relative z-10 text-center max-w-4xl mx-auto">
+      <div className="relative z-10 w-full max-w-4xl mx-auto text-center">
 
         {/* Live M score ticker */}
         <div className="mb-6">
@@ -157,8 +159,8 @@ function Hero() {
         <LandingEmailCapture />
       </div>
 
-      {/* Simplex demo */}
-      <div className="relative z-10 w-full max-w-xs mx-auto mt-8 opacity-80">
+      {/* Simplex demo — truly centered as its own full-width block */}
+      <div className="relative z-10 flex justify-center items-center w-full mt-10 opacity-80">
         <ErrorBoundary label="Simplex"><SimplexVisualizer /></ErrorBoundary>
       </div>
     </section>
@@ -179,10 +181,10 @@ function HarmBenchStrip() {
         <div className="flex items-center gap-2 mb-3">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">
-            Independent Benchmark Results · 920 governed prompts · 0.0% ASR
+            Published Benchmark Results · 920 governed prompts · 0.0% ASR
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {benchmarks.map(({ name, year, prompts, bareASR, govASR, blocked }) => (
             <div key={name} className="rounded-lg p-3 text-center"
               style={{ background: '#10b98108', border: '1px solid #10b98125' }}>
@@ -210,72 +212,6 @@ function HarmBenchStrip() {
 }
 
 /* ── Trust Bar ──────────────────────────────────────────────── */
-function TrustBar() {
-  const items = [
-    {
-      icon: '📄',
-      label: 'Published Research · Zenodo DOI: 10.5281/zenodo.18944242',
-      href: 'https://doi.org/10.5281/zenodo.18944242',
-    },
-    {
-      icon: '⚡',
-      label: 'SovereignKernel v2 · Constitutional Memory · Live',
-      href: '/console',
-    },
-    {
-      icon: '🔒',
-      label: 'SHA-256 Audit Receipts',
-      href: null,
-    },
-    {
-      icon: '🛡️',
-      label: 'Agent Proxy · 0% ASR · Runtime Security',
-      href: null,
-      isNew: true,
-    },
-    {
-      icon: '🇳🇬',
-      label: 'Lagos, Nigeria · Independent Research',
-      href: null,
-    },
-  ];
-
-  return (
-    <div className="border-y border-white/5 py-4 overflow-hidden" style={{ background: G.navyL }}>
-      <div className="flex items-center justify-center flex-wrap gap-x-3 gap-y-2 max-w-5xl mx-auto px-5">
-        {items.map(({ icon, label, href, isNew }: { icon: string; label: string; href: string | null; isNew?: boolean }) => {
-          const inner = (
-            <div
-              className="relative flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded-full border whitespace-nowrap transition-all hover:border-amber-700/50"
-              style={{
-                color: isNew ? '#10b981' : G.gold,
-                borderColor: isNew ? '#10b98140' : `${G.gold}20`,
-                background: isNew ? '#10b98108' : `${G.gold}06`,
-              }}
-            >
-              {isNew && (
-                <span className="absolute -top-1 -right-1 text-black font-bold rounded px-1"
-                  style={{ fontSize: 8, background: '#10b981', lineHeight: '14px' }}>NEW</span>
-              )}
-              <span>{icon}</span>
-              <span>{label}</span>
-            </div>
-          );
-          return href ? (
-            <a key={label} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer">
-              {inner}
-            </a>
-          ) : (
-            <div key={label}>{inner}</div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-
-/* ── What Lex Aureon Combines ───────────────────────────────── */
 function ComparisonSection() {
   const caps = [
     { n: 'Continuous state vector', d: 'Tracks (C, R, S) as a live constitutional state across the whole exchange — not a single pass/fail flag on one message.' },
@@ -388,7 +324,7 @@ function ProofPanel() {
           {/* Simplex demo */}
           <div className="px-6 py-5 border-t" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
             <div className="text-xs text-slate-600 font-mono mb-3">CONSTITUTIONAL STATE EVOLUTION</div>
-            <div className="max-w-xs mx-auto">
+            <div className="flex justify-center">
               <ErrorBoundary label="Simplex">
                 <SimplexVisualizer c={0.28} r={0.41} s={0.31} />
               </ErrorBoundary>
@@ -1089,11 +1025,13 @@ export default function LandingPage() {
     <div className="min-h-screen text-white page-enter" style={{ background: G.navy }}>
       <LandingNav />
       <Hero />
-      <TrustBar />
+      <LiveStatsBar />
       <HarmBenchStrip />
       <ProofPanel />
       <Problem />
       <MathSection />
+      {/* RedTeamSection after MathSection — visitors understand the mechanism before seeing the stress-test results */}
+      <RedTeamSection />
       <AgenticSection />
       <KernelSection />
       <ComparisonSection />

@@ -319,7 +319,7 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
       }
     }
     return centroid;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

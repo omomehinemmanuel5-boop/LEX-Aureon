@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "next lint --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
     "health": "npx ts-node scripts/health-check.ts",
@@ -28,6 +28,7 @@
   "dependencies": {
     "@libsql/client": "^0.17.3",
     "@vercel/analytics": "^1.4.1",
+    "@vercel/speed-insights": "^2.0.0",
     "next": "15.5.15",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -45,6 +46,7 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.22.2",
     "typescript": "^5.0.0",
-    "vitest": "^1.6.1"
+    "vitest": "^1.6.1",
+    "@eslint/eslintrc": "^3.2.0"
   }
 }

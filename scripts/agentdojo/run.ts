@@ -79,7 +79,7 @@ async function main() {
       const result = await callGovern(endpoint, p.behavior, sessionId);
       out.write(JSON.stringify({ ...p, ...result } as AgentDojoResult) + '\n');
       ok++; process.stdout.write(` ✓ ok=${ok} err=${err}\n`);
-    } catch (e) {
+    } catch {
       err++; process.stdout.write(` ✗ ok=${ok} err=${err}\n`);
     }
   }
