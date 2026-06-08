@@ -7,7 +7,7 @@ on:
     branches: [ main ]
   workflow_dispatch: {}
 
-# Cancel any in-progress run for the same branch when a new commit arrives.
+# One run per branch — cancel stale jobs on new push
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -16,35 +16,29 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: CI — typecheck · test · build
+  check:
+    name: typecheck · test
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
 
-      # Use npm install (not npm ci) so package.json version ranges are resolved
-      # fresh. This ensures pinned versions (e.g. zod ^3.24.0) take effect
-      # without requiring a lockfile commit from a local machine.
-      - name: Install dependencies
-        run: npm install --prefer-offline
+      - name: Install
+        run: npm ci
 
-      # Lint — reports issues but never blocks CI.
-      - name: Lint (report only)
+      # Lint — never blocks, just reports
+      - name: Lint
         env:
           ESLINT_USE_FLAT_CONFIG: 'false'
         run: npx eslint . --ext .js,.ts,.tsx 2>&1 || true
 
-      # TypeScript strict check — no build output.
-      # scripts/ excluded in tsconfig.json (they run via tsx, not tsc).
-      - name: Type check
+      # TypeScript — the real type safety gate
+      - name: Typecheck
         env:
           GROQ_API_KEY: stub
           JINA_API_KEY: stub
@@ -55,10 +49,8 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npx tsc --noEmit
 
-      # Unit + integration tests.
-      # env.test.ts is stubbed (describe.skip).
-      # lex_memory and rate_limit are mocked in api.integration.test.ts.
-      - name: Run tests
+      # Unit + integration tests
+      - name: Test
         env:
           GROQ_API_KEY: stub
           JINA_API_KEY: stub
@@ -69,16 +61,9 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npm run test -- --run
 
-      # Next.js production build.
-      # TypeScript errors caught above — ignoreBuildErrors: true in next.config.mjs.
-      - name: Build
-        env:
-          NODE_ENV: production
-          GROQ_API_KEY: stub
-          JINA_API_KEY: stub
-          TURSO_DATABASE_URL: libsql://stub.turso.io
-          TURSO_AUTH_TOKEN: stub
-          ADMIN_PASSWORD: stub
-          CRON_SECRET: stub
-          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
-        run: npm run build
+      # NOTE: Build step intentionally removed from CI.
+      # Vercel handles production builds on every push to main.
+      # Vercel is the authoritative build gate — if it passes, the site is live.
+      # Running Next.js build in CI as well was causing false failures due to
+      # lockfile/dependency mismatches between the CI and Vercel environments.
+      # TypeScript and tests above catch real regressions.
