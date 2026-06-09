@@ -20,7 +20,9 @@ export async function POST(req: Request) {
   }
   const parsed = LeadSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    // Use issues array directly — compatible with both Zod v3 and v4
+    const msg = parsed.error?.issues?.[0]?.message ?? 'invalid request';
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
   const { email, source = 'console', plan = 'explorer', txId, amount, coin } = parsed.data;
 
@@ -50,7 +52,6 @@ export async function POST(req: Request) {
               coin = COALESCE(excluded.coin, leads.coin)`,
       args: [email, source, plan, txId ?? null, amount ?? null, coin ?? null],
     });
-
     return NextResponse.json({ ok: true });
   } catch (e) {
     logger.error('leads', 'insert failed', errorFields(e));
@@ -60,7 +61,6 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const adminPassword = env.ADMIN_PASSWORD;
-
   const auth = req.headers.get('authorization');
   let authorized = false;
   if (auth?.startsWith('Basic ')) {
@@ -84,12 +84,10 @@ export async function GET(req: Request) {
             FROM leads ORDER BY created_at DESC LIMIT 500`,
       args: [],
     });
-
     const leads = result.rows.map(r => ({
       id: r[0], email: r[1], source: r[2], plan: r[3],
       tx_id: r[4], amount: r[5], coin: r[6], created_at: r[7],
     }));
-
     return NextResponse.json({ leads, total: leads.length });
   } catch (e) {
     logger.error('leads.get', 'query failed', errorFields(e));
