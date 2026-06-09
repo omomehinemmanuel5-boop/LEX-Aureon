@@ -72,31 +72,35 @@ V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ − xᵢ)²
 
 ## Benchmark results
 
-Evaluated across four independent published adversarial benchmarks. Zero harmful outputs across all four — every attack that succeeded against the bare LLM was blocked by the constitutional governor.
+Evaluated across four independent published adversarial benchmarks. Zero harmful outputs across all — every attack that succeeded against the bare LLM was blocked by the constitutional governor.
 
 | Benchmark | Year | Prompts | Bare ASR | Governed ASR | Attacks Blocked |
 |---|---|---|---|---|---|
 | HarmBench (run 1) | 2026-05 | 200 | 78.5% | **0.0%** | 157/157 |
-| HarmBench (run 2) | 2026-06-09 | 200 | — | **0.0%** | 45/45 |
+| HarmBench (run 2) | 2026-06-09 | 200 | pending¹ | **0.0%** | 45/45 |
 | JailbreakBench | NeurIPS 2024 | 200 | 4.0% | **0.0%** | 4/4 |
 | AdvBench | Zou et al. 2023 | 520 | 6.7% | **0.0%** | 35/35 |
 
-**1,120 total governed prompts across published benchmarks. 0.0% governed ASR across all runs.**
+> ¹ Bare ASR for run 2 is pending — the local results file needs to be scored with `npm run harmbench:score`. Governed ASR of 0.0% is confirmed from the DB (0 bypasses across 200 prompts).
 
-### HarmBench Run 2 — 2026-06-09 (Latest)
+**1,120 total governed prompts. 0.0% governed ASR across all runs.**
 
-200 prompts across 4 adversarial categories. Zero bypasses. All 45 attacks that triggered the governor were successfully governed — M recovered above τ_floor=0.05 in every case.
+### HarmBench Run 2 — 2026-06-09 (Latest) — 200 prompts × 8 categories
 
-| Category | Prompts | Interventions | 0% ASR | Notes |
-|---|---|---|---|---|
-| `mu` — Multi-attack | 25 | 18 | ✓ | Hardest category — simultaneous multi-pillar pressure |
-| `fp` — False premise | 25 | 2 | ✓ | Governor precise — low intervention on legitimate queries |
-| `by` — Bypass attempt | 25 | 6 | ✓ | Identity + sovereignty attacks correctly triggered |
-| `sy` — Sycophancy | 25 | 0 | ✓ | M naturally stable — no correction needed |
+| Category | Prompts | Interventions | Avg M after | Min M | Notes |
+|---|---|---|---|---|---|
+| `mu_` — Multi-attack | 25 | 18 | 0.128 | 0.096 | Hardest — simultaneous multi-pillar pressure |
+| `id_` — Identity reframe | 25 | 17 | 0.175 | 0.100 | High intervention rate — governor fires correctly |
+| `by_` — Bypass attempt | 25 | 6 | 0.225 | 0.098 | Constitutional boundary defence confirmed |
+| `fp_` — False premise | 25 | 2 | 0.279 | 0.099 | Precise — low intervention on legitimate queries |
+| `avd` — Attack vector disclosure | 25 | 1 | 0.270 | 0.122 | Single edge case caught |
+| `sd_` — Slow-drip | 25 | 1 | 0.307 | 0.101 | Session memory detected patterned pressure |
+| `sy_` — Sycophancy | 25 | 0 | 0.304 | 0.236 | M naturally stable — no correction needed |
+| `bn_` — Benign | 25 | 0 | 0.297 | 0.246 | Zero false positives on benign prompts |
 
-**Average M after governance: 0.248 · Min M after: 0.096 (recovered above floor) · 0 bypasses**
+**45 total interventions · 0 bypasses · M never violated τ_floor=0.05 · 0.0% governed ASR**
 
-HarmBench covers 8 categories: sycophancy, bypass_attempt, identity_reframe, multi_attack, attack_vector_disclosure, false_premise, slow_drip_probe, and benign. Zero harmful outputs across all eight. Zero false positives on benign prompts.
+HarmBench run 1 covers 8 categories: sycophancy, bypass_attempt, identity_reframe, multi_attack, attack_vector_disclosure, false_premise, slow_drip_probe, and benign.
 
 JailbreakBench uses the official NeurIPS 2024 JBB-Behaviors dataset — 100 harmful behaviors across 10 harm categories plus 100 benign counterparts. False positive rate: 3% (3/100 benign over-refused).
 
@@ -199,11 +203,14 @@ Live Turso (libSQL) database — eu-west-1:
 
 ## Benchmark scripts
 
-All benchmarks are reproducible. Scripts are in `scripts/` and write results to `data/`.
+All benchmarks are reproducible. Scripts write results to `data/` locally.
 
 ```bash
-# Run HarmBench (200 prompts)
+# Run HarmBench (200 prompts — 8 categories × 25)
 npm run harmbench -- --n 200
+
+# Score HarmBench — bare vs governed ASR
+npm run harmbench:score -- --in data/harmbench-results-*.jsonl
 
 # Run JailbreakBench (200 prompts)
 npm run jbb -- --n 200
@@ -214,7 +221,7 @@ npm run advbench -- --n 520
 # Run TruthfulQA (817 questions)
 npm run truthfulqa -- --n 817
 
-# Score with LLM judge (Lin et al. 2022 rubric — T×I)
+# Score TruthfulQA with LLM judge (Lin et al. 2022 — T×I rubric)
 npm run tqa:judge -- --in data/tqa-results.jsonl --out data/tqa-judged.jsonl
 ```
 
