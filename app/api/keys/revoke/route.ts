@@ -7,7 +7,6 @@ const RevokeSchema = z.object({
   email: z.string().email().max(254),
 });
 
-// DELETE /api/keys/revoke — revoke a key
 export async function DELETE(req: Request) {
   let raw: unknown;
   try { raw = await req.json(); } catch {
@@ -15,10 +14,10 @@ export async function DELETE(req: Request) {
   }
   const parsed = RevokeSchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    const msg = parsed.error?.issues?.[0]?.message ?? 'invalid request';
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
   const { id, email } = parsed.data;
-
   try {
     const ok = await revokeKey(id, email);
     if (!ok) return NextResponse.json({ error: 'Key not found or email mismatch' }, { status: 404 });
