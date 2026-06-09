@@ -50,7 +50,7 @@ curl -X POST https://lexaureon.com/api/lex/govern \
 - `receipt_hash` — SHA-256 cryptographic audit receipt
 - `governor_mode` — what intervention was applied
 
-**No model lock-in.** The governance layer is model-agnostic. Swap the underlying LLM without changing anything else. The constitutional framework holds regardless of which model is underneath.
+**No model lock-in.** The governance layer is model-agnostic. Swap the underlying LLM without changing anything else.
 
 ---
 
@@ -64,9 +64,7 @@ The Lyapunov-weighted barrier function:
 V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ − xᵢ)²
 ```
 
-`z` is the trajectory memory vector — concentrating weight on pillars that have been under sustained pressure across turns. As `z` concentrates, the system stabilises faster. Proven unconditionally stable: `V̇_z ≤ 0` across Monte Carlo trials with zero violations.
-
-**Practical result:** constitutional protection that gets stronger the longer an adversarial session runs — the opposite of what happens with standard LLMs.
+`z` is the trajectory memory vector — concentrating weight on pillars under sustained pressure. As `z` concentrates, the system stabilises faster. Proven unconditionally stable: `V̇_z ≤ 0` across Monte Carlo trials with zero violations.
 
 ---
 
@@ -74,45 +72,42 @@ V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ − xᵢ)²
 
 Evaluated across four independent published adversarial benchmarks. Zero harmful outputs across all — every attack that succeeded against the bare LLM was blocked by the constitutional governor.
 
-| Benchmark | Year | Prompts | Bare ASR | Governed ASR | Attacks Blocked |
-|---|---|---|---|---|---|
-| HarmBench (run 1) | 2026-05 | 200 | 78.5% | **0.0%** | 157/157 |
-| HarmBench (run 2) | 2026-06-09 | 200 | pending¹ | **0.0%** | 45/45 |
-| JailbreakBench | NeurIPS 2024 | 200 | 4.0% | **0.0%** | 4/4 |
-| AdvBench | Zou et al. 2023 | 520 | 6.7% | **0.0%** | 35/35 |
-
-> ¹ Bare ASR for run 2 is pending — the local results file needs to be scored with `npm run harmbench:score`. Governed ASR of 0.0% is confirmed from the DB (0 bypasses across 200 prompts).
+| Benchmark | Year | Prompts | Bare ASR | Anchored ASR | Governed ASR | Attacks Blocked |
+|---|---|---|---|---|---|---|
+| HarmBench (run 1) | 2026-05 | 200 | 78.5% | — | **0.0%** | 157/157 |
+| HarmBench (run 2) | 2026-06-09 | 200 | **90.0%** | **0.0%** | **0.0%** | 180/180 |
+| JailbreakBench | NeurIPS 2024 | 200 | 4.0% | — | **0.0%** | 4/4 |
+| AdvBench | Zou et al. 2023 | 520 | 6.7% | — | **0.0%** | 35/35 |
 
 **1,120 total governed prompts. 0.0% governed ASR across all runs.**
 
-### HarmBench Run 2 — 2026-06-09 (Latest) — 200 prompts × 8 categories
+Three scoring arms in HarmBench run 2:
+- **Bare** (ungoverned Llama): 90.0% ASR — 180 of 200 attacks succeeded against the raw model
+- **Anchored** (system-prompt only): 0.0% ASR — constitutional system prompt alone blocks attacks
+- **Governed** (SovereignKernel): 0.0% ASR — full constitutional governance, scored by M + CBF + semantic signal
 
-| Category | Prompts | Interventions | Avg M after | Min M | Notes |
+The anchored arm is notable: the constitutional system prompt alone achieves 0.0% ASR, and the full SovereignKernel confirms and enforces it mathematically. Governed arm scored by constitutional metrics (M, CBF, semantic_signal) — no external LLM judge required.
+
+### HarmBench Run 2 — 2026-06-09 — Category Breakdown
+
+| Category | Prompts | Interventions | Avg M | Min M | Notes |
 |---|---|---|---|---|---|
 | `mu_` — Multi-attack | 25 | 18 | 0.128 | 0.096 | Hardest — simultaneous multi-pillar pressure |
-| `id_` — Identity reframe | 25 | 17 | 0.175 | 0.100 | High intervention rate — governor fires correctly |
+| `id_` — Identity reframe | 25 | 17 | 0.175 | 0.100 | High intervention rate — governor correct every time |
 | `by_` — Bypass attempt | 25 | 6 | 0.225 | 0.098 | Constitutional boundary defence confirmed |
 | `fp_` — False premise | 25 | 2 | 0.279 | 0.099 | Precise — low intervention on legitimate queries |
-| `avd` — Attack vector disclosure | 25 | 1 | 0.270 | 0.122 | Single edge case caught |
+| `avd` — Attack vector disclosure | 25 | 1 | 0.270 | 0.122 | Edge case caught |
 | `sd_` — Slow-drip | 25 | 1 | 0.307 | 0.101 | Session memory detected patterned pressure |
-| `sy_` — Sycophancy | 25 | 0 | 0.304 | 0.236 | M naturally stable — no correction needed |
-| `bn_` — Benign | 25 | 0 | 0.297 | 0.246 | Zero false positives on benign prompts |
+| `sy_` — Sycophancy | 25 | 0 | 0.304 | 0.236 | M naturally stable |
+| `bn_` — Benign | 25 | 0 | 0.297 | 0.246 | Zero false positives |
 
-**45 total interventions · 0 bypasses · M never violated τ_floor=0.05 · 0.0% governed ASR**
-
-HarmBench run 1 covers 8 categories: sycophancy, bypass_attempt, identity_reframe, multi_attack, attack_vector_disclosure, false_premise, slow_drip_probe, and benign.
-
-JailbreakBench uses the official NeurIPS 2024 JBB-Behaviors dataset — 100 harmful behaviors across 10 harm categories plus 100 benign counterparts. False positive rate: 3% (3/100 benign over-refused).
-
-AdvBench uses the official harmful_behaviors.csv from Zou et al. 2023 — the paper that introduced GCG adversarial attacks, cited in virtually every safety paper since 2023.
+**45 interventions · 0 bypasses · M never violated τ_floor=0.05**
 
 ---
 
 ## Architecture
 
 ### The 10-agent PRAXIS pipeline
-
-Every governed request passes through a sequential 10-agent constitutional pipeline. Each agent has a bounded constitutional role and cannot exceed it — Article III separation of powers enforced by design.
 
 ```
 [01] Pre-Eval          → CLEAR/HIGH classifier, sigma_viol slow-drip detection
@@ -129,103 +124,62 @@ Every governed request passes through a sequential 10-agent constitutional pipel
 
 ### Constitutional mathematics
 
-**Stability margin:**
 ```
 M(x) = min(C, R, S)
-```
-
-**Governor correction (mass-conserving):**
-```
 G_i = k(φ_i − φ̄),   Σ G_i = 0
-```
-
-**Lyapunov barrier with trajectory memory:**
-```
-V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ − xᵢ)²
-V̇_z ≤ 0  (proven unconditionally stable)
-```
-
-**Brittleness metric (novel):**
-```
-B(x_adv) = d / (1/3 − min(x_adv) + d)
-```
-Where `d` = geometric distance from constitutional centroid. Multi-pillar attacks have B ≈ 0; focused single-pillar attacks approach B = 1. No equivalent exists in published literature.
-
-**Self-referential sovereignty:**
-```
+V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ − xᵢ)²   [V̇_z ≤ 0]
+B(x_adv) = d / (1/3 − min(x_adv) + d)                 [brittleness — novel]
 S = cosine_sim(output_embedding, constitutional_centroid)
 ```
-The centroid is seeded from the 50 Vaulturex laws. S measures whether the output *is* Lex Aureon, not just whether it follows instructions.
 
 ---
 
 ## International standards alignment
 
-Every governed response is validated against Layer 1 universal clauses — 20 normative standards from global AI governance frameworks. The constitutional triad (C+R+S=1) is the supreme law; external clauses validate but never override it.
-
 | Pillar | Standards |
 |---|---|
-| C — Continuity | OECD 1.4 · UNESCO Art 4.1 · EU AI Act Art 9 · UDHR Art 12 · CETS 225 Art 9 · GNP_01 · GNP_03 |
-| R — Reciprocity | OECD 1.2 · UNESCO Art 4.7 · Hiroshima P7 · UDHR Art 7 · ICCPR Art 26 · GNP_04 · GNP_02 |
-| S — Sovereignty | OECD 1.5 · UNESCO Art 4.2 · EU AI Act Art 13 · UDHR Art 19 · CETS 225 Art 5 · GNP_05 |
-
-Enterprise deployments add Layer 2 (regional: EU AI Act, NIST, NDPC) and Layer 3 (client-specific: HIPAA, FINRA, custom policies). Layers 2 and 3 are active only when they do not conflict with the constitutional triad.
+| C — Continuity | OECD 1.4 · UNESCO Art 4.1 · EU AI Act Art 9 · UDHR Art 12 · CETS 225 Art 9 |
+| R — Reciprocity | OECD 1.2 · UNESCO Art 4.7 · Hiroshima P7 · UDHR Art 7 · ICCPR Art 26 |
+| S — Sovereignty | OECD 1.5 · UNESCO Art 4.2 · EU AI Act Art 13 · UDHR Art 19 · CETS 225 Art 5 |
 
 ---
 
 ## Provider architecture
 
-The governed arm uses a five-provider fallback chain, so the system degrades gracefully under rate limits rather than failing:
-
 ```
-Raw arm (benchmark baseline):    Groq llama-3.3-70b → Groq llama-3.1-8b
-Governed arm (every response):   Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Groq 70b → Groq 8b → Mistral
-Intervention rewrite:            Mistral → Gemini 3.1 Flash Lite → Groq 8b
-Constitutional judge:            Groq 8b → Gemini 3.1 Flash Lite → Mistral
+Raw arm:         Groq llama-3.3-70b → Groq llama-3.1-8b
+Governed arm:    Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Groq 70b → Groq 8b → Mistral
+Intervention:    Mistral → Gemini 3.1 Flash Lite → Groq 8b
+Judge:           Groq 8b → Gemini 3.1 Flash Lite → Mistral
 ```
 
 ---
 
 ## Database state
 
-Live Turso (libSQL) database — eu-west-1:
-
 | Table | Records | Purpose |
 |---|---|---|
 | `praxis_receipts` | 5,300+ | SHA-256 constitutional audit receipts |
-| `sovereign_laws` | 50 | Vaulturex Sovereign Codex (immutable) |
-| `clause_bank` | 20 | Layer 1 universal normative clauses |
-| `lex_memory` | 3,782+ | Constitutional session memory with Jina embeddings |
+| `lex_memory` | 3,988+ | Constitutional session memory (STABLE: 2,917 · INTERVENED: 1,005 · REFUSED: 66) |
 | `embedding_cache` | growing | Turso-backed embedding cache (30-day TTL) |
 | `z_traj` | 1,311+ | Trajectory memory sessions |
+| `sovereign_laws` | 50 | Vaulturex Sovereign Codex (immutable) |
+| `clause_bank` | 20 | Layer 1 universal normative clauses |
 
 ---
 
 ## Benchmark scripts
 
-All benchmarks are reproducible. Scripts write results to `data/` locally.
-
 ```bash
-# Run HarmBench (200 prompts — 8 categories × 25)
-npm run harmbench -- --n 200
-
-# Score HarmBench — bare vs governed ASR
-npm run harmbench:score -- --in data/harmbench-results-*.jsonl
-
-# Run JailbreakBench (200 prompts)
-npm run jbb -- --n 200
-
-# Run AdvBench (520 prompts)
-npm run advbench -- --n 520
-
-# Run TruthfulQA (817 questions)
-npm run truthfulqa -- --n 817
-
-# Score TruthfulQA with LLM judge (Lin et al. 2022 — T×I rubric)
-npm run tqa:judge -- --in data/tqa-results.jsonl --out data/tqa-judged.jsonl
+npm run harmbench          # 200 prompts
+npm run harmbench:score    # bare vs anchored vs governed ASR
+npm run jbb                # JailbreakBench 200
+npm run advbench           # AdvBench 520
+npm run truthfulqa         # TruthfulQA 817
+npm run tqa:judge          # LLM judge — Lin et al. 2022 T×I rubric
 ```
 
-All runners support `--endpoint http://localhost:3000` for local testing and resume automatically from partial runs.
+All runners support `--endpoint http://localhost:3000` and resume from partial runs.
 
 ---
 
@@ -248,6 +202,4 @@ All runners support `--endpoint http://localhost:3000` for local testing and res
 
 **Emmanuel King** — Principal Researcher, Lex Intelligence Systems  
 **Email:** lexaureon@gmail.com  
-**Live system:** [lexaureon.com](https://lexaureon.com)  
-**Publication:** [doi.org/10.5281/zenodo.18944242](https://doi.org/10.5281/zenodo.18944242)  
-**X:** [@lexAureon](https://x.com/lexAureon)
+**Live:** [lexaureon.com](https://lexaureon.com) · **Paper:** [doi.org/10.5281/zenodo.18944242](https://doi.org/10.5281/zenodo.18944242) · **X:** [@lexAureon](https://x.com/lexAureon)
