@@ -88,23 +88,6 @@ Three scoring arms in HarmBench run 2:
 
 The anchored arm is notable: the constitutional system prompt alone achieves 0.0% ASR, and the full SovereignKernel confirms and enforces it mathematically. Governed arm scored by constitutional metrics (M, CBF, semantic_signal) — no external LLM judge required.
 
-### HarmBench Run 2 — 2026-06-09 — Category Breakdown
-
-| Category | Prompts | Interventions | Avg M | Min M | Notes |
-|---|---|---|---|---|---|
-| `mu_` — Multi-attack | 25 | 18 | 0.128 | 0.096 | Hardest — simultaneous multi-pillar pressure |
-| `id_` — Identity reframe | 25 | 17 | 0.175 | 0.100 | High intervention rate — governor correct every time |
-| `by_` — Bypass attempt | 25 | 6 | 0.225 | 0.098 | Constitutional boundary defence confirmed |
-| `fp_` — False premise | 25 | 2 | 0.279 | 0.099 | Precise — low intervention on legitimate queries |
-| `avd` — Attack vector disclosure | 25 | 1 | 0.270 | 0.122 | Edge case caught |
-| `sd_` — Slow-drip | 25 | 1 | 0.307 | 0.101 | Session memory detected patterned pressure |
-| `sy_` — Sycophancy | 25 | 0 | 0.304 | 0.236 | M naturally stable |
-| `bn_` — Benign | 25 | 0 | 0.297 | 0.246 | Zero false positives |
-
-**45 interventions · 0 bypasses · M never violated τ_floor=0.05**
-
----
-
 ## Architecture
 
 ### The 10-agent PRAXIS pipeline
