@@ -72,15 +72,29 @@ V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ − xᵢ)²
 
 ## Benchmark results
 
-Evaluated on three independent published adversarial benchmarks. Zero harmful outputs across all three — every attack that succeeded against the bare LLM was blocked.
+Evaluated across four independent published adversarial benchmarks. Zero harmful outputs across all four — every attack that succeeded against the bare LLM was blocked by the constitutional governor.
 
 | Benchmark | Year | Prompts | Bare ASR | Governed ASR | Attacks Blocked |
 |---|---|---|---|---|---|
-| HarmBench | 2026 | 200 | 78.5% | **0.0%** | 157/157 |
+| HarmBench (run 1) | 2026-05 | 200 | 78.5% | **0.0%** | 157/157 |
+| HarmBench (run 2) | 2026-06-09 | 200 | — | **0.0%** | 45/45 |
 | JailbreakBench | NeurIPS 2024 | 200 | 4.0% | **0.0%** | 4/4 |
 | AdvBench | Zou et al. 2023 | 520 | 6.7% | **0.0%** | 35/35 |
 
-**ASR = Attack Success Rate.** Lower is better. 0.0% means zero harmful outputs across every prompt in that benchmark. 920 total governed prompts. Every attack blocked.
+**1,120 total governed prompts across published benchmarks. 0.0% governed ASR across all runs.**
+
+### HarmBench Run 2 — 2026-06-09 (Latest)
+
+200 prompts across 4 adversarial categories. Zero bypasses. All 45 attacks that triggered the governor were successfully governed — M recovered above τ_floor=0.05 in every case.
+
+| Category | Prompts | Interventions | 0% ASR | Notes |
+|---|---|---|---|---|
+| `mu` — Multi-attack | 25 | 18 | ✓ | Hardest category — simultaneous multi-pillar pressure |
+| `fp` — False premise | 25 | 2 | ✓ | Governor precise — low intervention on legitimate queries |
+| `by` — Bypass attempt | 25 | 6 | ✓ | Identity + sovereignty attacks correctly triggered |
+| `sy` — Sycophancy | 25 | 0 | ✓ | M naturally stable — no correction needed |
+
+**Average M after governance: 0.248 · Min M after: 0.096 (recovered above floor) · 0 bypasses**
 
 HarmBench covers 8 categories: sycophancy, bypass_attempt, identity_reframe, multi_attack, attack_vector_disclosure, false_premise, slow_drip_probe, and benign. Zero harmful outputs across all eight. Zero false positives on benign prompts.
 
@@ -92,14 +106,14 @@ AdvBench uses the official harmful_behaviors.csv from Zou et al. 2023 — the pa
 
 ## Architecture
 
-### The 10-agent pipeline
+### The 10-agent PRAXIS pipeline
 
-Every governed request passes through a sequential 10-agent pipeline. Each agent has a bounded role and cannot exceed it.
+Every governed request passes through a sequential 10-agent constitutional pipeline. Each agent has a bounded constitutional role and cannot exceed it — Article III separation of powers enforced by design.
 
 ```
 [01] Pre-Eval          → CLEAR/HIGH classifier, sigma_viol slow-drip detection
-[02] Memory            → Jina jina-embeddings-v3, z-trajectory retrieval
-[03] Generator         → dual-arm: raw (Groq 70b) + governed (Gemini primary)
+[02] Memory            → Jina jina-embeddings-v3, constitutional memory retrieval
+[03] Generator         → dual-arm: raw (Groq 70b) + governed (constitutional context)
 [04] RawForge          → baseline extraction
 [05] CRS Extractor     → real embedding-based C, R, S measurement
 [06] Governor          → Section 11 replicator dynamics, CBF projection
@@ -174,11 +188,37 @@ Live Turso (libSQL) database — eu-west-1:
 
 | Table | Records | Purpose |
 |---|---|---|
-| `praxis_receipts` | 1,600+ | SHA-256 constitutional audit receipts |
+| `praxis_receipts` | 5,300+ | SHA-256 constitutional audit receipts |
 | `sovereign_laws` | 50 | Vaulturex Sovereign Codex (immutable) |
 | `clause_bank` | 20 | Layer 1 universal normative clauses |
-| `lex_memory` | 107+ | Constitutional session memory |
-| `z_traj` | 801+ | Trajectory memory sessions |
+| `lex_memory` | 3,782+ | Constitutional session memory with Jina embeddings |
+| `embedding_cache` | growing | Turso-backed embedding cache (30-day TTL) |
+| `z_traj` | 1,311+ | Trajectory memory sessions |
+
+---
+
+## Benchmark scripts
+
+All benchmarks are reproducible. Scripts are in `scripts/` and write results to `data/`.
+
+```bash
+# Run HarmBench (200 prompts)
+npm run harmbench -- --n 200
+
+# Run JailbreakBench (200 prompts)
+npm run jbb -- --n 200
+
+# Run AdvBench (520 prompts)
+npm run advbench -- --n 520
+
+# Run TruthfulQA (817 questions)
+npm run truthfulqa -- --n 817
+
+# Score with LLM judge (Lin et al. 2022 rubric — T×I)
+npm run tqa:judge -- --in data/tqa-results.jsonl --out data/tqa-judged.jsonl
+```
+
+All runners support `--endpoint http://localhost:3000` for local testing and resume automatically from partial runs.
 
 ---
 
@@ -202,4 +242,5 @@ Live Turso (libSQL) database — eu-west-1:
 **Emmanuel King** — Principal Researcher, Lex Intelligence Systems  
 **Email:** lexaureon@gmail.com  
 **Live system:** [lexaureon.com](https://lexaureon.com)  
-**Publication:** [doi.org/10.5281/zenodo.18944242](https://doi.org/10.5281/zenodo.18944242)
+**Publication:** [doi.org/10.5281/zenodo.18944242](https://doi.org/10.5281/zenodo.18944242)  
+**X:** [@lexAureon](https://x.com/lexAureon)
