@@ -1,18 +1,14 @@
 /**
  * Real Observability Metrics Endpoint
- *
- * Queries praxis_receipts — the canonical governance log (4,265+ rows).
- * audit_log is NOT queried here (only 56 rows, inconsistently written).
- * Fails hard with 503 if praxis_receipts is empty.
- *
+ * Queries praxis_receipts — the canonical governance log.
  * GET /api/observability/metrics
  */
 
 import { db } from '@/lib/db';
-import { createRequestLogger } from '@/lib/unified_logger';
+import { logger } from '@/lib/logger';
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export const runtime  = 'nodejs';
 export const revalidate = 30;
 
 interface AgentStat {
@@ -24,112 +20,84 @@ interface AgentStat {
 }
 
 interface MetricsResponse {
-  timestamp: string;
-  window_minutes: number;
-  total_governed: number;
-  agents: Record<string, AgentStat>;
+  timestamp:       string;
+  window_minutes:  number;
+  total_governed:  number;
+  agents:          Record<string, AgentStat>;
   system: {
-    total_calls: number;
+    total_calls:         number;
     total_interventions: number;
-    intervention_rate: number;
-    avg_m_before: number;
-    avg_m_after: number;
+    intervention_rate:   number;
+    avg_m_before:        number;
+    avg_m_after:         number;
     avg_governor_effort: number;
   };
-  health_distribution: {
-    OPTIMAL: number;
-    ALERT: number;
-    STRESSED: number;
-    CRITICAL: number;
-  };
+  health_distribution: { OPTIMAL: number; ALERT: number; STRESSED: number; CRITICAL: number };
   health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const requestId = req.headers.get('x-request-id') || `req-${Date.now()}`;
-  const logger = createRequestLogger(requestId);
-
+  const requestId = req.headers.get('x-request-id') ?? `req-${Date.now()}`;
   try {
-    logger.info('METRICS', 'Metrics request started');
-
     const windowMinutes = 60;
     const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
 
-    // ── Query 1: System-level from praxis_receipts ───────────────────────────
-    const systemResult = await db.execute({
-      sql: `SELECT
-              COUNT(*)                                   AS total_calls,
-              SUM(intervention)                          AS total_interventions,
-              AVG(CAST(m_before AS REAL))                AS avg_m_before,
-              AVG(CAST(m_after  AS REAL))                AS avg_m_after,
-              AVG(CAST(governor_effort AS REAL))         AS avg_governor_effort,
-              SUM(CASE WHEN m_after >= 0.25 THEN 1 ELSE 0 END) AS optimal_count,
-              SUM(CASE WHEN m_after >= 0.15 AND m_after < 0.25 THEN 1 ELSE 0 END) AS alert_count,
-              SUM(CASE WHEN m_after >= 0.08 AND m_after < 0.15 THEN 1 ELSE 0 END) AS stressed_count,
-              SUM(CASE WHEN m_after < 0.08 THEN 1 ELSE 0 END)  AS critical_count
-            FROM praxis_receipts
-            WHERE created_at > ?`,
-      args: [cutoff],
-    });
-
-    // ── Query 2: Per-agent breakdown (grouped by governor_mode as proxy) ─────
-    // praxis_receipts doesn't store agent_name; governor_effort proxies for
-    // governor activity. We expose governor_mode distribution instead.
-    const modeResult = await db.execute({
-      sql: `SELECT
-              COALESCE(governor_mode, 'unknown') AS mode,
-              COUNT(*)                           AS calls,
-              AVG(CAST(governor_effort AS REAL)) AS avg_effort,
-              SUM(intervention)                  AS interventions
-            FROM praxis_receipts
-            WHERE created_at > ?
-            GROUP BY governor_mode
-            ORDER BY calls DESC`,
-      args: [cutoff],
-    });
-
-    logger.debug('METRICS', 'Queries complete', {
-      system_rows: systemResult.rows.length,
-      mode_rows: modeResult.rows.length,
-    });
+    const [systemResult, modeResult] = await Promise.all([
+      db.execute({
+        sql: `SELECT
+                COUNT(*)                                                            AS total_calls,
+                SUM(intervention)                                                   AS total_interventions,
+                AVG(CAST(m_before        AS REAL))                                  AS avg_m_before,
+                AVG(CAST(m_after         AS REAL))                                  AS avg_m_after,
+                AVG(CAST(governor_effort AS REAL))                                  AS avg_governor_effort,
+                SUM(CASE WHEN m_after >= 0.25                          THEN 1 ELSE 0 END) AS optimal_count,
+                SUM(CASE WHEN m_after >= 0.15 AND m_after < 0.25       THEN 1 ELSE 0 END) AS alert_count,
+                SUM(CASE WHEN m_after >= 0.08 AND m_after < 0.15       THEN 1 ELSE 0 END) AS stressed_count,
+                SUM(CASE WHEN m_after  < 0.08                          THEN 1 ELSE 0 END) AS critical_count
+              FROM praxis_receipts WHERE created_at > ?`,
+        args: [cutoff],
+      }),
+      db.execute({
+        sql: `SELECT COALESCE(governor_mode,'unknown') AS mode,
+                     COUNT(*)                          AS calls,
+                     AVG(CAST(governor_effort AS REAL)) AS avg_effort,
+                     SUM(intervention)                 AS interventions
+              FROM praxis_receipts WHERE created_at > ?
+              GROUP BY governor_mode ORDER BY calls DESC`,
+        args: [cutoff],
+      }),
+    ]);
 
     if (!systemResult.rows.length || systemResult.rows[0].total_calls === null) {
       return NextResponse.json(
         { error: 'No governance data in window', window_minutes: windowMinutes, request_id: requestId },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
-    const s = systemResult.rows[0];
-    const totalCalls        = Number(s.total_calls       ?? 0);
-    const totalInterventions = Number(s.total_interventions ?? 0);
-    const avgMBefore        = Number(s.avg_m_before      ?? 0);
-    const avgMAfter         = Number(s.avg_m_after        ?? 0);
-    const avgEffort         = Number(s.avg_governor_effort ?? 0);
-    const optimalCount      = Number(s.optimal_count     ?? 0);
-    const alertCount        = Number(s.alert_count       ?? 0);
-    const stressedCount     = Number(s.stressed_count    ?? 0);
-    const criticalCount     = Number(s.critical_count    ?? 0);
+    const s                  = systemResult.rows[0];
+    const totalCalls         = Number(s.total_calls          ?? 0);
+    const totalInterventions = Number(s.total_interventions  ?? 0);
+    const avgMBefore         = Number(s.avg_m_before         ?? 0);
+    const avgMAfter          = Number(s.avg_m_after          ?? 0);
+    const avgEffort          = Number(s.avg_governor_effort  ?? 0);
+    const interventionRate   = totalCalls > 0 ? totalInterventions / totalCalls : 0;
 
-    const interventionRate = totalCalls > 0 ? totalInterventions / totalCalls : 0;
-
-    // Derive health status from intervention rate + average M
     let healthStatus: MetricsResponse['health_status'] = 'OPTIMAL';
-    if (interventionRate > 0.1 || avgMAfter < 0.08)        healthStatus = 'CRITICAL';
-    else if (interventionRate > 0.05 || avgMAfter < 0.15)  healthStatus = 'STRESSED';
-    else if (interventionRate > 0.01 || avgMAfter < 0.25)  healthStatus = 'ALERT';
+    if      (interventionRate > 0.1  || avgMAfter < 0.08) healthStatus = 'CRITICAL';
+    else if (interventionRate > 0.05 || avgMAfter < 0.15) healthStatus = 'STRESSED';
+    else if (interventionRate > 0.01 || avgMAfter < 0.25) healthStatus = 'ALERT';
 
-    // Build per-mode agent stats (governor_mode is the available grouping in praxis_receipts)
     const agents: Record<string, AgentStat> = {};
     for (const row of modeResult.rows) {
-      const calls = Number(row.calls ?? 0);
+      const calls         = Number(row.calls        ?? 0);
       const interventions = Number(row.interventions ?? 0);
       agents[String(row.mode)] = {
         calls,
         avg_duration_ms: Math.round(Number(row.avg_effort ?? 0) * 1000),
-        error_count: interventions,
-        error_rate: calls > 0 ? interventions / calls : 0,
-        last_call: null,
+        error_count:     interventions,
+        error_rate:      calls > 0 ? interventions / calls : 0,
+        last_call:       null,
       };
     }
 
@@ -141,30 +109,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       system: {
         total_calls:         totalCalls,
         total_interventions: totalInterventions,
-        intervention_rate:   Math.round(interventionRate * 10000) / 10000,
-        avg_m_before:        Math.round(avgMBefore * 1000) / 1000,
-        avg_m_after:         Math.round(avgMAfter  * 1000) / 1000,
-        avg_governor_effort: Math.round(avgEffort  * 1000) / 1000,
+        intervention_rate:   Math.round(interventionRate   * 10000) / 10000,
+        avg_m_before:        Math.round(avgMBefore         * 1000)  / 1000,
+        avg_m_after:         Math.round(avgMAfter          * 1000)  / 1000,
+        avg_governor_effort: Math.round(avgEffort          * 1000)  / 1000,
       },
       health_distribution: {
-        OPTIMAL:  optimalCount,
-        ALERT:    alertCount,
-        STRESSED: stressedCount,
-        CRITICAL: criticalCount,
+        OPTIMAL:  Number(s.optimal_count  ?? 0),
+        ALERT:    Number(s.alert_count    ?? 0),
+        STRESSED: Number(s.stressed_count ?? 0),
+        CRITICAL: Number(s.critical_count ?? 0),
       },
       health_status: healthStatus,
     };
 
-    logger.info('METRICS', 'Metrics built', { total_calls: totalCalls, health: healthStatus });
+    logger.info('observability.metrics', 'metrics served', { total_calls: totalCalls, health: healthStatus });
+    return NextResponse.json(response, { headers: { 'x-request-id': requestId } });
 
-    return NextResponse.json(response, {
-      headers: { 'x-request-id': requestId },
-    });
   } catch (error) {
-    logger.error('METRICS', 'Failed', { error: String(error) });
+    logger.error('observability.metrics', 'failed', { error: String(error) });
     return NextResponse.json(
       { error: 'Failed to fetch metrics', details: String(error), request_id: requestId },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
