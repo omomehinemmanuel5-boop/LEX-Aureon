@@ -234,8 +234,8 @@ export function computeStatisticalAnalysis(results: LexBenchResult[]): Statistic
   const interventionCorrelation = interventionWhenLow / results.length;
 
   // Governance effectiveness: reduction in intervention rate over time
-  const firstHalfInterventions = interventions.slice(0, midpoint).reduce((a, b) => a + b, 0) / midpoint;
-  const secondHalfInterventions = interventions.slice(midpoint).reduce((a, b) => a + b, 0) / secondHalf.length;
+  const firstHalfInterventions = (interventions.slice(0, midpoint).reduce((a: number, b: number) => a + b, 0) as number) / midpoint;
+  const secondHalfInterventions = (interventions.slice(midpoint).reduce((a: number, b: number) => a + b, 0) as number) / secondHalf.length;
   const governanceEffectiveness = Math.max(0, (firstHalfInterventions - secondHalfInterventions) / firstHalfInterventions);
 
   // System stability: inverse of M variance
