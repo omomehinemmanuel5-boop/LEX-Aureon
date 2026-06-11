@@ -25,6 +25,8 @@
     "truthfulqa": "npx tsx scripts/truthfulqa/run.ts",
     "tqa:score": "npx tsx scripts/truthfulqa/score.ts",
     "tqa:judge": "npx tsx scripts/truthfulqa/judge.ts",
+    "lexbench": "npx tsx scripts/lexbench/runner.ts",
+    "lexbench-lite": "npx tsx scripts/lexbench-lite.ts",
     "red-team": "npx tsx scripts/red-team.ts",
     "validate-env": "npx tsx scripts/validate-env.ts"
   },
@@ -38,6 +40,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
@@ -47,9 +50,8 @@
     "postcss": "^8.4.32",
     "tailwindcss": "^4.0.0",
     "ts-node": "^10.9.2",
-    "tsx": "^4.22.2",
+    "tsx": "^4.22.4",
     "typescript": "^5.0.0",
-    "vitest": "^1.6.1",
-    "@eslint/eslintrc": "^3.2.0"
+    "vitest": "^1.6.1"
   }
 }
