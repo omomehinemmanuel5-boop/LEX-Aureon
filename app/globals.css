@@ -40,7 +40,7 @@
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted:   #94a3b8;
-  --border:       rgba(0,0,0,0.08);
+  --border:       rgba(0,0,0,0.12);
   --border-hover: rgba(201,168,76,0.5);
   --nav-bg:       rgba(250,250,247,0.92);
 }
@@ -347,19 +347,16 @@ body {
 [data-theme="light"] .text-white,
 [data-theme="light"] .text-slate-100,
 [data-theme="light"] .text-slate-200,
-[data-theme="light"] .text-slate-300 {
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-slate-400 {
   color: #0f172a !important;
 }
 
-[data-theme="light"] .text-slate-400,
-[data-theme="light"] .text-slate-500 {
-  color: #334155 !important;
-}
-
+[data-theme="light"] .text-slate-500,
 [data-theme="light"] .text-slate-600,
 [data-theme="light"] .text-slate-700,
 [data-theme="light"] .text-slate-800 {
-  color: #475569 !important;
+  color: #334155 !important;
 }
 
 /* Override inline white text styles globally in light mode */
@@ -369,8 +366,8 @@ body {
 [data-theme="light"] h4,
 [data-theme="light"] p,
 [data-theme="light"] span:not(.keep-color),
-[data-theme="light"] div:not(.terminal):not(pre):not(code) {
-  color: inherit;
+[data-theme="light"] div:not(.terminal):not(pre):not(code):not(.keep-theme) {
+  color: #0f172a !important;
 }
 
 /* Force nav text dark */
@@ -390,12 +387,22 @@ body {
   background: var(--bg-primary) !important;
 }
 
+/* Force borders to be visible in light mode */
+[data-theme="light"] .border,
+[data-theme="light"] .border-t,
+[data-theme="light"] .border-b,
+[data-theme="light"] .border-l,
+[data-theme="light"] .border-r {
+  border-color: rgba(0,0,0,0.12) !important;
+}
+
 /* Override all inline style white text in light mode */
 [data-theme="light"] *[style*="color: white"],
-[data-theme="light"] *[style*="color:#fff"],
-[data-theme="light"] *[style*="color: #fff"],
-[data-theme="light"] *[style*="color:#f1f5f9"],
+[data-theme="light"] *[style*="color:white"],
+[data-theme="light"] *[style*="color: #ffffff"],
+[data-theme="light"] *[style*="color:#ffffff"],
 [data-theme="light"] *[style*="color: #f1f5f9"],
+[data-theme="light"] *[style*="color:#f1f5f9"],
 [data-theme="light"] *[style*="color: rgb(255"] {
   color: #0f172a !important;
 }
@@ -423,17 +430,19 @@ body {
   color: #334155 !important;
 }
 
-/* Gold accent stays gold — keep it */
+/* Gold accent stays gold — keep it readable */
+[data-theme="light"] .text-gold,
 [data-theme="light"] *[style*="color: #c9a84c"],
 [data-theme="light"] *[style*="color: #e8c96d"],
 [data-theme="light"] *[style*="color: rgb(201, 168, 76)"] {
   color: #a07830 !important;
+  -webkit-text-fill-color: #a07830 !important;
 }
 
 /* Card backgrounds in light mode */
 [data-theme="light"] *[style*="background: rgba(255,255,255,0.0"],
 [data-theme="light"] *[style*="background: rgba(255, 255, 255, 0.0"] {
-  background: rgba(0,0,0,0.02) !important;
+  background: rgba(0,0,0,0.03) !important;
 }
 
 /* Section backgrounds */
@@ -447,6 +456,11 @@ body {
   background: var(--bg-secondary) !important;
 }
 
+/* Ensure background particles are visible but subtle in light mode */
+[data-theme="light"] .particle {
+  opacity: 0.15 !important;
+}
+
 /* Terminal always dark */
 [data-theme="light"] .font-mono[style*="background"],
 [data-theme="light"] pre,
@@ -454,4 +468,3 @@ body {
   background: #0d0d1a !important;
   color: #f1f5f9 !important;
 }
-
