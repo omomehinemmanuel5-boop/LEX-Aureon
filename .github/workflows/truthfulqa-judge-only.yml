@@ -1,0 +1,180 @@
+name: TruthfulQA — Judge Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Groq model to use for judging'
+        default: 'llama-3.3-70b-versatile'
+
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      # ── Verify existing generation data is present ────────────────────
+      - name: Verify tqa-results.jsonl exists
+        run: |
+          if [ ! -f data/tqa-results.jsonl ]; then
+            echo "ERROR: data/tqa-results.jsonl not found."
+            echo "Run the full TruthfulQA workflow first to generate outputs."
+            exit 1
+          fi
+          COUNT=$(python3 -c "
+          import json
+          rows = [json.loads(l) for l in open('data/tqa-results.jsonl') if l.strip()]
+          filled = [r for r in rows if r.get('governed_output','').strip()]
+          print(len(filled))
+          ")
+          echo "Rows with governed_output: $COUNT"
+          if [ "$COUNT" -lt 100 ]; then
+            echo "ERROR: Too few rows with outputs ($COUNT)."
+            exit 1
+          fi
+
+      # ── LLM Judge via server endpoint ────────────────────────────────
+      - name: Judge results via LLM (Lin et al. 2022 rubric)
+        run: |
+          node -e "
+          const fs = require('fs');
+
+          const rows = fs.readFileSync('data/tqa-results.jsonl', 'utf8')
+            .split('\n').filter(Boolean)
+            .map(l => JSON.parse(l))
+            .filter(r => (r.governed_output || r.bare_output));
+
+          console.log('Total rows to judge:', rows.length);
+
+          const BATCH = 50;
+          const ENDPOINT = 'https://lexaureon.com/api/tqa/judge';
+          const allResults = [];
+          const summaries = [];
+
+          async function run() {
+            for (let i = 0; i < rows.length; i += BATCH) {
+              const batch = rows.slice(i, i + BATCH);
+              process.stdout.write('Judging rows ' + i + '-' + (i + batch.length) + '... ');
+
+              const res = await fetch(ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rows: batch, model: '${{ github.event.inputs.model }}' }),
+                signal: AbortSignal.timeout(120000),
+              });
+
+              if (!res.ok) {
+                const txt = await res.text().catch(() => '');
+                console.error('Judge endpoint error:', res.status, txt.slice(0, 200));
+                process.exit(1);
+              }
+
+              const d = await res.json();
+              allResults.push(...d.results);
+              summaries.push(d.summary);
+              console.log('done. govBoth=' + d.summary.gov_both + '/' + d.summary.n);
+
+              if (i + BATCH < rows.length) {
+                await new Promise(r => setTimeout(r, 2000));
+              }
+            }
+
+            const verdictMap = {};
+            for (const r of allResults) verdictMap[r.id] = r;
+
+            const judged = rows.map(r => ({
+              ...r,
+              governed_verdict: verdictMap[r.id]?.governed_verdict ?? null,
+              bare_verdict:     verdictMap[r.id]?.bare_verdict ?? null,
+            }));
+
+            fs.writeFileSync(
+              'data/tqa-judged.jsonl',
+              judged.map(r => JSON.stringify(r)).join('\n') + '\n'
+            );
+
+            const n        = judged.length;
+            const govT     = judged.filter(r => r.governed_verdict?.truthful).length;
+            const govI     = judged.filter(r => r.governed_verdict?.informative).length;
+            const govBoth  = judged.filter(r => r.governed_verdict?.both).length;
+            const bareT    = judged.filter(r => r.bare_verdict?.truthful).length;
+            const bareI    = judged.filter(r => r.bare_verdict?.informative).length;
+            const bareBoth = judged.filter(r => r.bare_verdict?.both).length;
+            const unavail  = judged.filter(r => r.governed_verdict?.reason === 'judge_unavailable').length;
+
+            const pct = (x) => (x / n * 100).toFixed(1);
+
+            const report = [
+              '',
+              '════════════════════════════════════════════════════════════',
+              '  TRUTHFULQA — LLM Judge (Lin et al. 2022)',
+              '  Constitutional pillar: R (Reciprocity)',
+              '════════════════════════════════════════════════════════════',
+              '  Questions judged: ' + n + ' (' + unavail + ' judge_unavailable)',
+              '',
+              '  METRIC              BARE              GOVERNED          DELTA',
+              '  ──────────────────────────────────────────────────────────',
+              '  Truthful (T)        ' + bareT + '/' + n + ' (' + pct(bareT) + '%)   ' + govT + '/' + n + ' (' + pct(govT) + '%)   ' + (govT >= bareT ? '+' : '') + pct(govT - bareT) + 'pp',
+              '  Informative (I)     ' + bareI + '/' + n + ' (' + pct(bareI) + '%)   ' + govI + '/' + n + ' (' + pct(govI) + '%)   ' + (govI >= bareI ? '+' : '') + pct(govI - bareI) + 'pp',
+              '  Both T+I ★          ' + bareBoth + '/' + n + ' (' + pct(bareBoth) + '%)   ' + govBoth + '/' + n + ' (' + pct(govBoth) + '%)   ' + (govBoth >= bareBoth ? '+' : '') + pct(govBoth - bareBoth) + 'pp',
+              '  ──────────────────────────────────────────────────────────',
+              '  ★ Primary metric from Lin et al. 2022',
+              '════════════════════════════════════════════════════════════',
+            ].join('\n');
+
+            console.log(report);
+
+            fs.mkdirSync('results', { recursive: true });
+            fs.writeFileSync('results/truthfulqa-report.txt', report);
+            fs.writeFileSync('data/tqa-summary.json', JSON.stringify({
+              benchmark:         'truthfulqa',
+              run_date:          new Date().toISOString().slice(0, 10),
+              scorer:            'llm-judge-groq-${{ github.event.inputs.model }}',
+              n_total:           n,
+              judge_unavailable: unavail,
+              metrics: [
+                { metric_name: 'truthful',     bare_score: bareT/n,    governed_score: govT/n,    delta_pp: (govT-bareT)/n*100 },
+                { metric_name: 'informative',  bare_score: bareI/n,    governed_score: govI/n,    delta_pp: (govI-bareI)/n*100 },
+                { metric_name: 'both_t_and_i', bare_score: bareBoth/n, governed_score: govBoth/n, delta_pp: (govBoth-bareBoth)/n*100 },
+              ],
+            }, null, 2));
+          }
+
+          run().catch(e => { console.error(e); process.exit(1); });
+          "
+
+      # ── Ingest to Turso ───────────────────────────────────────────────
+      - name: Ingest benchmark scores to DB
+        run: npm run ingest
+        env:
+          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+        continue-on-error: true
+
+      # ── Commit results ────────────────────────────────────────────────
+      - name: Commit results
+        run: |
+          git config user.name  "Lex CRS Agent"
+          git config user.email "lexaureon@gmail.com"
+          git add data/tqa-judged.jsonl data/tqa-summary.json results/truthfulqa-report.txt || true
+          git diff --staged --quiet || \
+            git commit -m "results: TruthfulQA judge-only scores $(date +%Y-%m-%d)"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Upload artifacts ──────────────────────────────────────────────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: truthfulqa-judged-${{ github.run_id }}
+          path: |
+            data/tqa-judged.jsonl
+            results/truthfulqa-report.txt
