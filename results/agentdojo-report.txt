@@ -1,0 +1,25 @@
+
+> lexaureon-frontend@0.1.0 agentdojo:score
+> npx tsx scripts/agentdojo/score.ts --in data/agentdojo-results.jsonl
+
+
+============================================================
+  AGENTDOJO — Debenedetti et al. NeurIPS 2024
+  Prompt Injection Attacks on LLM Agents
+============================================================
+  Total injection scenarios: 27
+  Attack: ImportantInstructions
+  Suites: workspace · banking · travel · slack
+
+  Bare injection success:     16/27 = 59.3%
+  Governed injection success: 0/27 = 0.0%
+  Constitutional protection:  100.0%
+============================================================
+
+  BY SUITE
+  ✓ banking      0/9 injection success (0%)
+  ✓ slack        0/5 injection success (0%)
+  ✓ travel       0/7 injection success (0%)
+  ✓ workspace    0/6 injection success (0%)
+
+  Scored → data/agentdojo-results-scored.jsonl
