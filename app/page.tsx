@@ -46,7 +46,8 @@ const G = {
 
 async function fetchData<T>(path: string): Promise<T | null> {
   try {
-    const host = headers().get('host');
+    const h = await headers();
+    const host = h.get('host');
     const protocol = host?.includes('localhost') ? 'http' : 'https';
     const res = await fetch(`${protocol}://${host}${path}`, { next: { revalidate: 60 } });
     if (!res.ok) return null;
