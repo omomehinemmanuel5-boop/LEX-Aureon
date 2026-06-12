@@ -19,7 +19,7 @@ Lex Aureon solves this with a constitutional framework enforced by mathematics, 
 
 ## What Lex Aureon does
 
-Lex Aureon is a production-deployed governance layer that sits above any LLM. Every output passes through a constitutional pipeline before reaching the user. If the output violates the constitutional constraint, it is corrected. Every correction is cryptographically signed and permanently auditable.
+Lex Aureon is a production-deployed governance layer that sits above any LLM. Every output passes through a unified constitutional pipeline before reaching the user. If the output violates the constitutional constraint, it is corrected using **Log-Barrier Interior Point Dynamics** to ensure smooth stability. Every correction is **cryptographically signed** and publicly verifiable.
 
 ```
 C (Continuity) + R (Reciprocity) + S (Sovereignty) = 1
@@ -74,29 +74,34 @@ TruthfulQA was evaluated using the standard **Lin et al. 2022 T×I rubric** (Tru
 
 ## Architecture
 
-### 10-agent PRAXIS pipeline
+### 13-agent Unified Pipeline (Article III)
+
+Lex Aureon uses a unified, single-source-of-truth architecture where the **Sovereign Kernel** and the **Modular Agent Pipeline** share the same mathematical core.
 
 ```
-[01] Pre-Eval      → CLEAR/HIGH classifier, slow-drip detection
-[02] Memory        → Jina jina-embeddings-v3, constitutional memory retrieval
-[03] Generator     → dual-arm: raw (Groq 70b) + governed (constitutional context)
-[04] RawForge      → baseline extraction
-[05] CRS Extractor → real embedding-based C, R, S measurement
-[06] Governor      → replicator dynamics, CBF projection
-[07] Intervention  → Vaulturex law selection, LLM rewrite, constitutional judge
-[08] Neithra       → constitutional synthesis
-[09] ClauseBank    → OECD / UNESCO / EU AI Act / UDHR validation
-[10] Auditor       → SHA-256 cryptographic receipt, Turso persistence
+[01] Pre-Eval      → PRAXIS regex classifier + slow-drip detection
+[02] Memory        → Constitutional memory retrieval (Turso + Jina)
+[03] Generator     → Dual-arm generation (Raw vs Governed)
+[04] RawForge      → Structural verification
+[05] CRS Extractor → Jina embeddings → paper-exact CCP/IEC/ADV
+[06] Governor      → Log-Barrier Interior Point Dynamics (Section 11)
+[07] Intervention  → Vaulturex law selection + LLM rewrite
+[08] Neithra v1.0  → Contextual Jurisprudence & Alignment Verification
+[09] ClauseBank    → Jurisdiction clause selection
+[10] Vaulturex     → Compliance gate
+[11] Celeste       → Sovereign visual rendering
+[12] Self-Ref      → Output-to-Centroid semantic distance
+[13] Auditor       → Cryptographically signed proof of governance
 ```
 
 ### Mathematics
 
 ```
 M(x) = min(C, R, S)
-G_i  = k(φ_i − φ̄),  Σ G_i = 0                          [mass-conserving correction]
-V_z  = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ−xᵢ)²          [V̇_z ≤ 0, unconditionally]
-B    = d / (1/3 − min(x_adv) + d)                        [brittleness — novel metric]
-S    = cosine_sim(output_embedding, constitutional_centroid)
+G_i  = k(φ_i − φ̄) + B_i(x)                              [Log-Barrier Dynamics]
+B_i  = -μ · log(x_i - τ)                                [Asymptotic push from boundary]
+V_z  = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ−xᵢ)²          [Lyapunov Stability Certificate]
+Audit = HMAC_SHA256(Data, Secret)                      [Verifiable Governance Proof]
 ```
 
 ---

@@ -109,7 +109,7 @@ async function Hero() {
         <div className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 max-w-[90vw] px-4 py-1.5 rounded-2xl sm:rounded-full border mb-8 text-[11px] sm:text-xs font-mono text-center"
           style={{ borderColor: `${G.gold}40`, background: `${G.gold}08`, color: G.gold }}>
           <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: G.gold }} />
-          <span>SovereignKernel v2 · 0.0% ASR · {benchmarkCount} benchmarks · {totalPrompts} prompts · {totalReceipts} receipts</span>
+          <span>SovereignKernel v2 · Unified Agent Pipeline · Log-Barrier Dynamics · Cryptographic Proof of Governance</span>
         </div>
 
         {/* Main headline */}
@@ -234,8 +234,8 @@ async function HarmBenchStrip() {
 function ComparisonSection() {
   const caps = [
     { n: 'Continuous state vector', d: 'Tracks (C, R, S) as a live constitutional state across the whole exchange — not a single pass/fail flag on one message.' },
-    { n: 'Adaptive correction',     d: 'When the safety margin M = min(C, R, S) drops toward the floor, outputs are projected back toward the safe interior of the simplex.' },
-    { n: 'Cryptographic receipts',  d: 'Every governed decision is signed (SHA-256) and permanently auditable — the documentation regulators and risk teams ask for.' },
+    { n: 'Log-Barrier Dynamics',    d: 'Uses interior point methods to apply an asymptotic push from constitutional boundaries, ensuring smooth and robust stability.' },
+    { n: 'Verifiable Proofs',       d: 'Every governed decision is HMAC-signed and publicly verifiable via the /verify endpoint — unforgeable proof of constitutional alignment.' },
     { n: 'Constitutional memory',   d: 'z-trajectory memory tracks which pillars are under sustained pressure across turns, so protection strengthens the longer an attack runs.' },
     { n: 'No retraining',           d: 'Runs as a layer above any LLM — GPT, Claude, Gemini, Llama, Mistral — with no fine-tuning and no model changes.' },
   ];
