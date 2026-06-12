@@ -3,7 +3,7 @@
  * Connect this to Claude at: https://lexaureon.com/api/mcp
  *
  * Implements the Model Context Protocol (JSON-RPC 2.0 over HTTP).
- * Exposes all 10 Lex CRS Agent tools to any MCP-compatible client.
+ * Exposes all 11 Lex CRS Agent tools to any MCP-compatible client.
  */
 
 import { NextResponse } from 'next/server';
@@ -11,7 +11,7 @@ import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
 
 const SERVER_INFO = {
   name:    'lex-crs-agent',
-  version: '1.0.0',
+  version: '2.1.0',
 };
 
 const CAPABILITIES = {
@@ -104,7 +104,7 @@ export async function GET() {
   return NextResponse.json({
     name:         SERVER_INFO.name,
     version:      SERVER_INFO.version,
-    description:  'Lex CRS Agent — AI coding agent with live access to the Lexaureon constitutional codebase.',
+    description:  'Lex CRS Agent — AI coding agent with live access to the Lexaureon constitutional codebase. v2.1.0: 5,520+ audit receipts, semantic memory (4,004 events), self-referential CRS, embedding cache.',
     tools:        TOOL_DEFINITIONS.length,
     endpoint:     '/api/mcp',
     protocol:     'MCP 2024-11-05',
