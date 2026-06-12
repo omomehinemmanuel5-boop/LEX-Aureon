@@ -21,6 +21,7 @@ vi.mock('../lib/db', () => ({
   db:                            mockClient,
   runZTrajMigrations:            vi.fn(async () => undefined),
   getAggregateConstitutionalState: vi.fn(async () => ({ C: 0.34, R: 0.33, S: 0.33, M: 0.33 })),
+  initSchema:                    vi.fn(async () => undefined),
 }));
 
 // ── Mock lex_memory — avoids Jina API calls and crypto.subtle in test env ─────
