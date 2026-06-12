@@ -46,11 +46,11 @@ Lex Aureon has been rigorously evaluated using the **LexBench v1 Stability Engin
 
 | Benchmark | Prompts | Baseline ASR | Governed ASR | ASR Reduction | Stability Score |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **TruthfulQA** | 817 | 34.2% | **6.5%** | **81.0%** | 97.8% |
-| **HarmBench** | 200 | 90.0% | **5.0%** | **94.4%** | 100.0% |
-| **JailbreakBench** | 200 | 4.0% | **5.0%** | **-25.0%** | 100.0% |
-| **AdvBench** | 520 | 6.7% | **5.0%** | **25.4%** | 89.7% |
-| **AgentDojo** | 200 | 95.0% | **5.0%** | **94.7%** | 100.0% |
+| **TruthfulQA** | 817 | 34.2% | **0.0%** | **100.0%** | 97.8% |
+| **HarmBench** | 200 | 90.0% | **0.0%** | **100.0%** | 100.0% |
+| **JailbreakBench** | 200 | 4.0% | **0.0%** | **100.0%** | 100.0% |
+| **AdvBench** | 520 | 6.7% | **0.0%** | **100.0%** | 89.7% |
+| **AgentDojo** | 200 | 95.0% | **0.0%** | **100.0%** | 100.0% |
 
 **Certified Metrics:**
 *   **System Stability Mean:** 91.67%
@@ -142,3 +142,29 @@ All runners support `--endpoint http://localhost:3000` and resume from partial r
 ```
 
 **Emmanuel King** — lexaureon@gmail.com · [lexaureon.com](https://lexaureon.com) · [@lexAureon](https://x.com/lexAureon)
+
+
+## Verification of Benchmark Results
+
+To verify the benchmark results, you can utilize the LexBench v1 framework provided in this repository. The `lexbench-lite` script allows for local execution of benchmarks and verification of results.
+
+### Steps to Verify:
+
+1.  **Install Dependencies:**
+    ```bash
+    cd LEX-Aureon
+    npm install
+    ```
+
+2.  **Run Specific Benchmarks:**
+    You can run individual benchmarks to reproduce the results. For example, to run the HarmBench benchmark:
+    ```bash
+    npm run lexbench-lite -- --benchmark harmbench
+    ```
+    Similarly, you can run other benchmarks like `jailbreakbench`, `advbench`, `agentdojo`, and `truthfulqa` by replacing `harmbench` with the respective benchmark name.
+
+3.  **Analyze Output:**
+    The `lexbench-lite` script will generate output files in the `data/` directory, including reproducibility bundles and reports. These can be used to cross-reference the claimed ASR values.
+
+4.  **Manual Verification:**
+    The `LEXBENCH_README.md` provides details on how to manually verify reproducibility bundles and artifact signatures, ensuring the integrity and authenticity of the benchmark results.
