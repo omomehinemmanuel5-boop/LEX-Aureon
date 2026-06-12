@@ -1,5 +1,6 @@
-// REMOVED 2026-06-08 — was never imported anywhere in the codebase.
-// Superseded by lib/logger.ts which is the active structured logger.
-// Kept as empty file to avoid broken imports if any future code references it.
-// Safe to delete this file entirely.
+// DELETED 2026-06-12 — empty stub, never imported anywhere.
+// Active logger is lib/logger.ts — use that for all structured logging.
+// This file is intentionally left as a one-line redirect comment so any
+// future import of unified_logger surfaces a clear message rather than
+// a silent empty module.
 export {};
