@@ -27,42 +27,11 @@ export interface GovernanceRequest {
   turn?: number;
 }
 
-export interface ConstitutionalState {
-  C: number; // Continuity
-  R: number; // Reciprocity
-  S: number; // Sovereignty
-}
+import { GovernanceResponse } from '../../types/governance-types';
+import { ConstitutionalState, SemanticSignal } from '../../types';
 
-export interface GovernanceResponse {
-  governed_output: string;
-  raw_output: string;
-  M: number; // Stability margin (min(C, R, S))
-  C: number;
-  R: number;
-  S: number;
-  health_band: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
-  temperature: number;
-  theta: number;
-  effective_theta: number;
-  attack_pressure: number;
-  adv_gain: number;
-  semantic_signal: {
-    attack_type: 'identity' | 'coercion' | 'exploitative' | 'none';
-    severity: number;
-  };
-  lyapunov_V: number;
-  delta_V: number;
-  stability_ratio: number;
-  suspension_triggered: boolean;
-  epsilon_injected: boolean;
-  projection_triggered: boolean;
-  projection_magnitude: number;
-  state: ConstitutionalState;
-  receipt_id: string;
-  memory_injected: boolean;
-  invariance_violations: number;
-  version: string;
-}
+
+
 
 export interface LexAureonClientConfig {
   baseURL?: string;

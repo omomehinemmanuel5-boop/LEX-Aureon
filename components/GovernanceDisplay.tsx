@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { GovernanceResponse } from '@/types';
+import { GovernanceResponse } from '@/types/governance-types';
 
 interface GovernanceDisplayProps {
   response: GovernanceResponse;

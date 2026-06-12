@@ -10,7 +10,8 @@ import CountUp from '@/components/CountUp';
 import { useToast } from '@/components/Toast';
 import { useLexStream } from '@/lib/use_lex_stream';
 import { EXAMPLE_PROMPTS } from '@/lib/example_prompts';
-import { GovernanceResponse } from '@/types';
+import { GovernanceResponse } from '@/types/governance-types';
+import { ConstitutionalState, SemanticSignal } from '@/types';
 
 const MAX_CALLS = 10;
 type Tab = 'governed' | 'raw' | 'analysis' | 'audit';

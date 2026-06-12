@@ -1,4 +1,4 @@
-import { GovernanceResponse } from '@/types';
+import { GovernanceResponse } from '@/types/governance-types';
 
 interface ResultsPanelProps {
   response: GovernanceResponse;

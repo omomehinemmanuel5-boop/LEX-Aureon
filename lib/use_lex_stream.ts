@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import type { GovernanceResponse } from '@/types';
+import type { GovernanceResponse } from '@/types/governance-types';
 
 export interface StreamState {
   loading: boolean;
