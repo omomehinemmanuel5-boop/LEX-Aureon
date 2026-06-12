@@ -28,7 +28,7 @@ export default function LandingNav() {
         <Link href="/" className="flex items-center gap-3">
           <Image src="/logo.png" alt="Lex Aureon" width={32} height={32} className="w-8 h-8 rounded-lg object-cover" />
           <div>
-            <div className="text-sm font-bold text-slate-900 dark:text-white leading-none">Lex Aureon</div>
+            <div className="text-sm font-black text-slate-900 dark:text-white leading-none">Lex Aureon</div>
             <div
               className="text-[9px] leading-none mt-0.5 font-bold"
               style={{ color: G.gold, fontFamily: 'monospace', letterSpacing: '0.1em' }}
@@ -39,7 +39,7 @@ export default function LandingNav() {
         </Link>
 
         {/* Desktop links */}
-        <div className="hidden sm:flex items-center gap-6 text-xs text-slate-500 dark:text-slate-400 font-bold">
+        <div className="hidden sm:flex items-center gap-8 text-xs text-slate-600 dark:text-slate-400 font-black tracking-tight">
           {NAV_LINKS.map(([label, href]) => (
             <a
               key={label}

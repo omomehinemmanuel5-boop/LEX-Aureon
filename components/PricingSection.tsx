@@ -66,17 +66,17 @@ export default function PricingSection() {
                 </div>
               )}
               <div className="mb-5">
-                <div className="text-xs font-mono uppercase tracking-widest mb-2 font-bold"
-                  style={{ color: plan.highlight ? G.gold : '#64748b' }}>{plan.name}</div>
+                <div className="text-xs font-mono uppercase tracking-widest mb-2 font-black"
+                  style={{ color: plan.highlight ? G.gold : '#475569' }}>{plan.name}</div>
                 <div className="flex items-baseline gap-1">
                   <span className="text-3xl font-black text-slate-900 dark:text-white">{plan.price}</span>
-                  {plan.period && <span className="text-slate-500 text-sm">{plan.period}</span>}
+                  {plan.period && <span className="text-slate-600 dark:text-slate-500 text-sm font-bold">{plan.period}</span>}
                 </div>
               </div>
               <ul className="space-y-2 flex-1 mb-6">
                 {plan.features.map(f => (
-                  <li key={f} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400">
-                    <span style={{ color: plan.highlight ? G.gold : '#10b981' }} className="flex-shrink-0 mt-0.5 font-bold">✓</span>
+                  <li key={f} className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 font-bold">
+                    <span style={{ color: plan.highlight ? G.gold : '#10b981' }} className="flex-shrink-0 mt-0.5 font-black">✓</span>
                     {f}
                   </li>
                 ))}
@@ -98,7 +98,7 @@ export default function PricingSection() {
           ))}
         </div>
 
-        <div className="mt-8 text-center text-xs text-slate-600 font-mono">
+        <div className="mt-8 text-center text-xs text-slate-500 dark:text-slate-600 font-mono font-black uppercase tracking-tighter">
           All plans include cryptographic audit receipts. Your AI governance is always provable.
         </div>
       </div>

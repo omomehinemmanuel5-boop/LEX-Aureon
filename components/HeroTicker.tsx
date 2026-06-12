@@ -45,10 +45,8 @@ export default function HeroTicker() {
 
   return (
     <div
-      className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-mono transition-opacity duration-300 ${flash ? 'opacity-60' : 'opacity-100'}`}
+      className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-mono transition-all duration-300 ${flash ? 'opacity-60' : 'opacity-100'} bg-black/80 dark:bg-black/80 border-black/10 dark:border-white/10 shadow-lg`}
       style={{
-        borderColor: `${GOLD}30`,
-        background: 'rgba(5,8,16,0.8)',
         color: GOLD,
         backdropFilter: 'blur(8px)',
       }}

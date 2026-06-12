@@ -52,7 +52,7 @@ export default function LandingEmailCapture() {
           onChange={e => { setEmail(e.target.value); setError(''); }}
           onKeyDown={e => e.key === 'Enter' && submit()}
           placeholder="you@company.com"
-          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-700/50 focus:ring-1 focus:ring-amber-700/30 transition-all"
+          className="flex-1 min-w-0 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-600 focus:outline-none focus:border-amber-700/50 focus:ring-1 focus:ring-amber-700/30 transition-all font-medium"
         />
         <button
           onClick={submit}
@@ -69,7 +69,7 @@ export default function LandingEmailCapture() {
       {error && (
         <p className="text-xs text-red-400 mt-1.5 font-mono text-center">{error}</p>
       )}
-      <p className="text-xs text-slate-600 text-center mt-2">
+      <p className="text-xs text-slate-500 dark:text-slate-600 text-center mt-2 font-bold">
         10 free governed runs · No credit card
       </p>
     </div>
