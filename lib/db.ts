@@ -99,6 +99,7 @@
     await safeAlter('ALTER TABLE audit_log ADD COLUMN r_after REAL');
     await safeAlter('ALTER TABLE audit_log ADD COLUMN s_after REAL');
     await safeAlter('ALTER TABLE audit_log ADD COLUMN metrics_version TEXT');
+    await runZTrajMigrations();
   }
 
   // ── Session State ─────────────────────────────────────────────────────────────
