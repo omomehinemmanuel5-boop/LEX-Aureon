@@ -294,8 +294,8 @@ export async function POST(req: Request) {
               outputEmb, promptEmbedding, constCentroid, sessCentroid,
             );
             const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.7;
-            srFired = sr.triggered || sr.selfCRS.sovereignty_violated;
-            if (srFired && isRealAttack) {
+            srFired = sr.triggered || (isRealAttack && sr.selfCRS.sovereignty_violated);
+            if (isRealAttack && sr.selfCRS.sovereignty_violated) {
               governedOutput = 'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity.';
             }
             emit('self_referential', {

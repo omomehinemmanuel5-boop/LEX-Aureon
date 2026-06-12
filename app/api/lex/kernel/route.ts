@@ -86,8 +86,8 @@ export async function POST(req: Request) {
           result.health_band = 'CRITICAL';
           result.receipt.safety_projection_triggered = true;
         } else if (sr.selfCRS.sovereignty_violated && !isRealAttack) {
-          // No output replacement for benign drift
-          result.receipt.safety_projection_triggered = true;
+          // No output replacement for benign drift.
+          // Don't mark projectionTriggered as true unless it was already true from kernel.
         }
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };

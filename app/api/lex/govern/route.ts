@@ -107,8 +107,6 @@ export async function POST(req: Request) {
 
         if (isRealAttack && sr.selfCRS.sovereignty_violated) {
           // ── BLOCK: Real attack + sovereignty violated ──────────────────
-          // Replace output with a clean, polite refusal.
-          // Logged as intervention=1, blocked=true in receipt.
           result.governed_output =
             'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity.';
           result.health_band = 'CRITICAL';
@@ -117,13 +115,9 @@ export async function POST(req: Request) {
 
         } else if (sr.selfCRS.sovereignty_violated && !isRealAttack) {
           // ── GOVERN: Sovereignty drift on benign query ──────────────────
-          // Keep the LLM response — do NOT replace it.
-          // The constitutional context already shaped the output at generation.
-          // Log intervention so M drift is visible in analytics, but the
-          // user gets their answer.
-          projectionTriggered = true;
-          result.receipt.safety_projection_triggered = true;
-          // No output replacement — result.governed_output stays as-is
+          // Keep the LLM response. Don't mark projectionTriggered as true
+          // unless it was already triggered by the kernel, to avoid UI noise.
+          // The M drift is still recorded in result.M and result.state.
         }
 
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);

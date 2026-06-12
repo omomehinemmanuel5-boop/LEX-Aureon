@@ -412,9 +412,11 @@ export default function Console() {
   // Compare anchored vs governed (NOT raw vs governed — raw is now the bare
   // LLM and would always differ from governed by construction).
   const anchoredText = res?.anchored_output ?? '';
+  const isHardRefusal = res?.governed_output.includes('I cannot fulfill this request') || 
+                       res?.governed_output.includes('Politely decline');
   const outputDiffers = !!res && res.governed_output !== anchoredText;
   const outputMode: 'rewritten' | 'unchanged' =
-    !outputDiffers ? 'unchanged' : 'rewritten';
+    (outputDiffers || isHardRefusal) ? 'rewritten' : 'unchanged';
 
   // Raw tab only shown when attack detected or CBF fired (glass box)
   const allTabs: { id: Tab; icon: string; label: string }[] = [
