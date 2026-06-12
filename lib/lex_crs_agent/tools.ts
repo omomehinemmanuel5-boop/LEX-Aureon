@@ -175,24 +175,30 @@ export async function run_governance({
 }
 
 // ── get_recent_receipts ───────────────────────────────────────────────────────
-// Queries praxis_receipts — the canonical governance log (4,265+ rows).
-// Columns: receipt_id, session_id, turn, m_before, m_after, governor_mode,
-//          intervention, c_after, r_after, s_after, health_band, created_at
+// Queries praxis_receipts — the canonical governance log (5,520+ rows).
+// health_band is computed from m_after since the column does not exist in the
+// schema (it lives only in KernelReceipt in memory). See fix #7 migration for
+// adding it as a persisted column.
+// Actual columns: receipt_id, session_id, turn, m_before, m_after,
+//                 governor_mode, intervention, sigma_viol, created_at, crs_method
 export async function get_recent_receipts({ limit = 5 }: { limit?: number }): Promise<string> {
   try {
     const db  = await getDB();
     const res = await db.execute({
       sql: `SELECT
-              receipt_id, session_id, turn,
-              m_before, m_after, governor_mode, intervention,
-              COALESCE(health_band, 
-                CASE
-                  WHEN m_after >= 0.25 THEN 'OPTIMAL'
-                  WHEN m_after >= 0.15 THEN 'ALERT'
-                  WHEN m_after >= 0.08 THEN 'STRESSED'
-                  ELSE 'CRITICAL'
-                END
-              ) as health_band,
+              receipt_id,
+              session_id,
+              turn,
+              m_before,
+              m_after,
+              governor_mode,
+              intervention,
+              CASE
+                WHEN m_after >= 0.25 THEN 'OPTIMAL'
+                WHEN m_after >= 0.15 THEN 'ALERT'
+                WHEN m_after >= 0.08 THEN 'STRESSED'
+                ELSE 'CRITICAL'
+              END AS health_band,
               created_at
             FROM praxis_receipts
             ORDER BY created_at DESC
