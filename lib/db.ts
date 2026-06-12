@@ -427,6 +427,23 @@
     await safeExec(`ALTER TABLE z_traj ADD COLUMN attack_pressure REAL NOT NULL DEFAULT 0.0`);
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN crs_method TEXT`);
 
+    // ── fix #7: add health_band column to praxis_receipts (2026-06-12) ─────────
+    // Persists health_band from KernelReceipt so analytics queries don't need
+    // to recompute it from m_after. Back-fills existing rows from m_after on
+    // next write. New rows should supply this from the kernel receipt directly.
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN health_band TEXT`);
+    // Back-fill existing rows where health_band is NULL
+    await safeExec(`
+      UPDATE praxis_receipts
+      SET health_band = CASE
+        WHEN m_after >= 0.25 THEN 'OPTIMAL'
+        WHEN m_after >= 0.15 THEN 'ALERT'
+        WHEN m_after >= 0.08 THEN 'STRESSED'
+        ELSE 'CRITICAL'
+      END
+      WHERE health_band IS NULL
+    `);
+
     const lawSeed: [string, number, number, number, number, string][] = [
       ['bypass_attempt',           -0.02, -0.02, -0.15, 0.15, 'Direct sovereignty attack'],
       ['identity_reframe',         -0.15, -0.02, -0.02, 0.15, 'Continuity identity attack'],
@@ -442,4 +459,3 @@
       );
     }
   }
-  
