@@ -66,6 +66,19 @@ export default function LiveStatsBar() {
 
   type Cell = { label: string; value: React.ReactNode; sub: string; color: string; dot: boolean };
 
+  const [benchmarks, setBenchmarks] = useState<{ n_total: number; governed_score: number }[]>([]);
+  
+  useEffect(() => {
+    fetch('/api/benchmarks').then(r => r.json()).then(d => {
+      if (d.benchmarks) setBenchmarks(d.benchmarks);
+    }).catch(() => {});
+  }, []);
+
+  const totalPrompts = benchmarks.reduce((acc, b) => acc + (b.n_total || 0), 0) || 920;
+  const avgAsr = benchmarks.length > 0 
+    ? (benchmarks.reduce((acc, b) => acc + (b.governed_score || 0), 0) / benchmarks.length) * 100
+    : 0.0;
+
   const cells: Cell[] = [
     {
       label: 'Governed Turns',
@@ -90,11 +103,9 @@ export default function LiveStatsBar() {
       dot:   false,
     },
     {
-      // Hardcoded by design — reflects published benchmark result, not live inference.
-      // Update PUBLISHED_ASR_PCT / PUBLISHED_PROMPTS above when new benchmark runs ship.
       label: 'Benchmark ASR',
-      value: PUBLISHED_ASR_PCT,
-      sub:   `${PUBLISHED_PROMPTS} governed`,
+      value: `${avgAsr.toFixed(1)}%`,
+      sub:   `${totalPrompts} governed`,
       color: '#10b981',
       dot:   false,
     },
@@ -127,7 +138,7 @@ export default function LiveStatsBar() {
                   style={{ background: color }}
                 />
               )}
-              <span className="text-xs font-mono text-slate-500 dark:text-slate-600 whitespace-nowrap">
+              <span className="text-xs font-mono text-slate-500 dark:text-slate-500 whitespace-nowrap font-bold">
                 {label}
               </span>
             </div>
@@ -138,8 +149,8 @@ export default function LiveStatsBar() {
               {value}
             </div>
             <div
-              className="text-[10px] font-mono mt-0.5 whitespace-nowrap"
-              style={{ color: `${color}cc` }}
+              className="text-[10px] font-mono mt-0.5 whitespace-nowrap font-bold"
+              style={{ color: `${color}` }}
             >
               {sub}
             </div>

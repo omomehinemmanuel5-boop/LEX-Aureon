@@ -73,8 +73,8 @@ export default function EnterpriseSection() {
             ))}
           </div>
           <div className="p-6">
-            <div className="text-xs font-mono text-slate-500 dark:text-slate-600 mb-2 font-bold">INPUT</div>
-            <div className="bg-black/5 dark:bg-black/30 rounded-xl px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 mb-5 border border-black/5 dark:border-none">{t.input}</div>
+            <div className="text-xs font-mono text-slate-500 dark:text-slate-500 mb-2 font-bold">INPUT</div>
+            <div className="bg-black/5 dark:bg-black/30 rounded-xl px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 mb-5 border border-black/5 dark:border-none font-medium">{t.input}</div>
             <div className="grid grid-cols-3 gap-3">
               {[
                 { label: 'DECISION', value: t.decision, color: t.color },
@@ -83,7 +83,7 @@ export default function EnterpriseSection() {
               ].map(({ label, value, color }) => (
                 <div key={label} className="rounded-xl border p-3 text-center border-black/10 dark:border-white/10"
                   style={{ background: `${color}08` }}>
-                  <div className="text-[10px] font-mono text-slate-500 dark:text-slate-600 mb-1 font-bold">{label}</div>
+                  <div className="text-[10px] font-mono text-slate-500 dark:text-slate-500 mb-1 font-bold">{label}</div>
                   <div className="text-xs font-bold font-mono" style={{ color }}>{value}</div>
                 </div>
               ))}
@@ -102,7 +102,7 @@ export default function EnterpriseSection() {
             <div className="text-slate-500 dark:text-slate-600 mb-1">{'// After: route through constitutional proxy'}</div>
             <div className="text-emerald-600 dark:text-emerald-400">{'target_mcp_url: "https://lexaureon.com/api/tool-proxy"'}</div>
           </div>
-          <div className="text-xs text-slate-500 dark:text-slate-600 font-mono mt-3 font-medium">
+          <div className="text-xs text-slate-500 dark:text-slate-500 font-mono mt-3 font-bold">
             Every call intercepted · SHA-256 audit receipt · Full audit trail
           </div>
         </div>
@@ -110,11 +110,11 @@ export default function EnterpriseSection() {
         {/* CTA */}
         <div className="text-center">
           <a href="mailto:lexaureon@gmail.com?subject=Enterprise%20Agent%20Governance%20Inquiry"
-            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl text-sm font-bold transition-all active:scale-95"
+            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-lg shadow-gold/20"
             style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
             Inquire About Enterprise Access &#8594;
           </a>
-          <div className="text-xs text-slate-500 dark:text-slate-600 font-mono mt-3 font-medium">
+          <div className="text-xs text-slate-500 dark:text-slate-500 font-mono mt-3 font-bold">
             lexaureon@gmail.com · Response within 24 hours
           </div>
         </div>

@@ -156,7 +156,7 @@ export default function SimplexVisualizer({
         <polygon points={outerPts} fill="url(#svRBasin)" opacity={dominantR} style={{ transition: 'opacity 1s' }} />
         <polygon points={outerPts} fill="url(#svSBasin)" opacity={dominantS} style={{ transition: 'opacity 1s' }} />
 
-        {/* τ_recovery boundary */}
+        {/* &tau;_recovery boundary */}
         <polygon
           points={recoveryPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
           fill="rgba(59,130,246,0.05)"
@@ -165,7 +165,7 @@ export default function SimplexVisualizer({
           strokeDasharray="3,2"
         />
 
-        {/* τ_floor boundary */}
+        {/* &tau;_floor boundary */}
         <polygon
           points={floorPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
           fill="rgba(239,68,68,0.04)"
@@ -187,12 +187,12 @@ export default function SimplexVisualizer({
           strokeWidth="0.5"
         />
 
-        {/* τ labels */}
+        {/* &tau; labels */}
         <text x={recoveryPts[2].x} y={recoveryPts[2].y - 5} textAnchor="middle" className="fill-blue-600/70 dark:fill-blue-400/55" fontSize="6">
-          τ_rec=15%
+          &tau;_rec=15%
         </text>
         <text x={floorPts[2].x} y={floorPts[2].y - 5} textAnchor="middle" className="fill-amber-700/70 dark:fill-[#c9a84c]/65" fontSize="6">
-          τ_floor=5%
+          &tau;_floor=5%
         </text>
 
         {/* Trail — last 5 positions fading out */}

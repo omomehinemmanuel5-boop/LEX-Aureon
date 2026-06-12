@@ -81,11 +81,11 @@ export default function LiveAuditFeed() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <div className="flex items-center gap-2.5">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"/>
-          <span className="text-xs font-semibold text-slate-300">Live Audit Feed</span>
-          <span className="text-xs text-slate-600 font-mono">— real governance stream</span>
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Live Audit Feed</span>
+          <span className="text-xs text-slate-500 dark:text-slate-500 font-mono font-bold">— real governance stream</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-600 font-mono">{count.toLocaleString()} total runs</span>
+          <span className="text-xs text-slate-500 dark:text-slate-500 font-mono font-bold">{count.toLocaleString()} total runs</span>
           <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/20 border border-emerald-800/40 text-emerald-400 font-mono">LIVE</span>
         </div>
       </div>
@@ -119,14 +119,14 @@ export default function LiveAuditFeed() {
                   )}
                 </div>
               </div>
-              <div className="flex-shrink-0 text-xs text-slate-700 font-mono whitespace-nowrap">{formatAge(event.age)}</div>
+              <div className="flex-shrink-0 text-xs text-slate-500 dark:text-slate-500 font-mono font-bold whitespace-nowrap">{formatAge(event.age)}</div>
             </div>
           );
         })}
       </div>
 
-      <div className="px-4 py-2.5 border-t border-white/5 flex items-center justify-between">
-        <span className="text-xs text-slate-700 font-mono">Every event carries a SHA-256 audit receipt{events[0]?.metrics_version ? ` · ${events[0].metrics_version}` : ''}</span>
+      <div className="px-4 py-2.5 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
+        <span className="text-xs text-slate-500 dark:text-slate-500 font-mono font-bold">Every event carries a SHA-256 audit receipt{events[0]?.metrics_version ? ` · ${events[0].metrics_version}` : ''}</span>
         <a href="/console" className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium">Try it yourself →</a>
       </div>
     </div>

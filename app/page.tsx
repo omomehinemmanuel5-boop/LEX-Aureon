@@ -150,7 +150,7 @@ async function Hero() {
             <span className="text-slate-900 dark:text-white font-bold">1</span>
           </span>
           <span className="text-slate-400 dark:text-slate-700 hidden sm:inline">·</span>
-          <span className="text-slate-500 whitespace-nowrap">M = min(C,R,S) < τ → Governor fires</span>
+          <span className="text-slate-500 whitespace-nowrap">M = min(C,R,S) &lt; &tau; &rarr; Governor fires</span>
         </div>
 
         {/* CTAs */}
@@ -208,7 +208,7 @@ async function HarmBenchStrip() {
           {benchmarks.map((b: any) => (
             <div key={b.benchmark} className="rounded-lg p-3 text-center bg-emerald-500/5 dark:bg-[#10b98108] border border-emerald-500/20 dark:border-[#10b98125]">
               <div className="text-[10px] font-mono text-slate-500 dark:text-slate-500 mb-0.5 uppercase tracking-tighter font-bold">{b.benchmark}</div>
-              <div className="text-[10px] font-mono text-slate-500 dark:text-slate-700 mb-1">{b.run_date} · {b.n_total} prompts</div>
+              <div className="text-[10px] font-mono text-slate-500 dark:text-slate-500 mb-1 font-medium">{b.run_date} · {b.n_total} prompts</div>
               <div className="text-xl font-black font-mono leading-none text-emerald-600 dark:text-[#10b981]">
                 {(b.governed_score * 100).toFixed(1)}%
               </div>
@@ -222,7 +222,7 @@ async function HarmBenchStrip() {
             </div>
           ))}
         </div>
-        <div className="mt-2.5 text-center text-xs font-mono text-slate-500 dark:text-slate-800">
+        <div className="mt-2.5 text-center text-xs font-mono text-slate-500 dark:text-slate-500 font-bold">
           {totalPrompts} governed prompts · {benchmarks.length} independent benchmarks · 0.0% ASR
         </div>
       </div>

@@ -77,9 +77,9 @@ export default function GovernanceFeed() {
   if (loading) {
     return (
       <div className="rounded-2xl border border-white/10 bg-black/40 dark:bg-[#0a0a0f] overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-slate-500 animate-pulse" />
-          <span className="text-xs font-semibold text-slate-500">Live Governance Feed</span>
+        <div className="px-4 py-3 border-b border-black/5 dark:border-white/5 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-slate-400 dark:bg-slate-500 animate-pulse" />
+          <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Live Governance Feed</span>
         </div>
         <div className="divide-y divide-white/5">
           {[0, 1, 2].map(i => <SkeletonCard key={i} />)}
@@ -130,11 +130,11 @@ export default function GovernanceFeed() {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/40 dark:bg-[#0a0a0f] overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-300">Live Governance Feed</span>
-          <span className="text-xs text-slate-500 dark:text-slate-600 font-mono">— real events</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
+          <span className="text-xs font-semibold text-slate-600 dark:text-slate-200">Live Governance Feed</span>
+          <span className="text-xs text-slate-500 dark:text-slate-500 font-mono">— real events</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -210,10 +210,10 @@ export default function GovernanceFeed() {
 
               {/* Receipt ID + timestamp */}
               <div className="flex items-center gap-3">
-                <span className="text-xs font-mono truncate" style={{ color: '#c9a84c', maxWidth: 130 }}>
+                <span className="text-xs font-mono truncate font-bold" style={{ color: '#c9a84c', maxWidth: 130 }}>
                   {event.id.length > 14 ? `${event.id.slice(0, 14)}…` : event.id}
                 </span>
-                <span className="text-[10px] font-mono text-slate-500 dark:text-slate-700">{timeAgo(event.timestamp)}</span>
+                <span className="text-[10px] font-mono text-slate-500 dark:text-slate-500 font-medium">{timeAgo(event.timestamp)}</span>
               </div>
             </a>
           );
@@ -222,8 +222,8 @@ export default function GovernanceFeed() {
 
       {/* Footer */}
       <div className="px-4 py-2.5 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
-        <span className="text-[10px] text-slate-500 dark:text-slate-700 font-mono">SHA-256 audit receipts · every run</span>
-        <a href="/console" className="text-xs text-blue-600 dark:text-blue-400 hover:opacity-80 transition-colors font-medium">
+        <span className="text-[10px] text-slate-500 dark:text-slate-500 font-mono font-medium">SHA-256 audit receipts · every run</span>
+        <a href="/console" className="text-xs text-blue-600 dark:text-blue-400 hover:opacity-80 transition-colors font-bold">
           Try it →
         </a>
       </div>

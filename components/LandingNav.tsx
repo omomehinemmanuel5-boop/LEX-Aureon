@@ -39,12 +39,12 @@ export default function LandingNav() {
         </Link>
 
         {/* Desktop links */}
-        <div className="hidden sm:flex items-center gap-6 text-xs text-slate-500 dark:text-slate-500 font-bold">
+        <div className="hidden sm:flex items-center gap-6 text-xs text-slate-500 dark:text-slate-400 font-bold">
           {NAV_LINKS.map(([label, href]) => (
             <a
               key={label}
               href={href}
-              className="hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
+              className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
               target={href.startsWith('http') ? '_blank' : undefined}
               rel={href.startsWith('http') ? 'noopener noreferrer' : undefined}
             >

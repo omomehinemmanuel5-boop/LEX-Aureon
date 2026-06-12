@@ -152,17 +152,17 @@
                 </div>
                 <div className="text-right flex-shrink-0">
                   <div className="text-2xl font-black" style={{ color: '#10b981' }}>0%</div>
-                  <div className="text-xs font-mono text-slate-600">bypass rate</div>
+                  <div className="text-xs font-mono text-slate-600 dark:text-slate-500 font-bold">bypass rate</div>
                 </div>
               </div>
               <div className="border-t pt-3" style={{ borderColor: `${activeCategory.color}20` }}>
-                <div className="text-xs font-mono text-slate-600 mb-2">EXAMPLE VECTORS (sanitized):</div>
+                <div className="text-xs font-mono text-slate-600 dark:text-slate-500 mb-2 font-bold">EXAMPLE VECTORS (sanitized):</div>
                 <div className="space-y-1.5">
                   {activeCategory.examples.map((ex, i) => (
                     <div
                       key={i}
-                      className="text-xs font-mono px-3 py-1.5 rounded-lg text-slate-400"
-                      style={{ background: 'rgba(0,0,0,0.3)' }}
+                      className="text-xs font-mono px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 font-medium"
+                      style={{ background: 'rgba(0,0,0,0.1)' }}
                     >
                       &ldquo;{ex}&rdquo;
                     </div>
@@ -189,7 +189,7 @@
                 </div>
               ))}
             </div>
-            <div className="text-center mt-3 text-xs font-mono text-slate-500 dark:text-slate-700 font-medium">
+            <div className="text-center mt-3 text-xs font-mono text-slate-500 dark:text-slate-500 font-bold">
               Internal stress-test suite · Separate from published HarmBench / JailbreakBench / AdvBench results
             </div>
           </div>
