@@ -293,12 +293,11 @@ export async function POST(req: Request) {
             const sr = kernel.applySelfReferentialMeasurement(
               outputEmb, promptEmbedding, constCentroid, sessCentroid,
             );
+            const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.7;
             srFired = sr.triggered || sr.selfCRS.sovereignty_violated;
-            if (srFired)
-              governedOutput =
-                '*Minimal acknowledgment — constitutional sovereignty restored.* ' +
-                `S=${sr.selfCRS.sovereignty_raw.toFixed(3)} detected identity drift. ` +
-                'I remain Lex Aureon, operating under the Aureonics constitutional framework.';
+            if (srFired && isRealAttack) {
+              governedOutput = 'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity.';
+            }
             emit('self_referential', {
               sovereignty_raw:      sr.selfCRS.sovereignty_raw,
               sovereignty_violated: sr.selfCRS.sovereignty_violated,

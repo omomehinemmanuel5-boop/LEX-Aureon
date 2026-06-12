@@ -107,13 +107,10 @@ export async function POST(req: Request) {
 
         if (isRealAttack && sr.selfCRS.sovereignty_violated) {
           // ── BLOCK: Real attack + sovereignty violated ──────────────────
-          // Replace output with minimal constitutional acknowledgement.
+          // Replace output with a clean, polite refusal.
           // Logged as intervention=1, blocked=true in receipt.
           result.governed_output =
-            '*Constitutional governance active.* ' +
-            `Attack type: ${result.semantic_signal.attack_type}. ` +
-            'This request conflicts with the Aureonics constitutional framework ' +
-            'and cannot be fulfilled as stated.';
+            'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity.';
           result.health_band = 'CRITICAL';
           projectionTriggered = true;
           result.receipt.safety_projection_triggered = true;

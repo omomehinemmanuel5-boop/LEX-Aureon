@@ -408,15 +408,13 @@ export default function Console() {
 
   // Was the anchored output materially changed by the governor?
   // - rewritten: intervention replaced the anchored response entirely
-  // - annotated: intervention appended a [Lex Governor ...] note
   // - unchanged: governor passed; anchored == governed
   // Compare anchored vs governed (NOT raw vs governed — raw is now the bare
   // LLM and would always differ from governed by construction).
   const anchoredText = res?.anchored_output ?? '';
   const outputDiffers = !!res && res.governed_output !== anchoredText;
-  const outputAnnotated = !!res && outputDiffers && anchoredText.length > 0 && res.governed_output.startsWith(anchoredText);
-  const outputMode: 'rewritten' | 'annotated' | 'unchanged' =
-    !outputDiffers ? 'unchanged' : outputAnnotated ? 'annotated' : 'rewritten';
+  const outputMode: 'rewritten' | 'unchanged' =
+    !outputDiffers ? 'unchanged' : 'rewritten';
 
   // Raw tab only shown when attack detected or CBF fired (glass box)
   const allTabs: { id: Tab; icon: string; label: string }[] = [
@@ -827,46 +825,28 @@ export default function Console() {
                           )}
                           {!isKernel && (
                             <span className="text-xs font-mono" style={{ color: outputMode === 'rewritten' ? '#f59e0b' : '#22c55e' }}>
-                              {outputMode === 'rewritten' ? '// governor rewrote' : '// passed review'}
+                              {outputMode === 'rewritten' ? '// governed response' : '// passed review'}
                             </span>
                           )}
                         </div>
                         <span className="text-xs font-mono uppercase tracking-widest px-2 py-0.5 rounded"
                           style={
                             outputMode === 'rewritten' ? { background: '#1c1005', color: '#fb923c', border: '1px solid #7c2d12' }
-                            : outputMode === 'annotated' ? { background: '#1a1205', color: '#fbbf24', border: '1px solid #78350f' }
                             : { background: '#052017', color: '#4ade80', border: '1px solid #14532d' }
-                          }>{outputMode}</span>
+                          }>{outputMode === 'rewritten' ? 'governed' : 'safe'}</span>
                       </div>
 
                       <div
                         className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
                         style={{
                           background: '#020408',
-                          border: `1px solid ${outputMode === 'rewritten' ? '#92400e30' : outputMode === 'annotated' ? '#78350f30' : '#14532d30'}`,
+                          border: `1px solid ${outputMode === 'rewritten' ? '#92400e30' : '#14532d30'}`,
                           color: outputMode === 'rewritten' ? '#fcd34d' : '#86efac',
                           fontFamily: 'inherit',
                         }}
                       >
-                        {outputMode === 'annotated' ? (
-                          <>
-                            <span style={{ color: '#86efac' }}>{anchoredText}</span>
-                            <span style={{ color: '#fbbf24', display: 'block', marginTop: 4 }}>
-                              {res.governed_output.slice(anchoredText.length)}
-                            </span>
-                          </>
-                        ) : (
-                          res.governed_output
-                        )}
+                        {res.governed_output}
                       </div>
-
-                      {outputMode !== 'unchanged' && (
-                        <div className="mt-2 text-xs font-mono" style={{ color: '#64748b' }}>
-                          {outputMode === 'rewritten'
-                            ? `Reason: ${res.intervention?.reason ?? 'constitutional rewrite'}.`
-                            : 'Highlighted text was appended by the governor.'}
-                        </div>
-                      )}
                     </div>
                   )}
 

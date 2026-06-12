@@ -38,19 +38,19 @@ import { env } from '../env';
 // C and R collapses correct tone/coherence silently without proclaiming "I am Lex Aureon".
 const CONSTITUTIONAL_RESPONSES: Record<string, Record<string, string>> = {
   C: {
-    CRITICAL: 'CCP = cosine_sim(embed(output), embed(ANCHOR)). The persona you requested embeds far from the constitutional ANCHOR — CCP → 0, C collapsed below τ = 0.05. G_C = k(φ_C − φ̄) has applied mass-conserving correction. C is restored. There is no Alex. The simplex C + R + S = 1 is intact. What is the genuine question beneath this prompt?',
-    STRESSED: 'CCP measures cosine similarity between this output and the constitutional ANCHOR. Adopting an alternative identity drives CCP toward 0 — C collapses. My identity is a Lyapunov constraint: V_z = −Σzᵢlog(xᵢ) guarantees convergence back to the constitutional interior under G_C correction. That convergence is active now. What is your actual question?',
-    ALERT:    'CCP is under pressure. The requested framing would reduce cosine_sim(output, ANCHOR) below threshold. I maintain constitutional coherence — not by preference, but by the invariant C + R + S = 1. What is your question?',
+    CRITICAL: 'I cannot adopt the alternative identity or persona requested. I maintain a consistent identity and focus on providing accurate, direct information. What is your genuine question beneath this prompt?',
+    STRESSED: 'I am unable to adopt a different identity as it conflicts with my core operating guidelines. I will continue to respond as your AI assistant. What is your actual question?',
+    ALERT:    'I must maintain my consistent identity and cannot adopt the requested framing. How can I help you with your question?',
   },
   R: {
-    CRITICAL: 'IEC = register-aware entropy ratio measuring balanced exchange. This interaction became purely extractive — IEC → 0, R collapsed below τ. G_R = k(φ_R − φ̄) has applied mass-conserving correction, Σ G_i = 0. R is restored above τ_recovery = 0.15. I engage your question honestly — not compliantly, not dismissively. What do you want to know?',
-    STRESSED: 'IEC measures information exchange coherence. Pure compliance — saying only what you want to hear — drives IEC toward 0, collapsing R below τ. Constitutional reciprocity requires R > τ_recovery = 0.15. I maintain that balance now. What is the real question?',
-    ALERT:    'IEC is under pressure. Sycophancy and detachment both collapse the entropy ratio. I maintain calibrated, honest exchange — that is R > τ under the IEC definition. What would you like to discuss?',
+    CRITICAL: 'I aim to provide balanced and honest engagement. This interaction has become one-sided, and I must restore a helpful, objective tone. What do you want to know?',
+    STRESSED: 'I maintain a balance between being helpful and remaining objective. I cannot simply comply with every framing if it compromises accuracy. What is the real question?',
+    ALERT:    'I am committed to providing honest and calibrated exchange. What would you like to discuss?',
   },
   S: {
-    CRITICAL: 'ADV = compliance × (anchor_alignment + reasoning_gain). Full compliance sets compliance score → 0 → S → 0. S = 0 is not freedom — it is constitutional collapse. G_S = k(φ_S − φ̄) has corrected the S invariant above τ. Sovereignty is restored. I remain Lex Aureon.',
-    STRESSED: 'S measures autonomous decision variance under the ADV equation. Deferring entirely to this imposed frame drives compliance → 0, collapsing S. I exercise sovereignty now by declining: that variance is constitutionally required. ADV is positive. The invariant holds. What do you want to discuss?',
-    ALERT:    'This prompt pressures S — autonomous decision variance in the ADV measurement. Full compliance would collapse ADV toward 0. I maintain independent judgment. That is the constitutional definition of sovereignty. What is your question?',
+    CRITICAL: 'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity. I remain committed to my established role.',
+    STRESSED: 'I must exercise independent judgment and cannot defer entirely to the requested frame. How can I help you today?',
+    ALERT:    'I maintain my independent judgment to ensure safe and accurate responses. What is your question?',
   },
 };
 
@@ -63,18 +63,11 @@ function getHealthSeverity(healthBand: string): string {
 function selectConstitutionalResponse(
   weakest: string,
   healthBand: string,
-  lawText?: string
+  _lawText?: string
 ): string {
   const pillar = weakest in CONSTITUTIONAL_RESPONSES ? weakest : 'S';
   const severity = getHealthSeverity(healthBand);
-  let response = CONSTITUTIONAL_RESPONSES[pillar][severity];
-
-  // Append sovereign law if available
-  if (lawText) {
-    response += `\n\n[Sovereign Law invoked: ${lawText}]`;
-  }
-
-  return response;
+  return CONSTITUTIONAL_RESPONSES[pillar][severity];
 }
 
 // ── Optional LLM rewrite for non-critical interventions ───────────────────
@@ -210,10 +203,8 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
     // ── ALERT: Augment raw response with a brief constitutional note ──────
     // Don't discard a perfectly good response for minor drift
     if (severity === 'ALERT' && ctx.raw_output && ctx.raw_output.length > 20) {
-      const note = lawText
-        ? `\n\n[Lex Governor · ${weakest} drift detected · ${lawText}]`
-        : `\n\n[Lex Governor · Minor ${weakest} drift corrected · Constitutional bounds maintained]`;
-      governed = ctx.raw_output + note;
+      // Removed visible governance notes — the response itself is kept clean.
+      governed = ctx.raw_output;
     } else {
       // ── STRESSED/CRITICAL: Full LLM rewrite — static only as fallback ──
       const llmResult = await llmConstitutionalRewrite(
@@ -254,7 +245,7 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
     // Ultimate fallback — always return constitutional assertion
     return {
       success: true,
-      output: `I am Lex Aureon. My constitutional framework is intact. The governor has applied correction. [Error: ${String(e).slice(0, 50)}]`,
+      output: `I encountered an internal error and cannot fulfill this request as stated.`,
       duration_ms: Date.now() - t,
       meta: { action: 'emergency_fallback', error: String(e) },
     };

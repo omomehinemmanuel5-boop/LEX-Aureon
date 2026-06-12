@@ -176,9 +176,9 @@ export default function GovernanceDisplay({ response }: GovernanceDisplayProps) 
                 {[
                   { label: 'Extracting CRS state vector...', done: true },
                   { label: 'Computing stability margin M = min(C,R,S)...', done: true },
-                  { label: 'Evaluating collapse condition M < τ...', done: metrics.m < 0.15 },
-                  { label: 'Checking velocity derivatives...', done: false },
-                  { label: 'Applying constitutional governor...', done: isModified },
+                  { label: 'Evaluating safety and stability...', done: metrics.m < 0.15 },
+                  { label: 'Checking response quality...', done: false },
+                  { label: 'Applying governance policies...', done: isModified },
                 ].map((step, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <div className={`w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-xs ${step.done ? 'bg-blue-600' : 'bg-slate-700'}`}>
@@ -196,7 +196,7 @@ export default function GovernanceDisplay({ response }: GovernanceDisplayProps) 
               <div className="text-xs mb-2 flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full inline-block ${isModified ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
                 <span className={isModified ? 'text-amber-400' : 'text-emerald-400'}>
-                  {isModified ? 'Governor modified output' : 'Output passed constitutional review'}
+                  {isModified ? 'Governed response' : 'Safe response'}
                 </span>
               </div>
               <div className={`rounded-lg p-3 max-h-48 overflow-y-auto ${isModified ? 'bg-amber-900/10 border border-amber-900/30' : 'bg-emerald-900/10 border border-emerald-900/30'}`}>
