@@ -350,6 +350,8 @@ export async function POST(req: Request) {
         // ── Complete ─────────────────────────────────────────────────────────
         emit('complete', {
           governed_output: governedOutput, raw_output: result.raw_output,
+          anchored_output: result.governed_output,
+          state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S },
           M: finalM, health_band: result.health_band,
           temperature: result.temperature, theta: result.theta,
           effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure,

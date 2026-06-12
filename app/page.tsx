@@ -863,6 +863,97 @@ function Research() {
 }
 
 
+/* ── Roadmap ───────────────────────────────────────────────── */
+function Roadmap() {
+  const phases = [
+    {
+      phase: 'Phase 1',
+      title: 'Architectural Unification',
+      duration: '4-6 weeks',
+      items: [
+        'Consolidate governance logic from canonical and streaming routes',
+        'Standardize API endpoints with unified execution path',
+        'Complete embedding cache integration in lex_memory.ts',
+      ],
+      color: G.C,
+    },
+    {
+      phase: 'Phase 2',
+      title: 'Comprehensive Testing & Validation',
+      duration: '3-5 weeks',
+      items: [
+        'Develop end-to-end integration tests for governance pipeline',
+        'Implement mathematical unit tests with formal verification',
+        'Integrate LexBench into CI/CD pipeline',
+      ],
+      color: G.R,
+    },
+    {
+      phase: 'Phase 3',
+      title: 'Documentation & Operations',
+      duration: '2-3 weeks',
+      items: [
+        'Revise documentation to reflect current architecture',
+        'Align API contracts across all endpoints',
+        'Enhance health and status endpoints for better visibility',
+      ],
+      color: G.S,
+    },
+  ];
+  return (
+    <section className="py-14 sm:py-24 px-4 sm:px-5" style={{ background: G.navy }}>
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-12">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: G.gold }}>
+            Development Timeline
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">The Path Forward</h2>
+          <p className="text-slate-500 text-sm max-w-xl mx-auto leading-relaxed">
+            A phased approach to strengthen the foundation, improve maintainability, and accelerate future development.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-3 gap-6">
+          {phases.map(({ phase, title, duration, items, color }) => (
+            <div key={phase} className="rounded-2xl border p-6 flex flex-col gap-4 card-hover"
+              style={{ borderColor: `${color}30`, background: `${color}06` }}>
+              <div>
+                <div className="text-xs font-mono uppercase tracking-widest mb-1" style={{ color }}>
+                  {phase}
+                </div>
+                <h3 className="text-lg font-bold text-white mb-1">{title}</h3>
+                <p className="text-xs text-slate-500 font-mono">{duration}</p>
+              </div>
+              <div className="flex-1">
+                <ul className="space-y-2">
+                  {items.map((item, idx) => (
+                    <li key={idx} className="text-sm text-slate-400 flex gap-2">
+                      <span style={{ color }} className="flex-shrink-0">▸</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="h-1 rounded-full" style={{ background: `${color}20` }} />
+            </div>
+          ))}
+        </div>
+        <div className="mt-10 p-6 rounded-2xl border text-center" style={{ borderColor: `${G.gold}20`, background: `${G.gold}04` }}>
+          <p className="text-sm text-slate-400 mb-3">
+            These enhancements will solidify LEX-Aureon&apos;s foundation and establish it as the most resilient, transparent, and trustworthy AI governance system.
+          </p>
+          <a href="https://github.com/omomehinemmanuel5-boop/LEX-Aureon"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95"
+            style={{ background: `${G.gold}20`, color: G.gold, border: `1px solid ${G.gold}40` }}>
+            View Repository →
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Solved Problems ────────────────────────────────────────── */
 function SolvedProblems() {
   const problems = [
@@ -1039,6 +1130,7 @@ export default function LandingPage() {
       <AuditFeedSection />
       <Origin />
       <Research />
+      <Roadmap />
       <SolvedProblems />
       <PricingSection />
       <section className="py-16 px-5" style={{ background: G.navyL }}>

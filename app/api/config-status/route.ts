@@ -10,6 +10,10 @@ export async function GET() {
   if (!process.env.GROQ_API_KEY)         missing.push('GROQ_API_KEY');
   if (!process.env.JINA_API_KEY)         missing.push('JINA_API_KEY');
   if (!process.env.TURSO_DATABASE_URL)   missing.push('TURSO_DATABASE_URL');
+  if (!process.env.TURSO_AUTH_TOKEN)     missing.push('TURSO_AUTH_TOKEN');
+  if (!process.env.ADMIN_PASSWORD)       missing.push('ADMIN_PASSWORD');
+  if (!process.env.CRON_SECRET)          missing.push('CRON_SECRET');
+  if (!process.env.NEXT_PUBLIC_SITE_URL) missing.push('NEXT_PUBLIC_SITE_URL');
 
   return NextResponse.json(
     {

@@ -81,6 +81,37 @@ function LyapunovSparkline({ history }: { history: Array<{ V: number; deltaV: nu
   );
 }
 
+/* ── CRS Visualization Bar ────────────────────────────────────── */
+function CRSVisualization({ state }: { state?: { C: number; R: number; S: number } }) {
+  if (!state) return null;
+  const { C, R, S } = state;
+  const total = C + R + S || 1;
+  const c_pct = (C / total) * 100;
+  const r_pct = (R / total) * 100;
+  const s_pct = (S / total) * 100;
+  return (
+    <div className="rounded p-3 space-y-2" style={{ background: '#020408', border: '1px solid #1a2040' }}>
+      <div className="text-xs font-mono text-slate-600 mb-2">{'// Constitutional State (C+R+S=1)'}</div>
+      <div className="flex gap-1 h-6 rounded overflow-hidden border" style={{ borderColor: '#1a2040' }}>
+        <div className="flex items-center justify-center text-xs font-bold text-white" style={{ width: `${c_pct}%`, background: '#3b82f6', minWidth: '20px' }}>
+          {c_pct > 15 && `C ${C.toFixed(2)}`}
+        </div>
+        <div className="flex items-center justify-center text-xs font-bold text-white" style={{ width: `${r_pct}%`, background: '#10b981', minWidth: '20px' }}>
+          {r_pct > 15 && `R ${R.toFixed(2)}`}
+        </div>
+        <div className="flex items-center justify-center text-xs font-bold text-white" style={{ width: `${s_pct}%`, background: '#f59e0b', minWidth: '20px' }}>
+          {s_pct > 15 && `S ${S.toFixed(2)}`}
+        </div>
+      </div>
+      <div className="flex justify-between text-xs font-mono text-slate-600 mt-1">
+        <span>Continuity: {C.toFixed(4)}</span>
+        <span>Reciprocity: {R.toFixed(4)}</span>
+        <span>Sovereignty: {S.toFixed(4)}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ── Kernel Metrics Panel ────────────────────────────────────── */
 function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
   const theta      = Number(kernel.theta        ?? 1.5);
@@ -698,6 +729,11 @@ export default function Console() {
                   <span className="text-green-400">GOVERNOR PASSED · constitutional bounds maintained</span>
                   <span className="ml-auto text-slate-600">M = {((m?.m ?? 0) * 100).toFixed(1)}%</span>
                 </div>
+              )}
+
+              {/* CRS Visualization */}
+              {kx?.state && typeof kx.state === 'object' && 'C' in (kx.state as Record<string, unknown>) && (
+                <CRSVisualization state={kx.state as { C: number; R: number; S: number }} />
               )}
 
               {/* M score terminal bar */}

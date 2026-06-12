@@ -108,7 +108,7 @@ export async function GET(req: Request) {
           kernel:        '/api/lex/kernel',
           lex_run:       '/api/lex/run',
         },
-        required_fields: ['raw_output', 'governed_output', 'metrics', 'intervention', 'audit_id'],
+        required_fields: ['raw_output', 'governed_output', 'M', 'health_band', 'state', 'receipt_id', 'projection_triggered'],
       },
     },
     { status: ok ? 200 : 503 },
