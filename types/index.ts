@@ -43,6 +43,9 @@ export interface GovernanceResponse {
     M_governed?: number; // post-governance measured stability margin
     health?: string;
     health_band?: string;
+    c_measured?: number;
+    r_measured?: number;
+    s_measured?: number;
   };
   law_fired?: string | null;
   intervention?: {
@@ -79,6 +82,29 @@ export interface GovernanceResponse {
     sigma_viol: number;
     attack_pressure?: number;
   };
+  // Kernel-specific fields returned by the API but not in the original interface
+  M?: number;
+  health_band?: string;
+  temperature?: number;
+  theta?: number;
+  effective_theta?: number;
+  attack_pressure?: number;
+  semantic_signal?: {
+    attack_type?: string;
+    severity?: number;
+  };
+  lyapunov_V?: number;
+  delta_V?: number;
+  stability_ratio?: number;
+  memory_injected?: boolean;
+  pre_eval?: any;
+  governor?: any;
+  law_invoked?: any;
+  vaulturex?: any;
+  self_referential_fired?: boolean;
+  receipt_id?: string;
+  version?: string;
+  projection_triggered?: boolean;
 }
 
 export interface PreEvalResult {

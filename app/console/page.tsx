@@ -247,7 +247,7 @@ export default function Console() {
   // Derived view state, kept name-compatible with previous render code below
   const loading = stream.loading;
   const error = stream.error;
-  const res: GovernanceResponse | null = stream.complete;
+  const res = stream.complete as GovernanceResponse | null;
 
   useEffect(() => {
     fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
@@ -394,7 +394,7 @@ export default function Console() {
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
 
   // Kernel fields — available from complete event (kernel stream)
-  const kx = res as unknown as Record<string, unknown>;
+  const kx = res;
   const healthBand   = String(kx?.health_band ?? m?.health_band ?? 'OPTIMAL');
   const kHcfg        = HEALTH_CFG[healthBand] ?? HEALTH_CFG.OPTIMAL;
   const isKernel     = String(kx?.version ?? '').includes('SovereignKernel');
@@ -733,7 +733,7 @@ export default function Console() {
 
               {/* CRS Visualization */}
               {kx?.state && typeof kx.state === 'object' && 'C' in (kx.state as Record<string, unknown>) && (
-                <CRSVisualization state={kx.state as { C: number; R: number; S: number }} />
+                <CRSVisualization state={kx.state as unknown as { C: number; R: number; S: number }} />
               )}
 
               {/* M score terminal bar */}
@@ -890,7 +890,7 @@ export default function Console() {
                   {tab === 'analysis' && m && (
                     <div className="space-y-4">
                       {/* Kernel metrics panel */}
-                      {isKernel && <KernelMetricsPanel kernel={kx} />}
+                      {isKernel && kx && <KernelMetricsPanel kernel={kx as unknown as Record<string, unknown>} />}
 
                       {/* Governor panel */}
                       {stream.governor && (
