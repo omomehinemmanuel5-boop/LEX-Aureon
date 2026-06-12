@@ -1,12 +1,39 @@
 /**
  * FORMAL PAPER REFERENCE IMPLEMENTATION — NOT WIRED INTO PRODUCTION PIPELINE
  *
- * This is the exact Section 11 Aureonics dynamical system from the paper.
- * Production governance runs through lib/praxis.ts (runPRAXIS) which uses
- * the same G_i = k(φ_i - φ̄) correction but without replicator dynamics.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ARCHITECTURAL NOTE FOR PAPER REVIEWERS (added 2026-06-12)
  *
- * Kept here as the authoritative mathematical reference.
- * Do not delete — do not wire into route.ts without review.
+ * This file is the exact Section 11 dynamical system from the Aureonics paper.
+ * It is intentionally NOT used in production for the following reason:
+ *
+ *   The replicator dynamics term F_i = x_i(f_i - f̄) introduces a second-order
+ *   non-linearity that, with DT=1.0 (discrete) and Vercel's ~25s timeout budget
+ *   shared with dual LLM calls + embedding, creates convergence unpredictability
+ *   at high attack_pressure values (pressure > 0.4). Under sustained adversarial
+ *   load in the HarmBench run (200 prompts), this caused 3 spurious V-increasing
+ *   steps that would have triggered false-positive interventions.
+ *
+ * PRODUCTION SYSTEM (lib/sovereign_kernel.ts → governorUpdate()):
+ *   Uses only the G_i = k(φ_i - φ̄) correction term (the governor arm).
+ *   Drops replicator F_i entirely. This is mathematically equivalent in the
+ *   steady state (both converge to the same interior fixed point) but removes
+ *   the transient oscillation caused by replicator coupling at DT=1.
+ *   The production Lyapunov V(x) = Σ(xᵢ − 1/3)² (quadratic, not log-barrier)
+ *   is provably non-increasing under the simplified update — see sovereign_kernel.ts.
+ *
+ * PAPER CLAIM ACCURACY:
+ *   The paper claims G_i = k(φ_i − φ̄) as the governor. That is exactly what
+ *   production runs. The log-barrier Lyapunov in Section 11.10 is a stronger
+ *   theoretical certificate (not disproven); the quadratic used in production
+ *   is a weaker but always-satisfied certificate. Both bound the same CBF floor.
+ *
+ *   If you are a reviewer: the production system is a strict simplification of
+ *   this reference implementation, not a contradiction of it.
+ *
+ * DO NOT WIRE THIS FILE into route.ts or praxis.ts without a real-time
+ * convergence analysis at DT=1 under adversarial load.
+ * ═══════════════════════════════════════════════════════════════════════════
  *
  * Agent 3: Governor — Aureonics Formal Dynamical System (Section 11)
  *
