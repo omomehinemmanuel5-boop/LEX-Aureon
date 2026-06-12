@@ -25,18 +25,12 @@ import { measurePostResponse, type PostResponseCRS } from './constitutional_metr
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
 
-// ── Constitutional constants ─────────────────────────────────────────────────
-const TAU           = 0.05;   // hard CBF floor
-const SOFT_FLOOR    = 0.08;   // pre-emptive suspension barrier
-const TAU_GOV       = 0.22;   // governor correction activates below this
-const TARGET_MARGIN = 0.24;   // governor seeks interior stability
-const THETA_0       = 1.5;    // baseline adaptive gain
-const THETA_MIN     = 0.25;
-const THETA_MAX     = 12.0;
-const THETA_ETA     = 3.0;    // gain increase rate
-const THETA_BETA    = 0.08;   // decay rate toward theta_0
-const SOFT_GAIN     = 0.5;    // suspension pull strength
-const MIN_DELTA     = 0.01;   // minimum dynamics perturbation
+import {
+  TAU, SOFT_FLOOR, TAU_GOV, TARGET_MARGIN, THETA_0, THETA_MIN, THETA_MAX,
+  THETA_ETA, THETA_BETA, SOFT_GAIN, MIN_DELTA,
+  projectToSimplex, lyapunovQuadratic, calculateGovernorG
+} from './aureonics_core';
+
 const NORMALIZATION_EPS = 1e-12;
 
 export interface KernelState {
@@ -138,8 +132,7 @@ export class SovereignKernel {
 
   // ── Lyapunov V = Σ(xᵢ − 1/3)² ──────────────────────────────────────────
   lyapunovCandidate(s: KernelState = this.state): number {
-    const c = 1.0 / 3.0;
-    return (s.C - c) ** 2 + (s.R - c) ** 2 + (s.S - c) ** 2;
+    return lyapunovQuadratic(s);
   }
 
   // ── Assert C+R+S=1 ────────────────────────────────────────────────────────
@@ -152,32 +145,17 @@ export class SovereignKernel {
 
   // ── L2-optimal CBF simplex projection ────────────────────────────────────
   projectToSimplex(): boolean {
-    const floor = TAU;
-    const keys: (keyof KernelState)[] = ['C', 'R', 'S'];
     const original = { ...this.state };
-    const x = keys.map(k => this.state[k]);
+    const x: [number, number, number] = [this.state.C, this.state.R, this.state.S];
+    const projected = projectToSimplex(x, TAU);
+    
+    this.state.C = projected[0];
+    this.state.R = projected[1];
+    this.state.S = projected[2];
 
-    const y = x.map(v => v - floor);
-    const target = 1.0 - 3 * floor;
-
-    const u = [...y].sort((a, b) => b - a);
-    let cssv = 0.0, rho = 0;
-    for (let j = 0; j < 3; j++) {
-      cssv += u[j];
-      if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
-    }
-    const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
-    const yProj = y.map(v => Math.max(v - theta, 0.0));
-
-    const xProj = yProj.map(v => v + floor);
-    const total = xProj.reduce((a, b) => a + b, 0);
-    const xNorm = xProj.map(v => v / total);
-
-    this.state.C = xNorm[0];
-    this.state.R = xNorm[1];
-    this.state.S = 1.0 - this.state.C - this.state.R;
-
-    return keys.some(k => Math.abs(this.state[k] - (original[k] as number)) > 1e-9);
+    return Math.abs(this.state.C - original.C) > 1e-9 ||
+           Math.abs(this.state.R - original.R) > 1e-9 ||
+           Math.abs(this.state.S - original.S) > 1e-9;
   }
 
   // ── Normalize state to simplex ────────────────────────────────────────────
@@ -264,10 +242,8 @@ export class SovereignKernel {
 
   // ── Governor update with adaptive θ(t) ───────────────────────────────────
   governorUpdate(effectiveTheta: number): void {
-    const x = [this.state.C, this.state.R, this.state.S];
-    const phi = x.map(xi => Math.max(0.0, TAU_GOV - xi));
-    const phiBar = phi.reduce((a, b) => a + b, 0) / 3.0;
-    const g = phi.map(p => p - phiBar);
+    const x: [number, number, number] = [this.state.C, this.state.R, this.state.S];
+    const g = calculateGovernorG(x, TAU_GOV);
 
     const M = Math.min(...x);
     const error = Math.max(0.0, TARGET_MARGIN - M);

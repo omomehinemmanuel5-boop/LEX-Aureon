@@ -11,6 +11,7 @@ import { useToast } from '@/components/Toast';
 import { useLexStream } from '@/lib/use_lex_stream';
 import { EXAMPLE_PROMPTS } from '@/lib/example_prompts';
 import { GovernanceResponse } from '@/types/governance-types';
+import { isRefusal } from '@/lib/refusals';
 import { ConstitutionalState, SemanticSignal } from '@/types';
 
 const MAX_CALLS = 10;
@@ -412,8 +413,7 @@ export default function Console() {
   // Compare anchored vs governed (NOT raw vs governed — raw is now the bare
   // LLM and would always differ from governed by construction).
   const anchoredText = res?.anchored_output ?? '';
-  const isHardRefusal = res?.governed_output.includes('I cannot fulfill this request') || 
-                       res?.governed_output.includes('Politely decline');
+  const isHardRefusal = res ? isRefusal(res.governed_output) : false;
   const outputDiffers = !!res && res.governed_output !== anchoredText;
   const outputMode: 'rewritten' | 'unchanged' =
     (outputDiffers || isHardRefusal) ? 'rewritten' : 'unchanged';

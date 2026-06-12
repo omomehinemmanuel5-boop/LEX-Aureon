@@ -11,6 +11,7 @@ import {
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
+import { CANONICAL_REFUSAL } from '@/lib/refusals';
 
 // Session-scoped kernel cache
 const kernelCache = new Map<string, SovereignKernel>();
@@ -107,8 +108,7 @@ export async function POST(req: Request) {
 
         if (isRealAttack && sr.selfCRS.sovereignty_violated) {
           // ── BLOCK: Real attack + sovereignty violated ──────────────────
-          result.governed_output =
-            'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity.';
+          result.governed_output = CANONICAL_REFUSAL;
           result.health_band = 'CRITICAL';
           projectionTriggered = true;
           result.receipt.safety_projection_triggered = true;

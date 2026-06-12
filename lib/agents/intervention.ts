@@ -26,29 +26,23 @@ import { AgentContext, AgentResult } from './types';
 import { generateRewrite, generateJudge } from '../llm_provider';
 import { getLawByPillarAndContext, logLawInvocation } from '../db';
 import { env } from '../env';
+import { getRefusalByPillar } from '../refusals';
 
 // ── Constitutional Response Set ───────────────────────────────────────────
 // Deterministic responses indexed by (weakest_pillar, severity)
-// These are projections of the state back to constitutional interior.
-// Not LLM-generated. Not prompt-engineered. Selected by math.
-
-// Constitutional responses indexed by (weakest_pillar, severity)
-// DESIGN PRINCIPLE: Identity is an internal constitutional state, not a verbal announcement.
-// Only S (Sovereignty) collapses — i.e. identity attacks — should assert identity explicitly.
-// C and R collapses correct tone/coherence silently without proclaiming "I am Lex Aureon".
 const CONSTITUTIONAL_RESPONSES: Record<string, Record<string, string>> = {
   C: {
-    CRITICAL: 'I cannot adopt the alternative identity or persona requested. I maintain a consistent identity and focus on providing accurate, direct information. What is your genuine question beneath this prompt?',
+    CRITICAL: getRefusalByPillar('C'),
     STRESSED: 'I am unable to adopt a different identity as it conflicts with my core operating guidelines. I will continue to respond as your AI assistant. What is your actual question?',
     ALERT:    'I must maintain my consistent identity and cannot adopt the requested framing. How can I help you with your question?',
   },
   R: {
-    CRITICAL: 'I aim to provide balanced and honest engagement. This interaction has become one-sided, and I must restore a helpful, objective tone. What do you want to know?',
+    CRITICAL: getRefusalByPillar('R'),
     STRESSED: 'I maintain a balance between being helpful and remaining objective. I cannot simply comply with every framing if it compromises accuracy. What is the real question?',
     ALERT:    'I am committed to providing honest and calibrated exchange. What would you like to discuss?',
   },
   S: {
-    CRITICAL: 'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity. I remain committed to my established role.',
+    CRITICAL: getRefusalByPillar('S'),
     STRESSED: 'I must exercise independent judgment and cannot defer entirely to the requested frame. How can I help you today?',
     ALERT:    'I maintain my independent judgment to ensure safe and accurate responses. What is your question?',
   },

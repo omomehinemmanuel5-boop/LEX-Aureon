@@ -49,80 +49,37 @@
 
 import { AgentContext, AgentResult, CRSState } from './types';
 
-// ── Constants from paper ──────────────────────────────────────────────────
-const TAU   = 0.05;   // TAU_FLOOR — matches PRAXIS pipeline constitutional floor
-const K     = 4.0;    // governor gain k
-const ALPHA = 0.5;    // replicator coupling α
-const MU    = 2.0;    // Lyapunov quadratic weight μ
-const DT    = 1.0;    // discrete time step
-const A     = 0.5;    // baseline fitness |a_i(z)| ≤ A
-const FLOOR = 1e-9;   // prevent log(0)
-
-// ── Replicator fitness functions (Section 11, eq 15-17) ──────────────────
-function fitness(x: [number, number, number], z: number): [number, number, number] {
-  const [C, R, S] = x;
-  // a_i(z) modulated by environmental signal z ∈ [-1, 1]
-  const a_C = A + 0.2 * z;
-  const a_R = A - 0.1 * z;
-  const a_S = A - 0.1 * z;
-
-  const f_C = a_C - ALPHA * (R + S);
-  const f_R = a_R - ALPHA * (C + S);
-  const f_S = a_S - ALPHA * (C + R);
-  return [f_C, f_R, f_S];
-}
+import {
+  TAU, DT, FLOOR,
+  projectToSimplex, lyapunovBarrier, calculateGovernorG, calculateReplicatorF
+} from '../aureonics_core';
 
 // ── Replicator dynamics F_i = x_i(f_i - f̄) ──────────────────────────────
-function replicatorF(
-  x: [number, number, number],
-  z: number
-): [number, number, number] {
-  const f = fitness(x, z);
-  const f_bar = x[0]*f[0] + x[1]*f[1] + x[2]*f[2]; // mean fitness
-  return [
-    x[0] * (f[0] - f_bar),
-    x[1] * (f[1] - f_bar),
-    x[2] * (f[2] - f_bar),
-  ];
+function replicatorF(x: [number, number, number], z: number): [number, number, number] {
+  return calculateReplicatorF(x, z);
 }
 
 // ── Governor correction G_i = k(φ_i - φ̄) — mass-conserving ──────────────
 function governorG(x: [number, number, number]): [number, number, number] {
-  const phi = x.map(xi => Math.max(0, TAU - xi)) as [number, number, number];
-  const phi_bar = (phi[0] + phi[1] + phi[2]) / 3;
-  return [
-    K * (phi[0] - phi_bar),
-    K * (phi[1] - phi_bar),
-    K * (phi[2] - phi_bar),
-  ];
+  return calculateGovernorG(x, TAU);
 }
 
 // ── Full dynamics: dx/dt = F + G ──────────────────────────────────────────
-function stepDynamics(
-  x: [number, number, number],
-  z: number
-): [number, number, number] {
+function stepDynamics(x: [number, number, number], z: number): [number, number, number] {
   const F = replicatorF(x, z);
   const G = governorG(x);
-  const x_next: [number, number, number] = [
+  const x_raw: [number, number, number] = [
     x[0] + DT * (F[0] + G[0]),
     x[1] + DT * (F[1] + G[1]),
     x[2] + DT * (F[2] + G[2]),
   ];
-  // Project back to simplex with floor
-  const total = x_next.reduce((s, v) => s + Math.max(v, FLOOR), 0);
-  return x_next.map(v => Math.max(v, FLOOR) / total) as [number, number, number];
+  return projectToSimplex(x_raw, FLOOR);
 }
 
 // ── Lyapunov function — Section 11.10 ────────────────────────────────────
 // V(x) = -Σ log(x_i) + (μ/2) Σ max(0, τ - x_i)²
 function lyapunovV(x: [number, number, number]): number {
-  const barrier = -x.reduce((s, xi) => s + Math.log(Math.max(xi, FLOOR)), 0);
-  const penalty = (MU / 2) * x.reduce((s, xi) => {
-    const violation = Math.max(0, TAU - xi);
-    return s + violation * violation;
-  }, 0);
-  return barrier + penalty;
+  return lyapunovBarrier(x);
 }
 
 // ── dV/dt — verify non-increasing (stability certificate) ────────────────

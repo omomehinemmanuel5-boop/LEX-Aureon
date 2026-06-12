@@ -29,6 +29,7 @@ import {
   getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
 import { preEval }            from '@/lib/praxis';
+import { CANONICAL_REFUSAL }  from '@/lib/refusals';
 import { CRSExtractorAgent }  from '@/lib/agents/crs_extractor';
 import { GovernorAgent }      from '@/lib/agents/governor';
 import { InterventionAgent }  from '@/lib/agents/intervention';
@@ -296,7 +297,7 @@ export async function POST(req: Request) {
             const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.7;
             srFired = sr.triggered || (isRealAttack && sr.selfCRS.sovereignty_violated);
             if (isRealAttack && sr.selfCRS.sovereignty_violated) {
-              governedOutput = 'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity.';
+              governedOutput = CANONICAL_REFUSAL;
             }
             emit('self_referential', {
               sovereignty_raw:      sr.selfCRS.sovereignty_raw,
