@@ -298,6 +298,10 @@ export async function ensureLexMemoryTable(): Promise<void> {
 }
 
 // ── Constitutional centroid ───────────────────────────────────────────────────
+// fix #8: uses only high-quality STABLE rows with M > 0.15 for centroid
+// calculation. INTERVENED rows are semantically far from the constitutional
+// ideal (they represent governed-away states) and contaminated the centroid,
+// lowering S scores on innocent prompts. Sovereign Laws still seed when thin.
 let _centroidCache: { vec: number[]; ts: number } | null = null;
 const CENTROID_TTL_MS = 5 * 60 * 1000;
 
@@ -308,9 +312,12 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
   }
   try {
     const db  = getDB();
+    // Only STABLE rows above M > 0.15 — not INTERVENED, which are off-centre
     const res = await db.execute({
       sql:  `SELECT embedding FROM lex_memory
-             WHERE embedding IS NOT NULL AND state_label IN ('STABLE','INTERVENED')
+             WHERE embedding IS NOT NULL
+               AND state_label = 'STABLE'
+               AND M > 0.15
              ORDER BY created_at DESC LIMIT 100`,
       args: [],
     });
