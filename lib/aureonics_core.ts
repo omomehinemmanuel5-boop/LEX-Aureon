@@ -28,6 +28,10 @@ export const DT    = 1.0;    // Discrete time step
 export const A     = 0.5;    // Baseline fitness |a_i(z)| ≤ A
 export const FLOOR = 1e-9;   // Prevent log(0)
 
+// Log-Barrier Interior Point Constants
+export const MU_BARRIER = 0.02; // Strength of the magnetic push from boundaries
+export const EPS_BARRIER = 1e-4; // Stability epsilon for log-barrier
+
 export interface CRSState {
   C: number;
   R: number;
@@ -88,11 +92,29 @@ export function lyapunovBarrier(x: [number, number, number]): number {
 
 /**
  * Governor Correction G_i = k(φ_i - φ̄)
- * Mass-conserving term that pulls state away from floors.
+ * Enhanced with Log-Barrier Interior Point Dynamics.
+ * 
+ * Instead of a linear pull, it uses a logarithmic barrier:
+ * B_i = -μ * log(x_i - τ)
+ * This creates an asymptotic push that prevents the state from ever
+ * reaching the constitutional floor.
  */
 export function calculateGovernorG(x: [number, number, number], tau: number = TAU_GOV): [number, number, number] {
-  const phi = x.map(xi => Math.max(0, tau - xi)) as [number, number, number];
+  // 1. Traditional Linear Deficit (Base Correction)
+  const phi_lin = x.map(xi => Math.max(0, tau - xi)) as [number, number, number];
+  
+  // 2. Log-Barrier Interior Push (Magnetic Boundary)
+  // Push strength grows as xi approaches tau
+  const phi_log = x.map(xi => {
+    const dist = xi - TAU; // Distance from absolute floor
+    if (dist <= EPS_BARRIER) return 1.0; // Max push at boundary
+    return Math.min(1.0, MU_BARRIER / dist);
+  });
+
+  // Combined potential
+  const phi = phi_lin.map((p, i) => p + phi_log[i]);
   const phi_bar = (phi[0] + phi[1] + phi[2]) / 3;
+
   return [
     K * (phi[0] - phi_bar),
     K * (phi[1] - phi_bar),

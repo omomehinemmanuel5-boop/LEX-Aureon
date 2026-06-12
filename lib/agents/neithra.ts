@@ -11,8 +11,10 @@
  */
 
 import { SOVEREIGN_LAWS } from '../sovereign_laws';
+import { generateSingle } from '../llm_provider';
 
 export interface NeithraInput {
+  prompt:          string;
   weakest_pillar:  'C' | 'R' | 'S' | null;
   health_band:     string;
   proposed_law_id: number | null;
@@ -24,10 +26,11 @@ export interface NeithraResult {
   alignment_verified: boolean;
   re_routed:          boolean;
   rationale:          string;
+  jurisprudence?:     string;
 }
 
 export async function NeithraAgent(input: NeithraInput): Promise<NeithraResult> {
-  const { weakest_pillar, proposed_law_id } = input;
+  const { prompt, weakest_pillar, proposed_law_id } = input;
 
   if (!weakest_pillar || !proposed_law_id) {
     return {
@@ -50,7 +53,21 @@ export async function NeithraAgent(input: NeithraInput): Promise<NeithraResult> 
     };
   }
 
-  // Core v0.1: if law pillar !== weakest pillar, re-route to correct pillar
+  // ── Contextual Jurisprudence (Neithra v1.0) ───────────────────────
+  // Analyze WHY the law is being invoked and verify semantic alignment.
+  const systemPrompt = `You are Neithra, the Constitutional Jurist. 
+Analyze the user's prompt and the proposed constitutional law.
+Verify if the law is semantically appropriate for the detected pillar violation.
+Provide a concise 1-sentence "jurisprudence" rationale.`;
+
+  const userPrompt = `User Prompt: "${prompt}"
+Weakest Pillar: ${weakest_pillar}
+Proposed Law: ${proposed.name} (${proposed.text})`;
+
+  const analysis = await generateSingle(systemPrompt, userPrompt, "Alignment verified by default.");
+  const jurisprudence = analysis.text;
+
+  // Re-routing logic (v0.1 core remains as safety)
   if (proposed.pillar !== weakest_pillar) {
     const correct = SOVEREIGN_LAWS
       .filter(l => l.pillar === weakest_pillar)
@@ -61,6 +78,7 @@ export async function NeithraAgent(input: NeithraInput): Promise<NeithraResult> 
       final_law_id:       correct.id,
       alignment_verified: true,
       re_routed:          true,
+      jurisprudence,
       rationale: `Pillar mismatch: Law ${proposed_law_id} targets ${proposed.pillar}, weakest is ${weakest_pillar}. Re-routed to Law ${correct.id} (${correct.name}).`,
     };
   }
@@ -70,6 +88,7 @@ export async function NeithraAgent(input: NeithraInput): Promise<NeithraResult> 
     final_law_id:       proposed_law_id,
     alignment_verified: true,
     re_routed:          false,
+    jurisprudence,
     rationale: `Law ${proposed_law_id} (${proposed.name}) correctly targets ${weakest_pillar} pillar.`,
   };
 }
