@@ -149,7 +149,7 @@ export default function SimplexVisualizer({
         </defs>
 
         {/* Outer triangle fill */}
-        <polygon points={outerPts} fill="rgba(7,7,13,0.85)" stroke="rgba(100,116,139,0.4)" strokeWidth="1.5" />
+        <polygon points={outerPts} className="fill-black/5 dark:fill-[#07070d]/85 stroke-black/10 dark:stroke-slate-700/40" strokeWidth="1.5" />
 
         {/* Basin fills — fade based on position */}
         <polygon points={outerPts} fill="url(#svCBasin)" opacity={dominantC} style={{ transition: 'opacity 1s' }} />
@@ -188,10 +188,10 @@ export default function SimplexVisualizer({
         />
 
         {/* τ labels */}
-        <text x={recoveryPts[2].x} y={recoveryPts[2].y - 5} textAnchor="middle" fill="rgba(59,130,246,0.55)" fontSize="6">
+        <text x={recoveryPts[2].x} y={recoveryPts[2].y - 5} textAnchor="middle" className="fill-blue-600/70 dark:fill-blue-400/55" fontSize="6">
           τ_rec=15%
         </text>
-        <text x={floorPts[2].x} y={floorPts[2].y - 5} textAnchor="middle" fill="rgba(201,168,76,0.65)" fontSize="6">
+        <text x={floorPts[2].x} y={floorPts[2].y - 5} textAnchor="middle" className="fill-amber-700/70 dark:fill-[#c9a84c]/65" fontSize="6">
           τ_floor=5%
         </text>
 
@@ -253,8 +253,8 @@ export default function SimplexVisualizer({
           <circle cx={C_VERTEX.x} cy={C_VERTEX.y} r="16" fill="transparent" />
           <circle cx={C_VERTEX.x} cy={C_VERTEX.y} r="5" fill="#3b82f6" filter="url(#svGlow)"
             style={{ transform: hoveredCorner === 'C' ? 'scale(1.6)' : 'scale(1)', transformOrigin: `${C_VERTEX.x}px ${C_VERTEX.y}px`, transition: 'transform 0.2s' }} />
-          <text x={C_VERTEX.x} y={C_VERTEX.y - 10} textAnchor="middle" fill="#93c5fd" fontSize="13" fontWeight="700">C</text>
-          <text x={C_VERTEX.x} y={C_VERTEX.y - 1} textAnchor="middle" fill="#475569" fontSize="7">Continuity</text>
+          <text x={C_VERTEX.x} y={C_VERTEX.y - 10} textAnchor="middle" className="fill-blue-700 dark:fill-blue-300" fontSize="13" fontWeight="700">C</text>
+          <text x={C_VERTEX.x} y={C_VERTEX.y - 1} textAnchor="middle" className="fill-slate-500 dark:fill-slate-500" fontSize="7">Continuity</text>
         </g>
 
         {/* R corner */}
@@ -267,8 +267,8 @@ export default function SimplexVisualizer({
           <circle cx={R_VERTEX.x} cy={R_VERTEX.y} r="16" fill="transparent" />
           <circle cx={R_VERTEX.x} cy={R_VERTEX.y} r="5" fill="#c9a84c" filter="url(#svGlow)"
             style={{ transform: hoveredCorner === 'R' ? 'scale(1.6)' : 'scale(1)', transformOrigin: `${R_VERTEX.x}px ${R_VERTEX.y}px`, transition: 'transform 0.2s' }} />
-          <text x={R_VERTEX.x - 2} y={R_VERTEX.y + 16} textAnchor="middle" fill="#d4a83c" fontSize="13" fontWeight="700">R</text>
-          <text x={R_VERTEX.x + 18} y={R_VERTEX.y + 27} textAnchor="middle" fill="#475569" fontSize="7">Reciprocity</text>
+          <text x={R_VERTEX.x - 2} y={R_VERTEX.y + 16} textAnchor="middle" className="fill-amber-700 dark:fill-amber-500" fontSize="13" fontWeight="700">R</text>
+          <text x={R_VERTEX.x + 18} y={R_VERTEX.y + 27} textAnchor="middle" className="fill-slate-500 dark:fill-slate-500" fontSize="7">Reciprocity</text>
         </g>
 
         {/* S corner */}
@@ -281,8 +281,8 @@ export default function SimplexVisualizer({
           <circle cx={S_VERTEX.x} cy={S_VERTEX.y} r="16" fill="transparent" />
           <circle cx={S_VERTEX.x} cy={S_VERTEX.y} r="5" fill="#9b7fff" filter="url(#svGlow)"
             style={{ transform: hoveredCorner === 'S' ? 'scale(1.6)' : 'scale(1)', transformOrigin: `${S_VERTEX.x}px ${S_VERTEX.y}px`, transition: 'transform 0.2s' }} />
-          <text x={S_VERTEX.x + 2} y={S_VERTEX.y + 16} textAnchor="middle" fill="#c4b5fd" fontSize="13" fontWeight="700">S</text>
-          <text x={S_VERTEX.x - 18} y={S_VERTEX.y + 27} textAnchor="middle" fill="#475569" fontSize="7">Sovereignty</text>
+          <text x={S_VERTEX.x + 2} y={S_VERTEX.y + 16} textAnchor="middle" className="fill-purple-700 dark:fill-purple-300" fontSize="13" fontWeight="700">S</text>
+          <text x={S_VERTEX.x - 18} y={S_VERTEX.y + 27} textAnchor="middle" className="fill-slate-500 dark:fill-slate-500" fontSize="7">Sovereignty</text>
         </g>
 
         {/* Hover tooltips */}
@@ -300,10 +300,10 @@ export default function SimplexVisualizer({
           return (
             <g>
               <rect x={boxX} y={tp.y - boxH + 4} width={boxW} height={boxH} rx="4"
-                fill="#0d0d1a" stroke={color} strokeWidth="0.7" strokeOpacity="0.6" />
+                className="fill-white dark:fill-[#0d0d1a] stroke-black/10 dark:stroke-white/10" strokeWidth="0.7" />
               <text x={tp.x} y={tp.y + 1}
                 textAnchor={tp.anchor as 'middle' | 'start' | 'end'}
-                fill={color} fontSize="7.5" fontFamily="monospace">
+                fill={color} fontSize="7.5" fontFamily="monospace" fontWeight="bold">
                 {text}
               </text>
             </g>
@@ -311,10 +311,10 @@ export default function SimplexVisualizer({
         })()}
 
         {/* M score label below triangle */}
-        <text x={140} y={268} textAnchor="middle" fill="#c9a84c" fontSize="10" fontWeight="700" fontFamily="monospace">
+        <text x={140} y={268} textAnchor="middle" className="fill-amber-700 dark:fill-[#c9a84c]" fontSize="10" fontWeight="700" fontFamily="monospace">
           M = {M.toFixed(3)}
         </text>
-        <text x={140} y={282} textAnchor="middle" fill="#1e293b" fontSize="7">
+        <text x={140} y={282} textAnchor="middle" className="fill-slate-400 dark:fill-slate-700" fontSize="7">
           C+R+S=1 · Constitutional Simplex
         </text>
       </svg>

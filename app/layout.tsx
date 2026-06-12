@@ -37,8 +37,8 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="scroll-smooth" data-theme="dark" suppressHydrationWarning>
-      <body className="bg-slate-950 text-slate-100 antialiased min-h-screen flex flex-col overflow-x-hidden">
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
+      <body className="antialiased min-h-screen flex flex-col overflow-x-hidden">
         <ThemeProvider>
           <ToastProvider>
             <ConfigBanner />

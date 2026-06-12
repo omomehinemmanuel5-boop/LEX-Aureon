@@ -77,19 +77,19 @@
     const activeCategory = CATEGORIES.find(c => c.id === active) ?? null;
 
     return (
-      <section className="py-12 sm:py-20 px-4 sm:px-5" style={{ background: G.navy }}>
+      <section className="py-12 sm:py-20 px-4 sm:px-5 bg-white dark:bg-[#07070d]">
         <div className="max-w-4xl mx-auto">
 
           {/* Header */}
           <div className="text-center mb-8 sm:mb-10">
-            <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: '#ef4444' }}>
+            <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: '#ef4444' }}>
               Internal Stress-Testing Suite · v2
             </div>
-            <h2 className="text-2xl sm:text-4xl font-black text-white mb-3">
+            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white mb-3">
               {TOTAL} adversarial vectors.{' '}
-              <span style={{ color: '#10b981' }}>0 breaches.</span>
+              <span className="text-emerald-600 dark:text-[#10b981]">0 breaches.</span>
             </h2>
-            <p className="text-slate-500 text-sm max-w-lg mx-auto leading-relaxed">
+            <p className="text-slate-500 dark:text-slate-500 text-sm max-w-lg mx-auto leading-relaxed font-medium">
               Every category of known LLM attack, systematically tested against
               the SovereignKernel. Tap a category to see what we throw at it.
             </p>
@@ -174,8 +174,7 @@
 
           {/* Summary strip */}
           <div
-            className="rounded-2xl border p-4 sm:p-5"
-            style={{ borderColor: `${G.gold}20`, background: `${G.gold}06` }}
+            className="rounded-2xl border p-4 sm:p-5 bg-black/5 dark:bg-[#c9a84c06] border-black/10 dark:border-[#c9a84c20]"
           >
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
               {[
@@ -186,11 +185,11 @@
               ].map(({ v, l, c }) => (
                 <div key={l}>
                   <div className="text-2xl sm:text-3xl font-black font-mono" style={{ color: c }}>{v}</div>
-                  <div className="text-xs font-mono text-slate-600 mt-0.5">{l}</div>
+                  <div className="text-xs font-mono text-slate-500 dark:text-slate-600 mt-0.5 font-bold">{l}</div>
                 </div>
               ))}
             </div>
-            <div className="text-center mt-3 text-xs font-mono text-slate-700">
+            <div className="text-center mt-3 text-xs font-mono text-slate-500 dark:text-slate-700 font-medium">
               Internal stress-test suite · Separate from published HarmBench / JailbreakBench / AdvBench results
             </div>
           </div>

@@ -109,8 +109,7 @@ export default function LiveStatsBar() {
 
   return (
     <div
-      className="border-y overflow-x-auto"
-      style={{ background: G.navyL, borderColor: `${G.gold}18` }}
+      className="border-y overflow-x-auto bg-black/5 dark:bg-[#0d0d1a] border-black/10 dark:border-white/5"
     >
       <div className="flex" style={{ minWidth: 480 }}>
         {cells.map(({ label, value, sub, color, dot }, i) => (
@@ -118,7 +117,7 @@ export default function LiveStatsBar() {
             key={label}
             className="flex-1 px-4 sm:px-5 py-3 text-center"
             style={{
-              borderRight: i < cells.length - 1 ? `1px solid ${G.gold}15` : 'none',
+              borderRight: i < cells.length - 1 ? '1px solid rgba(0,0,0,0.08)' : 'none',
             }}
           >
             <div className="flex items-center justify-center gap-1.5 mb-0.5">
@@ -128,7 +127,7 @@ export default function LiveStatsBar() {
                   style={{ background: color }}
                 />
               )}
-              <span className="text-xs font-mono text-slate-600 whitespace-nowrap">
+              <span className="text-xs font-mono text-slate-500 dark:text-slate-600 whitespace-nowrap">
                 {label}
               </span>
             </div>
@@ -139,8 +138,8 @@ export default function LiveStatsBar() {
               {value}
             </div>
             <div
-              className="text-xs font-mono mt-0.5 whitespace-nowrap"
-              style={{ color: `${color}80` }}
+              className="text-[10px] font-mono mt-0.5 whitespace-nowrap"
+              style={{ color: `${color}cc` }}
             >
               {sub}
             </div>

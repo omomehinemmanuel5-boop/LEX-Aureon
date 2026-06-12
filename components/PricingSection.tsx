@@ -39,13 +39,13 @@ export default function PricingSection() {
   ];
 
   return (
-    <section id="pricing" className="py-24 px-5" style={{ background: G.navy }}>
+    <section id="pricing" className="py-24 px-5 bg-white dark:bg-[#07070d]">
       {showBtcModal && <BitcoinUpgradeModal onClose={() => setShowBtcModal(false)} />}
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-4">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: G.gold }}>Pricing</div>
-          <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">Choose your governance tier</h2>
-          <p className="text-xs text-slate-600 font-mono">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>Pricing</div>
+          <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-3">Choose your governance tier</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-600 font-mono">
             Early supporter pricing — first 50 customers lock in this rate forever.
           </p>
         </div>
@@ -53,10 +53,10 @@ export default function PricingSection() {
         <div className="grid sm:grid-cols-3 gap-4 mt-10">
           {plans.map(plan => (
             <div key={plan.name}
-              className="rounded-2xl border p-6 flex flex-col relative"
+              className="rounded-2xl border p-6 flex flex-col relative bg-black/5 dark:bg-[#0d0d1a] border-black/10 dark:border-white/5"
               style={{
-                borderColor: plan.highlight ? G.gold : 'rgba(255,255,255,0.06)',
-                background: plan.highlight ? `${G.gold}06` : G.navyL,
+                borderColor: plan.highlight ? G.gold : undefined,
+                background: plan.highlight ? `${G.gold}08` : undefined,
                 boxShadow: plan.highlight ? `0 0 40px ${G.gold}15` : 'none',
               }}>
               {plan.badge && (
@@ -66,17 +66,17 @@ export default function PricingSection() {
                 </div>
               )}
               <div className="mb-5">
-                <div className="text-xs font-mono uppercase tracking-widest mb-2"
+                <div className="text-xs font-mono uppercase tracking-widest mb-2 font-bold"
                   style={{ color: plan.highlight ? G.gold : '#64748b' }}>{plan.name}</div>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-black text-white">{plan.price}</span>
+                  <span className="text-3xl font-black text-slate-900 dark:text-white">{plan.price}</span>
                   {plan.period && <span className="text-slate-500 text-sm">{plan.period}</span>}
                 </div>
               </div>
               <ul className="space-y-2 flex-1 mb-6">
                 {plan.features.map(f => (
-                  <li key={f} className="flex items-start gap-2 text-xs text-slate-400">
-                    <span style={{ color: plan.highlight ? G.gold : '#10b981' }} className="flex-shrink-0 mt-0.5">✓</span>
+                  <li key={f} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <span style={{ color: plan.highlight ? G.gold : '#10b981' }} className="flex-shrink-0 mt-0.5 font-bold">✓</span>
                     {f}
                   </li>
                 ))}
@@ -89,8 +89,8 @@ export default function PricingSection() {
                   background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`,
                   color: '#07070d',
                 } : {
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#94a3b8',
+                  border: '1px solid rgba(0,0,0,0.1)',
+                  color: '#475569',
                 }}>
                 {plan.cta}
               </a>
