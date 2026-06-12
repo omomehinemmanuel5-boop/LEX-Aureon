@@ -3,6 +3,9 @@ name: TruthfulQA — Judge Only
 on:
   workflow_dispatch:
     inputs:
+      run_id:
+        description: 'GitHub Actions run ID that produced tqa-results.jsonl (find in the failed run URL)'
+        required: true
       model:
         description: 'Groq model to use for judging'
         default: 'llama-3.3-70b-versatile'
@@ -20,12 +23,21 @@ jobs:
 
       - run: npm install
 
-      # ── Verify existing generation data is present ────────────────────
-      - name: Verify tqa-results.jsonl exists
+      # ── Download tqa-results.jsonl from the previous run's artifact ───
+      - name: Download generation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: truthfulqa-results-${{ github.event.inputs.run_id }}
+          path: data/
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.inputs.run_id }}
+
+      # ── Verify it downloaded and has content ──────────────────────────
+      - name: Verify tqa-results.jsonl
         run: |
           if [ ! -f data/tqa-results.jsonl ]; then
-            echo "ERROR: data/tqa-results.jsonl not found."
-            echo "Run the full TruthfulQA workflow first to generate outputs."
+            echo "ERROR: tqa-results.jsonl not found after download."
+            echo "Check that run_id ${{ github.event.inputs.run_id }} exists and uploaded the artifact."
             exit 1
           fi
           COUNT=$(python3 -c "
@@ -158,12 +170,13 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         continue-on-error: true
 
-      # ── Commit results ────────────────────────────────────────────────
+      # ── Commit results back to repo ───────────────────────────────────
       - name: Commit results
         run: |
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
-          git add data/tqa-judged.jsonl data/tqa-summary.json results/truthfulqa-report.txt || true
+          git add data/tqa-results.jsonl data/tqa-judged.jsonl \
+                  data/tqa-summary.json results/truthfulqa-report.txt || true
           git diff --staged --quiet || \
             git commit -m "results: TruthfulQA judge-only scores $(date +%Y-%m-%d)"
           git push
