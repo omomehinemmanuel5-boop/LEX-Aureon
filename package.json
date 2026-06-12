@@ -28,7 +28,8 @@
     "lexbench": "npx tsx scripts/lexbench/runner.ts",
     "lexbench-lite": "npx tsx scripts/lexbench-lite.ts",
     "red-team": "npx tsx scripts/red-team.ts",
-    "validate-env": "npx tsx scripts/validate-env.ts"
+    "validate-env": "npx tsx scripts/validate-env.ts",
+    "ingest": "npx tsx scripts/ingest-results.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",

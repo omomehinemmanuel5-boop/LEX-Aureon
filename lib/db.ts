@@ -87,6 +87,21 @@
         sql: `INSERT OR IGNORE INTO run_stats (key, value) VALUES ('total_runs', 0)`,
         args: [],
       },
+      {
+        sql: `CREATE TABLE IF NOT EXISTS benchmark_results (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          benchmark TEXT NOT NULL,
+          run_date TEXT NOT NULL,
+          n_total INTEGER,
+          metric_name TEXT NOT NULL,
+          bare_score REAL,
+          governed_score REAL,
+          delta_pp REAL,
+          notes TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        )`,
+        args: [],
+      },
     ], 'write');
 
     const safeAlter = async (sql: string) => {
