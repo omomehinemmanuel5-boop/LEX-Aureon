@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getClient } from '@/lib/db';
+import { getClient, initSchema } from '@/lib/db';
 import { logger, errorFields } from '@/lib/logger';
 
 export async function GET(req: Request) {
@@ -8,6 +8,7 @@ export async function GET(req: Request) {
   const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(50, Math.floor(limitParam))) : 8;
 
   try {
+    await initSchema();
     const r = await getClient().execute({
       sql: `SELECT receipt_id, session_id, turn, pre_eval_label,
                    m_before, m_after, governor_mode, intervention,
