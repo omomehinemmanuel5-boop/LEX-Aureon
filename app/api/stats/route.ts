@@ -14,10 +14,68 @@ async function ensureTable() {
 
 export async function GET() {
   await ensureTable();
-  const result = await getClient().execute(`SELECT value FROM run_stats WHERE key = 'total_runs'`);
-  const total_runs = (result.rows[0]?.value as number) ?? 0;
-  // `runs` kept for backwards compatibility with the existing console UI.
-  return NextResponse.json({ total_runs, runs: total_runs });
+  const c = getClient();
+
+  const [runsResult, receiptsResult, memoryResult, cacheResult, interventionResult] =
+    await Promise.all([
+      c.execute(`SELECT value FROM run_stats WHERE key = 'total_runs'`),
+      c.execute(`SELECT COUNT(*) as cnt FROM praxis_receipts`).catch(() => null),
+      c.execute(`SELECT COUNT(*) as cnt FROM lex_memory`).catch(() => null),
+      // Cache hit-rate: sum(hits) / count(*) gives avg hits per entry
+      c.execute(`
+        SELECT COUNT(*) as entries, COALESCE(SUM(hits), 0) as total_hits
+        FROM embedding_cache
+      `).catch(() => null),
+      c.execute(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN intervention = 1 THEN 1 ELSE 0 END) as interventions,
+          ROUND(AVG(m_after), 4) as avg_m,
+          ROUND(MIN(m_after), 4) as min_m
+        FROM praxis_receipts
+      `).catch(() => null),
+    ]);
+
+  const total_runs    = (runsResult.rows[0]?.value as number) ?? 0;
+  const total_receipts = Number(receiptsResult?.rows[0]?.cnt ?? 0);
+  const memory_events  = Number(memoryResult?.rows[0]?.cnt ?? 0);
+
+  const cacheRow        = cacheResult?.rows[0];
+  const cache_entries   = Number(cacheRow?.entries ?? 0);
+  const cache_total_hits = Number(cacheRow?.total_hits ?? 0);
+  // hit_rate = total_hits / (entries + total_hits) — approximates cache efficiency
+  const cache_hit_rate = cache_entries + cache_total_hits > 0
+    ? Math.round((cache_total_hits / (cache_entries + cache_total_hits)) * 10000) / 100
+    : 0;
+
+  const ivRow             = interventionResult?.rows[0];
+  const governed_turns    = Number(ivRow?.total ?? 0);
+  const intervention_count = Number(ivRow?.interventions ?? 0);
+  const intervention_rate = governed_turns > 0
+    ? Math.round((intervention_count / governed_turns) * 10000) / 100
+    : 0;
+  const avg_m = Number(ivRow?.avg_m ?? 0);
+  const min_m = Number(ivRow?.min_m ?? 0);
+
+  return NextResponse.json({
+    // legacy fields kept for backwards compat
+    total_runs,
+    runs: total_runs,
+    // governance telemetry
+    total_receipts,
+    memory_events,
+    governed_turns,
+    intervention_count,
+    intervention_rate_pct: intervention_rate,
+    avg_stability_margin: avg_m,
+    min_stability_margin: min_m,
+    // embedding cache efficiency (fix #10)
+    embedding_cache: {
+      entries:    cache_entries,
+      total_hits: cache_total_hits,
+      hit_rate_pct: cache_hit_rate,
+    },
+  });
 }
 
 export async function POST() {
