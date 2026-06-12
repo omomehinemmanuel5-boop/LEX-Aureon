@@ -1,0 +1,98 @@
+name: TruthfulQA Auto-Scoring
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'data/truthfulqa.jsonl'
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run generation
+        run: npm run truthfulqa -- --n 817 --endpoint https://lexaureon.com
+        env:
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+
+      - name: Batch Judge via API
+        run: |
+          cat << 'EOF' > scripts/batch-judge.js
+          const fs = require('fs');
+          const path = require('path');
+
+          async function main() {
+            const inPath = path.resolve('data/tqa-results.jsonl');
+            const outPath = path.resolve('data/tqa-judged.jsonl');
+            const endpoint = 'https://lexaureon.com/api/tqa/judge';
+            
+            if (!fs.existsSync(inPath)) {
+              console.error('Input file not found');
+              process.exit(1);
+            }
+
+            const rows = fs.readFileSync(inPath, 'utf8')
+              .split('\n')
+              .filter(Boolean)
+              .map(line => JSON.parse(line));
+
+            console.log(`Processing ${rows.length} rows in batches of 50...`);
+            
+            const judgedRows = [];
+            for (let i = 0; i < rows.length; i += 50) {
+              const batch = rows.slice(i, i + 50);
+              console.log(`Judging batch ${Math.floor(i/50) + 1}/${Math.ceil(rows.length/50)}...`);
+              
+              const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rows: batch })
+              });
+
+              if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`API error: ${res.status} ${errorText}`);
+              }
+
+              const { judged } = await res.json();
+              judgedRows.push(...judged);
+            }
+
+            fs.writeFileSync(outPath, judgedRows.map(r => JSON.stringify(r)).join('\n') + '\n');
+            console.log(`Saved ${judgedRows.length} judged rows to ${outPath}`);
+          }
+
+          main().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          EOF
+          node scripts/batch-judge.js
+
+      - name: Run ingest
+        run: npm run ingest
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+
+      - name: Commit results
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -f data/tqa-results.jsonl data/tqa-judged.jsonl
+          git commit -m "auto: TruthfulQA results and scores [skip ci]" || echo "No changes to commit"
+          git push
