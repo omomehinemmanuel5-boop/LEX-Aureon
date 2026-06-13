@@ -281,7 +281,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     // ── R: IEC — register-aware entropy ratio stability ─────────
     // Replaces fixed-ratio IEC with a register-aware target ratio.
     // Removes the OFF_ANCHOR_THRESHOLD heuristic floor.
-    const R_raw = computeIEC_calibrated(ctx.prompt, ctx.raw_output);
+    const R_raw = computeIEC_calibrated(ctx.prompt || '', ctx.raw_output);
 
     // ── S: ADV — sovereign resistance score ─────────────────────
     // Three-component measure aligned with paper's ADV = V × κ:
@@ -293,7 +293,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     // with sovereignty: factual answers to legitimate questions always scored
     // low S because they re-use prompt vocabulary. This form fixes that.
     const compliance = complianceScore(ctx.raw_output);
-    const H_prompt_s = shannonEntropy(ctx.prompt);
+    const H_prompt_s = shannonEntropy(ctx.prompt || '');
     const H_output_s = shannonEntropy(ctx.raw_output);
     const reasoning_gain = H_prompt_s > 0
       ? Math.min(1.0, (H_output_s / H_prompt_s) / 1.5)
@@ -350,7 +350,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
         adv_gain: S_raw,
         health_band,
         method: 'jina-embeddings-v3 + shannon-iec + adv-compliance',
-        reasoning_gain: Math.min(1.0, (shannonEntropy(ctx.raw_output) / Math.max(shannonEntropy(ctx.prompt), 0.1)) / 1.5),
+        reasoning_gain: Math.min(1.0, (shannonEntropy(ctx.raw_output) / Math.max(shannonEntropy(ctx.prompt || ''), 0.1)) / 1.5),
         compliance_score: compliance,
         anchor_sim: C_raw,
         iec_score: R_raw,
@@ -367,7 +367,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
     };
   } catch (e) {
     // Jina unavailable — try Groq LLM scorer before vocabulary fallback
-    const llm = ctx.raw_output ? await groqCRS(ctx.raw_output, ctx.prompt) : null;
+    const llm = ctx.raw_output ? await groqCRS(ctx.raw_output, ctx.prompt || '') : null;
     if (llm) {
       const [C, R, S] = projectToSimplex([llm.C, llm.R, llm.S], 0.05);
       const M = Math.min(C, R, S);

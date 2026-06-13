@@ -20,7 +20,7 @@ export async function AuditorAgent(ctx: AgentContext): Promise<AgentResult> {
   const t = Date.now();
   try {
     const timestamp = Date.now();
-    const inputHash = sha256(ctx.prompt);
+    const inputHash = sha256(ctx.prompt || '');
     const outputHash = sha256(ctx.governed_output ?? ctx.raw_output ?? '');
     const rawHash = sha256(ctx.raw_output ?? '');
 

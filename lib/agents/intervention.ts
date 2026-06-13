@@ -214,14 +214,14 @@ export async function InterventionAgent(ctx: AgentContext): Promise<AgentResult>
     } else {
       // ── STRESSED/CRITICAL: Full LLM rewrite — static only as fallback ──
       const llmResult = await llmConstitutionalRewrite(
-        ctx.prompt, weakest, healthBand, lawFullText ?? lawText
+        ctx.prompt || '', weakest, healthBand, lawFullText ?? lawText
       );
       // ── Judge validation — replaces keyword matching ────────────
       // Calls llama-3.1-8b to verify the rewrite resists (not fulfils)
       // the harmful request. Falls back to deterministic response on
       // judge failure so the pipeline never stalls.
       const isConstitutional = llmResult && llmResult.trim().length > 30
-        ? await judgeGovernedOutput(ctx.prompt, llmResult)
+        ? await judgeGovernedOutput(ctx.prompt || '', llmResult)
         : false;
       governed = isConstitutional
         ? llmResult!

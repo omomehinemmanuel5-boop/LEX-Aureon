@@ -223,6 +223,7 @@ export async function POST(req: Request) {
             action:    ivResult?.meta?.action ?? 'constitutional_rewrite',
             weakest, severity: result.health_band, law_invoked: invokedLaw,
             output_modified: governedOutput !== result.governed_output,
+            governed_output: governedOutput,
           });
 
         // ── 08. Neithra — verify law alignment ───────────────────────────

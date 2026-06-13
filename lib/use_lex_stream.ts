@@ -10,7 +10,7 @@ export interface StreamState {
   preEval: { label: string; governor_mode: string; blocked: boolean; tags?: string[] } | null;
   partialOutput: string;
   metrics: { c: number; r: number; s: number; m: number; health?: string; health_band?: string } | null;
-  intervention: { triggered: boolean; applied: boolean; action?: string; weakest?: string; severity?: string; law_invoked?: { id?: number; name: string; book: string; pillar: string; }; output_modified?: boolean; } | null;
+  intervention: { triggered: boolean; applied: boolean; action?: string; weakest?: string; severity?: string; law_invoked?: { id?: number; name: string; book: string; pillar: string; }; output_modified?: boolean; governed_output?: string; } | null;
   governor: { decision: string; dV: number; lyapunov_stable: boolean; V_before: number; V_after: number; weakest: string; reason: string } | null;
   law: { id?: number; book: string; name: string; pillar: string; } | null;
   selfReferential: { sovereignty_raw?: number; sovereignty_violated?: boolean; fired?: boolean; } | null;

@@ -963,7 +963,7 @@ export default function Console() {
                           <div className="font-bold" style={{ color: '#c9a84c' }}>
                             [{stream.law.book}] {stream.law.name}
                           </div>
-                          <div className="text-slate-500 mt-1">{stream.law.governor_use}</div>
+                          <div className="text-slate-500 mt-1">{(stream.law as any).governor_use}</div>
                         </div>
                       )}
 
@@ -978,7 +978,7 @@ export default function Console() {
                             </span>
                           </div>
                           <div className="flex gap-4 text-xs">
-                            <span className="text-slate-600">S_raw: <span style={{ color: stream.selfReferential.sovereignty_raw < 0.15 ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.sovereignty_raw?.toFixed(3)}</span></span>
+                            <span className="text-slate-600">S_raw: <span style={{ color: (stream.selfReferential.sovereignty_raw ?? 0) < 0.15 ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.sovereignty_raw?.toFixed(3)}</span></span>
                             <span className="text-slate-600">Adjustment Applied: <span style={{ color: stream.selfReferential.fired ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.fired ? 'Yes' : 'No'}</span></span>
                           </div>
                         </div>
