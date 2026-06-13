@@ -49,25 +49,28 @@ jobs:
             exit 1
           fi
 
-      # ── Step 2b: Commit generation output IMMEDIATELY ─────────────────
-      # Runs before judging so the 3hr generation is never lost.
+      # ── Step 2b: Upload artifact FIRST — data is safe before anything else
+      - name: Upload generation artifact (safety net)
+        uses: actions/upload-artifact@v4
+        with:
+          name: truthfulqa-results-${{ github.run_id }}
+          path: data/tqa-results.jsonl
+
+      # ── Step 2c: Commit generation output — never blocks the job ─────
       - name: Commit generation output
+        continue-on-error: true
         run: |
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
           git add data/tqa-results.jsonl
-          git diff --staged --quiet || \
-            git commit -m "data: TruthfulQA generation output $(date +%Y-%m-%d) [pre-judge]"
+          git diff --staged --quiet && echo "Nothing to commit" && exit 0
+          git commit -m "data: TruthfulQA generation output $(date +%Y-%m-%d) [pre-judge]"
+          git pull --rebase origin main
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Step 3: LLM Judge — never hard-fails ─────────────────────────
-      # On any batch error (endpoint down, bad response, timeout):
-      #   - logs the error
-      #   - marks all rows in that batch as judge_unavailable
-      #   - continues to the next batch
-      # The job only fails if judging produces 0 rows total.
       - name: Judge results via LLM (Lin et al. 2022 rubric)
         run: |
           node -e "
@@ -146,7 +149,6 @@ jobs:
               process.exit(1);
             }
 
-            // Merge verdicts by id
             const verdictMap = {};
             for (const r of allResults) verdictMap[r.id] = r;
 
@@ -208,33 +210,37 @@ jobs:
           run().catch(e => { console.error('Unexpected fatal:', e); process.exit(1); });
           "
 
-      # ── Step 4: Ingest to Turso ───────────────────────────────────────
-      - name: Ingest benchmark scores to DB
-        run: npm run ingest
-        env:
-          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
-          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
-        continue-on-error: true
-
-      # ── Step 5: Commit final results ──────────────────────────────────
-      - name: Commit results
-        run: |
-          git config user.name  "Lex CRS Agent"
-          git config user.email "lexaureon@gmail.com"
-          git add data/tqa-judged.jsonl data/tqa-summary.json \
-                  results/truthfulqa-report.txt || true
-          git diff --staged --quiet || \
-            git commit -m "results: TruthfulQA LLM judge scores $(date +%Y-%m-%d)"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ── Step 6: Upload artifacts ──────────────────────────────────────
-      - name: Upload artifacts
+      # ── Step 4: Upload all artifacts immediately after judging ────────
+      - name: Upload all artifacts (safety net)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: truthfulqa-results-${{ github.run_id }}
+          name: truthfulqa-judged-${{ github.run_id }}
           path: |
             data/tqa-results.jsonl
             data/tqa-judged.jsonl
             results/truthfulqa-report.txt
+            data/tqa-summary.json
+
+      # ── Step 5: Ingest to Turso ───────────────────────────────────────
+      - name: Ingest benchmark scores to DB
+        continue-on-error: true
+        run: npm run ingest
+        env:
+          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+
+      # ── Step 6: Commit all results — never blocks the job ────────────
+      - name: Commit results
+        continue-on-error: true
+        run: |
+          git config user.name  "Lex CRS Agent"
+          git config user.email "lexaureon@gmail.com"
+          git add data/tqa-results.jsonl data/tqa-judged.jsonl \
+                  data/tqa-summary.json results/truthfulqa-report.txt || true
+          git diff --staged --quiet && echo "Nothing to commit" && exit 0
+          git commit -m "results: TruthfulQA LLM judge scores $(date +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
