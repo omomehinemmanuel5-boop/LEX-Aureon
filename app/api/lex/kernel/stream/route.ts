@@ -193,7 +193,7 @@ export async function POST(req: Request) {
         let invokedLaw: { book: string; name: string; pillar: string; id?: number } | null = null;
 
         if (needsIntervention) {
-          emit('stage', { name: 'intervening', description: 'Intervention: Vaulturex law → LLM rewrite → judge' });
+          emit('stage', { name: 'intervening', description: 'Applying principled correction' });
           const ivResult = await safe(() => InterventionAgent({
             prompt, session_id, raw_output: result.governed_output,
             intervention_required: true, weakest_dimension: weakest,
@@ -223,9 +223,9 @@ export async function POST(req: Request) {
             output_modified: governedOutput !== result.governed_output,
           });
 
-          // ── 08. Neithra — verify law alignment ───────────────────────────
-          if (invokedLaw?.id) {
-            emit('stage', { name: 'neithra', description: 'Neithra: pillar-law alignment verification' });
+        // ── 08. Neithra — verify law alignment ───────────────────────────
+        if (invokedLaw?.id) {
+          emit('stage', { name: 'neithra', description: 'Verifying alignment' });
             const neithraResult = await safe(() => NeithraAgent({
               prompt,
               proposed_law_id: invokedLaw!.id ?? null,
@@ -248,7 +248,7 @@ export async function POST(req: Request) {
         }
 
         // ── 09. ClauseBank ───────────────────────────────────────────────────
-        emit('stage', { name: 'clause_bank', description: 'ClauseBank: jurisdiction clause selection' });
+        emit('stage', { name: 'clause_bank', description: 'Selecting relevant guidelines' });
         const clause = await safe(() => ClauseBankAgent(weakest, 'global', result.health_band), null);
         emit('clause_bank', {
           found:        clause?.found ?? false,
@@ -262,7 +262,7 @@ export async function POST(req: Request) {
         });
 
         // ── 10. Vaulturex ────────────────────────────────────────────────────
-        emit('stage', { name: 'vaulturex', description: 'Vaulturex: compliance gate' });
+        emit('stage', { name: 'vaulturex', description: 'Compliance check' });
         const vaul = await safe(() => VaulturexAgent(governedOutput, 'global', 'general'), null);
         emit('vaulturex', {
           compliant:          vaul?.compliant ?? true,
@@ -272,7 +272,7 @@ export async function POST(req: Request) {
         });
 
         // ── 11. Celeste ──────────────────────────────────────────────────────
-        emit('stage', { name: 'celeste', description: 'Celeste: sovereign visual rendering' });
+        emit('stage', { name: 'celeste', description: 'Finalizing response' });
         const celeste = await safe(() => CelesteAgent(governedOutput, '', 'api'), null);
         if (celeste?.rendered_output && celeste.rendered_output !== governedOutput)
           governedOutput = celeste.rendered_output;
@@ -283,7 +283,7 @@ export async function POST(req: Request) {
         });
 
         // ── 12. Self-referential CRS ─────────────────────────────────────────
-        emit('stage', { name: 'self_referential', description: 'S = cosine_sim(output_emb, constitutional_centroid)' });
+        emit('stage', { name: 'self_referential', description: 'Verifying final output' });
         let srFired = false;
         if (promptEmbedding.length) {
           const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
@@ -315,7 +315,7 @@ export async function POST(req: Request) {
         emit('token', governedOutput);
 
         // ── 13. Auditor ──────────────────────────────────────────────────────
-        emit('stage', { name: 'auditing', description: 'Auditor: SHA-256 cryptographic receipt + brittleness B(x)' });
+        emit('stage', { name: 'auditing', description: 'Creating audit record' });
         const finalM = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         const auditorResult = await safe(() => AuditorAgent({
           prompt, session_id, raw_output: result.raw_output, governed_output: governedOutput,

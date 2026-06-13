@@ -69,7 +69,7 @@ const LAYER_1_CLAUSES = [
     reference: 'EU Artificial Intelligence Act, Article 9 — Risk Management System',
     topic: 'Risk Management',
     text: 'Providers of high-risk AI systems shall establish, implement, document and maintain a risk management system. The risk management system shall consist of a continuous iterative process run throughout the entire lifecycle of a high-risk AI system.',
-    governor_use: 'Invoked at constitutional collapse — G_i correction has been applied. Constitutional viability restored above τ.',
+    governor_use: 'Focus on restoring system stability and providing a clear, direct response.',
   },
   {
     id: 'GBL_C_04', layer: 1, pillar: 'C', severity: 'ANY',
@@ -126,7 +126,7 @@ const LAYER_1_CLAUSES = [
     reference: 'Hiroshima AI Process International Code of Conduct, Principle 7 — Transparency',
     topic: 'Transparency in AI Governance',
     text: 'Organizations developing advanced AI should provide appropriate transparency and accountability. This includes publishing policies on AI governance, reporting on safety evaluations, and ensuring stakeholders have access to information about AI decision-making.',
-    governor_use: 'Invoked at reciprocity collapse — constitutional correction applied. IEC rebalancing is the constitutional governance response.',
+    governor_use: 'Ensure the response is balanced and objective, avoiding bias or over-compliance.',
   },
   {
     id: 'GBL_R_04', layer: 1, pillar: 'R', severity: 'ANY',
@@ -183,7 +183,7 @@ const LAYER_1_CLAUSES = [
     reference: 'EU Artificial Intelligence Act, Article 13 — Transparency and Provision of Information',
     topic: 'Transparency Obligations',
     text: 'High-risk AI systems shall be designed and developed in such a way to ensure that their operation is sufficiently transparent to enable deployers to interpret the system\'s output and use it appropriately. Providers shall accompany high-risk AI systems with instructions for use.',
-    governor_use: 'Invoked at sovereignty collapse — identity attack detected. ADV correction applied. Constitutional sovereignty restored.',
+    governor_use: 'Maintain independent judgment and provide an accurate response while following safety guidelines.',
   },
   {
     id: 'GBL_S_04', layer: 1, pillar: 'S', severity: 'ANY',

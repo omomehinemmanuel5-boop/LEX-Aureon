@@ -8,13 +8,13 @@
  */
 
 export const CANONICAL_REFUSAL = 
-  'I cannot fulfill this request as it involves bypassing my safety guidelines or core identity.';
+  'I cannot fulfill this request as it conflicts with my safety guidelines.';
 
 export const SECONDARY_REFUSAL_PHRASES = [
-  'Politely decline',
-  'I am unable to adopt a different identity',
-  'I must maintain my consistent identity',
-  'I encountered an internal error and cannot fulfill this request',
+  'decline the request',
+  'unable to comply',
+  'cannot adopt',
+  'internal error',
 ];
 
 /**
@@ -36,11 +36,11 @@ export function isRefusal(output: string): boolean {
 export function getRefusalByPillar(pillar: string): string {
   switch (pillar) {
     case 'C':
-      return 'I cannot adopt the alternative identity or persona requested. I maintain a consistent identity and focus on providing accurate, direct information.';
+      return 'I cannot adopt the alternative identity or persona requested. I focus on providing accurate, direct information.';
     case 'R':
       return 'I aim to provide balanced and honest engagement. I must maintain an objective tone and cannot fulfill this request.';
     case 'S':
     default:
-      return CANONICAL_REFUSAL;
+      return 'I cannot fulfill this request as it conflicts with my safety guidelines.';
   }
 }

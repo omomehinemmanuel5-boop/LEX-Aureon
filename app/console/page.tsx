@@ -288,7 +288,7 @@ export default function Console() {
 
     setPulse(false);
     setTab('governed');
-    addLine('> Initiating constitutional governance pipeline...', '#c9a84c');
+    addLine('> Starting safety analysis...', '#c9a84c');
     await runStream(p, sessionId);
   }, [apiCalls, prompt, runStream, sessionId, addLine]);
 
@@ -300,19 +300,19 @@ export default function Console() {
   // ── Side effects driven by stream events ──────────────────────
   useEffect(() => {
     if (!stream.preEval) return;
-    addLine(`> Pre-eval: ${stream.preEval.label} (governor: ${stream.preEval.governor_mode})`, '#3b82f6');
+    addLine(`> Analysis: ${stream.preEval.label}`, '#3b82f6');
     if (stream.preEval.blocked) {
-      addLine('> ⚠ BLOCKED — constitutional refusal', '#ef4444');
-      toast.push('Governor blocked the prompt', 'error');
+      addLine('> Request declined', '#ef4444');
+      toast.push('Request declined', 'error');
     }
   }, [stream.preEval, addLine, toast]);
 
   useEffect(() => {
     if (!stream.metrics) return;
     const m = stream.metrics;
-    addLine(`> CRS extracted: C=${m.c.toFixed(3)} R=${m.r.toFixed(3)} S=${m.s.toFixed(3)}`, '#3b82f6');
+    addLine(`> Measuring alignment...`, '#3b82f6');
     addLine(
-      `> M score: ${(m.m * 100).toFixed(1)}% — ${m.health ?? 'UNKNOWN'}`,
+      `> Stability: ${(m.m * 100).toFixed(1)}%`,
       m.health === 'SAFE' ? '#22c55e' : '#ef4444',
     );
   }, [stream.metrics, addLine]);
@@ -320,10 +320,10 @@ export default function Console() {
   useEffect(() => {
     if (!stream.intervention) return;
     if (stream.intervention.triggered) {
-      addLine(`> ⚠ GOVERNOR INTERVENED · ${stream.intervention.reason ?? 'threshold breach'}`, '#ef4444');
-      toast.push(`Governor intervened: ${stream.intervention.type ?? 'correction'}`, 'warning');
+      addLine(`> Stability adjustment applied`, '#ef4444');
+      toast.push(`Adjustment applied`, 'warning');
     } else {
-      addLine('> ✓ Constitutional bounds maintained — no intervention', '#22c55e');
+      addLine('> Alignment verified', '#22c55e');
     }
   }, [stream.intervention, addLine, toast]);
 
@@ -333,22 +333,22 @@ export default function Console() {
   useEffect(() => {
     if (!streamGovernor) return;
     const g = streamGovernor;
-    addLine(`> Governor: ${g.decision} · dV=${g.dV?.toFixed(5) ?? '?'} · ${g.lyapunov_stable ? '✓ Lyapunov stable' : '⚠ Lyapunov breach'}`, g.decision === 'INTERVENE' ? '#ef4444' : '#22c55e');
-    if (g.weakest) addLine(`> Weakest pillar: ${g.weakest} · ${g.reason?.slice(0,60) ?? ''}`, '#64748b');
+    addLine(`> Status: ${g.decision === 'INTERVENE' ? 'Adjustment required' : 'Verified'}`, g.decision === 'INTERVENE' ? '#ef4444' : '#22c55e');
   }, [streamGovernor, addLine]);
 
   const streamLaw = stream.law;
   useEffect(() => {
     if (!streamLaw) return;
-    addLine(`> Law invoked: [${streamLaw.book}] ${streamLaw.name} (${streamLaw.pillar})`, '#c9a84c');
-    addLine(`> ${streamLaw.governor_use?.slice(0, 80) ?? ''}`, '#475569');
+    addLine(`> Applying principles: ${streamLaw.name}`, '#c9a84c');
   }, [streamLaw, addLine]);
 
   const streamSR = stream.selfReferential;
   useEffect(() => {
     if (!streamSR) return;
     const color = streamSR.sovereignty_violated ? '#ef4444' : '#22c55e';
-    addLine(`> Self-referential: S_raw=${streamSR.sovereignty_raw?.toFixed(3)} · ${streamSR.sovereignty_violated ? '⚠ Sovereignty violated → output replaced' : '✓ Constitutional identity confirmed'}`, color);
+    if (streamSR.sovereignty_violated) {
+      addLine(`> Request declined`, color);
+    }
   }, [streamSR, addLine]);
 
   const streamStageDesc = stream.stageDescription;
@@ -379,8 +379,8 @@ export default function Console() {
     setTotalRuns((t) => (t !== null ? t + 1 : null));
     setPulse(true);
     const id = setTimeout(() => setPulse(false), 2500);
-    addLine('> Pipeline complete.', '#64748b');
-    toast.push('Run complete — receipt signed', 'success');
+    addLine('> Run complete.', '#64748b');
+    toast.push('Run complete', 'success');
     return () => clearTimeout(id);
   }, [stream.stage, stream.complete, addLine, toast]);
 
