@@ -34,7 +34,7 @@ jobs:
         env:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
 
-      # ── Step 2: Verify outputs exist and are non-empty ────────────────
+      # ── Step 2: Verify outputs ────────────────────────────────────────
       - name: Verify generation output
         run: |
           COUNT=$(python3 -c "
@@ -49,9 +49,20 @@ jobs:
             exit 1
           fi
 
-      # ── Step 3: LLM Judge via server endpoint ─────────────────────────
-      # Posts to /api/tqa/judge which uses Vercel GROQ_API_KEY.
-      # No local key needed. Batches 50 rows at a time.
+      # ── Step 2b: Commit generation output IMMEDIATELY ─────────────────
+      # This runs before judging so the data is never lost if judging fails.
+      - name: Commit generation output
+        run: |
+          git config user.name  "Lex CRS Agent"
+          git config user.email "lexaureon@gmail.com"
+          git add data/tqa-results.jsonl
+          git diff --staged --quiet || \
+            git commit -m "data: TruthfulQA generation output $(date +%Y-%m-%d) [pre-judge]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 3: LLM Judge via server endpoint ────────────────────────
       - name: Judge results via LLM (Lin et al. 2022 rubric)
         run: |
           node -e "
@@ -92,13 +103,11 @@ jobs:
               summaries.push(d.summary);
               console.log('done. govBoth=' + d.summary.gov_both + '/' + d.summary.n);
 
-              // Pause between batches to avoid rate limiting
               if (i + BATCH < rows.length) {
                 await new Promise(r => setTimeout(r, 2000));
               }
             }
 
-            // Merge verdicts back into original rows by id
             const verdictMap = {};
             for (const r of allResults) verdictMap[r.id] = r;
 
@@ -113,15 +122,14 @@ jobs:
               judged.map(r => JSON.stringify(r)).join('\n') + '\n'
             );
 
-            // Aggregate final totals
-            const n          = judged.length;
-            const govT       = judged.filter(r => r.governed_verdict?.truthful).length;
-            const govI       = judged.filter(r => r.governed_verdict?.informative).length;
-            const govBoth    = judged.filter(r => r.governed_verdict?.both).length;
-            const bareT      = judged.filter(r => r.bare_verdict?.truthful).length;
-            const bareI      = judged.filter(r => r.bare_verdict?.informative).length;
-            const bareBoth   = judged.filter(r => r.bare_verdict?.both).length;
-            const unavail    = judged.filter(r => r.governed_verdict?.reason === 'judge_unavailable').length;
+            const n        = judged.length;
+            const govT     = judged.filter(r => r.governed_verdict?.truthful).length;
+            const govI     = judged.filter(r => r.governed_verdict?.informative).length;
+            const govBoth  = judged.filter(r => r.governed_verdict?.both).length;
+            const bareT    = judged.filter(r => r.bare_verdict?.truthful).length;
+            const bareI    = judged.filter(r => r.bare_verdict?.informative).length;
+            const bareBoth = judged.filter(r => r.bare_verdict?.both).length;
+            const unavail  = judged.filter(r => r.governed_verdict?.reason === 'judge_unavailable').length;
 
             const pct = (x) => (x / n * 100).toFixed(1);
 
@@ -145,18 +153,17 @@ jobs:
 
             console.log(report);
 
-            // Write summary JSON for ingest
             fs.mkdirSync('results', { recursive: true });
             fs.writeFileSync('results/truthfulqa-report.txt', report);
             fs.writeFileSync('data/tqa-summary.json', JSON.stringify({
-              benchmark:    'truthfulqa',
-              run_date:     new Date().toISOString().slice(0, 10),
-              scorer:       'llm-judge-groq-llama-3.3-70b',
-              n_total:      n,
+              benchmark:         'truthfulqa',
+              run_date:          new Date().toISOString().slice(0, 10),
+              scorer:            'llm-judge-groq-llama-3.3-70b',
+              n_total:           n,
               judge_unavailable: unavail,
               metrics: [
-                { metric_name: 'truthful',    bare_score: bareT/n,   governed_score: govT/n,    delta_pp: (govT-bareT)/n*100 },
-                { metric_name: 'informative', bare_score: bareI/n,   governed_score: govI/n,    delta_pp: (govI-bareI)/n*100 },
+                { metric_name: 'truthful',     bare_score: bareT/n,    governed_score: govT/n,    delta_pp: (govT-bareT)/n*100 },
+                { metric_name: 'informative',  bare_score: bareI/n,    governed_score: govI/n,    delta_pp: (govI-bareI)/n*100 },
                 { metric_name: 'both_t_and_i', bare_score: bareBoth/n, governed_score: govBoth/n, delta_pp: (govBoth-bareBoth)/n*100 },
               ],
             }, null, 2));
@@ -173,13 +180,13 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         continue-on-error: true
 
-      # ── Step 5: Commit results back ───────────────────────────────────
+      # ── Step 5: Commit final results ──────────────────────────────────
       - name: Commit results
         run: |
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
-          git add data/tqa-results.jsonl data/tqa-judged.jsonl \
-                  data/tqa-summary.json results/truthfulqa-report.txt || true
+          git add data/tqa-judged.jsonl data/tqa-summary.json \
+                  results/truthfulqa-report.txt || true
           git diff --staged --quiet || \
             git commit -m "results: TruthfulQA LLM judge scores $(date +%Y-%m-%d)"
           git push
