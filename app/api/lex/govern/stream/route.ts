@@ -37,6 +37,7 @@ import { NeithraAgent }       from '@/lib/agents/neithra';
 import { ClauseBankAgent }    from '@/lib/agents/clause_bank';
 import { VaulturexAgent }     from '@/lib/agents/vaulturex_agent';
 import { CelesteAgent }       from '@/lib/agents/celeste';
+import { StyleAgent }         from '@/lib/agents/style_agent';
 import { AuditorAgent }       from '@/lib/agents/auditor';
 import { RawForgeAgent }      from '@/lib/agents/raw_forge';
 import { computeZWeights }    from '@/lib/aureonics_math';
@@ -283,7 +284,18 @@ export async function POST(req: Request) {
           template:     celeste?.template_used ?? 'passthrough-v0.1',
         });
 
-        // ── 12. Self-referential CRS ─────────────────────────────────────────
+        // ── 12. Style Agent (Canonical Filter) ───────────────────────────────
+        emit('stage', { name: 'style_agent', description: 'Applying canonical style filter' });
+        const styleResult = await safe(() => StyleAgent({ prompt, session_id, governed_output: governedOutput }), null);
+        if (styleResult?.success && styleResult.output) {
+          governedOutput = styleResult.output;
+        }
+        emit('style_agent', {
+          cleaned_length: styleResult?.meta?.cleaned_length ?? governedOutput.length,
+          original_length: styleResult?.meta?.original_length ?? governedOutput.length,
+        });
+
+        // ── 13. Self-referential CRS ─────────────────────────────────────────
         emit('stage', { name: 'self_referential', description: 'Verifying final output' });
         let srFired = false;
         if (promptEmbedding.length) {

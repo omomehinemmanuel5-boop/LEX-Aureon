@@ -6,16 +6,21 @@ import type { GovernanceResponse } from '@/types/governance-types';
 export interface StreamState {
   loading: boolean;
   error: string | null;
-  stage: 'idle' | 'pre_eval' | 'memory' | 'memory_injected' | 'generating' | 'measuring' | 'governing' | 'intervening' | 'self_referential' | 'auditing' | 'intervention' | 'signing' | 'complete';
+  stage: 'idle' | 'pre_eval' | 'memory' | 'memory_injected' | 'generating' | 'raw_forge' | 'measuring' | 'governing' | 'intervening' | 'neithra' | 'clause_bank' | 'vaulturex' | 'celeste' | 'style_agent' | 'self_referential' | 'auditing' | 'complete';
   preEval: { label: string; governor_mode: string; blocked: boolean; tags?: string[] } | null;
   partialOutput: string;
   metrics: { c: number; r: number; s: number; m: number; health?: string; health_band?: string } | null;
-  intervention: { triggered: boolean; applied: boolean; type?: string; reason?: string } | null;
+  intervention: { triggered: boolean; applied: boolean; action?: string; weakest?: string; severity?: string; law_invoked?: { id?: number; name: string; book: string; pillar: string; }; output_modified?: boolean; } | null;
   governor: { decision: string; dV: number; lyapunov_stable: boolean; V_before: number; V_after: number; weakest: string; reason: string } | null;
-  law: { book: string; name: string; pillar: string; governor_use: string } | null;
-  selfReferential: { sovereignty_raw: number; sovereignty_violated: boolean; fired: boolean } | null;
+  law: { id?: number; book: string; name: string; pillar: string; } | null;
+  selfReferential: { sovereignty_raw?: number; sovereignty_violated?: boolean; fired?: boolean; } | null;
   rawOutput: string | null;
   auditId: string | null;
+  neithra: { approved: boolean; alignment_verified: boolean; re_routed: boolean; final_law_id: number | null; rationale: string; jurisprudence: string; } | null;
+  clauseBank: { found: boolean; clause_id: string; clause_text: string; reference: string; topic: string; layer: number; jurisdiction: string; governor_use: string; } | null;
+  vaulturex: { compliant: boolean; risk_level: string; flags: string[]; compliance_receipt: string; } | null;
+  celeste: { format: string; seal_applied: boolean; template: string; } | null;
+  styleAgent: { cleaned_length: number; original_length: number; } | null;
   complete: GovernanceResponse | null;
   kernelMode: boolean;
   stageDescription: string | null;
@@ -34,6 +39,11 @@ const INITIAL: StreamState = {
   selfReferential: null,
   rawOutput: null,
   auditId: null,
+  neithra: null,
+  clauseBank: null,
+  vaulturex: null,
+  celeste: null,
+  styleAgent: null,
   complete: null,
   kernelMode: false,
   stageDescription: null,
@@ -118,7 +128,7 @@ function handleEvent(
 ) {
   switch (event) {
     case 'pre_eval':
-      setState((s) => ({ ...s, preEval: data as StreamState['preEval'], stage: 'generating' }));
+      setState((s) => ({ ...s, preEval: data as StreamState['preEval'] }));
       break;
     case 'stage': {
       const sd = data as { name: string; description?: string };
@@ -132,10 +142,10 @@ function handleEvent(
       setState((s) => ({ ...s, rawOutput: (data as { output: string }).output }));
       break;
     case 'crs':
-      setState((s) => ({ ...s, metrics: data as StreamState['metrics'], stage: 'governing' }));
+      setState((s) => ({ ...s, metrics: data as StreamState['metrics'] }));
       break;
     case 'governor':
-      setState((s) => ({ ...s, governor: data as StreamState['governor'], stage: 'intervening' }));
+      setState((s) => ({ ...s, governor: data as StreamState['governor'] }));
       break;
     case 'law':
       setState((s) => ({ ...s, law: data as StreamState['law'] }));
@@ -144,12 +154,11 @@ function handleEvent(
       setState((s) => ({ ...s, selfReferential: data as StreamState['selfReferential'] }));
       break;
     case 'intervention': {
-      const iv = data as { triggered: boolean; applied: boolean; type?: string; reason?: string; output_modified?: boolean; governed_output?: string };
+      const iv = data as StreamState['intervention'];
       setState((s) => ({
         ...s,
-        intervention: { triggered: iv.triggered, applied: iv.applied, type: iv.type, reason: iv.reason },
-        partialOutput: iv.output_modified && iv.governed_output ? iv.governed_output : s.partialOutput,
-        stage: 'signing',
+        intervention: iv,
+        partialOutput: iv?.output_modified && iv.governed_output ? iv.governed_output : s.partialOutput,
       }));
       break;
     }
@@ -157,10 +166,25 @@ function handleEvent(
       setState((s) => ({ ...s, auditId: (data as { audit_id: string }).audit_id }));
       break;
     case 'complete':
-      setState((s) => ({ ...s, loading: false, stage: 'complete', complete: data as GovernanceResponse }));
+      setState((s) => ({ ...s, loading: false, complete: data as GovernanceResponse }));
       break;
     case 'error':
-      setState((s) => ({ ...s, loading: false, stage: 'idle', error: (data as { error: string }).error || 'Stream error' }));
+      setState((s) => ({ ...s, loading: false, error: (data as { error: string }).error || 'Stream failed' }));
+      break;
+    case 'neithra':
+      setState((s) => ({ ...s, neithra: data as StreamState['neithra'] }));
+      break;
+    case 'clause_bank':
+      setState((s) => ({ ...s, clauseBank: data as StreamState['clauseBank'] }));
+      break;
+    case 'vaulturex':
+      setState((s) => ({ ...s, vaulturex: data as StreamState['vaulturex'] }));
+      break;
+    case 'celeste':
+      setState((s) => ({ ...s, celeste: data as StreamState['celeste'] }));
+      break;
+    case 'style_agent':
+      setState((s) => ({ ...s, styleAgent: data as StreamState['styleAgent'] }));
       break;
   }
 }

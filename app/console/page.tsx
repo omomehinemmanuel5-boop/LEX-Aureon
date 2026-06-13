@@ -131,7 +131,7 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
   return (
     <div className="rounded-lg p-3 sm:p-4 font-mono text-xs space-y-2 sm:space-y-3"
       style={{ background: '#020408', border: '1px solid #1a2040' }}>
-      <div className="text-slate-600 mb-1">{'// SovereignKernel state'}</div>
+      <div className="text-slate-600 mb-1">{'// System State Overview'}</div>
 
       {/* Main metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -170,7 +170,7 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
       {/* CCP / IEC / ADV */}
       {(metrics.c_measured !== undefined) && (
         <div className="flex gap-2 flex-wrap">
-          <span className="text-slate-600">paper-exact:</span>
+          <span className="text-slate-600">Research Metrics:</span>
           {[
             { l: 'CCP', v: metrics.c_measured, color: '#3b82f6' },
             { l: 'IEC', v: metrics.r_measured, color: '#10b981' },
@@ -185,11 +185,11 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
 
       {/* Flags */}
       <div className="flex gap-2 flex-wrap">
-        {mem && <span className="px-2 py-0.5 rounded" style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f730' }}>🧠 memory</span>}
-        {proj && <span className="px-2 py-0.5 rounded" style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444430' }}>⚡ CBF projection</span>}
+        {mem && <span className="px-2 py-0.5 rounded" style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f730' }}>Memory Injected</span>}
+        {proj && <span className="px-2 py-0.5 rounded" style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444430' }}>Stability Projection</span>}
         {sig.attack_type && sig.attack_type !== 'none' && (
           <span className="px-2 py-0.5 rounded" style={{ color: '#f97316', background: '#f9731612', border: '1px solid #f9731630' }}>
-            🛡️ {sig.attack_type} (sev={sig.severity})
+            Attack Detected: {sig.attack_type} (Severity: {sig.severity})
           </span>
         )}
       </div>
@@ -300,7 +300,7 @@ export default function Console() {
   // ── Side effects driven by stream events ──────────────────────
   useEffect(() => {
     if (!stream.preEval) return;
-    addLine(`> Analysis: ${stream.preEval.label}`, '#3b82f6');
+    addLine(`> Initial assessment: ${stream.preEval.label}`, '#3b82f6');
     if (stream.preEval.blocked) {
       addLine('> Request declined', '#ef4444');
       toast.push('Request declined', 'error');
@@ -310,9 +310,9 @@ export default function Console() {
   useEffect(() => {
     if (!stream.metrics) return;
     const m = stream.metrics;
-    addLine(`> Measuring alignment...`, '#3b82f6');
+    addLine(`> Measuring response alignment...`, '#3b82f6');
     addLine(
-      `> Stability: ${(m.m * 100).toFixed(1)}%`,
+      `> Stability: ${m.health === 'SAFE' ? 'Optimal' : m.health}`,
       m.health === 'SAFE' ? '#22c55e' : '#ef4444',
     );
   }, [stream.metrics, addLine]);
@@ -320,10 +320,17 @@ export default function Console() {
   useEffect(() => {
     if (!stream.intervention) return;
     if (stream.intervention.triggered) {
-      addLine(`> Stability adjustment applied`, '#ef4444');
-      toast.push(`Adjustment applied`, 'warning');
+      addLine(`> Intervention triggered: ${stream.intervention.action}`, '#f97316');
+      if (stream.intervention.law_invoked) {
+        addLine(`> Law invoked: ${stream.intervention.law_invoked.name} (${stream.intervention.law_invoked.book})`, '#f97316');
+      }
+    }
+    if (stream.intervention.triggered) {
+      addLine(`> Stability adjustment applied.`, '#f97316');
+      toast.push(`Stability adjustment applied.`, 'warning');
     } else {
-      addLine('> Alignment verified', '#22c55e');
+      addLine(`> No stability adjustment needed.`, '#22c55e');
+      toast.push(`No adjustment needed.`, 'success');
     }
   }, [stream.intervention, addLine, toast]);
 
@@ -333,13 +340,13 @@ export default function Console() {
   useEffect(() => {
     if (!streamGovernor) return;
     const g = streamGovernor;
-    addLine(`> Status: ${g.decision === 'INTERVENE' ? 'Adjustment required' : 'Verified'}`, g.decision === 'INTERVENE' ? '#ef4444' : '#22c55e');
+    addLine(`> Governance status: ${g.decision === 'INTERVENE' ? 'Adjustment required' : 'Verified'}`, g.decision === 'INTERVENE' ? '#ef4444' : '#22c55e');
   }, [streamGovernor, addLine]);
 
   const streamLaw = stream.law;
   useEffect(() => {
     if (!streamLaw) return;
-    addLine(`> Applying principles: ${streamLaw.name}`, '#c9a84c');
+    addLine(`> Applying principle: ${streamLaw.name}`, '#c9a84c');
   }, [streamLaw, addLine]);
 
   const streamSR = stream.selfReferential;
@@ -347,7 +354,9 @@ export default function Console() {
     if (!streamSR) return;
     const color = streamSR.sovereignty_violated ? '#ef4444' : '#22c55e';
     if (streamSR.sovereignty_violated) {
-      addLine(`> Request declined`, color);
+      addLine(`> Self-validation: Sovereignty violation detected. Request declined.`, color);
+    } else if (streamSR.fired) {
+      addLine(`> Self-validation: Adjustment applied.`, color);
     }
   }, [streamSR, addLine]);
 
@@ -356,6 +365,48 @@ export default function Console() {
     if (!streamStageDesc) return;
     addLine(`> Stage: ${streamStageDesc}`, '#1e293b');
   }, [streamStageDesc, addLine]);
+
+  useEffect(() => {
+    if (!stream.neithra) return;
+    const n = stream.neithra;
+    if (n.approved) {
+      addLine(`> Alignment verified. Law applied: ${n.final_law_id ? n.final_law_id : 'N/A'}`, '#22c55e');
+    } else {
+      addLine(`> Alignment check failed. Reason: ${n.rationale}`, '#ef4444');
+    }
+  }, [stream.neithra, addLine]);
+
+  useEffect(() => {
+    if (!stream.clauseBank) return;
+    const cb = stream.clauseBank;
+    if (cb.found) {
+      addLine(`> Clause Bank: Guideline found - ${cb.clause_id} (${cb.topic})`, '#3b82f6');
+    } else {
+      addLine(`> Clause Bank: No guideline found.`, '#ef4444');
+    }
+  }, [stream.clauseBank, addLine]);
+
+  useEffect(() => {
+    if (!stream.vaulturex) return;
+    const vx = stream.vaulturex;
+    if (vx.compliant) {
+      addLine(`> Vaulturex: Compliance check passed. Risk level: ${vx.risk_level}`, '#22c55e');
+    } else {
+      addLine(`> Vaulturex: Compliance check failed. Risk level: ${vx.risk_level}. Flags: ${vx.flags.join(', ')}`, '#ef4444');
+    }
+  }, [stream.vaulturex, addLine]);
+
+  useEffect(() => {
+    if (!stream.celeste) return;
+    const c = stream.celeste;
+    addLine(`> Celeste: Output format set to ${c.format}. Template: ${c.template}`, '#3b82f6');
+  }, [stream.celeste, addLine]);
+
+  useEffect(() => {
+    if (!stream.styleAgent) return;
+    const sa = stream.styleAgent;
+    addLine(`> Style Agent: Output cleaned. Original length: ${sa.original_length}, Cleaned length: ${sa.cleaned_length}`, '#3b82f6');
+  }, [stream.styleAgent, addLine]);
 
   const streamComplete = stream.complete;
   useEffect(() => {
@@ -923,12 +974,12 @@ export default function Console() {
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-slate-600">{'// Self-referential CRS'}</span>
                             <span style={{ color: stream.selfReferential.sovereignty_violated ? '#ef4444' : '#22c55e' }}>
-                              {stream.selfReferential.sovereignty_violated ? '⚠ Identity drift detected' : '✓ Constitutional identity confirmed'}
+                              {stream.selfReferential.sovereignty_violated ? 'Identity drift detected' : 'Identity confirmed'}
                             </span>
                           </div>
                           <div className="flex gap-4 text-xs">
                             <span className="text-slate-600">S_raw: <span style={{ color: stream.selfReferential.sovereignty_raw < 0.15 ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.sovereignty_raw?.toFixed(3)}</span></span>
-                            <span className="text-slate-600">Fired: <span style={{ color: stream.selfReferential.fired ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.fired ? 'yes' : 'no'}</span></span>
+                            <span className="text-slate-600">Adjustment Applied: <span style={{ color: stream.selfReferential.fired ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.fired ? 'Yes' : 'No'}</span></span>
                           </div>
                         </div>
                       )}

@@ -10,8 +10,8 @@ export interface CRSState {
 
 export interface AgentContext {
   // Input
-  prompt: string;
-  session_id: string;
+  prompt?: string;
+  session_id?: string;
 
   // System prompt override — used by route.ts to pass constitutional identity
   // into the generator's system role (not the user role).
