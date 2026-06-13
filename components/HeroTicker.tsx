@@ -36,7 +36,7 @@ export default function HeroTicker() {
     };
 
     fetchState();
-    const id = setInterval(fetchState, 5000);
+    const id = setInterval(fetchState, 3000); // More frequent updates for "Live" feel
     return () => clearInterval(id);
   }, []);
 
@@ -52,9 +52,9 @@ export default function HeroTicker() {
       }}
     >
       <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: healthColor }} />
-      <span>Live M Score:</span>
+      <span>Canonical M-Score:</span>
       <span className="font-black" style={{ color: healthColor }}>
-        {M !== null ? `${(M * 100).toFixed(1)}%` : '—'}
+        {M !== null ? `${(M * 100).toFixed(1)}%` : 'SYNCING...'}
       </span>
       <span style={{ color: 'rgba(201,168,76,0.4)' }}>·</span>
       <span>
@@ -62,7 +62,7 @@ export default function HeroTicker() {
         <span style={{ color: healthColor }}>{healthLabel}</span>
       </span>
       <span style={{ color: 'rgba(201,168,76,0.4)' }}>·</span>
-      <span>Governor: <span style={{ color: '#22c55e' }}>ACTIVE</span></span>
+      <span>Source: <span style={{ color: '#c9a84c' }}>SovereignKernel v2</span></span>
     </div>
   );
 }

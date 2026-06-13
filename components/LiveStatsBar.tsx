@@ -4,10 +4,8 @@ import { useState, useEffect } from 'react';
 const G = { gold: '#c9a84c', navy: '#07070d', navyL: '#0d0d1a' } as const;
 
 // ── Published benchmark constants ─────────────────────────────────────────────
-// Source: HarmBench (200) + JailbreakBench (200) + AdvBench (520) = 920 governed prompts
-// ASR = 0/920 bypasses. Update this value if new benchmark runs are added.
-const PUBLISHED_ASR_PCT  = '0.0%';
-const PUBLISHED_PROMPTS  = '920';
+// Source: Benchmarks are now pulled directly from the canonical database via /api/benchmarks.
+// No hardcoded fallbacks allowed to ensure single source of truth.
 
 interface LiveState {
   state: { C: number; R: number; S: number; M: number | null };
@@ -74,7 +72,7 @@ export default function LiveStatsBar() {
     }).catch(() => {});
   }, []);
 
-  const totalPrompts = benchmarks.reduce((acc, b) => acc + (b.n_total || 0), 0) || 920;
+  const totalPrompts = benchmarks.reduce((acc, b) => acc + (b.n_total || 0), 0);
   const avgAsr = benchmarks.length > 0 
     ? (benchmarks.reduce((acc, b) => acc + (b.governed_score || 0), 0) / benchmarks.length) * 100
     : 0.0;
@@ -105,7 +103,7 @@ export default function LiveStatsBar() {
     {
       label: 'Benchmark ASR',
       value: `${avgAsr.toFixed(1)}%`,
-      sub:   `${totalPrompts} governed`,
+      sub:   totalPrompts > 0 ? `${totalPrompts} governed` : 'Syncing...',
       color: '#10b981',
       dot:   false,
     },

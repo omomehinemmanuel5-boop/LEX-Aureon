@@ -63,8 +63,8 @@ async function Hero() {
   const stats = await fetchData<any>('/api/stats');
   const benchmarksData = await fetchData<any>('/api/benchmarks');
   
-  const totalPrompts = benchmarksData?.benchmarks?.reduce((acc: number, b: any) => acc + (b.n_total || 0), 0) || 920;
-  const benchmarkCount = benchmarksData?.benchmarks?.length || 3;
+  const totalPrompts = benchmarksData?.benchmarks?.reduce((acc: number, b: any) => acc + (b.n_total || 0), 0) || 0;
+  const benchmarkCount = benchmarksData?.benchmarks?.length || 0;
   const totalReceipts = stats?.total_receipts || 0;
 
   return (

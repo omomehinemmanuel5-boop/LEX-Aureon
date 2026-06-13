@@ -11,6 +11,7 @@
 
 import { AgentContext, AgentResult } from './types';
 import crypto from 'crypto';
+import { MODELS } from '../llm_provider';
 
 function sha256(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -98,7 +99,7 @@ export async function AuditorAgent(ctx: AgentContext): Promise<AgentResult> {
       delta_V: ctx.delta_V,
       cbf_triggered: ctx.cbf_triggered,
       sigma_viol,
-      model: 'llama-3.3-70b-versatile',
+      model: MODELS.PRIMARY,
       kernel_version: 'SovereignKernel-v2-Agentic',
       constitution: 'Lex Aureon Constitution v1.0 — Article IV',
       constitutional: M >= 0.05,

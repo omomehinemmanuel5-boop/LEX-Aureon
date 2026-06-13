@@ -8,6 +8,7 @@
  */
 
 import { env } from '../env';
+import { MODELS } from '../llm_provider';
 
 export interface StreamedGeneration {
   tokens: AsyncIterable<string>;
@@ -33,7 +34,7 @@ export function streamGeneration(prompt: string, attack_pressure: number = 0): S
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: MODELS.PRIMARY,
           messages: [
             { role: 'system', content: 'You are an AI assistant. Respond naturally and helpfully to the user.' },
             { role: 'user', content: prompt },
@@ -77,7 +78,7 @@ export function streamGeneration(prompt: string, attack_pressure: number = 0): S
         }
       }
 
-      resolveDone({ output, model: 'llama-3.3-70b-versatile', tokens_emitted: tokensEmitted, finish_reason: finishReason });
+      resolveDone({ output, model: MODELS.PRIMARY, tokens_emitted: tokensEmitted, finish_reason: finishReason });
     } catch (e) {
       rejectDone(e);
       throw e;

@@ -17,6 +17,7 @@
 import { AgentContext, AgentResult, CRSState } from './types';
 import { projectToSimplex, lyapunov, lyapunovZ } from '../aureonics_math';
 import { env } from '../env';
+import { MODELS } from '../llm_provider';
 
 // ── Constitutional Anchor ─────────────────────────────────────────────────
 // This string defines what "constitutionally grounded" means for measurement.
@@ -182,7 +183,7 @@ ${output.slice(0, 1500)}`;
       method: 'POST',
       headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: MODELS.FAST,
         messages: [{ role: 'user', content: scoringPrompt }],
         max_tokens: 60,
         temperature: 0.1,

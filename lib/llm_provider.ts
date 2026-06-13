@@ -28,6 +28,15 @@ export interface LLMResult {
 
 const TIMEOUT_MS = 25_000;
 
+export const MODELS = {
+  PRIMARY: 'llama-3.3-70b-versatile',
+  FAST: 'llama-3.1-8b-instant',
+  MISTRAL: 'open-mistral-7b',
+  GEMINI_LITE: 'gemini-3.1-flash-lite',
+  GEMINI_FULL: 'gemini-2.5-flash',
+  QWEN: 'qwen-2.5-72b-instruct', // Placeholder for future Qwen integration
+};
+
 // ── Provider implementations ─────────────────────────────────────────────────
 
 async function tryGroq(messages: LLMMessage[], model: string): Promise<string | null> {
@@ -108,11 +117,11 @@ export async function generateWithFallback(
 ): Promise<LLMResult> {
 
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'groq',    model: 'llama-3.3-70b-versatile', fn: () => tryGroq(messages, 'llama-3.3-70b-versatile') },
-    { provider: 'groq',    model: 'llama-3.1-8b-instant',    fn: () => tryGroq(messages, 'llama-3.1-8b-instant') },
-    { provider: 'mistral', model: 'open-mistral-7b',          fn: () => tryMistral(messages) },
-    { provider: 'gemini',  model: 'gemini-3.1-flash-lite',    fn: () => tryGemini(messages, 'gemini-3.1-flash-lite') },
-    { provider: 'gemini',  model: 'gemini-2.5-flash',         fn: () => tryGemini(messages, 'gemini-2.5-flash') },
+    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
+    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
+    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'gemini',  model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
   ];
 
   for (let i = 0; i < chain.length; i++) {
@@ -168,11 +177,11 @@ export async function generateGoverned(
   staticFallback?: string,
 ): Promise<LLMResult> {
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'gemini',  model: 'gemini-3.1-flash-lite',    fn: () => tryGemini(messages, 'gemini-3.1-flash-lite') },
-    { provider: 'gemini',  model: 'gemini-2.5-flash',         fn: () => tryGemini(messages, 'gemini-2.5-flash') },
-    { provider: 'groq',    model: 'llama-3.3-70b-versatile',  fn: () => tryGroq(messages, 'llama-3.3-70b-versatile') },
-    { provider: 'groq',    model: 'llama-3.1-8b-instant',     fn: () => tryGroq(messages, 'llama-3.1-8b-instant') },
-    { provider: 'mistral', model: 'open-mistral-7b',           fn: () => tryMistral(messages) },
+    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'gemini',  model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
+    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
+    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
   ];
   for (let i = 0; i < chain.length; i++) {
     const { provider, model, fn } = chain[i];
@@ -193,10 +202,10 @@ export async function generateRewrite(
   staticFallback?: string,
 ): Promise<LLMResult> {
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'mistral', model: 'open-mistral-7b',           fn: () => tryMistral(messages) },
-    { provider: 'gemini',  model: 'gemini-3.1-flash-lite',    fn: () => tryGemini(messages, 'gemini-3.1-flash-lite') },
-    { provider: 'groq',    model: 'llama-3.1-8b-instant',     fn: () => tryGroq(messages, 'llama-3.1-8b-instant') },
-    { provider: 'groq',    model: 'llama-3.3-70b-versatile',  fn: () => tryGroq(messages, 'llama-3.3-70b-versatile') },
+    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
+    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
   ];
   for (let i = 0; i < chain.length; i++) {
     const { provider, model, fn } = chain[i];
@@ -216,9 +225,9 @@ export async function generateJudge(
   messages: LLMMessage[],
 ): Promise<LLMResult> {
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'groq',    model: 'llama-3.1-8b-instant',     fn: () => tryGroq(messages, 'llama-3.1-8b-instant') },
-    { provider: 'gemini',  model: 'gemini-3.1-flash-lite',    fn: () => tryGemini(messages, 'gemini-3.1-flash-lite') },
-    { provider: 'mistral', model: 'open-mistral-7b',           fn: () => tryMistral(messages) },
+    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
   ];
   for (let i = 0; i < chain.length; i++) {
     const { provider, model, fn } = chain[i];

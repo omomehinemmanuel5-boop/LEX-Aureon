@@ -10,6 +10,7 @@
 
 import { AgentContext, AgentResult } from './types';
 import { env } from '../env';
+import { MODELS } from '../llm_provider';
 
 // ── Constitutional System Prompt ──────────────────────────────────────────
 // Exported so route.ts imports rather than redefines it.
@@ -65,7 +66,7 @@ export async function GeneratorAgent(ctx: AgentContext): Promise<AgentResult> {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: MODELS.PRIMARY,
         messages: [
           { role: 'system', content: systemContent },
           { role: 'user',   content: ctx.prompt },
@@ -85,7 +86,7 @@ export async function GeneratorAgent(ctx: AgentContext): Promise<AgentResult> {
       success: true,
       output,
       duration_ms: Date.now() - t,
-      meta: { model: 'llama-3.3-70b-versatile', tokens, finish_reason: d.choices?.[0]?.finish_reason },
+      meta: { model: MODELS.PRIMARY, tokens, finish_reason: d.choices?.[0]?.finish_reason },
     };
   } catch (e) {
     return { success: false, error: String(e), duration_ms: Date.now() - t };

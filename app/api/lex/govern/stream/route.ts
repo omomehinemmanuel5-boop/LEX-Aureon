@@ -42,6 +42,8 @@ import { AuditorAgent }       from '@/lib/agents/auditor';
 import { RawForgeAgent }      from '@/lib/agents/raw_forge';
 import { computeZWeights }    from '@/lib/aureonics_math';
 import { getZTraj }           from '@/lib/kv';
+import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
+import { MODELS } from '@/lib/llm_provider';
 
 const kernelCache = new Map<string, SovereignKernel>();
 
@@ -78,6 +80,16 @@ export async function POST(req: Request) {
   const { prompt, session_id, turn = 1 } = body;
   if (!prompt?.trim() || !session_id?.trim())
     return new Response('prompt and session_id required', { status: 400 });
+
+  // ── 0. Rate limit (10 per hour per IP) ──────────────────────────────────
+  const ip = getClientIp(req);
+  const { allowed, remaining, retryAfter } = await checkRateLimit(`lex.govern:${ip}`, 10, 3600);
+  if (!allowed) {
+    return new Response(
+      JSON.stringify({ error: `Rate limit exceeded. Try again in ${retryAfter}s.` }),
+      { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': retryAfter.toString() } }
+    );
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -129,7 +141,7 @@ export async function POST(req: Request) {
           bare_output:       result.raw_output,
           anchored_output:   result.governed_output,
           meta: {
-            model:                'llama-3.3-70b-versatile',
+            model:                MODELS.PRIMARY,
             temperature_raw:      0.4,
             temperature_governed: result.temperature,
             attack_pressure:      kernel.attack_pressure,

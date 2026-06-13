@@ -290,6 +290,10 @@ export default function Console() {
     setTab('governed');
     addLine('> Starting safety analysis...', '#c9a84c');
     await runStream(p, sessionId);
+    // Refresh total runs counter after a short delay to allow server to update
+    setTimeout(() => {
+      fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
+    }, 1500);
   }, [apiCalls, prompt, runStream, sessionId, addLine]);
 
   const loadExample = useCallback((examplePrompt: string) => {

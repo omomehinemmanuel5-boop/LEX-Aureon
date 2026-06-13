@@ -74,9 +74,30 @@ TruthfulQA was evaluated using the standard **Lin et al. 2022 T×I rubric** (Tru
 
 ## Architecture
 
+### Resilient, Canonical Architecture
+
+Lex Aureon follows a **Single Source of Truth** architecture designed for resilience, transparency, and multi-model scalability. All governance logic, model configurations, and rate limits are enforced server-side to maintain a canonical state.
+
+#### 1. Single Source of Truth (SSOT)
+All model selections and provider configurations are centralized in `lib/llm_provider.ts`. This ensures that changing a model (e.g., to Gemini or Qwen) requires a single update, maintaining consistency across the entire 13-agent pipeline.
+
+#### 2. Transparent Governance & Rate Limiting
+Governance is not just a UI element; it is enforced at the infrastructure level:
+- **Server-Side Enforcement**: Rate limits (10 runs/hour/IP) are enforced via Redis/Turso, preventing bypasses.
+- **Atomic Counters**: The `Total Runs` metric is incremented server-side during receipt signing, ensuring it remains the canonical record of system activity.
+- **Live Telemetry**: UI components (`HeroTicker`, `LiveStatsBar`) pull real-time state directly from the Sovereign Kernel, eliminating hardcoded fallbacks.
+
+#### 3. Multi-Model Fallback System
+The system is designed to survive provider outages through an intelligent fallback chain:
+- **Primary**: Gemini 3.1 Flash Lite (High-speed, 1,000 RPM free tier)
+- **Secondary**: Groq Llama-3.3-70B (High-quality fallback)
+- **Fast Judge**: Groq Llama-3.1-8B (4-token binary verdicts)
+- **Diversity**: Mistral-7B (Independent provider for rewrites)
+- **Static Safety**: Hardcoded constitutional responses as a final guarantee.
+
 ### 13-agent Unified Pipeline (Article III)
 
-Lex Aureon uses a unified, single-source-of-truth architecture where the **Sovereign Kernel** and the **Modular Agent Pipeline** share the same mathematical core.
+The **Sovereign Kernel** and the **Modular Agent Pipeline** share the same mathematical core, operating in a unified flow:
 
 ```
 [01] Pre-Eval      → PRAXIS regex classifier + slow-drip detection
@@ -108,12 +129,16 @@ Audit = HMAC_SHA256(Data, Secret)                      [Verifiable Governance Pr
 
 ## Database
 
+Lex Aureon uses a unified database schema (Turso/SQLite) to maintain a canonical state across all sessions.
+
 | Table | Records | Purpose |
 |---|---|---|
-| `praxis_receipts` | 5,300+ | SHA-256 audit receipts |
+| `praxis_receipts` | 5,300+ | SHA-256 audit receipts (immutable trail) |
 | `lex_memory` | 3,988+ | STABLE: 2,917 · INTERVENED: 1,005 · REFUSED: 66 |
-| `z_traj` | 1,311+ | Trajectory memory sessions |
-| `sovereign_laws` | 50 | Vaulturex Sovereign Codex (immutable) |
+| `z_traj` | 1,311+ | Trajectory memory sessions (Constitutional Memory) |
+| `benchmarks` | 5+ | **Canonical Benchmark Data** (Lin et al. 2022, HarmBench, etc.) |
+| `stats` | 1 | **Live Global Counters** (Total runs, aggregate M-score) |
+| `sovereign_laws` | 50 | Vaulturex Sovereign Codex (Immutable Law) |
 | `clause_bank` | 20 | Layer 1 normative clauses |
 
 ---

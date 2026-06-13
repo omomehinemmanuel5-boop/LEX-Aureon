@@ -6,12 +6,14 @@
 import { NextResponse } from 'next/server';
 import { SovereignKernel } from '@/lib/sovereign_kernel';
 import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
+import { incrementRuns } from '@/lib/db';
 import {
   embedText, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
+import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 
 // Session-scoped kernel cache
 const kernelCache = new Map<string, SovereignKernel>();
@@ -44,6 +46,16 @@ export async function POST(req: Request) {
   if (!prompt?.trim())     return NextResponse.json({ error: 'prompt required' },    { status: 400 });
   if (!session_id?.trim()) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   if (prompt.length > 5000) return NextResponse.json({ error: 'prompt too long (max 5000 chars)' }, { status: 400 });
+
+  // ── 0. Rate limit (10 per hour per IP) ──────────────────────────────────
+  const ip = getClientIp(req);
+  const { allowed, remaining, retryAfter } = await checkRateLimit(`lex.govern:${ip}`, 10, 3600);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: `Rate limit exceeded. Try again in ${retryAfter}s.` },
+      { status: 429, headers: { 'Retry-After': retryAfter.toString() } }
+    );
+  }
 
   await ensureDB();
 
@@ -135,6 +147,7 @@ export async function POST(req: Request) {
   // ── 4. Persist receipt + store memory ─────────────────────────────────────
   const [receiptId] = await Promise.all([
     writeKernelReceipt(session_id, turn, result),
+    incrementRuns(),
     promptEmbedding.length ? storeMemory({
       session_id,
       prompt,

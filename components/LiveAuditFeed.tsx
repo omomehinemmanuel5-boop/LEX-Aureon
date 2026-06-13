@@ -49,9 +49,9 @@ export default function LiveAuditFeed() {
         }
 
         if (!auditsRes.ok) return;
-        const data = await auditsRes.json() as { audits?: Array<{ id: string; timestamp: number; m_before: number; m_after: number; health_band?: string; intervention: boolean; reason?: string; c_after?: number; r_after?: number; s_after?: number; metrics_version?: string }> };
+        const data = await auditsRes.json() as { receipts?: Array<{ id: string; timestamp: number; m_before: number; m_after: number; health_band?: string; intervention: boolean; reason?: string; c_after?: number; r_after?: number; s_after?: number; metrics_version?: string }> };
 
-        const mapped = (data.audits ?? []).map((a) => ({
+        const mapped = (data.receipts ?? []).map((a) => ({
           id: a.id,
           message: a.reason && a.reason.trim().length ? a.reason : (a.intervention ? 'Governor intervention applied' : 'Constitutional pass'),
           m_before: a.m_before,

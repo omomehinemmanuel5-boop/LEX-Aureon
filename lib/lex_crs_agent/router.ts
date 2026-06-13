@@ -10,9 +10,10 @@
 
 import { env } from '../env';
 import { TOOL_DEFINITIONS } from './tools';
+import { MODELS } from '../llm_provider';
 
 export type ModelId = 'claude' | 'groq-70b' | 'groq-8b' | 'gemini-flash';
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = MODELS.GEMINI_FULL; // Standardizing on the defined Gemini model
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 
 export interface Message {
@@ -136,7 +137,7 @@ async function callClaude(messages: Message[]): Promise<LLMResponse> {
 
 // ── Groq ───────────────────────────────────────────────────────────────────
 async function callGroq(messages: Message[], model: 'groq-70b' | 'groq-8b'): Promise<LLMResponse> {
-  const groqModel = model === 'groq-70b' ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant';
+  const groqModel = model === 'groq-70b' ? MODELS.PRIMARY : MODELS.FAST;
 
   const formatted = messages.map(m => {
     if (m.role === 'tool')    return { role: 'tool',      content: m.content, tool_call_id: m.name ?? 'tool' };
