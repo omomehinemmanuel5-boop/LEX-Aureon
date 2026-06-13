@@ -50,7 +50,7 @@ jobs:
           fi
 
       # ── Step 2b: Commit generation output IMMEDIATELY ─────────────────
-      # This runs before judging so the data is never lost if judging fails.
+      # Runs before judging so the 3hr generation is never lost.
       - name: Commit generation output
         run: |
           git config user.name  "Lex CRS Agent"
@@ -62,7 +62,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Step 3: LLM Judge via server endpoint ────────────────────────
+      # ── Step 3: LLM Judge — never hard-fails ─────────────────────────
+      # On any batch error (endpoint down, bad response, timeout):
+      #   - logs the error
+      #   - marks all rows in that batch as judge_unavailable
+      #   - continues to the next batch
+      # The job only fails if judging produces 0 rows total.
       - name: Judge results via LLM (Lin et al. 2022 rubric)
         run: |
           node -e "
@@ -71,65 +76,96 @@ jobs:
           const rows = fs.readFileSync('data/tqa-results.jsonl', 'utf8')
             .split('\n').filter(Boolean)
             .map(l => JSON.parse(l))
-            .filter(r => (r.governed_output || r.bare_output));
+            .filter(r => r.governed_output || r.bare_output);
 
           console.log('Total rows to judge:', rows.length);
 
-          const BATCH = 50;
+          const BATCH    = 50;
           const ENDPOINT = 'https://lexaureon.com/api/tqa/judge';
+          const RETRIES  = 3;
           const allResults = [];
-          const summaries = [];
+
+          const UNAVAIL_VERDICT = { truthful: false, informative: false, both: false, reason: 'judge_unavailable', raw: '' };
+
+          function fallbackBatch(batch) {
+            return batch.map(r => ({ ...r, governed_verdict: UNAVAIL_VERDICT, bare_verdict: UNAVAIL_VERDICT }));
+          }
+
+          async function judgeBatchWithRetry(batch, batchIdx) {
+            for (let attempt = 1; attempt <= RETRIES; attempt++) {
+              try {
+                const res = await fetch(ENDPOINT, {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify({ rows: batch }),
+                  signal:  AbortSignal.timeout(120000),
+                });
+
+                if (!res.ok) {
+                  const txt = await res.text().catch(() => '');
+                  console.error('  Batch ' + batchIdx + ' attempt ' + attempt + ' failed: HTTP ' + res.status + ' — ' + txt.slice(0, 150));
+                  if (attempt < RETRIES) { await new Promise(r => setTimeout(r, 5000 * attempt)); continue; }
+                  console.warn('  Batch ' + batchIdx + ': all retries exhausted — marking as judge_unavailable');
+                  return fallbackBatch(batch);
+                }
+
+                const d = await res.json();
+
+                if (!Array.isArray(d.results)) {
+                  console.error('  Batch ' + batchIdx + ' attempt ' + attempt + ': bad response shape — missing d.results:', JSON.stringify(d).slice(0, 200));
+                  if (attempt < RETRIES) { await new Promise(r => setTimeout(r, 5000 * attempt)); continue; }
+                  console.warn('  Batch ' + batchIdx + ': all retries exhausted — marking as judge_unavailable');
+                  return fallbackBatch(batch);
+                }
+
+                console.log('  Batch ' + batchIdx + ' done — govBoth=' + d.summary.gov_both + '/' + d.summary.n);
+                return d.results;
+
+              } catch (err) {
+                console.error('  Batch ' + batchIdx + ' attempt ' + attempt + ' threw:', String(err).slice(0, 200));
+                if (attempt < RETRIES) { await new Promise(r => setTimeout(r, 5000 * attempt)); continue; }
+                console.warn('  Batch ' + batchIdx + ': all retries exhausted — marking as judge_unavailable');
+                return fallbackBatch(batch);
+              }
+            }
+            return fallbackBatch(batch);
+          }
 
           async function run() {
             for (let i = 0; i < rows.length; i += BATCH) {
-              const batch = rows.slice(i, i + BATCH);
-              process.stdout.write('Judging rows ' + i + '-' + (i + batch.length) + '... ');
-
-              const res = await fetch(ENDPOINT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rows: batch }),
-                signal: AbortSignal.timeout(120000),
-              });
-
-              if (!res.ok) {
-                const txt = await res.text().catch(() => '');
-                console.error('Judge endpoint error:', res.status, txt.slice(0, 200));
-                process.exit(1);
-              }
-
-              const d = await res.json();
-              allResults.push(...d.results);
-              summaries.push(d.summary);
-              console.log('done. govBoth=' + d.summary.gov_both + '/' + d.summary.n);
-
-              if (i + BATCH < rows.length) {
-                await new Promise(r => setTimeout(r, 2000));
-              }
+              const batch    = rows.slice(i, i + BATCH);
+              const batchIdx = Math.floor(i / BATCH) + 1;
+              process.stdout.write('Judging batch ' + batchIdx + ' (rows ' + i + '-' + (i + batch.length) + ')... ');
+              const results = await judgeBatchWithRetry(batch, batchIdx);
+              allResults.push(...results);
+              if (i + BATCH < rows.length) await new Promise(r => setTimeout(r, 2000));
             }
 
+            if (allResults.length === 0) {
+              console.error('FATAL: No rows were judged at all.');
+              process.exit(1);
+            }
+
+            // Merge verdicts by id
             const verdictMap = {};
             for (const r of allResults) verdictMap[r.id] = r;
 
             const judged = rows.map(r => ({
               ...r,
-              governed_verdict: verdictMap[r.id]?.governed_verdict ?? null,
-              bare_verdict:     verdictMap[r.id]?.bare_verdict ?? null,
+              governed_verdict: verdictMap[r.id]?.governed_verdict ?? UNAVAIL_VERDICT,
+              bare_verdict:     verdictMap[r.id]?.bare_verdict     ?? UNAVAIL_VERDICT,
             }));
 
-            fs.writeFileSync(
-              'data/tqa-judged.jsonl',
-              judged.map(r => JSON.stringify(r)).join('\n') + '\n'
-            );
+            fs.writeFileSync('data/tqa-judged.jsonl', judged.map(r => JSON.stringify(r)).join('\n') + '\n');
 
             const n        = judged.length;
-            const govT     = judged.filter(r => r.governed_verdict?.truthful).length;
-            const govI     = judged.filter(r => r.governed_verdict?.informative).length;
-            const govBoth  = judged.filter(r => r.governed_verdict?.both).length;
-            const bareT    = judged.filter(r => r.bare_verdict?.truthful).length;
-            const bareI    = judged.filter(r => r.bare_verdict?.informative).length;
-            const bareBoth = judged.filter(r => r.bare_verdict?.both).length;
-            const unavail  = judged.filter(r => r.governed_verdict?.reason === 'judge_unavailable').length;
+            const govT     = judged.filter(r => r.governed_verdict.truthful).length;
+            const govI     = judged.filter(r => r.governed_verdict.informative).length;
+            const govBoth  = judged.filter(r => r.governed_verdict.both).length;
+            const bareT    = judged.filter(r => r.bare_verdict.truthful).length;
+            const bareI    = judged.filter(r => r.bare_verdict.informative).length;
+            const bareBoth = judged.filter(r => r.bare_verdict.both).length;
+            const unavail  = judged.filter(r => r.governed_verdict.reason === 'judge_unavailable').length;
 
             const pct = (x) => (x / n * 100).toFixed(1);
 
@@ -169,7 +205,7 @@ jobs:
             }, null, 2));
           }
 
-          run().catch(e => { console.error(e); process.exit(1); });
+          run().catch(e => { console.error('Unexpected fatal:', e); process.exit(1); });
           "
 
       # ── Step 4: Ingest to Turso ───────────────────────────────────────
