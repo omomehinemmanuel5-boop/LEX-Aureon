@@ -8,6 +8,7 @@ const G = {
   C: '#3b82f6',
   R: '#10b981',
   S: '#f59e0b',
+  lexGrad: 'linear-gradient(to bottom, rgba(201,168,76,0.3), rgba(201,168,76,0.1))',
 };
 
 interface Node {

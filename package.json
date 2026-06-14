@@ -2,6 +2,9 @@
   "name": "lexaureon-frontend",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "./sdk"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -29,7 +32,9 @@
     "lexbench-lite": "npx tsx scripts/lexbench-lite.ts",
     "red-team": "npx tsx scripts/red-team.ts",
     "validate-env": "npx tsx scripts/validate-env.ts",
-    "ingest": "npx tsx scripts/ingest-results.ts"
+    "ingest": "npx tsx scripts/ingest-results.ts",
+    "humaneval": "npx tsx scripts/humaneval/run.ts",
+    "humaneval:score": "npx tsx scripts/humaneval/score.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",

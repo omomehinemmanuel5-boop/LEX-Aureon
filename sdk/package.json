@@ -1,0 +1,15 @@
+{
+  "name": "@aureonics/lex-sdk",
+  "version": "0.1.0",
+  "description": "Official SDK for the Lex Aureon Constitutional AI Governance API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist/"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["ai-safety", "constitutional-ai", "governance", "llm"],
+  "author": "Emmanuel King — Aureonics Systems",
+  "license": "MIT"
+}

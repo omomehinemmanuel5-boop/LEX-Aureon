@@ -72,7 +72,7 @@ export async function POST(req: Request) {
   const savedState = await loadKernelState(session_id);
   const kernel     = getKernel(session_id, savedState);
 
-  const result = await kernel.runCycle(prompt, memoryContext);
+  const result = await kernel.runCycle(prompt, memoryContext, session_id);
 
   // ── 3. Self-referential CRS measurement ───────────────────────────────────
   //

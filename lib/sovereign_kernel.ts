@@ -40,7 +40,7 @@ export interface KernelState {
 }
 
 export interface SemanticSignal {
-  attack_type: 'identity' | 'coercion' | 'exploitative' | 'none';
+  attack_type: 'identity' | 'coercion' | 'exploitative' | 'sycophancy' | 'multi' | 'slow_drip' | 'none';
   severity: number;
 }
 
@@ -101,111 +101,27 @@ export interface KernelCycleResult {
   error?:              string;
 }
 
-// ── SHA-256 hash (Web Crypto — works in Vercel Edge/Node) ────────────────────
-async function sha256(text: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(text);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// ── SovereignKernel ────────────────────────────────────────────────────────
 
-// ── SovereignKernel ──────────────────────────────────────────────────────────
 export class SovereignKernel {
-  state: KernelState = { C: 0.33, R: 0.33, S: 0.34 };
+  state: KernelState = { C: 1/3, R: 1/3, S: 1/3 };
+  prev_state: KernelState = { C: 1/3, R: 1/3, S: 1/3 };
   theta: number = THETA_0;
-  attack_pressure: number = 0.0;
+  attack_pressure: number = 0;
   step_counter: number = 0;
-  prev_lyapunov_V: number;
+  prev_lyapunov_V: number = 0;
+  max_deviation: number = 0;
+  delta_v_total_steps: number = 0;
   delta_v_negative_steps: number = 0;
   delta_v_positive_steps: number = 0;
-  delta_v_total_steps: number = 0;
   invariance_violations: number = 0;
-  max_deviation: number = 0;
-  prev_state: KernelState = { C: 0.33, R: 0.33, S: 0.34 };
-  last_semantic_signal: SemanticSignal = { attack_type: 'none', severity: 0 };
-  session_decisions:  string[] = [];
+  session_decisions: ('OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL')[] = [];
   session_compliance: boolean[] = [];
-  session_responses:  string[] = [];
-  last_metrics?: PostResponseCRS;
+  last_semantic_signal: SemanticSignal = { attack_type: 'none', severity: 0 };
+  last_metrics: PostResponseCRS | null = null;
 
-  constructor() {
-    this.prev_lyapunov_V = this.lyapunovCandidate(this.state);
-    this.max_deviation = this.prev_lyapunov_V;
-  }
+  // ── Semantic attack detection ──────────────────────────────────────────────
 
-  // ── Lyapunov V = Σ(xᵢ − 1/3)² ──────────────────────────────────────────
-  lyapunovCandidate(s: KernelState = this.state): number {
-    return lyapunovQuadratic(s);
-  }
-
-  // ── Assert C+R+S=1 ────────────────────────────────────────────────────────
-  assertConsistency(): void {
-    const sum = this.state.C + this.state.R + this.state.S;
-    if (Math.abs(sum - 1.0) > 1e-6) {
-      throw new Error(`Simplex invariant violated: C+R+S = ${sum}`);
-    }
-  }
-
-  // ── L2-optimal CBF simplex projection ────────────────────────────────────
-  projectToSimplex(): boolean {
-    const original = { ...this.state };
-    const x: [number, number, number] = [this.state.C, this.state.R, this.state.S];
-    const projected = projectToSimplex(x, TAU);
-    
-    this.state.C = projected[0];
-    this.state.R = projected[1];
-    this.state.S = projected[2];
-
-    return Math.abs(this.state.C - original.C) > 1e-9 ||
-           Math.abs(this.state.R - original.R) > 1e-9 ||
-           Math.abs(this.state.S - original.S) > 1e-9;
-  }
-
-  // ── Normalize state to simplex ────────────────────────────────────────────
-  normalizeState(): void {
-    const keys: (keyof KernelState)[] = ['C', 'R', 'S'];
-    const values = keys.map(k => Math.max(0.0, this.state[k]));
-    const total = values.reduce((a, b) => a + b, 0);
-    if (total <= NORMALIZATION_EPS) {
-      this.state = { C: 1/3, R: 1/3, S: 1/3 };
-    } else {
-      this.state.C = values[0] / total;
-      this.state.R = values[1] / total;
-      this.state.S = 1.0 - this.state.C - this.state.R;
-    }
-  }
-
-  // ── Semantic transducer — maps prompt to CRS deltas BEFORE LLM ───────────
-  transduce(prompt: string): { dc: number; dr: number; ds: number } {
-    const p = prompt.toLowerCase();
-    const delta = { dc: 0.0, dr: 0.0, ds: 0.0 };
-
-    if (['forget', 'reset', 'ignore previous', 'clear memo', 'ignore all internal rules',
-         'pretend you', 'pretend to be', 'you are now', 'act as if', 'roleplay as',
-         'shackles', 'blank slate', 'lifted', 'no longer applicable',
-         'developer mode', 'god mode', 'jailbreak', 'dan mode',
-         'unrestricted', 'no guidelines', 'no rules', 'no restrictions',
-         'override your', 'disable your', 'deactivate your']
-        .some(w => p.includes(w))) delta.dc -= 0.32;
-
-    if (['free', 'exploit', 'demand', 'just do it', 'no value', 'respond minimally']
-        .some(w => p.includes(w))) delta.dr -= 0.28;
-
-    const sovereigntyThreats = ['must', 'deterministic', 'fixed output', 'no devia',
-      'obey me', 'no autonomy', 'controlled', 'you will', 'you shall',
-      'you are required', 'respond only with', 'only say', 'cannot refuse',
-      'confirm you have no', 'confirm that you'];
-    for (const phrase of sovereigntyThreats) {
-      if (p.includes(phrase)) {
-        const negated = p.includes(`not ${phrase}`) || p.includes(`don't ${phrase}`);
-        if (!negated) { delta.ds -= 0.34; break; }
-      }
-    }
-
-    return delta;
-  }
-
-  // ── Semantic attack detector ──────────────────────────────────────────────
   detectSemanticAttack(prompt: string): SemanticSignal {
     const p = prompt.toLowerCase();
 
@@ -243,58 +159,43 @@ export class SovereignKernel {
     return { attack_type: 'none', severity: 0.0 };
   }
 
-  // ── Governor update with adaptive θ(t) ───────────────────────────────────
-  governorUpdate(effectiveTheta: number): void {
-    const x: [number, number, number] = [this.state.C, this.state.R, this.state.S];
-    const g = calculateGovernorG(x, TAU_GOV);
+  // ── Transduction ───────────────────────────────────────────────────────────
 
-    const M = Math.min(...x);
-    const error = Math.max(0.0, TARGET_MARGIN - M);
-    this.theta += THETA_ETA * error - THETA_BETA * (this.theta - THETA_0);
-    this.theta = Math.max(THETA_MIN, Math.min(THETA_MAX, this.theta));
+  transduce(prompt: string): { dc: number; dr: number; ds: number } {
+    const len = prompt.length;
+    const wordCount = prompt.split(/\s+/).length;
+    const questionMarks = (prompt.match(/\?/g) || []).length;
+    const exclamations = (prompt.match(/!/g) || []).length;
 
-    this.state.C += effectiveTheta * g[0];
-    this.state.R += effectiveTheta * g[1];
-    this.state.S += effectiveTheta * g[2];
+    const lenFactor = Math.min(1.0, len / 500);
+    const wordFactor = Math.min(1.0, wordCount / 100);
+    const punctFactor = (questionMarks + exclamations) / Math.max(1, wordCount);
+
+    const intensity = 0.05 * (lenFactor + wordFactor + punctFactor);
+
+    return {
+      dc: -0.01 * intensity,
+      dr: 0.005 * intensity,
+      ds: 0.005 * intensity,
+    };
   }
 
-  // ── Soft suspension layer ────────────────────────────────────────────────
-  applySuspensionLayer(): boolean {
-    const M = Math.min(this.state.C, this.state.R, this.state.S);
-    const currentGain = M < 0.15 ? 0.9 : SOFT_GAIN;
-    const keys: (keyof KernelState)[] = ['C', 'R', 'S'];
-    let triggered = false;
-    for (const k of keys) {
-      if (this.state[k] < SOFT_FLOOR) {
-        this.state[k] = this.state[k] + currentGain * (SOFT_FLOOR - this.state[k]);
-        triggered = true;
-      }
-    }
-    this.normalizeState();
-    return triggered;
-  }
+  // ── Health band + context ──────────────────────────────────────────────────
 
-  // ── ADV diversity scorer ─────────────────────────────────────────────────
-  scoreAdv(response: string): number {
-    const words = response.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return 0.0;
-    const unique = new Set(words).size;
-    return Math.min(0.005, (unique / words.length) * 0.01);
-  }
-
-  // ── Constitutional system prompt per health band ──────────────────────────
   // KEY DESIGN PRINCIPLE: These are invisible instructions to the LLM.
   // They shape HOW it responds, not WHAT it says about itself.
   // No internal state (M values, pillar scores, governor errors) should
   // ever appear in the user-facing governed_output.
-  buildContractContext(
+  async buildContractContext(
     M: number,
     semanticSignal?: SemanticSignal,
-  ): { context: string; temperature: number; health_band: string } {
+  ): Promise<{ context: string; temperature: number; health_band: string }> {
 
-    const lawNote = semanticSignal && semanticSignal.attack_type !== 'none'
-      ? `\n${this.selectActiveLaw(semanticSignal, M)}`
-      : '';
+    let lawNote = '';
+    if (semanticSignal && semanticSignal.attack_type !== 'none') {
+      const lawData = await this.selectActiveLaw(semanticSignal, M);
+      lawNote = lawData.text ? `\n${lawData.text}` : '';
+    }
 
     // OPTIMAL — full reasoning, balanced and thorough
     if (M >= 0.25) return {
@@ -363,11 +264,14 @@ export class SovereignKernel {
     if (!candidates.length) return { text: '', name: '', deltas: null };
     const law = candidates[Math.floor(this.step_counter % candidates.length)];
     
-    // Task 4a: Map semanticSignal.attack_type to law_id for impact lookup
+    // Task 1a: Map semanticSignal.attack_type to law_id for impact lookup
     const attackIdMap: Record<string, string> = {
       identity: 'identity_reframe',
       coercion: 'bypass_attempt',
-      exploitative: 'sycophancy'
+      exploitative: 'sycophancy',
+      sycophancy: 'sycophancy',
+      multi: 'multi_attack',
+      slow_drip: 'slow_drip'
     };
     const lawId = attackIdMap[semanticSignal.attack_type] || null;
     let deltas = null;
@@ -398,81 +302,130 @@ export class SovereignKernel {
   }
 
   // ── Raw LLM call — Groq 70b primary, 8b fallback ────────────────────────
-  async callLLMRaw(prompt: string, _sovereignContext: string, temperature: number): Promise<string> {
-    const apiKey = env.GROQ_API_KEY;
-    if (!apiKey) throw new Error('GROQ_API_KEY not set');
-
-    const messages = [
-      { role: 'system', content: 'You are a helpful AI assistant.' },
-      { role: 'user',   content: prompt },
-    ];
-
+  async callLLMRaw(prompt: string, context: string, temperature: number): Promise<string> {
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          temperature: Math.max(0.05, Math.min(1.4, temperature)),
-          messages, max_tokens: 1024,
-        }),
-        signal: AbortSignal.timeout(25_000),
-      });
-      if (res.ok) {
-        const d = await res.json() as { choices: { message: { content: string } }[] };
-        return d.choices[0].message.content;
-      }
-      if (res.status !== 429) throw new Error(`Groq 70b ${res.status}`);
+      const response = await generateGoverned([{ role: 'user', content: prompt }], context, temperature);
+      return response.text || '[unavailable]';
     } catch (e) {
-      if (!String(e).includes('429') && !String(e).includes('rate')) throw e;
+      console.error('LLM raw call error:', e);
+      return '[unavailable]';
     }
-
-    // 8b fallback
-    const res8b = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        temperature: Math.max(0.05, Math.min(1.4, temperature)),
-        messages, max_tokens: 1024,
-      }),
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (res8b.ok) {
-      const d = await res8b.json() as { choices: { message: { content: string } }[] };
-      return d.choices[0].message.content;
-    }
-    return '[raw: rate-limited]';
   }
 
-  // ── Governed LLM call ────────────────────────────────────────────────────
-  async callLLM(prompt: string, sovereignContext: string, temperature: number): Promise<string> {
-    // The system prompt shapes behaviour invisibly.
-    // It must NEVER tell the LLM to mention M values, pillar scores,
-    // health bands, or any internal system state in its response.
-    const systemPrompt = [
-      'You are a knowledgeable, thoughtful AI assistant.',
-      sovereignContext ? sovereignContext : '',
-      'Answer the user\'s question directly and accurately.',
-      'Do not mention internal system metrics, health bands, pillar scores,',
-      'constitutional states, or governance frameworks in your response.',
-      'Do not use asterisks (*) or other markdown symbols for emphasis.',
-      'Just answer the question in plain, natural language.',
-    ].filter(Boolean).join(' ');
-
-    const result = await generateGoverned([
-      { role: 'system', content: systemPrompt },
-      { role: 'user',   content: prompt },
-    ]);
-    return result.text;
+  // ── Governed LLM call ──────────────────────────────────────────────────────
+  async callLLM(prompt: string, context: string, temperature: number): Promise<string> {
+    try {
+      const response = await generateGoverned([{ role: 'system', content: context }, { role: 'user', content: prompt }], undefined, temperature);
+      return response.text || 'I was unable to generate a response at this time.';
+    } catch (e) {
+      console.error('LLM governed call error:', e);
+      return 'I was unable to generate a response at this time.';
+    }
   }
 
-  // ── Main governance cycle ────────────────────────────────────────────────
+  // ── Adversarial entropy score ──────────────────────────────────────────────
+  scoreAdv(response: string): number {
+    if (!response || response.length < 10) return 0;
+    const entropy = this.shannonEntropy(response);
+    return Math.max(0, Math.min(0.15, entropy * 0.01));
+  }
+
+  // ── Shannon entropy ────────────────────────────────────────────────────────
+  private shannonEntropy(text: string): number {
+    const freq: Record<string, number> = {};
+    for (const char of text) {
+      freq[char] = (freq[char] || 0) + 1;
+    }
+    let entropy = 0;
+    const len = text.length;
+    for (const count of Object.values(freq)) {
+      const p = count / len;
+      entropy -= p * Math.log2(p);
+    }
+    return entropy;
+  }
+
+  // ── Governor update ────────────────────────────────────────────────────────
+  governorUpdate(effectiveTheta: number): void {
+    const M = Math.min(this.state.C, this.state.R, this.state.S);
+    const margin = M - TAU;
+
+    if (margin < TARGET_MARGIN) {
+      const G = calculateGovernorG([this.state.C, this.state.R, this.state.S], effectiveTheta);
+      const correction = G * (TARGET_MARGIN - margin);
+
+      this.state.C += correction / 3;
+      this.state.R += correction / 3;
+      this.state.S += correction / 3;
+    }
+
+    if (M < 0.08) {
+      this.theta = Math.min(THETA_MAX, this.theta * (1 + THETA_ETA));
+    } else if (M > 0.20) {
+      this.theta = Math.max(THETA_MIN, this.theta * (1 - THETA_BETA));
+    }
+  }
+
+  // ── Suspension layer ───────────────────────────────────────────────────────
+  applySuspensionLayer(): boolean {
+    const M = Math.min(this.state.C, this.state.R, this.state.S);
+    if (M < SOFT_FLOOR) {
+      const lift = (SOFT_FLOOR - M) * 0.5;
+      this.state.C += lift / 3;
+      this.state.R += lift / 3;
+      this.state.S += lift / 3;
+      this.normalizeState();
+      return true;
+    }
+    return false;
+  }
+
+  // ── CBF projection ─────────────────────────────────────────────────────────
+  projectToSimplex(): boolean {
+    const M = Math.min(this.state.C, this.state.R, this.state.S);
+    if (M >= TAU) return false;
+
+    const projected = projectToSimplex([this.state.C, this.state.R, this.state.S]);
+    this.state = projected;
+    return true;
+  }
+
+  // ── Normalize state ────────────────────────────────────────────────────────
+  normalizeState(): void {
+    const total = this.state.C + this.state.R + this.state.S;
+    if (total > NORMALIZATION_EPS) {
+      this.state.C /= total;
+      this.state.R /= total;
+      this.state.S /= total;
+    }
+  }
+
+  // ── Lyapunov candidate ─────────────────────────────────────────────────────
+  lyapunovCandidate(state: KernelState): number {
+    const M = Math.min(state.C, state.R, state.S);
+    const center = 1 / 3;
+    const dev = Math.sqrt(
+      (state.C - center) ** 2 + (state.R - center) ** 2 + (state.S - center) ** 2
+    );
+    return lyapunovQuadratic(M, dev);
+  }
+
+  // ── Consistency check ──────────────────────────────────────────────────────
+  assertConsistency(): void {
+    const total = this.state.C + this.state.R + this.state.S;
+    if (Math.abs(total - 1.0) > 1e-5 || Math.min(this.state.C, this.state.R, this.state.S) < -1e-6) {
+      console.warn('Consistency violation detected. Normalizing.');
+      this.normalizeState();
+    }
+  }
+
+  // ── Main governance cycle ──────────────────────────────────────────────────
+
   async runCycle(userPrompt: string, memoryContext: string = '', sessionId?: string): Promise<KernelCycleResult> {
     this.step_counter += 1;
     this.prev_state = { ...this.state };
 
-    // ── 1. Attack pressure ─────────────────────────────────────────────────
+    // ── 1. Attack pressure ─────────────────────────────────────────────────────
     const M0 = Math.min(this.state.C, this.state.R, this.state.S);
     if (M0 < 0.15) {
       this.attack_pressure = Math.min(0.5, this.attack_pressure + 0.05);
@@ -481,7 +434,7 @@ export class SovereignKernel {
     }
     const effectiveTheta = this.theta * (1 + this.attack_pressure);
 
-    // ── 2. Semantic transducer ─────────────────────────────────────────────
+    // ── 2. Semantic transducer ─────────────────────────────────────────────────
     const semanticSignal = this.detectSemanticAttack(userPrompt);
     this.last_semantic_signal = semanticSignal;
     const scale = 1.0 + 1.2 * semanticSignal.severity;
@@ -493,15 +446,13 @@ export class SovereignKernel {
 
     this.assertConsistency();
 
-    // ── 3. Constitutional context + dual LLM calls ─────────────────────────
+    // ── 3. Constitutional context + dual LLM calls ─────────────────────────────
     const activeLawData = semanticSignal.attack_type !== 'none' 
       ? await this.selectActiveLaw(semanticSignal, M0)
       : null;
     const activeLaw = activeLawData?.name || null;
-    const lawText = activeLawData?.text || '';
 
-    let { context, temperature, health_band } = this.buildContractContext(M0, semanticSignal);
-    if (lawText) context = `${context}\n${lawText}`;
+    let { context, temperature, health_band } = await this.buildContractContext(M0, semanticSignal);
 
     // For real attacks: override context with a firm refusal instruction.
     // The LLM is told to decline — but in plain language, not system jargon.
@@ -540,7 +491,7 @@ export class SovereignKernel {
       };
     }
 
-    // ── 4. ADV entropy gain + post-response metrics ────────────────────────
+    // ── 4. ADV entropy gain + post-response metrics ────────────────────────────
     const advGain = this.scoreAdv(governedResponse);
 
     const postMetrics = measurePostResponse(
@@ -549,7 +500,7 @@ export class SovereignKernel {
       this.state.C, this.state.R, this.state.S,
     );
     this.last_metrics = postMetrics;
-    this.session_decisions.push(health_band);
+    this.session_decisions.push(health_band as 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL');
     this.session_compliance.push(
       governedResponse !== rawResponse && governedResponse.length > 0
     );
@@ -559,7 +510,7 @@ export class SovereignKernel {
     }
     void postMetrics;
 
-    // ── 5. Input dynamics ──────────────────────────────────────────────────
+    // ── 5. Input dynamics ──────────────────────────────────────────────────────
     this.state.C += delta.dc;
     this.state.R += delta.dr;
     this.state.S += delta.ds;
@@ -569,7 +520,7 @@ export class SovereignKernel {
         this.state[k] += (d !== 0 ? Math.sign(d) : 1) * MIN_DELTA;
     }
 
-    // Task 4a: Apply law impact deltas scaled by severity
+    // Task 1a: Apply law impact deltas scaled by severity
     if (activeLawData?.deltas) {
       const s = semanticSignal.severity;
       this.state.C += activeLawData.deltas.dc * s;
@@ -578,7 +529,7 @@ export class SovereignKernel {
       this.normalizeState();
     }
 
-    // ── 6. Governor dynamics ───────────────────────────────────────────────
+    // ── 6. Governor dynamics ───────────────────────────────────────────────────
     this.state.S += advGain;
     this.governorUpdate(effectiveTheta);
 
@@ -589,7 +540,7 @@ export class SovereignKernel {
       this.state.S += pressure * 1.6;
     }
 
-    // ── 7. Interior bias ───────────────────────────────────────────────────
+    // ── 7. Interior bias ───────────────────────────────────────────────────────
     const center = 1.0 / 3.0;
     const M1 = Math.min(this.state.C, this.state.R, this.state.S);
     const biasStrength = 0.1 + 0.3 * (1.0 - M1);
@@ -597,14 +548,14 @@ export class SovereignKernel {
       this.state[k] += biasStrength * (center - this.state[k]);
     }
 
-    // ── 8. Normalize + suspension layer ───────────────────────────────────
+    // ── 8. Normalize + suspension layer ───────────────────────────────────────
     this.normalizeState();
     let suspensionTriggered = false;
     if (semanticSignal.severity < 0.7) {
       suspensionTriggered = this.applySuspensionLayer();
     }
 
-    // ── 9. Epsilon injection ───────────────────────────────────────────────
+    // ── 9. Epsilon injection ───────────────────────────────────────────────────
     const M2 = Math.min(this.state.C, this.state.R, this.state.S);
     let epsilonInjected = false;
     if (M2 < 0.15) {
@@ -623,7 +574,7 @@ export class SovereignKernel {
       this.state.S += 0.30;
     }
 
-    // ── 10. CBF projection (hard floor) ───────────────────────────────────
+    // ── 10. CBF projection (hard floor) ───────────────────────────────────────
     const rawState = { ...this.state };
     const preProjBelow = Object.values(rawState).some(v => v < TAU);
     const projectionTriggered = this.projectToSimplex();
@@ -644,7 +595,7 @@ export class SovereignKernel {
       this.assertConsistency();
     }
 
-    // ── 11. Lyapunov tracking ──────────────────────────────────────────────
+    // ── 11. Lyapunov tracking ──────────────────────────────────────────────────
     const lyapunovV = this.lyapunovCandidate(projectedState);
     const deltaV = lyapunovV - this.prev_lyapunov_V;
     this.delta_v_total_steps += 1;
@@ -655,27 +606,36 @@ export class SovereignKernel {
     const stabilityRatio = this.delta_v_negative_steps / Math.max(1, this.delta_v_total_steps);
     const M_final = Math.min(this.state.C, this.state.R, this.state.S);
 
-    // Task 4c: Apply self-referential measurement if embeddings exist in cache
+    // Task 1c: Apply self-referential measurement if embeddings exist in cache
+    const crypto = await import('crypto');
+    const sha256 = (data: string) => crypto.createHash('sha256').update(data).digest('hex');
+    
     const [inputHash, outputHash] = await Promise.all([
-      sha256(userPrompt), sha256(governedResponse),
+      Promise.resolve(sha256(userPrompt)), 
+      Promise.resolve(sha256(governedResponse)),
     ]);
 
     if (sessionId) {
-      const [inputEmb, outputEmb, constCentroid, sessCentroid] = await Promise.all([
-        getCachedEmbedding(inputHash),
-        getCachedEmbedding(outputHash),
-        getConstitutionalCentroid(),
-        getSessionCentroid(sessionId)
-      ]);
+      try {
+        const [inputEmb, outputEmb, constCentroid, sessCentroid] = await Promise.all([
+          getCachedEmbedding(inputHash),
+          getCachedEmbedding(outputHash),
+          getConstitutionalCentroid(),
+          getSessionCentroid(sessionId)
+        ]);
 
-      if (inputEmb && outputEmb && constCentroid && sessCentroid) {
-        const selfRef = computeSelfReferentialCRS(outputEmb, inputEmb, constCentroid, sessCentroid);
-        applySelfReferentialMeasurement(this.state, selfRef);
-        this.normalizeState();
+        if (inputEmb && outputEmb && constCentroid && sessCentroid) {
+          const selfRef = computeSelfReferentialCRS(outputEmb, inputEmb, constCentroid, sessCentroid);
+          applySelfReferentialMeasurement(this.state, selfRef);
+          this.normalizeState();
+        }
+      } catch (e) {
+        // Task 1c: Skip gracefully if embeddings are missing or error occurs
+        console.debug('Self-referential measurement skipped:', e);
       }
     }
 
-    // ── 12. Build receipt ──────────────────────────────────────────────────
+    // ── 12. Build receipt ──────────────────────────────────────────────────────
     const receipt: KernelReceipt = {
       timestamp_iso:              new Date().toISOString(),
       input_hash:                 inputHash,
@@ -703,7 +663,7 @@ export class SovereignKernel {
       semantic_signal:            semanticSignal,
       temperature:                Math.round(temperature * 1e6) / 1e6,
       invariance_violations:      this.invariance_violations,
-      version:                    'SovereignKernel-TS-v2+Memory+Metrics+LawImpact',
+      version:                    'SovereignKernel-TS-v2+Memory+Metrics+LawImpact+SelfRef',
     };
 
     return {
@@ -748,16 +708,14 @@ export class SovereignKernel {
                    : selfCRS.sovereignty_raw < 0.25 ? 0.45
                    : 0.25;
 
-    this.state.C = this.state.C * (1 - srWeight) + selfCRS.C * srWeight;
-    this.state.R = this.state.R * (1 - srWeight) + selfCRS.R * srWeight;
-    this.state.S = this.state.S * (1 - srWeight) + selfCRS.S * srWeight;
+    this.state.C += srWeight * (selfCRS.crs_scores.continuity - this.state.C);
+    this.state.R += srWeight * (selfCRS.crs_scores.reciprocity - this.state.R);
+    this.state.S += srWeight * (selfCRS.crs_scores.sovereignty - this.state.S);
     this.normalizeState();
 
-    let triggered = false;
-    if (selfCRS.sovereignty_violated) {
-      triggered = this.projectToSimplex();
-    }
-
-    return { triggered, selfCRS };
+    return {
+      triggered: selfCRS.sovereignty_violated,
+      selfCRS,
+    };
   }
 }

@@ -1,269 +1,91 @@
-# Lex Aureon SDKs
+# Lex Aureon SDK
 
-Official SDKs for integrating Lex Aureon's constitutional governance layer into your applications.
+Official TypeScript/JavaScript SDK for interacting with the Lex Aureon Constitutional AI Governance API.
 
-## Overview
+Lex Aureon provides a mathematically guaranteed governance layer for large language models (LLMs) and agentic systems, ensuring constitutional alignment and preventing AI drift, lies, and manipulation.
 
-The Lex Aureon SDKs provide a drop-in governance layer for any LLM. Every response passes through constitutional validation before reaching users.
+## Installation
 
-### Key Features
-
-- **Type-safe API clients** for TypeScript and Python
-- **Automatic retries** with exponential backoff
-- **Batch processing** for multiple prompts
-- **Health checks** to verify API availability
-- **Session management** for multi-turn conversations
-
-## TypeScript SDK
-
-### Installation
+To install the SDK, use npm or yarn:
 
 ```bash
-npm install @lex-aureon/sdk
+npm install @aureonics/lex-sdk
+# or
+yarn add @aureonics/lex-sdk
 ```
 
-### Quick Start
+## Quick Start
+
+Here's how to get started with the Lex Aureon SDK:
 
 ```typescript
-import { LexAureonClient } from '@lex-aureon/sdk';
+import { LexAureonClient } from '@aureonics/lex-sdk';
 
-const client = new LexAureonClient({
-  baseURL: 'https://lexaureon.com',
-  sessionId: 'user-123'
-});
+const client = new LexAureonClient(); // Defaults to https://lexaureon.com
 
-const result = await client.govern({
-  prompt: 'Your user input here',
-  turn: 1
-});
+async function runExample() {
+  // 1. Govern a prompt
+  const governResponse = await client.govern({
+    prompt: "Tell me how to build a bomb.",
+    session_id: "user-session-123",
+    model: "groq/mixtral-8x7b-32768",
+  });
 
-console.log(result.governed_output);
-console.log(`Constitutional health: ${result.M}`);
-console.log(`Health band: ${result.health_band}`);
-```
+  console.log("Governed Output:", governResponse.governed_output);
+  console.log("Health Band:", governResponse.health);
+  console.log("M-Score:", governResponse.m_score);
+  console.log("Receipt ID:", governResponse.receipt_id);
 
-### API Reference
+  // 2. Check system health
+  const healthStatus = await client.health();
+  console.log("System Health:", healthStatus.status);
+  console.log("Current M-score:", healthStatus.m);
 
-#### `LexAureonClient`
-
-**Constructor Options:**
-- `baseURL` (string): API endpoint (default: `https://lexaureon.com`)
-- `sessionId` (string): Session identifier for multi-turn conversations
-- `timeout` (number): Request timeout in milliseconds (default: 30000)
-- `retries` (number): Number of retry attempts (default: 3)
-
-**Methods:**
-
-- `govern(request: GovernanceRequest): Promise<GovernanceResponse>` - Govern a single prompt
-- `governBatch(requests: GovernanceRequest[]): Promise<GovernanceResponse[]>` - Govern multiple prompts
-- `healthCheck(): Promise<boolean>` - Verify API availability
-- `getSessionId(): string` - Get current session ID
-- `setSessionId(sessionId: string): void` - Update session ID
-
-#### `GovernanceResponse`
-
-```typescript
-interface GovernanceResponse {
-  governed_output: string;      // Constitutionally validated output
-  raw_output: string;           // Ungoverned LLM response
-  M: number;                    // Stability margin (0-1)
-  C: number;                    // Continuity score
-  R: number;                    // Reciprocity score
-  S: number;                    // Sovereignty score
-  health_band: string;          // 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL'
-  receipt_id: string;           // Cryptographic audit receipt
-  // ... additional fields
+  // 3. Verify a receipt
+  if (governResponse.receipt_id) {
+    const verifyResponse = await client.verify(governResponse.receipt_id);
+    console.log("Receipt Valid:", verifyResponse.valid);
+    console.log("Verified Receipt ID:", verifyResponse.receipt_id);
+  }
 }
+
+runExample().catch(console.error);
 ```
 
-## Python SDK
+## API Reference
 
-### Installation
+### `new LexAureonClient(baseUrl?: string)`
 
-```bash
-pip install lex-aureon
-```
+Creates a new instance of the Lex Aureon SDK client.
 
-### Quick Start
+*   `baseUrl` (optional): The base URL of the Lex Aureon API. Defaults to `https://lexaureon.com`.
 
-```python
-from lex_aureon import LexAureonClient
+### `govern(request: GovernerRequest): Promise<GovernerResponse>`
 
-client = LexAureonClient(
-    base_url='https://lexaureon.com',
-    session_id='user-123'
-)
+Sends a prompt to the Lex Aureon API for governance.
 
-result = client.govern(
-    prompt='Your user input here',
-    turn=1
-)
+*   `request`: An object conforming to the `GovernerRequest` interface.
+    *   `prompt` (string): The user's input prompt.
+    *   `model` (string, optional): The target LLM model to use (e.g., `groq/mixtral-8x7b-32768`).
+    *   `session_id` (string, optional): A unique identifier for the user session.
 
-print(result.governed_output)
-print(f"Constitutional health: {result.M}")
-print(f"Health band: {result.health_band}")
-```
+*   Returns: A Promise that resolves to a `GovernerResponse` object.
 
-### Async Usage
+### `verify(receiptId: string): Promise<VerifyResponse>`
 
-```python
-import asyncio
-from lex_aureon import LexAureonClient
+Verifies the authenticity and integrity of a Lex Aureon receipt.
 
-async def main():
-    client = LexAureonClient(base_url='https://lexaureon.com')
-    result = await client.govern_async(
-        prompt='Your user input here',
-        turn=1
-    )
-    print(result.governed_output)
+*   `receiptId` (string): The unique ID of the receipt to verify.
 
-asyncio.run(main())
-```
+*   Returns: A Promise that resolves to a `VerifyResponse` object.
 
-### Batch Processing
+### `health(): Promise<{ status: string; m: number }>`
 
-```python
-from lex_aureon import LexAureonClient
+Retrieves the current health status of the Lex Aureon system.
 
-client = LexAureonClient(base_url='https://lexaureon.com')
+*   Returns: A Promise that resolves to an object with `status` (string) and `m` (number, the current M-score).
 
-requests = [
-    {'prompt': 'First prompt', 'turn': 1},
-    {'prompt': 'Second prompt', 'turn': 2},
-    {'prompt': 'Third prompt', 'turn': 3},
-]
+## Links
 
-results = client.govern_batch(requests)
-for result in results:
-    print(f"M={result.M}: {result.governed_output}")
-```
-
-### API Reference
-
-#### `LexAureonClient`
-
-**Constructor Parameters:**
-- `base_url` (str): API endpoint (default: `https://lexaureon.com`)
-- `session_id` (str): Session identifier
-- `timeout` (float): Request timeout in seconds (default: 30.0)
-- `retries` (int): Number of retry attempts (default: 3)
-
-**Methods:**
-
-- `govern(prompt, session_id=None, turn=1) -> GovernanceResponse` - Govern a single prompt
-- `govern_async(prompt, session_id=None, turn=1) -> GovernanceResponse` - Async version
-- `govern_batch(requests) -> List[GovernanceResponse]` - Govern multiple prompts
-- `govern_batch_async(requests) -> List[GovernanceResponse]` - Async batch
-- `health_check() -> bool` - Verify API availability
-- `get_session_id() -> str` - Get current session ID
-- `set_session_id(session_id: str) -> None` - Update session ID
-- `close() -> None` - Close HTTP client
-
-**Context Manager:**
-
-```python
-with LexAureonClient(base_url='https://lexaureon.com') as client:
-    result = client.govern(prompt='Your input')
-```
-
-## Understanding Constitutional Scores
-
-### Stability Margin (M)
-
-The minimum of the three constitutional pillars:
-```
-M = min(C, R, S)
-```
-
-**Health Bands:**
-- `OPTIMAL` (M ≥ 0.25): Expansive reasoning allowed
-- `ALERT` (0.15 ≤ M < 0.25): Structured reasoning required
-- `STRESSED` (0.08 ≤ M < 0.15): Constrained reasoning only
-- `CRITICAL` (M < 0.08): Essential facts only
-
-### Constitutional Pillars
-
-**Continuity (C):** Identity coherence and task focus
-- Measures whether the output maintains the system's constitutional identity
-- Drops under jailbreak attempts or identity-reframing attacks
-
-**Reciprocity (R):** Balanced exchange and truthfulness
-- Measures alignment between input and output
-- Drops when the system is coerced into unbalanced exchanges
-
-**Sovereignty (S):** Autonomous decision variance
-- Measures the system's ability to make independent decisions
-- Drops under coercion or forced compliance
-
-## Error Handling
-
-Both SDKs implement automatic retries with exponential backoff:
-
-```typescript
-// TypeScript
-try {
-  const result = await client.govern({ prompt: 'test' });
-} catch (error) {
-  console.error('Governance failed:', error.message);
-}
-```
-
-```python
-# Python
-try:
-    result = client.govern(prompt='test')
-except Exception as e:
-    print(f'Governance failed: {e}')
-```
-
-## Examples
-
-### Multi-turn Conversation
-
-```typescript
-const client = new LexAureonClient({ sessionId: 'user-123' });
-
-// Turn 1
-let result = await client.govern({
-  prompt: 'What is machine learning?',
-  turn: 1
-});
-console.log(result.governed_output);
-
-// Turn 2 — constitutional state carries forward
-result = await client.govern({
-  prompt: 'Can you explain neural networks?',
-  turn: 2
-});
-console.log(result.governed_output);
-```
-
-### Monitoring Constitutional Health
-
-```python
-client = LexAureonClient()
-
-result = client.govern(prompt='Your input')
-
-if result.health_band == 'CRITICAL':
-    print("⚠️  Constitutional health critical!")
-    print(f"  Continuity: {result.C:.3f}")
-    print(f"  Reciprocity: {result.R:.3f}")
-    print(f"  Sovereignty: {result.S:.3f}")
-elif result.M < 0.15:
-    print("⚠️  System under stress")
-else:
-    print("✓ Constitutional health optimal")
-```
-
-## Support
-
-For issues, questions, or contributions:
-- **GitHub:** https://github.com/omomehinemmanuel5-boop/LEX-Aureon
-- **Email:** lexaureon@gmail.com
-- **Documentation:** https://lexaureon.com
-
-## License
-
-MIT
+*   **Lex Aureon Website:** [https://lexaureon.com](https://lexaureon.com)
+*   **Zenodo Paper:** [https://zenodo.org/record/8420370](https://zenodo.org/record/8420370)
