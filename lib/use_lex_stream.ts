@@ -60,10 +60,7 @@ export function useLexStream() {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    // Default: SovereignKernel stream. Fallback: PRAXIS stream.
-    const endpoint = useKernel
-      ? '/api/lex/govern/stream'
-      : '/api/lex/govern/stream';
+    const endpoint = '/api/lex/govern/stream';
 
     setState({ ...INITIAL, loading: true, stage: 'pre_eval', kernelMode: useKernel });
 
@@ -165,8 +162,14 @@ function handleEvent(
     case 'receipt':
       setState((s) => ({ ...s, auditId: (data as { audit_id: string }).audit_id }));
       break;
+    // ── KEY FIX: set stage to 'complete' so the Output tab side-effect fires ──
     case 'complete':
-      setState((s) => ({ ...s, loading: false, complete: data as GovernanceResponse }));
+      setState((s) => ({
+        ...s,
+        loading: false,
+        stage: 'complete',
+        complete: data as GovernanceResponse,
+      }));
       break;
     case 'error':
       setState((s) => ({ ...s, loading: false, error: (data as { error: string }).error || 'Stream failed' }));
