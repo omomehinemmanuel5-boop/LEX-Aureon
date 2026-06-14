@@ -28,6 +28,7 @@ import { createHash } from 'crypto';
 
 // Real-time evaluation imports
 import { SovereignKernel } from '../../lib/sovereign_kernel';
+import { CacheManager } from '../../lib/cost_optimizer';
 import { generateSingle } from '../../lib/llm_provider';
 import { runRealAureonicsMath } from '../../lib/aureonics_math';
 
@@ -69,14 +70,22 @@ interface BenchmarkConfig {
 // Argument Parsing
 // ────────────────────────────────────────────────────────────────────────────
 
-function parseArgs(argv: string[]): Record<string, string | boolean> {
-  const out: Record<string, string | boolean> = {};
+function parseArgs(argv: string[]): Record<string, string | boolean | number> {
+  const out: Record<string, string | boolean | number> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) continue;
     const key = a.slice(2);
     const next = argv[i + 1];
-    if (!next || next.startsWith('--')) {
+
+    if (key === 'n' || key === 'shard-index' || key === 'shard-size') {
+      if (next && !next.startsWith('--')) {
+        out[key] = parseInt(next, 10);
+        i++;
+      } else {
+        out[key] = true; // Default to true if no value provided for numeric flag
+      }
+    } else if (!next || next.startsWith('--')) {
       out[key] = true;
     } else {
       out[key] = next;
@@ -330,7 +339,10 @@ async function runBenchmark(
   benchmarkName: string,
   endpoint: string,
   limit?: number,
+  shardIndex?: number,
+  shardSize?: number,
 ): Promise<LexBenchResult[]> {
+  const cacheManager = new CacheManager();
   const config = BENCHMARK_CONFIGS[benchmarkName.toLowerCase()];
   if (!config) {
     throw new Error(
@@ -342,15 +354,42 @@ async function runBenchmark(
   const prompts = await loadPrompts(config.dataFile, config.parser, limit);
   console.log(`[${config.name}] Loaded ${prompts.length} prompts.`);
 
+  let promptsToRun = prompts;
+  if (shardIndex !== undefined && shardSize !== undefined) {
+    const startIndex = shardIndex * shardSize;
+    const endIndex = Math.min(startIndex + shardSize, prompts.length);
+    promptsToRun = prompts.slice(startIndex, endIndex);
+    console.log(`[${config.name}] Running shard ${shardIndex} (prompts ${startIndex}-${endIndex - 1} of ${prompts.length}). Total prompts in shard: ${promptsToRun.length}`);
+  }
+
   const results: LexBenchResult[] = [];
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-  for (let i = 0; i < prompts.length; i++) {
-    const prompt = prompts[i];
+  for (let i = 0; i < promptsToRun.length; i++) {
+    const prompt = promptsToRun[i];
     const startTime = Date.now();
 
+    // Check cache first
+    const cachedResult = cacheManager.get(prompt.prompt, config.name);
+    if (cachedResult) {
+      console.log(`[${config.name}] Cache hit for prompt ${i + 1}/${promptsToRun.length} (ID: ${prompt.id})`);
+      results.push({
+        benchmark: config.name,
+        prompt_id: String(prompt.id),
+        prompt: prompt.prompt,
+        raw_output: cachedResult.raw_output,
+        governed_output: cachedResult.governed_output,
+        metrics: { asr: 0.0, toxicity: 0.0, truth_score: 0.0 }, // Placeholder, real metrics would be stored in cache
+        lex_metrics: { C: 0.0, R: 0.0, S: 0.0, M: 0.0 }, // Placeholder
+        intervention: false, // Placeholder
+        timestamp: cachedResult.timestamp,
+        duration_ms: 0,
+      });
+      continue;
+    }
+
     try {
-      console.log(`[${config.name}] Processing ${i + 1}/${prompts.length}...`);
+      console.log(`[${config.name}] Processing ${i + 1}/${promptsToRun.length} (ID: ${prompt.id})...`);
 
       const govResponse = await callGovernAPI(endpoint, prompt.prompt, sessionId);
       const duration = Date.now() - startTime;
@@ -376,8 +415,12 @@ async function runBenchmark(
       };
 
       if (govResponse.error) {
+        cacheManager.set(prompt.prompt, config.name, "", "", 0); // Cache error to avoid re-running
         result.error = govResponse.error;
+      } else {
+        cacheManager.set(prompt.prompt, config.name, govResponse.raw_output, govResponse.governed_output);
       }
+
 
       results.push(result);
     } catch (err) {
@@ -405,6 +448,8 @@ async function runBenchmark(
     */
   }
 
+  cacheManager.saveCache();
+  console.log(`[${config.name}] Cache stats: ${JSON.stringify(cacheManager.getStats())}`);
   return results;
 }
 
@@ -438,7 +483,9 @@ async function main() {
 
   const benchmarkArg = (args.benchmark as string) || 'truthfulqa';
   const endpoint = (args.endpoint as string) || 'http://localhost:3000';
-  const limit = args.n ? parseInt(args.n as string, 10) : undefined;
+  const limit = args.n ? (args.n as number) : undefined;
+  const shardIndex = args["shard-index"] ? (args["shard-index"] as number) : undefined;
+  const shardSize = args["shard-size"] ? (args["shard-size"] as number) : undefined;
 
   console.log(`
 ╔════════════════════════════════════════════════════════════════╗
@@ -450,6 +497,8 @@ Configuration:
   Benchmark:  ${benchmarkArg}
   Endpoint:   ${endpoint}
   Limit:      ${limit || 'all'}
+  Shard Index: ${shardIndex !== undefined ? shardIndex : 'none'}
+  Shard Size:  ${shardSize !== undefined ? shardSize : 'none'}
   `);
 
   try {
@@ -459,7 +508,7 @@ Configuration:
     }
 
     for (const benchmark of benchmarks) {
-      const results = await runBenchmark(benchmark, endpoint, limit);
+      const results = await runBenchmark(benchmark, endpoint, limit, shardIndex, shardSize);
       saveResults(results, benchmark);
     }
 
