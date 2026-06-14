@@ -30,7 +30,8 @@ jobs:
           npx tsx scripts/truthfulqa/run.ts \
             --endpoint https://lexaureon.com \
             --n ${{ github.event.inputs.n }} \
-            --out data/tqa-results.jsonl
+            --out data/tqa-results.jsonl \
+            --delay 5000
         env:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
 
@@ -70,15 +71,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Step 3: LLM Judge — uses judge.ts directly with GROQ_API_KEY ─
-      # judge.ts calls Groq directly, not the HTTP endpoint.
-      # GROQ_API_KEY is passed explicitly so .env.local is not needed.
+      # ── Step 3: LLM Judge — concurrency 1 to respect Groq free tier ──
       - name: Judge results via LLM (Lin et al. 2022 rubric)
         run: |
           npx tsx scripts/truthfulqa/judge.ts \
             --in data/tqa-results.jsonl \
             --out data/tqa-judged.jsonl \
-            --concurrency 5
+            --concurrency 1
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
