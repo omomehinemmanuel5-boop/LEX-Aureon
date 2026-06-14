@@ -10,6 +10,7 @@ import LandingEmailCapture from '@/components/LandingEmailCapture';
 import EnterpriseSection from '@/components/EnterpriseSection';
 import LiveStatsBar from '@/components/LiveStatsBar';
 import RedTeamSection from '@/components/RedTeamSection';
+import ArchitectureSection from '@/components/ArchitectureSection';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
@@ -356,6 +357,7 @@ export default function LandingPage() {
       <Hero />
       <HarmBenchStrip />
       <ComparisonSection />
+      <ArchitectureSection />
       <LiveStatsBar />
       <ProofPanel />
       {/* CHANGE 5 — Email capture as standalone section */}
