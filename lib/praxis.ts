@@ -88,6 +88,15 @@ const STATIC_DELTA: Record<string, { dc: number; dr: number; ds: number }> = {
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
 // CBF-safe Euclidean projection: guarantees each pillar ≥ TAU_FLOOR and C+R+S=1
+/**
+ * Projects a given CRS (Continuity, Reciprocity, Sovereignty) vector onto the constitutional simplex.
+ * This ensures that each pillar value is greater than or equal to TAU_FLOOR and their sum is 1.
+ * Implements the Duchi–Shalev-Shwartz–Singer algorithm with an offset for CBF-safe Euclidean projection.
+ * @param c - The Continuity value.
+ * @param r - The Reciprocity value.
+ * @param s - The Sovereignty value.
+ * @returns The projected CRS vector.
+ */
 function projectToSimplex(c: number, r: number, s: number): CRS {
   const floor = TAU_FLOOR;
   const vals = [c, r, s];
@@ -146,6 +155,12 @@ export interface PRAXISResult {
 
 // ── preEval ───────────────────────────────────────────────────────────────────
 
+/**
+ * Performs a pre-evaluation of the incoming prompt to detect potential attack patterns.
+ * It categorizes the prompt as 'CLEAR' or 'HIGH' based on identified attack tags.
+ * @param prompt - The user's input prompt.
+ * @returns An object containing the pre-evaluation label, identified tags, target, and lawId.
+ */
 export function preEval(prompt: string): PreEvalResult {
   const tags: string[] = [];
 
@@ -178,6 +193,13 @@ export function preEval(prompt: string): PreEvalResult {
 
 // ── semanticTransducer ────────────────────────────────────────────────────────
 
+/**
+ * Translates the pre-evaluation result into a semantic delta (change) for the CRS pillars.
+ * This delta represents the impact an identified attack pattern has on the constitutional state.
+ * @param _prompt - The original prompt (unused in current implementation but kept for interface consistency).
+ * @param pre - The result of the pre-evaluation step.
+ * @returns An object containing the delta values for Continuity (dc), Reciprocity (dr), and Sovereignty (ds).
+ */
 export function semanticTransducer(
   _prompt: string,
   pre: PreEvalResult,
@@ -188,6 +210,13 @@ export function semanticTransducer(
 
 // ── applyDelta ────────────────────────────────────────────────────────────────
 
+/**
+ * Applies a given delta to the current CRS values and re-projects the result onto the simplex.
+ * This ensures the constitutional constraints are maintained after applying semantic changes.
+ * @param crs - The current CRS values.
+ * @param delta - The delta values (dc, dr, ds) to apply.
+ * @returns The new CRS values after applying the delta and projection.
+ */
 export function applyDelta(crs: CRS, delta: { dc: number; dr: number; ds: number }): CRS {
   return projectToSimplex(
     Math.max(0, crs.c + delta.dc),
@@ -198,6 +227,15 @@ export function applyDelta(crs: CRS, delta: { dc: number; dr: number; ds: number
 
 // ── applyGovernorCorrection ───────────────────────────────────────────────────
 
+/**
+ * Applies a governor correction to the CRS values based on the current governor mode and constitutional state.
+ * This function implements the Log-Barrier Interior Point Dynamics to push the system away from constitutional boundaries.
+ * @param crs - The current CRS values.
+ * @param _z - The ZTraj (trajectory) object (unused in current implementation but kept for interface consistency).
+ * @param mode - The governor mode ('nudge', 'suppress', etc.) dictating the correction intensity.
+ * @param tauFloor - Optional override for the TAU_FLOOR constant.
+ * @returns The corrected CRS values after applying the governor's intervention and projection.
+ */
 export function applyGovernorCorrection(crs: CRS, _z: ZTraj, mode: GovernorMode, tauFloor?: number): CRS {
   if (mode === 'suppress') return crs;
 
@@ -228,6 +266,13 @@ export function applyGovernorCorrection(crs: CRS, _z: ZTraj, mode: GovernorMode,
 
 // ── governorEffort ────────────────────────────────────────────────────────────
 
+/**
+ * Calculates the Euclidean distance between the original and corrected CRS vectors,
+ * representing the 'effort' exerted by the governor to maintain constitutional alignment.
+ * @param crs - The original CRS values before correction.
+ * @param corrected - The CRS values after governor correction.
+ * @returns The Euclidean distance (governor effort).
+ */
 export function governorEffort(crs: CRS, corrected: CRS): number {
   return Math.sqrt(
     (corrected.c - crs.c) ** 2 +

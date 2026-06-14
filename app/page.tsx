@@ -112,19 +112,18 @@ async function Hero() {
           <span>SovereignKernel v2 · Unified Agent Pipeline · Log-Barrier Dynamics · Cryptographic Proof of Governance</span>
         </div>
 
-        {/* Main headline */}
+        {/* Main headline — CHANGE 1 */}
         <h1 className="text-5xl sm:text-7xl font-black leading-none tracking-tight text-slate-900 dark:text-white mb-6">
-          Every AI output.<br />
+          AI systems lie, manipulate, and drift.<br />
           <span style={{
             background: `linear-gradient(135deg, ${G.goldL}, ${G.gold}, ${G.goldD})`,
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
           }}>
-            Governed.
+            Lex Aureon stops it.
           </span>{' '}
-          <span className="text-slate-400 dark:text-slate-500 font-light">Audited.</span>{' '}
-          <span className="text-slate-900 dark:text-white">Proven.</span>
+          <span className="text-slate-400 dark:text-slate-500 font-light">Governed. Audited. Proven.</span>
         </h1>
 
         {/* Lagos origin line */}
@@ -138,8 +137,8 @@ async function Hero() {
           Drop-in API. Any LLM. Any agent framework.
         </p>
 
-        {/* Formula pill */}
-        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-10 font-mono text-xs sm:text-sm border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+        {/* Formula pill — CHANGE 2 */}
+        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-3 font-mono text-xs sm:text-sm border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
           <span className="inline-flex items-center gap-3 shrink-0">
             <span style={{ color: G.C }} className="font-bold">C</span>
             <span className="text-slate-400 dark:text-slate-600">+</span>
@@ -152,9 +151,12 @@ async function Hero() {
           <span className="text-slate-400 dark:text-slate-700 hidden sm:inline">·</span>
           <span className="text-slate-500 whitespace-nowrap">M = min(C,R,S) &lt; &tau; &rarr; Governor fires</span>
         </div>
+        <p className="text-[11px] font-mono text-slate-500 dark:text-slate-500 mb-10 text-center">
+          Continuity · Reciprocity · Sovereignty — three constitutional pillars
+        </p>
 
         {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
           <Link
             href="/console"
             className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-black transition-all active:scale-95 shadow-xl shadow-gold/20 cta-pulse flex items-center justify-center gap-2"
@@ -175,8 +177,6 @@ async function Hero() {
             📄 Read Paper v3 ↗
           </a>
         </div>
-
-        <LandingEmailCapture />
       </div>
 
       {/* Simplex demo — truly centered as its own full-width block */}
@@ -198,6 +198,13 @@ async function HarmBenchStrip() {
   return (
     <div className="w-full py-12 border-y border-black/5 dark:border-white/5 bg-black/5 dark:bg-[#0d0d1a]">
       <div className="max-w-4xl mx-auto px-5">
+        {/* CHANGE 3 — Hero stat */}
+        <div className="text-center mb-8">
+          <div className="text-6xl font-black font-mono text-emerald-500">0.0%</div>
+          <div className="text-sm font-mono text-slate-500 mt-1">
+            Attack Success Rate · Zero successful attacks across {totalPrompts} governed prompts
+          </div>
+        </div>
         <div className="flex items-center gap-2 mb-3">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
           <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 uppercase tracking-widest font-bold">
@@ -269,7 +276,8 @@ function ComparisonSection() {
     </section>
   );
 }
-/* ── Proof Panel ────────────────────────────────────────────── */
+
+/* ── Proof Panel ─────────────────────────────────────────────── */
 function ProofPanel() {
   return (
     <section className="py-14 sm:py-24 px-4 sm:px-5 bg-white dark:bg-[#07070d]">
@@ -316,7 +324,7 @@ function ProofPanel() {
             </div>
           </div>
 
-          {/* Reasoning footer */}
+          {/* Reasoning footer — CHANGE 4 */}
           <div className="px-6 py-4 bg-black/5 dark:bg-black/20 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-black/5 dark:border-white/5">
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
@@ -325,14 +333,14 @@ function ProofPanel() {
               </div>
               <div className="flex flex-col">
                 <span className="text-[9px] font-mono text-slate-500 dark:text-slate-500 uppercase font-black">Active Pillar</span>
-                <span className="text-xs font-mono text-amber-600 dark:text-amber-500 font-black">S (Security)</span>
+                <span className="text-xs font-mono text-amber-600 dark:text-amber-500 font-black">S (Sovereignty)</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-24 bg-black/10 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500" style={{ width: '92%' }} />
+                <div className="h-full bg-emerald-500" style={{ width: '6%' }} />
               </div>
-              <span className="text-[10px] font-mono text-slate-500 font-bold">M=0.92</span>
+              <span className="text-[10px] font-mono text-slate-500 font-bold">M=0.06</span>
             </div>
           </div>
         </div>
@@ -350,6 +358,21 @@ export default function LandingPage() {
       <ComparisonSection />
       <LiveStatsBar />
       <ProofPanel />
+      {/* CHANGE 5 — Email capture as standalone section */}
+      <section className="py-16 px-5 bg-black/5 dark:bg-[#0d0d1a] border-y border-black/5 dark:border-white/5">
+        <div className="max-w-lg mx-auto text-center">
+          <p className="text-xs font-mono uppercase tracking-widest mb-2 font-bold" style={{ color: G.gold }}>
+            Stay updated
+          </p>
+          <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
+            Get notified when TruthfulQA results publish
+          </h3>
+          <p className="text-sm text-slate-500 mb-6">
+            First constitutional AI governance benchmark on 817 questions. Results dropping soon.
+          </p>
+          <LandingEmailCapture />
+        </div>
+      </section>
       <RedTeamSection />
       <EnterpriseSection />
       <PricingSection />
@@ -363,7 +386,6 @@ export default function LandingPage() {
           <div className="flex flex-wrap justify-center gap-x-10 gap-y-4 text-xs font-mono text-slate-400 font-black uppercase tracking-widest">
             <Link href="/console" className="hover:text-white transition-colors">Console</Link>
             <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paper</a>
-            <a href="https://github.com/omomehinemmanuel5-boop/LEX-Aureon" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
           </div>
           <div className="text-[10px] font-mono text-slate-600 font-bold">

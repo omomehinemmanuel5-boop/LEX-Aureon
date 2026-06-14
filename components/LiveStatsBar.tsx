@@ -141,7 +141,7 @@ export default function LiveStatsBar() {
               </span>
             </div>
             <div
-              className={`text-xl font-black font-mono leading-none tabular-nums transition-opacity ${flash ? 'opacity-50' : 'opacity-100'}`}
+              className={`text-3xl font-black font-mono leading-none tabular-nums transition-opacity ${flash ? 'opacity-50' : 'opacity-100'}`}
               style={{ color }}
             >
               {value}
