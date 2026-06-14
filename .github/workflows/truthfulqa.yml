@@ -50,7 +50,7 @@ jobs:
             exit 1
           fi
 
-      # ── Step 2b: Upload artifact immediately — data safe before commit
+      # ── Step 2b: Upload artifact — data safe before commit ────────────
       - name: Upload generation artifact (safety net)
         uses: actions/upload-artifact@v4
         with:
@@ -71,15 +71,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Step 3: LLM Judge — concurrency 1 to respect Groq free tier ──
-      - name: Judge results via LLM (Lin et al. 2022 rubric)
+      # ── Step 3: Multi-provider parallel judge ─────────────────────────
+      # Rows split across Groq + Gemini + Mistral by RPM capacity.
+      # All providers run simultaneously — ~45-60min instead of 3hrs.
+      - name: Judge results via LLM (multi-provider parallel)
         run: |
           npx tsx scripts/truthfulqa/judge.ts \
             --in data/tqa-results.jsonl \
-            --out data/tqa-judged.jsonl \
-            --concurrency 1
+            --out data/tqa-judged.jsonl
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY:    ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
 
       # ── Step 4: Upload all artifacts immediately after judging ────────
       - name: Upload all artifacts (safety net)
