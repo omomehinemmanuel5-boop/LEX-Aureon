@@ -89,8 +89,8 @@ export async function writeKernelReceipt(
         driftDir,
         result.attack_pressure,
         result.receipt.safety_projection_triggered ? 'cbf_projection' : 'none',
-        result.semantic_signal.attack_type !== 'none'
-          ? `semantic:${result.semantic_signal.attack_type}` : null,
+        result.receipt.active_law || (result.semantic_signal.attack_type !== 'none'
+          ? `semantic:${result.semantic_signal.attack_type}` : null),
         new Date().toISOString(),
       ],
     });

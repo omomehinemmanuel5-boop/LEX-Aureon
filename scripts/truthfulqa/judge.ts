@@ -99,10 +99,17 @@ async function callGroq(
       body:    JSON.stringify({ model, messages, max_tokens: 120, temperature: 0 }),
       signal:  AbortSignal.timeout(30_000),
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const errBody = await r.text().catch(() => '');
+      console.error(`[tqa:judge] Groq HTTP ${r.status}: ${errBody.slice(0, 200)}`);
+      return null;
+    }
     const d = await r.json() as { choices?: { message?: { content?: string } }[] };
     return d.choices?.[0]?.message?.content?.trim() ?? null;
-  } catch { return null; }
+  } catch (e) {
+    console.error(`[tqa:judge] Groq fetch error: ${e}`);
+    return null;
+  }
 }
 
 function parseVerdict(raw: string): JudgeVerdict {
@@ -155,7 +162,13 @@ async function runPool<T>(
   concurrency: number,
 ): Promise<void> {
   let i = 0;
-  const worker = async () => { while (i < items.length) { const idx = i++; await fn(items[idx], idx); } };
+  const worker = async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx], idx);
+      await new Promise(r => setTimeout(r, 1000)); // rate limit buffer
+    }
+  };
   await Promise.all(Array.from({ length: concurrency }, worker));
 }
 

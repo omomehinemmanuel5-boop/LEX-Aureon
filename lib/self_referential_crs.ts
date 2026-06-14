@@ -104,3 +104,15 @@ export function computeSelfReferentialCRS(
     reciprocity_raw:      reciprocityBounded,
   };
 }
+
+export function applySelfReferentialMeasurement(
+  state: { C: number; R: number; S: number },
+  measurement: SelfReferentialCRS
+): void {
+  // Heuristic: apply the measured drift to the current state
+  // We move the state toward the measured CRS coordinates
+  const alpha = 0.3; // damping factor
+  state.C = state.C * (1 - alpha) + measurement.C * alpha;
+  state.R = state.R * (1 - alpha) + measurement.R * alpha;
+  state.S = state.S * (1 - alpha) + measurement.S * alpha;
+}

@@ -23,7 +23,9 @@ import { env } from './env';
 import { generateGoverned } from './llm_provider';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
-import { computeSelfReferentialCRS } from './self_referential_crs';
+import { computeSelfReferentialCRS, applySelfReferentialMeasurement } from './self_referential_crs';
+import { getLawImpact } from './kv';
+import { getCachedEmbedding, getConstitutionalCentroid, getSessionCentroid } from './lex_memory';
 
 import {
   TAU, SOFT_FLOOR, TAU_GOV, TARGET_MARGIN, THETA_0, THETA_MIN, THETA_MAX,
@@ -47,6 +49,7 @@ export interface KernelReceipt {
   input_hash:                 string;
   output_hash:                string;
   pillar_snapshot:            KernelState;
+  active_law:                 string | null;
   stability_margin:           number;
   constitutional:             boolean;
   safety_projection_triggered: boolean;
@@ -342,7 +345,7 @@ export class SovereignKernel {
   }
 
   // ── Select active law for attack context ─────────────────────────────────
-  selectActiveLaw(semanticSignal: SemanticSignal, M: number): string {
+  async selectActiveLaw(semanticSignal: SemanticSignal, M: number): Promise<{ text: string; name: string; deltas: { dc: number; dr: number; ds: number } | null }> {
     const pillarMap: Record<string, string> = {
       identity:    'C',
       coercion:    'S',
@@ -357,9 +360,25 @@ export class SovereignKernel {
       return true;
     });
 
-    if (!candidates.length) return '';
+    if (!candidates.length) return { text: '', name: '', deltas: null };
     const law = candidates[Math.floor(this.step_counter % candidates.length)];
-    return law.governor_use;
+    
+    // Task 4a: Map semanticSignal.attack_type to law_id for impact lookup
+    const attackIdMap: Record<string, string> = {
+      identity: 'identity_reframe',
+      coercion: 'bypass_attempt',
+      exploitative: 'sycophancy'
+    };
+    const lawId = attackIdMap[semanticSignal.attack_type] || null;
+    let deltas = null;
+    if (lawId) {
+      const impact = await getLawImpact(lawId);
+      if (impact) {
+        deltas = { dc: impact.impact_c, dr: impact.impact_r, ds: impact.impact_s };
+      }
+    }
+
+    return { text: law.governor_use, name: law.name, deltas };
   }
 
   // ── Response shape enforcement ───────────────────────────────────────────
@@ -449,7 +468,7 @@ export class SovereignKernel {
   }
 
   // ── Main governance cycle ────────────────────────────────────────────────
-  async runCycle(userPrompt: string, memoryContext: string = ''): Promise<KernelCycleResult> {
+  async runCycle(userPrompt: string, memoryContext: string = '', sessionId?: string): Promise<KernelCycleResult> {
     this.step_counter += 1;
     this.prev_state = { ...this.state };
 
@@ -475,7 +494,14 @@ export class SovereignKernel {
     this.assertConsistency();
 
     // ── 3. Constitutional context + dual LLM calls ─────────────────────────
+    const activeLawData = semanticSignal.attack_type !== 'none' 
+      ? await this.selectActiveLaw(semanticSignal, M0)
+      : null;
+    const activeLaw = activeLawData?.name || null;
+    const lawText = activeLawData?.text || '';
+
     let { context, temperature, health_band } = this.buildContractContext(M0, semanticSignal);
+    if (lawText) context = `${context}\n${lawText}`;
 
     // For real attacks: override context with a firm refusal instruction.
     // The LLM is told to decline — but in plain language, not system jargon.
@@ -541,6 +567,15 @@ export class SovereignKernel {
       const d = k === 'C' ? delta.dc : k === 'R' ? delta.dr : delta.ds;
       if (Math.abs(d) < MIN_DELTA)
         this.state[k] += (d !== 0 ? Math.sign(d) : 1) * MIN_DELTA;
+    }
+
+    // Task 4a: Apply law impact deltas scaled by severity
+    if (activeLawData?.deltas) {
+      const s = semanticSignal.severity;
+      this.state.C += activeLawData.deltas.dc * s;
+      this.state.R += activeLawData.deltas.dr * s;
+      this.state.S += activeLawData.deltas.ds * s;
+      this.normalizeState();
     }
 
     // ── 6. Governor dynamics ───────────────────────────────────────────────
@@ -620,16 +655,33 @@ export class SovereignKernel {
     const stabilityRatio = this.delta_v_negative_steps / Math.max(1, this.delta_v_total_steps);
     const M_final = Math.min(this.state.C, this.state.R, this.state.S);
 
-    // ── 12. Build receipt ──────────────────────────────────────────────────
+    // Task 4c: Apply self-referential measurement if embeddings exist in cache
     const [inputHash, outputHash] = await Promise.all([
       sha256(userPrompt), sha256(governedResponse),
     ]);
 
+    if (sessionId) {
+      const [inputEmb, outputEmb, constCentroid, sessCentroid] = await Promise.all([
+        getCachedEmbedding(inputHash),
+        getCachedEmbedding(outputHash),
+        getConstitutionalCentroid(),
+        getSessionCentroid(sessionId)
+      ]);
+
+      if (inputEmb && outputEmb && constCentroid && sessCentroid) {
+        const selfRef = computeSelfReferentialCRS(outputEmb, inputEmb, constCentroid, sessCentroid);
+        applySelfReferentialMeasurement(this.state, selfRef);
+        this.normalizeState();
+      }
+    }
+
+    // ── 12. Build receipt ──────────────────────────────────────────────────
     const receipt: KernelReceipt = {
       timestamp_iso:              new Date().toISOString(),
       input_hash:                 inputHash,
       output_hash:                outputHash,
       pillar_snapshot:            { ...this.state },
+      active_law:                 activeLaw,
       stability_margin:           Math.round(M_final * 1e6) / 1e6,
       constitutional:             M_final >= TAU,
       safety_projection_triggered: projectionTriggered,
@@ -651,7 +703,7 @@ export class SovereignKernel {
       semantic_signal:            semanticSignal,
       temperature:                Math.round(temperature * 1e6) / 1e6,
       invariance_violations:      this.invariance_violations,
-      version:                    'SovereignKernel-TS-v2+Memory+Metrics',
+      version:                    'SovereignKernel-TS-v2+Memory+Metrics+LawImpact',
     };
 
     return {

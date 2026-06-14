@@ -69,7 +69,7 @@ async function ensureCacheTable(): Promise<void> {
   }
 }
 
-async function getCachedEmbedding(hash: string): Promise<number[] | null> {
+export async function getCachedEmbedding(hash: string): Promise<number[] | null> {
   try {
     const db = getDB();
     const r  = await db.execute({
