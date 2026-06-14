@@ -1,0 +1,130 @@
+name: LexBench Production
+
+on:
+  workflow_dispatch: # Manual trigger
+  schedule:
+    - cron: '0 0 * * *' # Nightly run at midnight UTC
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+env:
+  NODE_VERSION: '20'
+  CACHE_PATH: '~/.lexbench-cache'
+
+jobs:
+  # Job to determine the total number of prompts and shards
+  determine-shards:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      shard-size: ${{ steps.set-matrix.outputs.shard-size }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Determine total prompts and shards
+        id: set-matrix
+        run: |
+          # Placeholder for script to calculate total prompts and shard count
+          # For now, we'll hardcode a few shards for demonstration
+          # In a real scenario, this script would read all benchmark files and calculate total prompts
+          # and then divide by a desired shard size (e.g., 50 prompts per shard)
+          TOTAL_PROMPTS=$(tsx scripts/lexbench/get-total-prompts.ts)
+          SHARD_SIZE=100 # Define your desired shard size
+          NUM_SHARDS=$(( (TOTAL_PROMPTS + SHARD_SIZE - 1) / SHARD_SIZE ))
+          MATRIX_CONFIG="{\"shard-index\":[$(seq 0 $((NUM_SHARDS - 1)) | paste -sd, -)]}"
+          echo "matrix=${MATRIX_CONFIG}" >> $GITHUB_OUTPUT
+          echo "shard-size=${SHARD_SIZE}" >> $GITHUB_OUTPUT
+
+  run-lexbench:
+    needs: determine-shards
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.determine-shards.outputs.matrix) }}
+    outputs:
+      shard_size: ${{ needs.determine-shards.outputs.shard-size }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Cache LexBench results
+        id: cache-lexbench
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CACHE_PATH }}
+          key: ${{ runner.os }}-lexbench-${{ github.sha }}-${{ matrix.shard-index }}
+          restore-keys: |
+            ${{ runner.os }}-lexbench-${{ github.sha }}-
+            ${{ runner.os }}-lexbench-
+
+      - name: Run LexBench Shard
+        run: |
+          tsx scripts/lexbench/runner.ts --benchmark all --endpoint http://localhost:3000 --shard-index ${{ matrix.shard-index }} --shard-size ${{ needs.determine-shards.outputs.shard-size }}
+
+      - name: Upload LexBench Shard Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexbench-shard-results-${{ matrix.shard-index }}
+          path: data/lexbench-*.jsonl
+
+  aggregate-and-report:
+    needs: run-lexbench
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download all LexBench Shard Results
+        uses: actions/download-artifact@v4
+        with:
+          name: lexbench-shard-results
+          path: results/
+
+      - name: Aggregate Results and Generate Report
+        run: |
+          find results/ -name "lexbench-*.jsonl" -print0 | xargs -0 cat > all_results.jsonl
+          tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary.json
+
+      - name: Fetch Baseline Results (from main branch)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline_repo
+
+      - name: Run Regression Check
+        run: |
+          tsx scripts/lexbench/check-regression.ts summary.json baseline_repo/summary.json
+
+      - name: Upload Final Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexbench-final-report
+          path: summary.json
+
