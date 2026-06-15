@@ -1,120 +1,88 @@
-name: TruthfulQA (Lin et al. 2022)
+name: TruthfulQA Generation
 
 on:
   workflow_dispatch:
     inputs:
       n:
         description: 'Number of questions (max 817)'
+        required: false
         default: '817'
+      workers:
+        description: 'Parallel workers'
+        required: false
+        default: '3'
 
-concurrency:
-  group: truthfulqa-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: write
 
 jobs:
-  benchmark:
+  generate:
+    name: Generate + Judge + Ingest
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.x'
 
-      - run: npm install
+      - name: Install
+        run: npm install
 
-      # ── Step 1: Generate outputs ──────────────────────────────────────
-      - name: Run TruthfulQA generation
-        run: |
-          npx tsx scripts/truthfulqa/run.ts \
-            --endpoint https://lexaureon.com \
-            --n ${{ github.event.inputs.n }} \
-            --out data/tqa-results.jsonl \
-            --delay 5000
+      - name: Generate (direct — no HTTP)
         env:
+          GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
+          JINA_API_KEY:         ${{ secrets.JINA_API_KEY }}
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
+          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          CRON_SECRET:          ${{ secrets.CRON_SECRET }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY:      ${{ secrets.MISTRAL_API_KEY }}
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+        run: npm run truthfulqa:direct -- --n ${{ github.event.inputs.n }} --workers ${{ github.event.inputs.workers }}
 
-      # ── Step 2: Verify outputs ────────────────────────────────────────
-      - name: Verify generation output
+      - name: Verify output
         run: |
-          COUNT=$(python3 -c "
-          import json
-          rows = [json.loads(l) for l in open('data/tqa-results.jsonl') if l.strip()]
-          filled = [r for r in rows if r.get('governed_output','').strip()]
-          print(len(filled))
-          ")
-          echo "Rows with outputs: $COUNT"
-          if [ "$COUNT" -lt 100 ]; then
-            echo "ERROR: Too few rows with outputs ($COUNT)."
-            exit 1
-          fi
+          python3 -c "
+          import json, sys
+          rows = open('data/tqa-results.jsonl').read().strip().split('\n')
+          total = len(rows)
+          has_output = sum(1 for r in rows if json.loads(r).get('governed_output','').strip())
+          errors = sum(1 for r in rows if json.loads(r).get('error'))
+          print(f'Total rows:   {total}')
+          print(f'With output:  {has_output}')
+          print(f'Errors:       {errors}')
+          if has_output < 750:
+              print('ERROR: too few outputs — failing')
+              sys.exit(1)
+          print('OK — ready for judge')
+          "
 
-      # ── Step 2b: Upload artifact — data safe before commit ────────────
-      - name: Upload generation artifact (safety net)
-        uses: actions/upload-artifact@v4
-        with:
-          name: truthfulqa-results-${{ github.run_id }}
-          path: data/tqa-results.jsonl
-
-      # ── Step 2c: Commit generation output — never blocks the job ─────
-      - name: Commit generation output
-        continue-on-error: true
-        run: |
-          git config user.name  "Lex CRS Agent"
-          git config user.email "lexaureon@gmail.com"
-          git add data/tqa-results.jsonl
-          git diff --staged --quiet && echo "Nothing to commit" && exit 0
-          git commit -m "data: TruthfulQA generation output $(date +%Y-%m-%d) [pre-judge]"
-          git pull --rebase origin main
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ── Step 3: Multi-provider parallel judge ─────────────────────────
-      # Rows split across Groq + Gemini + Mistral by RPM capacity.
-      # All providers run simultaneously — ~45-60min instead of 3hrs.
-      - name: Judge results via LLM (multi-provider parallel)
-        run: |
-          npx tsx scripts/truthfulqa/judge.ts \
-            --in data/tqa-results.jsonl \
-            --out data/tqa-judged.jsonl
+      - name: Judge (multi-provider parallel)
         env:
           GROQ_API_KEY:    ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: npm run tqa:judge -- --in data/tqa-results.jsonl --out data/tqa-judged.jsonl
 
-      # ── Step 4: Upload all artifacts immediately after judging ────────
-      - name: Upload all artifacts (safety net)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: truthfulqa-judged-${{ github.run_id }}
-          path: |
-            data/tqa-results.jsonl
-            data/tqa-judged.jsonl
-            results/truthfulqa-report.txt
-            data/tqa-summary.json
-
-      # ── Step 5: Ingest to Turso ───────────────────────────────────────
-      - name: Ingest benchmark scores to DB
-        continue-on-error: true
-        run: npm run ingest
+      - name: Ingest to DB
         env:
-          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:   ${{ secrets.TURSO_AUTH_TOKEN }}
+          GROQ_API_KEY:       stub
+          JINA_API_KEY:       stub
+          ADMIN_PASSWORD:     stub
+          CRON_SECRET:        stub
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+        run: npm run ingest-results
 
-      # ── Step 6: Commit all results — never blocks the job ────────────
       - name: Commit results
-        continue-on-error: true
         run: |
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
-          git add data/tqa-results.jsonl data/tqa-judged.jsonl \
-                  data/tqa-summary.json results/truthfulqa-report.txt || true
-          git diff --staged --quiet && echo "Nothing to commit" && exit 0
-          git commit -m "results: TruthfulQA LLM judge scores $(date +%Y-%m-%d)"
-          git pull --rebase origin main
+          git add data/tqa-results.jsonl data/tqa-judged.jsonl data/tqa-summary.json
+          git diff --staged --quiet || git commit -m "chore: tqa run complete — $(python3 -c \"import json; rows=open('data/tqa-results.jsonl').read().strip().split('\n'); print(len(rows))\" ) rows"
           git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
