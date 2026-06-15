@@ -26,6 +26,7 @@
     "agentdojo": "npx tsx scripts/agentdojo/run.ts",
     "agentdojo:score": "npx tsx scripts/agentdojo/score.ts",
     "truthfulqa": "npx tsx scripts/truthfulqa/run.ts",
+    "truthfulqa:fast": "npx tsx scripts/truthfulqa/run-parallel.ts",
     "tqa:score": "npx tsx scripts/truthfulqa/score.ts",
     "tqa:judge": "npx tsx scripts/truthfulqa/judge.ts",
     "lexbench": "npx tsx scripts/lexbench/runner.ts",
@@ -33,6 +34,7 @@
     "red-team": "npx tsx scripts/red-team.ts",
     "validate-env": "npx tsx scripts/validate-env.ts",
     "ingest": "npx tsx scripts/ingest-results.ts",
+    "ingest-results": "npx tsx scripts/ingest-results.ts",
     "humaneval": "npx tsx scripts/humaneval/run.ts",
     "humaneval:score": "npx tsx scripts/humaneval/score.ts"
   },
