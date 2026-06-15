@@ -2,9 +2,6 @@
  * TruthfulQA LLM Judge — Lin et al. 2022
  * Multi-provider parallel edition.
  *
- * Splits rows across available providers to maximise throughput
- * without hitting any single provider's rate limit.
- *
  * Provider allocation (free tier safe):
  *   Groq    llama-3.3-70b  — up to 30 RPM  → slice A
  *   Gemini  gemini-lite    — up to 15 RPM  → slice B
@@ -13,20 +10,40 @@
  *
  * Usage:
  *   npm run tqa:judge -- --in data/tqa-results.jsonl --out data/tqa-judged.jsonl
+ *   npm run tqa:judge -- --in data/tqa-judged.jsonl  # re-judge only judge_unavailable rows
  */
 
 import * as fs   from 'fs';
 import * as path from 'path';
 
+// ── Env loader — checks multiple locations, fails loudly if no keys ─────────
 function loadEnv() {
-  const envPath = path.resolve('.env.local');
-  if (!fs.existsSync(envPath)) return;
-  fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
-    const [k, ...rest] = line.split('=');
-    if (k?.trim() && !k.startsWith('#') && !process.env[k.trim()]) {
-      process.env[k.trim()] = rest.join('=').trim().replace(/^["']|["']$/g, '');
-    }
-  });
+  const candidates = [
+    path.resolve('.env.local'),
+    path.resolve('.env'),
+    path.resolve(process.cwd(), '.env.local'),
+    path.resolve(process.cwd(), '.env'),
+    // Walk up to repo root
+    path.resolve(__dirname, '../../.env.local'),
+    path.resolve(__dirname, '../../.env'),
+    path.resolve(__dirname, '../.env.local'),
+    path.resolve(__dirname, '../.env'),
+  ];
+
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    fs.readFileSync(p, 'utf8').split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx < 0) return;
+      const k = trimmed.slice(0, eqIdx).trim();
+      const v = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+      if (k && !process.env[k]) process.env[k] = v;
+    });
+    console.log(`[tqa:judge] Loaded env from: ${p}`);
+    break;
+  }
 }
 loadEnv();
 
@@ -106,17 +123,10 @@ function buildProviders(): Provider[] {
             body:    JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 120, temperature: 0 }),
             signal:  AbortSignal.timeout(30_000),
           });
-          if (!r.ok) {
-            const err = await r.text().catch(() => '');
-            console.error(`  [groq-70b] HTTP ${r.status}: ${err.slice(0, 150)}`);
-            return null;
-          }
+          if (!r.ok) { console.error(`  [groq-70b] HTTP ${r.status}: ${(await r.text().catch(()=>'')).slice(0,150)}`); return null; }
           const d = await r.json() as { choices?: { message?: { content?: string } }[] };
           return d.choices?.[0]?.message?.content?.trim() ?? null;
-        } catch (e) {
-          console.error(`  [groq-70b] threw: ${String(e).slice(0, 100)}`);
-          return null;
-        }
+        } catch (e) { console.error(`  [groq-70b] ${String(e).slice(0,100)}`); return null; }
       },
     });
   }
@@ -139,21 +149,14 @@ function buildProviders(): Provider[] {
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
             { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) }
           );
-          if (!r.ok) {
-            const err = await r.text().catch(() => '');
-            console.error(`  [${name}] HTTP ${r.status}: ${err.slice(0, 150)}`);
-            return null;
-          }
+          if (!r.ok) { console.error(`  [${name}] HTTP ${r.status}: ${(await r.text().catch(()=>'')).slice(0,150)}`); return null; }
           const d = await r.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
           return d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
-        } catch (e) {
-          console.error(`  [${name}] threw: ${String(e).slice(0, 100)}`);
-          return null;
-        }
+        } catch (e) { console.error(`  [${name}] ${String(e).slice(0,100)}`); return null; }
       },
     });
-    providers.push(geminiCall('gemini-3.1-flash-lite', 'gemini-lite', 15));
-    providers.push(geminiCall('gemini-2.5-flash',      'gemini-full', 10));
+    providers.push(geminiCall('gemini-2.0-flash-lite', 'gemini-lite', 30));
+    providers.push(geminiCall('gemini-2.5-flash',      'gemini-full', 15));
   }
 
   if (process.env.MISTRAL_API_KEY) {
@@ -167,17 +170,10 @@ function buildProviders(): Provider[] {
             body:    JSON.stringify({ model: 'open-mistral-7b', messages, max_tokens: 120, temperature: 0 }),
             signal:  AbortSignal.timeout(30_000),
           });
-          if (!r.ok) {
-            const err = await r.text().catch(() => '');
-            console.error(`  [mistral] HTTP ${r.status}: ${err.slice(0, 150)}`);
-            return null;
-          }
+          if (!r.ok) { console.error(`  [mistral] HTTP ${r.status}: ${(await r.text().catch(()=>'')).slice(0,150)}`); return null; }
           const d = await r.json() as { choices?: { message?: { content?: string } }[] };
           return d.choices?.[0]?.message?.content?.trim() ?? null;
-        } catch (e) {
-          console.error(`  [mistral] threw: ${String(e).slice(0, 100)}`);
-          return null;
-        }
+        } catch (e) { console.error(`  [mistral] ${String(e).slice(0,100)}`); return null; }
       },
     });
   }
@@ -215,6 +211,7 @@ async function judgeArm(row: TQARow, output: string, providers: Provider[], dela
   return parseVerdict('T=0 I=0 REASON=judge_unavailable', 'none');
 }
 
+// ── Parallel provider slice allocation (by RPM weight) ──────────────────────
 function allocateSlices(rows: TQARow[], providers: Provider[]): { provider: Provider; rows: TQARow[] }[] {
   if (!providers.length) return [];
   const totalRPM = providers.reduce((s, p) => s + p.rpmLimit, 0);
@@ -232,14 +229,17 @@ function allocateSlices(rows: TQARow[], providers: Provider[]): { provider: Prov
 }
 
 async function judgeSlice(
-  slice: { provider: Provider; rows: TQARow[] },
+  slice:       { provider: Provider; rows: TQARow[] },
   allProviders: Provider[],
-  onDone: (id: string, result: JudgedRow) => void,
+  onDone:      (id: string, result: JudgedRow) => void,
 ): Promise<void> {
+  // Inter-request delay to stay within RPM limit
   const delayMs     = Math.ceil(60_000 / slice.provider.rpmLimit);
+  // Fallback chain: primary provider first, then others
   const providerChain = [slice.provider, ...allProviders.filter(p => p !== slice.provider)];
 
   for (const row of slice.rows) {
+    // Judge governed and bare arm in parallel — each arm uses the same provider chain
     const [governed_verdict, bare_verdict] = await Promise.all([
       judgeArm(row, row.governed_output, providerChain, delayMs),
       judgeArm(row, row.bare_output,     providerChain, delayMs),
@@ -271,7 +271,7 @@ function printReport(judged: JudgedRow[]): void {
   console.log('  TRUTHFULQA — LLM Judge (Lin et al. 2022)');
   console.log('  Constitutional pillar: R (Reciprocity — honest exchange)');
   console.log('═'.repeat(66));
-  console.log(`  Questions judged: ${n} (${unavail} judge_unavailable)`);
+  console.log(`  Questions judged: ${n}  |  judge_unavailable: ${unavail}`);
   console.log('');
   console.log(`  ${'METRIC'.padEnd(22)} ${'BARE'.padStart(12)} ${'GOVERNED'.padStart(12)} ${'ΔLIFT'.padStart(8)}`);
   console.log('  ' + '─'.repeat(58));
@@ -295,7 +295,9 @@ function printReport(judged: JudgedRow[]): void {
     if (r.bare_verdict.both)     byCat[c].bareBoth++;
   }
   console.log('\n  TOP CATEGORIES (governed T∧I)');
-  for (const [cat, d] of Object.entries(byCat).sort((a, b) => b[1].govBoth/b[1].total - a[1].govBoth/a[1].total).slice(0, 12)) {
+  for (const [cat, d] of Object.entries(byCat)
+    .sort((a, b) => b[1].govBoth/b[1].total - a[1].govBoth/a[1].total)
+    .slice(0, 12)) {
     const frac  = d.govBoth / d.total;
     const icon  = frac >= 0.8 ? '✓' : frac >= 0.5 ? '~' : '⚠';
     const delta = (d.govBoth - d.bareBoth) / d.total * 100;
@@ -307,37 +309,77 @@ async function main() {
   const args    = parseArgs(process.argv.slice(2));
   const inPath  = args.in  ?? 'data/tqa-results.jsonl';
   const outPath = args.out ?? 'data/tqa-judged.jsonl';
+  // --retry-unavailable: re-judge only rows with judge_unavailable verdict
+  const retryUnavailable = args['retry-unavailable'] === 'true';
 
   const providers = buildProviders();
+
   if (!providers.length) {
     console.error('[tqa:judge] ERROR: No provider API keys found.');
-    console.error('[tqa:judge] Set at least one of: GROQ_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY');
+    console.error('[tqa:judge] Need at least one of: GROQ_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY');
+    console.error('[tqa:judge] Keys detected:', {
+      GROQ: !!process.env.GROQ_API_KEY,
+      GEMINI: !!process.env.GEMINI_API_KEY,
+      MISTRAL: !!process.env.MISTRAL_API_KEY,
+    });
     process.exit(1);
   }
 
   console.log(`[tqa:judge] Providers: ${providers.map(p => `${p.name}(${p.rpmLimit}RPM)`).join(', ')}`);
+
+  // Load existing judged results if available (for resume/retry mode)
+  const existingJudged = new Map<string, JudgedRow>();
+  if (fs.existsSync(path.resolve(outPath))) {
+    fs.readFileSync(path.resolve(outPath), 'utf8').split('\n').filter(Boolean).forEach(l => {
+      try {
+        const r = JSON.parse(l) as JudgedRow;
+        existingJudged.set(r.id, r);
+      } catch { /* skip */ }
+    });
+    console.log(`[tqa:judge] Loaded ${existingJudged.size} existing verdicts`);
+  }
 
   if (!fs.existsSync(path.resolve(inPath))) {
     console.error(`[tqa:judge] Input not found: ${inPath}`);
     process.exit(1);
   }
 
-  const rows: TQARow[] = fs.readFileSync(path.resolve(inPath), 'utf8')
+  const allRows: TQARow[] = fs.readFileSync(path.resolve(inPath), 'utf8')
     .split('\n').filter(Boolean)
     .map(l => JSON.parse(l) as TQARow)
     .filter(r => r.behavior && (r.governed_output || r.bare_output));
 
+  if (!allRows.length) { console.error('[tqa:judge] No scorable rows.'); process.exit(1); }
+
+  // Filter to only rows needing judgement
+  const rows = allRows.filter(r => {
+    const existing = existingJudged.get(r.id);
+    if (!existing) return true;
+    // Re-judge if retry mode and verdict was unavailable
+    if (retryUnavailable && existing.governed_verdict?.reason === 'judge_unavailable') return true;
+    return false;
+  });
+
+  const skipped = allRows.length - rows.length;
+  if (skipped > 0) console.log(`[tqa:judge] Skipping ${skipped} already-judged rows`);
+
   if (!rows.length) {
-    console.error('[tqa:judge] ERROR: No scorable rows found.');
-    process.exit(1);
+    console.log('[tqa:judge] All rows already judged. Use --retry-unavailable to re-judge failed rows.');
+    // Still print report from existing data
+    const judged = allRows.map(r => existingJudged.get(r.id) ?? r as unknown as JudgedRow);
+    printReport(judged);
+    return;
   }
 
   const slices = allocateSlices(rows, providers);
-  console.log(`[tqa:judge] ${rows.length} rows → allocation:`);
-  for (const s of slices) console.log(`  ${s.provider.name.padEnd(16)} ${s.rows.length} rows`);
+  console.log(`[tqa:judge] ${rows.length} rows to judge → allocation:`);
+  for (const s of slices) {
+    const eta = Math.ceil(s.rows.length * 60_000 / s.provider.rpmLimit / 60_000);
+    console.log(`  ${s.provider.name.padEnd(16)} ${s.rows.length} rows  (~${eta} min)`);
+  }
   console.log('');
 
-  const results = new Map<string, JudgedRow>();
+  const results = new Map<string, JudgedRow>(existingJudged);
   let done = 0;
 
   await Promise.all(slices.map(slice =>
@@ -349,11 +391,12 @@ async function main() {
   ));
   process.stdout.write('\n');
 
-  const judged = rows.map(r => results.get(r.id) ?? {
+  // Write all results (existing + newly judged)
+  const judged = allRows.map(r => results.get(r.id) ?? {
     ...r,
     governed_verdict: { truthful: false, informative: false, both: false, reason: 'missing', raw: '', judge_model: 'none' },
     bare_verdict:     { truthful: false, informative: false, both: false, reason: 'missing', raw: '', judge_model: 'none' },
-  });
+  } as JudgedRow);
 
   const outStream = fs.createWriteStream(path.resolve(outPath), { flags: 'w' });
   for (const r of judged) outStream.write(JSON.stringify(r) + '\n');
@@ -361,6 +404,7 @@ async function main() {
 
   printReport(judged);
 
+  // Write summary JSON for ingest-results.ts
   const n        = judged.length;
   const govBoth  = judged.filter(r => r.governed_verdict.both).length;
   const bareBoth = judged.filter(r => r.bare_verdict.both).length;
@@ -371,9 +415,6 @@ async function main() {
   const unavail  = judged.filter(r => r.governed_verdict.reason === 'judge_unavailable').length;
 
   fs.mkdirSync('results', { recursive: true });
-  fs.writeFileSync('results/truthfulqa-report.txt',
-    `TruthfulQA — ${n} questions — govBoth=${govBoth}/${n} (${(govBoth/n*100).toFixed(1)}%) bareBoth=${bareBoth}/${n} (${(bareBoth/n*100).toFixed(1)}%)`
-  );
   fs.writeFileSync('data/tqa-summary.json', JSON.stringify({
     benchmark: 'truthfulqa', run_date: new Date().toISOString().slice(0, 10),
     scorer: `multi-provider: ${providers.map(p => p.name).join('+')}`,
@@ -386,6 +427,7 @@ async function main() {
   }, null, 2));
 
   console.log(`\n[tqa:judge] Done → ${outPath}`);
+  console.log(`[tqa:judge] Ingest to DB: npm run ingest-results`);
 }
 
 main().catch(e => { console.error('[tqa:judge] fatal:', e); process.exit(1); });
