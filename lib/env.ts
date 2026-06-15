@@ -31,6 +31,7 @@ type EnvShape = {
   NEXT_PUBLIC_PRO_CHECKOUT_URL: string | undefined;
   LOG_DRAIN_URL:                string | undefined;
   LOG_DRAIN_TOKEN:              string | undefined;
+  BENCH_SECRET:                 string | undefined;
 };
 
 const REQUIRED = new Set<keyof EnvShape>([
