@@ -27,6 +27,7 @@
     "agentdojo:score": "npx tsx scripts/agentdojo/score.ts",
     "truthfulqa": "npx tsx scripts/truthfulqa/run.ts",
     "truthfulqa:fast": "npx tsx scripts/truthfulqa/run-parallel.ts",
+    "truthfulqa:direct": "npx tsx scripts/truthfulqa/run-direct.ts",
     "tqa:score": "npx tsx scripts/truthfulqa/score.ts",
     "tqa:judge": "npx tsx scripts/truthfulqa/judge.ts",
     "lexbench": "npx tsx scripts/lexbench/runner.ts",
