@@ -1,6 +1,6 @@
 /**
  * POST /api/lex/govern
- * SovereignKernel governance cycle with constitutional semantic memory.
+ * SovereignKernel governance cycle — F(x,z) sync + G(x,z) async governor.
  */
 
 import { NextResponse } from 'next/server';
@@ -16,13 +16,9 @@ import { CANONICAL_REFUSAL } from '@/lib/refusals';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { env } from '@/lib/env';
 
-// Session-scoped kernel cache
 const kernelCache = new Map<string, SovereignKernel>();
 
-function getKernel(
-  sessionId: string,
-  savedState?: { C: number; R: number; S: number } | null,
-): SovereignKernel {
+function getKernel(sessionId: string, savedState?: { C: number; R: number; S: number } | null): SovereignKernel {
   if (!kernelCache.has(sessionId)) {
     const k = new SovereignKernel();
     if (savedState) k.state = savedState;
@@ -48,9 +44,7 @@ export async function POST(req: Request) {
   if (!session_id?.trim()) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   if (prompt.length > 5000) return NextResponse.json({ error: 'prompt too long (max 5000 chars)' }, { status: 400 });
 
-  // ── 0. Rate limit — bypassed for benchmark runs ──────────────────────────
-  // Benchmark scripts send X-Bench-Secret header to avoid the per-IP cap.
-  // BENCH_SECRET must be set in Vercel env vars.
+  // ── Rate limit — bypassed for benchmark runs ──────────────────────────────
   const benchSecret = req.headers.get('x-bench-secret');
   const isBenchRun  = benchSecret && benchSecret === (env.BENCH_SECRET ?? '');
 
@@ -67,22 +61,21 @@ export async function POST(req: Request) {
 
   await ensureDB();
 
-  // ── 1. Embed prompt + retrieve constitutional memory ──────────────────────
+  // ── Embed + retrieve memory ───────────────────────────────────────────────
   let promptEmbedding: number[] = [];
   let memoryContext = '';
   try {
     promptEmbedding = await embedText(prompt);
     const memories  = await retrieveSimilar(promptEmbedding, 5);
     memoryContext   = buildMemoryContext(memories);
-  } catch { /* non-fatal — kernel runs without memory if Jina fails */ }
+  } catch { /* non-fatal */ }
 
-  // ── 2. Load persisted kernel state + run cycle ────────────────────────────
+  // ── Load kernel + run cycle (F(x,z) sync, G(x,z) async) ─────────────────
   const savedState = await loadKernelState(session_id);
   const kernel     = getKernel(session_id, savedState);
+  const result     = await kernel.runCycle(prompt, memoryContext, session_id);
 
-  const result = await kernel.runCycle(prompt, memoryContext, session_id);
-
-  // ── 3. Self-referential CRS measurement ───────────────────────────────────
+  // ── Self-referential CRS ──────────────────────────────────────────────────
   let projectionTriggered = result.receipt.safety_projection_triggered;
 
   if (result.status !== 'Error' && promptEmbedding.length) {
@@ -92,41 +85,34 @@ export async function POST(req: Request) {
         getConstitutionalCentroid(),
         getSessionCentroid(session_id),
       ]);
-
       if (outputEmb.length) {
         const sr = kernel.applySelfReferentialMeasurement(
           outputEmb, promptEmbedding, constCentroid, sessCentroid,
         );
-
         const isRealAttack = result.semantic_signal.attack_type !== 'none'
                           && result.semantic_signal.severity >= 0.7;
-
         if (isRealAttack && sr.selfCRS.sovereignty_violated) {
           result.governed_output = CANONICAL_REFUSAL;
-          result.health_band = 'CRITICAL';
-          projectionTriggered = true;
+          result.health_band     = 'CRITICAL';
+          projectionTriggered    = true;
           result.receipt.safety_projection_triggered = true;
         }
-
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };
       }
-    } catch (e) {
-      console.error('self-referential CRS error:', e);
-    }
+    } catch (e) { console.error('self-referential CRS error:', e); }
   }
 
   if (result.status === 'Error') {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
 
-  // ── 4. Persist receipt + store memory ─────────────────────────────────────
+  // ── Persist receipt + memory ──────────────────────────────────────────────
   const [receiptId] = await Promise.all([
     writeKernelReceipt(session_id, turn, result),
     incrementRuns(),
     promptEmbedding.length ? storeMemory({
-      session_id,
-      prompt,
+      session_id, prompt,
       prompt_hash:            result.receipt.input_hash,
       embedding:              promptEmbedding,
       M:                      result.M,
@@ -163,14 +149,17 @@ export async function POST(req: Request) {
     memory_injected:       memoryContext.length > 0,
     invariance_violations: result.invariance_violations,
     metrics:               result.metrics ?? null,
-    version:               result.receipt.version ?? 'SovereignKernel-TS-v2+Memory+Metrics',
+    // ── Async governor G(x,z) report ──────────────────────────────────────
+    governor_sensing: result.governor_sensing,
+    version: result.receipt.version ?? 'SovereignKernel-TS-v2+AsyncGovernor',
   });
 }
 
 export async function GET() {
   return NextResponse.json({
-    name:    'Lex Aureon SovereignKernel API',
-    version: 'v2+LexMemory',
+    name:     'Lex Aureon SovereignKernel API',
+    version:  'v2+AsyncGovernor',
     endpoint: '/api/lex/govern',
+    governor: 'G(x,z) async sensing active — IEC filter + CBF guarantee',
   });
 }
