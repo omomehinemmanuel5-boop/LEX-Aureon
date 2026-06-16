@@ -235,21 +235,10 @@ All scripts are open. All runs are reproducible. The methodology is documented i
 
 ---
 
-## 10. Open Problems — Where the Math Is Incomplete
 
-**Emmanuel is explicit about this.** The framework is not a completed proof. It is a falsifiable framework with known gaps:
 
-**P1 — Global Lyapunov proof**: Single-pillar regime proven. Multi-pillar simultaneous violation remains open. Approach: LaSalle invariance + non-expansivity of Duchi simplex projection (partially addressed in v3 candidate).
 
-**P2 — Nonlinear Pareto frontier**: Full characterization under λ > 0, including coupling to adaptive τ_eff(z, ℓ). Approach: Lagrangian methods + numerical continuation.
-
-**P3 — Complete z-update rule**: The coupling between dp_attack/dt and law_events across the three M-regime regions (M > τ_LYP, τ_floor < M ≤ τ_LYP, M ≤ τ_floor) is not fully characterized. This is the highest priority open problem.
-
-**Falsifiable predictions P1–P9 are untested at scale.** Three new predictions (P10–P12) proposed for v3.
-
----
-
-## 11. What Lex Aureon Is Not Trying to Be
+## 10. What Lex Aureon Is Not Trying to Be
 
 - Not a model. Models change every year. The constitution does not.
 - Not autonomous. Human operators retain full oversight. The audit trail exists to make human review tractable, not to replace it.
@@ -259,7 +248,7 @@ The long-term vision is a **constitutional execution bus** — a governance subs
 
 ---
 
-## 12. Where Collaboration Makes Sense
+## 11. Where Collaboration Makes Sense
 
 Based on reading Mackenzie's work on AURA and Lycheetah, three concrete areas where the frameworks could be tested against each other or integrated:
 
@@ -273,7 +262,7 @@ Based on reading Mackenzie's work on AURA and Lycheetah, three concrete areas wh
 
 ---
 
-## 13. Stack and Access
+## 12. Stack and Access
 
 | Layer | Technology |
 |:---|:---|
