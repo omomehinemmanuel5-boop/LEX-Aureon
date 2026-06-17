@@ -48,3 +48,9 @@ lexaureon-frontend.tar
 # benchmark data and results — never commit
 # (HarmBench prompts and adversarial generations stay local)
 /data/
+
+# local SQLite databases — never commit (may contain session data, embeddings)
+*.db
+*.sqlite
+*.sqlite3
+local.db
