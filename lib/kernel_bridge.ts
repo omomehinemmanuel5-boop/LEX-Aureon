@@ -2,22 +2,20 @@
  * Kernel Bridge — connects SovereignKernel to Turso
  * Writes kernel receipts into existing audit infrastructure.
  * No new tables. Uses: praxis_receipts, z_traj, governor_log.
+ *
+ * fix: uses singleton getClient() from db.ts — was calling createClient()
+ * on every writeKernelReceipt/loadKernelState call (same leak fixed in lex_memory.ts).
  */
 
-import { createClient } from '@libsql/client';
-import { env } from './env';
+import { getClient } from './db';
 import { KernelCycleResult, KernelState } from './sovereign_kernel';
-
-function getDB() {
-  return createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN });
-}
 
 export async function writeKernelReceipt(
   sessionId: string,
   turn: number,
   result: KernelCycleResult,
 ): Promise<string> {
-  const db = getDB();
+  const db = getClient();
   const receiptId = `KRN-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   const r = result.receipt;
 
@@ -104,7 +102,7 @@ export async function writeKernelReceipt(
 
 export async function loadKernelState(sessionId: string): Promise<KernelState | null> {
   try {
-    const db = getDB();
+    const db = getClient();
     const res = await db.execute({
       sql: 'SELECT last_c, last_r, last_s FROM z_traj WHERE session_id = ? LIMIT 1',
       args: [sessionId],
