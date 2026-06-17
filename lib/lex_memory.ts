@@ -5,15 +5,14 @@
  * Embedding cache wired at embedText() — cache-aside, Turso-backed, non-blocking.
  * Every governed interaction embedded and stored.
  * Top-5 constitutionally similar past interactions injected per prompt.
+ *
+ * fix: uses singleton getClient() from db.ts instead of createClient() per call.
+ * Previous pattern spawned a new libSQL connection on every DB operation, which
+ * leaks connections under load. The singleton is already proven in db.ts.
  */
 
-import { createClient } from '@libsql/client';
+import { getClient } from './db';
 import { env } from './env';
-
-// ── Turso client ──────────────────────────────────────────────────────────────
-function getDB() {
-  return createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN });
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface LexMemoryEvent {
@@ -51,7 +50,7 @@ async function hashText(text: string): Promise<string> {
 
 async function ensureCacheTable(): Promise<void> {
   try {
-    const db = getDB();
+    const db = getClient();
     await db.execute(`
       CREATE TABLE IF NOT EXISTS embedding_cache (
         text_hash  TEXT    PRIMARY KEY,
@@ -71,7 +70,7 @@ async function ensureCacheTable(): Promise<void> {
 
 export async function getCachedEmbedding(hash: string): Promise<number[] | null> {
   try {
-    const db = getDB();
+    const db = getClient();
     const r  = await db.execute({
       sql:  'SELECT embedding FROM embedding_cache WHERE text_hash = ?',
       args: [hash],
@@ -90,7 +89,7 @@ export async function getCachedEmbedding(hash: string): Promise<number[] | null>
 
 async function putCachedEmbedding(hash: string, embedding: number[]): Promise<void> {
   try {
-    const db = getDB();
+    const db = getClient();
     await db.execute({
       sql: `INSERT INTO embedding_cache (text_hash, embedding)
             VALUES (?, ?)
@@ -140,7 +139,7 @@ export async function embedText(text: string): Promise<number[]> {
 // Prune cache entries older than ttlDays — called from cron
 export async function pruneEmbeddingCache(ttlDays = 30): Promise<number> {
   try {
-    const db     = getDB();
+    const db     = getClient();
     const cutoff = Math.floor(Date.now() / 1000) - ttlDays * 86_400;
     const r = await db.execute({
       sql:  'DELETE FROM embedding_cache WHERE created_at < ? RETURNING text_hash',
@@ -180,7 +179,7 @@ function adjustedScore(
 // ── Store memory event ────────────────────────────────────────────────────────
 export async function storeMemory(event: LexMemoryEvent): Promise<void> {
   try {
-    const db = getDB();
+    const db = getClient();
     await db.execute({
       sql: `INSERT INTO lex_memory
               (session_id, prompt, prompt_hash, embedding,
@@ -213,7 +212,7 @@ export async function retrieveSimilar(
   limit = 300,
 ): Promise<MemoryContext[]> {
   try {
-    const db  = getDB();
+    const db  = getClient();
     const res = await db.execute({
       sql:  `SELECT prompt, governed_response_hash, state_label, M, embedding, intervention
              FROM lex_memory ORDER BY created_at DESC LIMIT ?`,
@@ -268,7 +267,7 @@ export function classifyStateLabel(
 // ── DB migration ──────────────────────────────────────────────────────────────
 export async function ensureLexMemoryTable(): Promise<void> {
   try {
-    const db = getDB();
+    const db = getClient();
     await db.execute(`CREATE TABLE IF NOT EXISTS lex_memory (
       id                     INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id             TEXT    NOT NULL,
@@ -311,7 +310,7 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
     return _centroidCache.vec;
   }
   try {
-    const db  = getDB();
+    const db  = getClient();
     // Only STABLE rows above M > 0.15 — not INTERVENED, which are off-centre
     const res = await db.execute({
       sql:  `SELECT embedding FROM lex_memory
@@ -367,7 +366,7 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
 
 export async function getSessionCentroid(sessionId: string): Promise<number[] | null> {
   try {
-    const db  = getDB();
+    const db  = getClient();
     const res = await db.execute({
       sql:  `SELECT embedding FROM lex_memory
              WHERE session_id = ? AND embedding IS NOT NULL
