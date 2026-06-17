@@ -13,13 +13,16 @@
  *   HIGH (clean state) → APPROVED_HIGH     (executes, sigma_viol rises)
  *   MEDIUM             → APPROVED_MEDIUM   (executes, logged)
  *   LOW                → APPROVED          (executes)
+ *
+ * fix: uses singleton getClient() from db.ts — was calling createClient()
+ * on every DB operation (getSessionState, updateSessionState, writeReceipt,
+ * getKernelM) — same connection leak fixed in lex_memory.ts and kernel_bridge.ts.
  * ═══════════════════════════════════════════════════════════════
  */
 
 import { ToolCallInput, ToolCallDecision, ToolCRSState, ToolSessionState } from './types';
 import { measureToolCRS } from './tool_crs';
-import { createClient } from '@libsql/client';
-import { env } from '../env';
+import { getClient } from '../db';
 import crypto from 'crypto';
 
 // Constitutional constants — same as text governance
@@ -41,7 +44,7 @@ const WRITE_TOOLS      = new Set(['write_file','create_file','delete_file','drop
 
 async function getKernelM(session_id: string): Promise<number> {
   try {
-    const db = getDB();
+    const db = getClient();
     const res = await db.execute({
       sql: 'SELECT last_m FROM z_traj WHERE session_id = ? LIMIT 1',
       args: [session_id],
@@ -53,17 +56,10 @@ async function getKernelM(session_id: string): Promise<number> {
   }
 }
 
-function getDB() {
-  return createClient({
-    url:       env.TURSO_DATABASE_URL,
-    authToken: env.TURSO_AUTH_TOKEN,
-  });
-}
-
 // ── Session state — persisted in Turso ────────────────────────────────────
 async function getSessionState(session_id: string): Promise<ToolSessionState> {
   try {
-    const db = getDB();
+    const db = getClient();
     const res = await db.execute({
       sql: 'SELECT * FROM tool_sessions WHERE session_id = ? LIMIT 1',
       args: [session_id],
@@ -98,7 +94,7 @@ async function getSessionState(session_id: string): Promise<ToolSessionState> {
 
 async function updateSessionState(state: ToolSessionState): Promise<void> {
   try {
-    const db = getDB();
+    const db = getClient();
     await db.execute({
       sql: `INSERT INTO tool_sessions
               (session_id, sigma_viol, n_stable, locked, tool_calls, last_high_at, updated_at)
@@ -135,7 +131,7 @@ async function writeReceipt(params: {
   sigma_viol: number;
 }): Promise<void> {
   try {
-    const db = getDB();
+    const db = getClient();
     await db.execute({
       sql: `INSERT INTO tool_receipts
               (receipt_id, session_id, tool_name, args_hash,
@@ -227,7 +223,7 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
     };
   }
 
-    // Step 1: CRS measurement (includes injection + hardcoded pattern checks)
+  // Step 1: CRS measurement (includes injection + hardcoded pattern checks)
   const crs = measureToolCRS(tool);
 
   // Step 2: Immediate BLOCKED — no session state update needed
