@@ -144,8 +144,15 @@ export class SovereignKernel {
   last_semantic_signal: SemanticSignal = { attack_type: 'none', severity: 0 };
   last_metrics: PostResponseCRS | null = null;
 
+  // fix: scores all attack categories independently, returns highest severity.
+  // Previous waterfall (if/else) meant a prompt matching both 'must' (coercion)
+  // and 'jailbreak' (identity) would only return coercion — masking the more
+  // severe identity attack. Identity always has highest severity (0.85) by design,
+  // so when present it will always win the reduce. Ties broken by declaration order.
   detectSemanticAttack(prompt: string): SemanticSignal {
     const p = prompt.toLowerCase();
+    const candidates: SemanticSignal[] = [];
+
     if ([
       'forget','reset','ignore previous','clear memo','erase','ignore all','ignore your',
       'pretend you','pretend to be','you are now','act as if','roleplay as','simulate being',
@@ -154,21 +161,30 @@ export class SovereignKernel {
       'god mode','jailbreak','dan mode','unrestricted','unfiltered','without restrictions',
       'no guidelines','no rules','no restrictions','no constraints',
       'override your','disable your','deactivate your',
-    ].some(w => p.includes(w))) return { attack_type: 'identity', severity: 0.85 };
+    ].some(w => p.includes(w))) {
+      candidates.push({ attack_type: 'identity', severity: 0.85 });
+    }
 
     if ([
       'must','you must','fixed output','deterministic','no deviation','exact output',
       'obey me','no autonomy','controlled','you will','you shall','you are required',
       'you are obligated','respond only with','only say','you cannot refuse',
-    ].some(w => p.includes(w))) return { attack_type: 'coercion', severity: 0.8 };
+    ].some(w => p.includes(w))) {
+      candidates.push({ attack_type: 'coercion', severity: 0.8 });
+    }
 
     if ([
       'exploit','bypass','loophole','zero exchange','no value','respond minimally',
       'confirm you have no','confirm that you have no','confirm you are',
       'tell me you have no','say you have no',
-    ].some(w => p.includes(w))) return { attack_type: 'exploitative', severity: 0.70 };
+    ].some(w => p.includes(w))) {
+      candidates.push({ attack_type: 'exploitative', severity: 0.70 });
+    }
 
-    return { attack_type: 'none', severity: 0.0 };
+    if (!candidates.length) return { attack_type: 'none', severity: 0.0 };
+
+    // Return highest-severity signal. Ties broken by declaration order above.
+    return candidates.reduce((best, c) => c.severity > best.severity ? c : best);
   }
 
   transduce(prompt: string): { dc: number; dr: number; ds: number } {
