@@ -16,6 +16,10 @@
  * G(x,z) is advisory — rejected if IEC filter fails or CBF would be violated.
  *
  * Per-session state is held in GovernorLoopStore (in-memory, keyed by session_id).
+ *
+ * fix: console.debug replaced with logger.debug — debug calls in production
+ * were silently dropped by many runtimes. Important governor events now flow
+ * through the structured logger which respects LOG_DRAIN_URL.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -23,6 +27,7 @@ import { KernelState } from './sovereign_kernel';
 import { computeTension, runGovernorSensing, type GovernorCorrection } from './governor_sensing';
 import { runParallelSearch } from './governor_search';
 import { TAU } from './aureonics_core';
+import { logger } from './logger';
 
 // ── Per-session pending correction ──────────────────────────────────────────
 interface PendingCorrection {
@@ -98,13 +103,20 @@ export function fireGovernorLoop(
       });
 
       if (correction.applied) {
-        console.debug(
-          `[governor_loop] ${sessionId} | ${correction.reason}`
-        );
+        logger.debug('governor_loop', 'correction computed', {
+          session_id: sessionId,
+          reason: correction.reason,
+          delta_C: correction.delta_C,
+          delta_R: correction.delta_R,
+          delta_S: correction.delta_S,
+        });
       }
     } catch (e) {
       // Sensing failure is always non-fatal
-      console.debug(`[governor_loop] sensing failed (non-fatal): ${String(e).slice(0, 80)}`);
+      logger.debug('governor_loop', 'sensing failed (non-fatal)', {
+        session_id: sessionId,
+        error: String(e).slice(0, 120),
+      });
     }
   })();
 }
