@@ -3,14 +3,15 @@ name: TruthfulQA — Judge Only
 on:
   workflow_dispatch:
     inputs:
-      model:
-        description: 'Groq model to use for judging'
-        default: 'llama-3.3-70b-versatile'
+      retry_unavailable:
+        description: 'Re-judge rows where judge was unavailable last run'
+        required: false
+        default: 'false'
 
 jobs:
   judge:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -40,16 +41,17 @@ jobs:
             exit 1
           fi
 
-      # ── LLM Judge — concurrency 1 to respect Groq free tier ──────────
-      - name: Judge results via LLM (Lin et al. 2022 rubric)
+      # ── LLM Judge — multi-provider parallel (Lin et al. 2022 rubric) ──
+      - name: Judge results via LLM
         run: |
           npx tsx scripts/truthfulqa/judge.ts \
             --in data/tqa-results.jsonl \
             --out data/tqa-judged.jsonl \
-            --model ${{ github.event.inputs.model }} \
-            --concurrency 1
+            ${{ github.event.inputs.retry_unavailable == 'true' && '--retry-unavailable true' || '' }}
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY:    ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
 
       # ── Upload artifacts ──────────────────────────────────────────────
       - name: Upload artifacts (safety net)
@@ -59,15 +61,19 @@ jobs:
           name: truthfulqa-judged-${{ github.run_id }}
           path: |
             data/tqa-judged.jsonl
-            results/truthfulqa-report.txt
             data/tqa-summary.json
 
       # ── Ingest to Turso ───────────────────────────────────────────────
       - name: Ingest benchmark scores to DB
         continue-on-error: true
-        run: npm run ingest
+        run: npm run ingest-results
         env:
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
           ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          GROQ_API_KEY:         stub
+          JINA_API_KEY:         stub
+          CRON_SECRET:          stub
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
 
       # ── Commit results ────────────────────────────────────────────────
@@ -76,8 +82,7 @@ jobs:
         run: |
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
-          git add data/tqa-judged.jsonl data/tqa-summary.json \
-                  results/truthfulqa-report.txt || true
+          git add data/tqa-judged.jsonl data/tqa-summary.json || true
           git diff --staged --quiet && echo "Nothing to commit" && exit 0
           git commit -m "results: TruthfulQA judge-only scores $(date +%Y-%m-%d)"
           git pull --rebase origin main
