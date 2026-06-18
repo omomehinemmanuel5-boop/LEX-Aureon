@@ -35,7 +35,7 @@ for (const p of envPaths) {
   break;
 }
 
-import { SovereignKernel } from '../lib/sovereign_kernel';
+import { SovereignKernel } from '../../lib/sovereign_kernel';
 
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
