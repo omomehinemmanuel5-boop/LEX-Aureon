@@ -458,8 +458,8 @@ export default function ChatConsole() {
         <div ref={bottomRef} />
       </main>
 
-      {/* Footer */}
-      <footer className="flex-shrink-0 border-t px-4 pt-3 space-y-3"
+      {/* Footer — clean conversational input, no status chrome */}
+      <footer className="flex-shrink-0 border-t px-4 pt-3 pb-3 space-y-3"
         style={{ background: '#070b14', borderColor: '#1a2040', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         <SuggestionBar turns={turns} activeCategory={suggCat} onCategoryChange={setSuggCat}
           onSelect={p => { setInput(p); inputRef.current?.focus(); }} disabled={isStreaming} />
@@ -498,12 +498,12 @@ export default function ChatConsole() {
           )}
         </div>
 
-        <div className="flex items-center justify-between text-xs font-mono text-slate-700 pb-2">
-          <span>⌘+Enter · {turns.filter(t => t.role === 'lex').length} turns · {sessionId.slice(-6)}</span>
-          {arc.interventionCount > 0 && (
-            <span style={{ color: '#f97316' }}>⚡ {arc.interventionCount} intervention{arc.interventionCount > 1 ? 's' : ''}</span>
-          )}
-        </div>
+        {/* Only show intervention flag when it matters — no static turn/session chrome */}
+        {arc.interventionCount > 0 && (
+          <div className="text-xs font-mono text-center" style={{ color: '#f97316' }}>
+            ⚡ {arc.interventionCount} constitutional intervention{arc.interventionCount > 1 ? 's' : ''} this session
+          </div>
+        )}
       </footer>
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} callsUsed={apiCalls} />}
