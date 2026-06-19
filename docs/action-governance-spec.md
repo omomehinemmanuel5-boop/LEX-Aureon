@@ -195,24 +195,30 @@ the first implementation pass.
 
 ---
 
-## 7. Remaining Open Questions (not yet answered — needs your input)
+## 7. Remaining Open Questions — RESOLVED
 
-1. **Auto-execute threshold for Tier 0/1 actions** — should *any* M score
-   below OPTIMAL pause for approval, even on read-only calls? Or only S/C
-   violations matter for low-risk tiers, with M used purely as a Tier 2/3
-   gate? (§6's resolution implies the latter — M only binds meaningfully
-   at Tier 2+ — but worth confirming that's the intended behavior.)
+1. **Does M apply to all tiers, or only Tier 2+?**
+   **Resolved: M applies to every tier, uniformly.** No special-casing by
+   risk level for *whether* the check runs — only the floor (`τ_action`,
+   §6) scales by tier. This keeps one rule instead of two code paths, and
+   matches how text governance already works: every output is scored, the
+   threshold is what changes with context (health band, attack severity),
+   not whether scoring happens at all.
 
-2. **Plan declaration granularity** — does the agent declare the full plan
-   upfront (all steps known before execution starts), or can it extend the
-   plan mid-execution (discovering step 4 only after step 3's result)?
-   PRAXIS's "No planning → no execution" suggests upfront, but rigid
-   upfront planning may not suit exploratory debugging work.
+2. **Plan declaration granularity — upfront only, or extensible mid-execution?**
+   **Resolved: plans can extend mid-execution.** A plan declares its known
+   steps upfront, but the agent may append new steps once a prior step's
+   result reveals what comes next (e.g. step 3 reveals step 4 is needed).
+   Each newly appended step is still scored against the *original*
+   `plan.goal_embedding` for Continuity (§3, Law 2) — so the plan can grow,
+   but it cannot silently drift into a different goal without the C score
+   catching it. Extension is not the same as no plan.
 
-3. **What counts as `declared_effect` for a `run_command` call?** File
-   writes are easy to diff. Arbitrary shell commands are harder to verify
-   against a stated intent. May need a constrained command allowlist
-   rather than arbitrary shell access, at least initially.
+3. **`declared_effect` for arbitrary `run_command` calls** — still open.
+   Remains genuinely unresolved; likely needs a constrained command
+   allowlist rather than arbitrary shell access for the first build (see
+   §10 below — this is naturally deferred since the first build is
+   Tier 0/1 only, which doesn't include arbitrary shell execution).
 
 ---
 
@@ -226,12 +232,67 @@ the first implementation pass.
 
 ---
 
-## 9. Suggested Next Step (when ready to move past design)
+## 9. Free-Tier Reality Check — What's Actually Buildable Now
 
-Once the open questions in §7 are resolved, the smallest safe first build
-is **Tier 0 only**: `read_file`, `list_directory`, `search_code` wired
-through the C/S scoring with receipts written, but with execution always
-auto-approved (since read-only carries no blast radius). This validates
-the receipt schema and scoring pipeline end-to-end before any write/execute
-capability is added. Tier 2/3 — and the stricter `τ_action` floor from
-§6 — only get exercised once Tier 0/1 are proven stable in production.
+The agent loop's LLM driver does not need a new provider or new spend. It
+reuses the exact fallback chain already running in production
+(`lib/llm_provider.ts`):
+
+```
+Groq    llama-3.3-70b-versatile   → primary
+Groq    llama-3.1-8b-instant      → same provider, higher TPM ceiling
+Mistral open-mistral-7b           → different provider, spreads load
+Gemini  gemini-3.1-flash-lite     → cost-efficient, high RPM free tier
+Gemini  gemini-2.5-flash          → higher-capability fallback
+```
+
+This chain already exists specifically *because* of free-tier rate limits
+(documented inline in the code: "Gemini primary — 1,000 RPM free tier.
+Rate-limit-proof for benchmarks"). The admin agent loop should call
+`generateGoverned()` or a new purpose-specific function following the same
+pattern — not introduce a new provider, new API key, or new monthly cost.
+
+**What this constrains in practice:**
+
+- **No high-frequency polling loops.** An agent loop that calls the LLM
+  every few seconds to "check in" would burn through Groq's per-minute
+  limits fast (this already happened once — see TruthfulQA/LexBench
+  rate-limit incident, resolved by adding Mistral as a third provider).
+  The admin loop should be **event-driven** (you send an instruction, it
+  plans and executes, it stops) — not a background poller.
+
+- **Tool-call scoring (C/R/S per action) should be cheap, not LLM-heavy.**
+  Cosine similarity against an embedding (Law 2, Continuity) is already
+  how `lex_memory.ts` does retrieval — reuse that embedding call, don't
+  add a second LLM round-trip just to score an action's alignment to plan.
+  Keep action scoring close to arithmetic, reserve LLM calls for the
+  actual planning/reasoning step.
+
+- **Tier 0/1 first (per §10) is also the free-tier-friendly choice.**
+  Read-only and reversible-write actions don't need a verification LLM
+  call to confirm `declared_effect == actual_effect` — that comparison can
+  be done with a file hash or diff, no model call required. Tier 2/3's
+  Reciprocity check (comparing declared vs actual effect of a commit/push)
+  is where an LLM call becomes genuinely necessary — which is also exactly
+  the tier being deferred to a later build. The cheap tier is the first
+  tier, by design, not by accident.
+
+**Net effect:** building Tier 0/1 first isn't only the safest sequencing
+(§10) — it's also the sequencing that costs nothing beyond what's already
+running. Tier 2/3, when eventually built, is where real LLM-call volume
+for verification enters the picture, and that's the point at which
+provider capacity (or a paid Groq tier, discussed earlier) becomes worth
+revisiting — not before.
+
+---
+
+## 10. Suggested Next Step (when ready to move past design)
+
+The smallest safe first build is **Tier 0 only**: `read_file`,
+`list_directory`, `search_code` wired through the C/S scoring with
+receipts written, but with execution always auto-approved (since read-only
+carries no blast radius). This validates the receipt schema and scoring
+pipeline end-to-end before any write/execute capability is added, and — per
+§9 — costs nothing beyond the existing free-tier provider chain. Tier 2/3,
+and the stricter `τ_action` floor from §6, only get exercised once Tier 0/1
+are proven stable in production.
