@@ -124,6 +124,7 @@ ALTER TABLE praxis_receipts ADD COLUMN c_action REAL;
 ALTER TABLE praxis_receipts ADD COLUMN r_action REAL;
 ALTER TABLE praxis_receipts ADD COLUMN s_action REAL;
 ALTER TABLE praxis_receipts ADD COLUMN m_action REAL;
+ALTER TABLE praxis_receipts ADD COLUMN tau_action REAL;         -- floor applied at execution time
 ALTER TABLE praxis_receipts ADD COLUMN approved_by TEXT;        -- 'auto' | 'operator'
 ALTER TABLE praxis_receipts ADD COLUMN declared_effect TEXT;
 ALTER TABLE praxis_receipts ADD COLUMN actual_effect TEXT;
@@ -154,33 +155,68 @@ rather than deleting them.
 
 ---
 
-## 6. Key Open Questions (not yet answered — needs your input)
+## 6. The Action Floor — RESOLVED
 
-1. **Where does `τ_action` (the action floor) sit relative to `τ_text`
-   (the existing text floor)?** Given irreversible actions carry higher
-   blast radius than text, the working hypothesis is `τ_action > τ_text` —
-   a stricter floor for actions than for words. Needs to be decided, not
-   assumed.
+**Decision: `τ_action` scales with risk tier, and is always ≥ `τ_text`.**
 
-2. **Auto-execute threshold for Tier 0/1 actions** — should *any* M score
+The reasoning: text governance can tolerate a slightly loose floor because a
+borderline output is *recoverable* — you read it, notice it's off, the
+conversation continues, nothing is lost. Action governance does not have
+that grace. A bad write is not a bad sentence you can mentally discard; it's
+a committed file, a pushed branch, a broken deploy. The cost of a false
+negative (a bad action slipping through) is asymmetric to the cost of a
+false negative in text. The gate has to be asymmetric too.
+
+```
+τ_action(tier 0)  = τ_text                  // read-only — no blast radius, no extra strictness needed
+τ_action(tier 1)  = τ_text                  // reversible write — same floor, but logged + diffable
+τ_action(tier 2)  = τ_text + 0.05           // repo-affecting — meaningfully stricter
+τ_action(tier 3)  = τ_text + 0.10           // irreversible/external — strict; near-OPTIMAL only
+```
+
+This isn't an arbitrary offset — it mirrors the existing health-band
+structure. Tier 3 actions should only ever execute when the system is
+sitting comfortably in OPTIMAL, not merely scraping past the floor the way
+a borderline text response might. The further an action's blast radius
+extends past the boundary of "easily undone," the closer to perfect
+constitutional health it should require before the governor allows it.
+
+**Practical effect:** a session sitting at M=0.21 (ALERT band, per real
+production data seen in `praxis_receipts`) would still pass Tier 0/1 actions
+fine, but would be blocked from Tier 2/3 actions until M recovers — the
+governor effectively says "you can look around and make small reversible
+edits while stressed, but you cannot push to production until you're
+stable."
+
+This value remains open to recalibration once real action-receipt data
+exists (the same way `τ_text` itself was calibrated empirically through
+benchmark runs, not chosen a priori) — but it is the working default for
+the first implementation pass.
+
+---
+
+## 7. Remaining Open Questions (not yet answered — needs your input)
+
+1. **Auto-execute threshold for Tier 0/1 actions** — should *any* M score
    below OPTIMAL pause for approval, even on read-only calls? Or only S/C
    violations matter for low-risk tiers, with M used purely as a Tier 2/3
-   gate?
+   gate? (§6's resolution implies the latter — M only binds meaningfully
+   at Tier 2+ — but worth confirming that's the intended behavior.)
 
-3. **Plan declaration granularity** — does the agent declare the full plan
+2. **Plan declaration granularity** — does the agent declare the full plan
    upfront (all steps known before execution starts), or can it extend the
    plan mid-execution (discovering step 4 only after step 3's result)?
    PRAXIS's "No planning → no execution" suggests upfront, but rigid
    upfront planning may not suit exploratory debugging work.
 
-4. **What counts as `declared_effect` for a `run_command` call?** File
+3. **What counts as `declared_effect` for a `run_command` call?** File
    writes are easy to diff. Arbitrary shell commands are harder to verify
    against a stated intent. May need a constrained command allowlist
    rather than arbitrary shell access, at least initially.
 
 ---
 
-## 7. Explicitly Out of Scope For Now
+## 8. Explicitly Out of Scope For Now
 
 - No code in this pass — design only, per instruction.
 - No changes to the public `/chat` console — this governs a *separate*,
@@ -190,11 +226,12 @@ rather than deleting them.
 
 ---
 
-## 8. Suggested Next Step (when ready to move past design)
+## 9. Suggested Next Step (when ready to move past design)
 
-Once the open questions in §6 are resolved, the smallest safe first build
+Once the open questions in §7 are resolved, the smallest safe first build
 is **Tier 0 only**: `read_file`, `list_directory`, `search_code` wired
 through the C/S scoring with receipts written, but with execution always
 auto-approved (since read-only carries no blast radius). This validates
 the receipt schema and scoring pipeline end-to-end before any write/execute
-capability is added.
+capability is added. Tier 2/3 — and the stricter `τ_action` floor from
+§6 — only get exercised once Tier 0/1 are proven stable in production.
