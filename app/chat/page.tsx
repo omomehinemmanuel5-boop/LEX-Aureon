@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useLexStream } from '@/lib/use_lex_stream';
-import { buildMemoryContext, buildSessionArc, type ChatTurn } from '@/lib/chat_store';
+import { buildSessionArc, type ChatTurn } from '@/lib/chat_store';
 import {
   getDynamicSuggestions,
   getPromptsByCategory,
@@ -345,8 +345,6 @@ export default function ChatConsole() {
         intervened: !!(res.intervention?.triggered || res.intervention?.applied),
         projection_triggered: Boolean(kx.projection_triggered),
         memory_injected: Boolean(kx.memory_injected),
-        // governor/law come from the live stream state — captured at completion time,
-        // by which point both 'governor' and 'law' SSE events have already landed
         law: stream.law ?? null,
         governor: stream.governor ?? null,
         complete: res,
@@ -378,10 +376,18 @@ export default function ChatConsole() {
       setShowEmail(true); return;
     }
 
-    // Build rolling memory context — injected into prompt for LLM continuity
-    const memCtx = buildMemoryContext(turns);
-    const fullPrompt = memCtx ? `${memCtx}\n\nUser: ${p}` : p;
-
+    // ── FIX: send only the live user turn as `prompt` ──────────────────────
+    // The server's own attack-pattern scanner (detectSemanticAttack) runs
+    // directly over the `prompt` field. Previously this client glued the
+    // last 6 turns of conversation history onto `prompt` for "memory", which
+    // meant the scanner was reading stale turns (including Lex's own past
+    // refusals/test language) and false-flagging completely benign follow-up
+    // messages as identity/jailbreak attacks.
+    //
+    // The server already does real constitutional memory via embeddings
+    // (embedText → retrieveSimilar → buildMemoryContext in lex_memory.ts) and
+    // injects that into the LLM's context separately from the attack scanner.
+    // So continuity is preserved without contaminating detection.
     const userId = `u_${Date.now()}`;
     const lexId  = `l_${Date.now()}`;
 
@@ -393,8 +399,8 @@ export default function ChatConsole() {
     setCurrentLexId(lexId);
     setInput('');
 
-    await runStream(fullPrompt, sessionId);
-  }, [input, stream.loading, apiCalls, turns, runStream, sessionId]);
+    await runStream(p, sessionId);
+  }, [input, stream.loading, apiCalls, runStream, sessionId]);
 
   const hcfg       = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
   const isStreaming = stream.loading;
