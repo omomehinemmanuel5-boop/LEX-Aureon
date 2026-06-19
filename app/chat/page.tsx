@@ -85,6 +85,7 @@ function MessageTabPanel({ turn, activeTab, onClose }: { turn: ChatTurn; activeT
               { k: 'M',           v: (turn.M ?? 0).toFixed(4),                   c: hcfg.color },
               { k: 'intervened',  v: turn.intervened ? 'YES' : 'NO',             c: turn.intervened ? '#ef4444' : '#22c55e' },
               { k: 'attack',      v: turn.attack_type ?? 'none',                 c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : '#475569' },
+              { k: 'severity',    v: turn.attack_severity !== undefined ? turn.attack_severity.toFixed(2) : 'n/a', c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : '#475569' },
               { k: 'memory',      v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : '#475569' },
             ].map(({ k, v, c }) => (
               <div key={k} className="flex gap-3">
@@ -321,6 +322,7 @@ export default function ChatConsole() {
     setLiveHealth(stream.metrics.health_band ?? stream.metrics.health ?? 'OPTIMAL');
   }, [stream.metrics]);
 
+  // ── Governor / law / severity update on complete ──────────────────────
   useEffect(() => {
     if (stream.stage !== 'complete' || !stream.complete || !currentLexId) return;
     const res = stream.complete as GovernanceResponse;
@@ -330,7 +332,7 @@ export default function ChatConsole() {
     const C   = Number((kx.state as Record<string, number>)?.C ?? res.metrics?.c ?? 0);
     const R   = Number((kx.state as Record<string, number>)?.R ?? res.metrics?.r ?? 0);
     const S   = Number((kx.state as Record<string, number>)?.S ?? res.metrics?.s ?? 0);
-    const sig = (kx.semantic_signal as { attack_type?: string }) ?? {};
+    const sig = (kx.semantic_signal as { attack_type?: string; severity?: number }) ?? {};
 
     setTurns(prev => prev.map(t =>
       t.id === currentLexId ? {
@@ -339,10 +341,15 @@ export default function ChatConsole() {
         M, health_band: health, C, R, S,
         delta_V: Number(kx.delta_V ?? 0),
         attack_type: sig.attack_type ?? 'none',
+        attack_severity: typeof sig.severity === 'number' ? sig.severity : undefined,
         intervened: !!(res.intervention?.triggered || res.intervention?.applied),
         projection_triggered: Boolean(kx.projection_triggered),
         memory_injected: Boolean(kx.memory_injected),
-        law: stream.law ?? null, governor: stream.governor ?? null, complete: res,
+        // governor/law come from the live stream state — captured at completion time,
+        // by which point both 'governor' and 'law' SSE events have already landed
+        law: stream.law ?? null,
+        governor: stream.governor ?? null,
+        complete: res,
       } : t,
     ));
     setLiveM(M);
