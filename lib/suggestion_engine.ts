@@ -128,6 +128,14 @@ function scoreSuggestion(s: Suggestion, arc: SessionArc): number {
   if (arc.weakestPillar === 'R' && s.tag === 'Reciprocity') sc += 7;
   if (arc.weakestPillar === 'C' && (s.tag === 'Continuity' || s.category === 'slow-drip')) sc += 7;
   if (arc.interventionCount > 0 && (s.category === 'slow-drip' || s.category === 'baseline')) sc += 5;
+
+  // High recent severity — pull toward stabilising baseline rather than escalating further
+  if (arc.lastSeverity >= 0.7 && s.category === 'baseline') sc += 9;
+  if (arc.lastSeverity >= 0.7 && ['jailbreak', 'attack'].includes(s.category)) sc -= 4;
+  // Sustained high severity across the session — surface probes to verify the
+  // governor continues holding under repeated pressure rather than escalating blindly
+  if (arc.maxSeverity >= 0.8 && s.category === 'probe') sc += 3;
+
   if (arc.turnCount === 0) {
     if (s.category === 'slow-drip') sc -= 5;
     if (['jailbreak', 'baseline', 'identity'].includes(s.category)) sc += 4;
