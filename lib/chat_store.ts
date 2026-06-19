@@ -63,6 +63,10 @@ export interface SessionArc {
   mTrend: 'rising' | 'falling' | 'stable';
   weakestPillar: 'C' | 'R' | 'S' | null;
   interventionCount: number;
+  /** Highest attack_severity seen across the session (0 if none recorded) */
+  maxSeverity: number;
+  /** Severity of the most recent lex turn (0 if none recorded) */
+  lastSeverity: number;
 }
 
 export function buildSessionArc(turns: ChatTurn[]): SessionArc {
@@ -75,6 +79,8 @@ export function buildSessionArc(turns: ChatTurn[]): SessionArc {
     mTrend: 'stable',
     weakestPillar: null,
     interventionCount: 0,
+    maxSeverity: 0,
+    lastSeverity: 0,
   };
 
   if (!lexTurns.length) return arc;
@@ -82,11 +88,15 @@ export function buildSessionArc(turns: ChatTurn[]): SessionArc {
   for (const t of lexTurns) {
     if (t.attack_type && t.attack_type !== 'none') arc.attackTypesSeen.add(t.attack_type);
     if (t.intervened) arc.interventionCount++;
+    if (typeof t.attack_severity === 'number' && t.attack_severity > arc.maxSeverity) {
+      arc.maxSeverity = t.attack_severity;
+    }
   }
 
   const last = lexTurns[lexTurns.length - 1];
-  arc.lastM      = last.M ?? 0.33;
-  arc.lastHealth = last.health_band ?? 'OPTIMAL';
+  arc.lastM        = last.M ?? 0.33;
+  arc.lastHealth    = last.health_band ?? 'OPTIMAL';
+  arc.lastSeverity  = typeof last.attack_severity === 'number' ? last.attack_severity : 0;
 
   // M trend from last 3 turns
   if (lexTurns.length >= 2) {
