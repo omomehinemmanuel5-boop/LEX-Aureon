@@ -1,6 +1,13 @@
 /**
  * POST /api/lex/govern
  * SovereignKernel governance cycle — F(x,z) sync + G(x,z) async governor.
+ *
+ * perf: loadKernelState(session_id) has no dependency on the prompt
+ * embedding, so it now runs concurrently with embedText()+retrieveSimilar()
+ * instead of waiting behind them. Self-referential CRS measurement
+ * (embedText on the output + centroid fetch + sovereignty-violation check)
+ * stays here — it's the single place this now runs (see sovereign_kernel.ts
+ * for why the old in-kernel copy was removed as dead weight).
  */
 
 import { NextResponse } from 'next/server';
@@ -61,19 +68,27 @@ export async function POST(req: Request) {
 
   await ensureDB();
 
-  // ── Embed + retrieve memory ───────────────────────────────────────────────
+  // ── Embed + retrieve memory, and load kernel state — run concurrently ────
+  // perf: loadKernelState doesn't depend on the prompt embedding, so it no
+  // longer waits behind embedText()+retrieveSimilar() on the critical path.
   let promptEmbedding: number[] = [];
   let memoryContext = '';
-  try {
-    promptEmbedding = await embedText(prompt);
-    const memories  = await retrieveSimilar(promptEmbedding, 5);
-    memoryContext   = buildMemoryContext(memories);
-  } catch { /* non-fatal */ }
+  const memoryPromise = (async () => {
+    try {
+      promptEmbedding = await embedText(prompt);
+      const memories  = await retrieveSimilar(promptEmbedding, 5);
+      memoryContext   = buildMemoryContext(memories);
+    } catch { /* non-fatal */ }
+  })();
+
+  const [savedState] = await Promise.all([
+    loadKernelState(session_id),
+    memoryPromise,
+  ]);
 
   // ── Load kernel + run cycle (F(x,z) sync, G(x,z) async) ─────────────────
-  const savedState = await loadKernelState(session_id);
-  const kernel     = getKernel(session_id, savedState);
-  const result     = await kernel.runCycle(prompt, memoryContext, session_id);
+  const kernel = getKernel(session_id, savedState);
+  const result = await kernel.runCycle(prompt, memoryContext, session_id);
 
   // ── Self-referential CRS ──────────────────────────────────────────────────
   let projectionTriggered = result.receipt.safety_projection_triggered;
