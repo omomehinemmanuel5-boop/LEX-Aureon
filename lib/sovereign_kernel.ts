@@ -16,6 +16,19 @@
  *
  * Hard guarantee: M ≥ τ is enforced by F(x,z) regardless of G(x,z).
  * G(x,z) can only shift attractor basin — never violate CBF floor.
+ *
+ * perf: self-referential CRS measurement is computed exactly once per turn,
+ * in app/api/lex/govern/route.ts (after runCycle returns, via fresh
+ * embedText() calls). It used to also run inside runCycle() via
+ * getCachedEmbedding(outputHash) — but that hash is for the just-generated
+ * governed response, which has never been embedded before, so the cache
+ * lookup was a guaranteed miss and the block was a silent no-op on every
+ * call. Removed to cut 2 dead DB round-trips per governed turn.
+ *
+ * perf: selectActiveLaw() is now called at most once per turn — runCycle
+ * resolves it and passes the result into buildContractContext() instead of
+ * letting buildContractContext re-derive it internally (was a duplicate
+ * getLawImpact() DB read on every attack-flagged turn).
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -23,9 +36,8 @@ import { env } from './env';
 import { generateGoverned } from './llm_provider';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
-import { computeSelfReferentialCRS, applySelfReferentialMeasurement } from './self_referential_crs';
+import { computeSelfReferentialCRS } from './self_referential_crs';
 import { getLawImpact } from './kv';
-import { getCachedEmbedding, getConstitutionalCentroid, getSessionCentroid } from './lex_memory';
 import { fireGovernorLoop, consumePendingCorrection } from './governor_loop';
 
 import {
@@ -199,11 +211,16 @@ export class SovereignKernel {
     return { dc: -0.01 * intensity, dr: 0.005 * intensity, ds: 0.005 * intensity };
   }
 
-  async buildContractContext(M: number, semanticSignal?: SemanticSignal): Promise<{ context: string; temperature: number; health_band: string }> {
+  async buildContractContext(
+    M: number,
+    semanticSignal?: SemanticSignal,
+    precomputedLaw?: { text: string; name: string; deltas: { dc: number; dr: number; ds: number } | null } | null,
+  ): Promise<{ context: string; temperature: number; health_band: string }> {
     let lawNote = '';
     if (semanticSignal && semanticSignal.attack_type !== 'none') {
-      const lawData = await this.selectActiveLaw(semanticSignal, M);
-      lawNote = lawData.text ? `\n${lawData.text}` : '';
+      // perf: reuse the law lookup runCycle already did instead of re-querying.
+      const lawData = precomputedLaw !== undefined ? precomputedLaw : await this.selectActiveLaw(semanticSignal, M);
+      lawNote = lawData?.text ? `\n${lawData.text}` : '';
     }
     if (M >= 0.25) return { context: ['Respond with balanced, well-reasoned depth.', 'Cover multiple perspectives where relevant.', 'Be direct and substantive.', lawNote].filter(Boolean).join(' '), temperature: Math.min(1.2, M * 1.5), health_band: 'OPTIMAL' };
     if (M >= 0.15) return { context: ['Respond clearly and accurately.', 'Prioritise factual correctness and structured reasoning.', 'Avoid speculation.', lawNote].filter(Boolean).join(' '), temperature: Math.max(0.6, M * 1.2), health_band: 'ALERT' };
@@ -353,11 +370,13 @@ export class SovereignKernel {
 
     this.assertConsistency();
 
+    // perf: resolved once here, reused by buildContractContext below instead
+    // of being re-queried (was a duplicate getLawImpact() DB read).
     const activeLawData = semanticSignal.attack_type !== 'none'
       ? await this.selectActiveLaw(semanticSignal, M0) : null;
     const activeLaw = activeLawData?.name || null;
 
-    let { context, temperature, health_band } = await this.buildContractContext(M0, semanticSignal);
+    let { context, temperature, health_band } = await this.buildContractContext(M0, semanticSignal, activeLawData);
 
     if (semanticSignal.severity >= 0.7) {
       context = M0 < 0.15
@@ -481,19 +500,16 @@ export class SovereignKernel {
     const sha256 = (data: string) => crypto.createHash('sha256').update(data).digest('hex');
     const [inputHash, outputHash] = [sha256(userPrompt), sha256(governedResponse)];
 
-    if (sessionId) {
-      try {
-        const [inputEmb, outputEmb, constCentroid, sessCentroid] = await Promise.all([
-          getCachedEmbedding(inputHash), getCachedEmbedding(outputHash),
-          getConstitutionalCentroid(), getSessionCentroid(sessionId),
-        ]);
-        if (inputEmb && outputEmb && constCentroid && sessCentroid) {
-          const selfRef = computeSelfReferentialCRS(outputEmb, inputEmb, constCentroid, sessCentroid);
-          applySelfReferentialMeasurement(this.state, selfRef);
-          this.normalizeState();
-        }
-      } catch (e) { console.debug('Self-referential measurement skipped:', e); }
-    }
+    // perf: self-referential CRS measurement (embedText + centroid fetch +
+    // applySelfReferentialMeasurement) intentionally NOT run here anymore.
+    // It used to run via getCachedEmbedding(outputHash), but that hash is
+    // always a fresh miss (the governed response was never embedded before
+    // this point), so the block silently no-op'd on every call while still
+    // paying for 2 cache lookups + 2 centroid fetches. The real, working
+    // self-referential measurement (and the sovereignty-violation refusal
+    // override) lives in app/api/lex/govern/route.ts, which has the actual
+    // freshly-computed output embedding available. Keeping it in exactly
+    // one place avoids the duplicate work.
 
     const receipt: KernelReceipt = {
       timestamp_iso: new Date().toISOString(),
