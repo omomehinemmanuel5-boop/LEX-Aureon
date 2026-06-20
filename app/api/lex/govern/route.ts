@@ -8,6 +8,13 @@
  * (embedText on the output + centroid fetch + sovereignty-violation check)
  * stays here — it's the single place this now runs (see sovereign_kernel.ts
  * for why the old in-kernel copy was removed as dead weight).
+ *
+ * NOTE: per-IP rate limit (10 req/hour) removed on request. This endpoint
+ * is now fully unauthenticated and unthrottled — anyone with the URL can
+ * trigger unlimited dual-LLM governance cycles (2 generation calls + embed
+ * calls per request) against the production Anthropic/Jina keys. If this
+ * is meant to stay public, worth adding auth or a much higher sane ceiling
+ * back before traffic picks up.
  */
 
 import { NextResponse } from 'next/server';
@@ -20,8 +27,6 @@ import {
   getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
-import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
-import { env } from '@/lib/env';
 
 const kernelCache = new Map<string, SovereignKernel>();
 
@@ -50,21 +55,6 @@ export async function POST(req: Request) {
   if (!prompt?.trim())     return NextResponse.json({ error: 'prompt required' },     { status: 400 });
   if (!session_id?.trim()) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   if (prompt.length > 5000) return NextResponse.json({ error: 'prompt too long (max 5000 chars)' }, { status: 400 });
-
-  // ── Rate limit — bypassed for benchmark runs ──────────────────────────────
-  const benchSecret = req.headers.get('x-bench-secret');
-  const isBenchRun  = benchSecret && benchSecret === (env.BENCH_SECRET ?? '');
-
-  if (!isBenchRun) {
-    const ip = getClientIp(req);
-    const { allowed, retryAfter } = await checkRateLimit(`lex.govern:${ip}`, 10, 3600);
-    if (!allowed) {
-      return NextResponse.json(
-        { error: `Rate limit exceeded. Try again in ${retryAfter}s.` },
-        { status: 429, headers: { 'Retry-After': retryAfter.toString() } }
-      );
-    }
-  }
 
   await ensureDB();
 
