@@ -74,6 +74,14 @@ export async function GET(req: Request) {
   const allProbesOk = !probes || Object.values(probes).every((p) => p.ok);
   const ok = turso === 'connected' && allProbesOk;
 
+  // fix: was reading process.env.GEMINI_API_KEY / process.env.MISTRAL_API_KEY
+  // directly, bypassing the centralized env contract. MISTRAL_API_KEY is now
+  // declared in lib/env.ts's EnvShape (it wasn't before — implicitly
+  // supported here but undeclared everywhere else).
+  let geminiConfigured = false, mistralConfigured = false;
+  try { geminiConfigured  = !!env.GEMINI_API_KEY; } catch { /* missing */ }
+  try { mistralConfigured = !!env.MISTRAL_API_KEY; } catch { /* missing */ }
+
   return NextResponse.json(
     {
       ok,
@@ -83,10 +91,10 @@ export async function GET(req: Request) {
       now:       new Date().toISOString(),
       services: {
         turso,
-        groq:    groqConfigured ? 'configured' : 'missing',
-        jina:    jinaConfigured ? 'configured' : 'missing',
-        gemini:  process.env.GEMINI_API_KEY  ? 'configured' : 'missing',
-        mistral: process.env.MISTRAL_API_KEY ? 'configured' : 'missing',
+        groq:    groqConfigured  ? 'configured' : 'missing',
+        jina:    jinaConfigured  ? 'configured' : 'missing',
+        gemini:  geminiConfigured  ? 'configured' : 'missing',
+        mistral: mistralConfigured ? 'configured' : 'missing',
       },
       storage: {
         mode:           turso === 'connected' ? 'turso' : 'error',
