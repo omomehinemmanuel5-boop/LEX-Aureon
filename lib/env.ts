@@ -23,6 +23,7 @@ type EnvShape = {
   TURSO_AUTH_TOKEN:             string;
   ADMIN_PASSWORD:               string;
   GEMINI_API_KEY:               string | undefined;
+  MISTRAL_API_KEY:              string | undefined;
   GITHUB_TOKEN:                 string | undefined;
   VERCEL_TOKEN:                 string | undefined;
   CRON_SECRET:                  string;
