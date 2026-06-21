@@ -6,15 +6,15 @@
  * fix: uses singleton getClient() from db.ts — was calling createClient()
  * on every writeKernelReceipt/loadKernelState call (same leak fixed in lex_memory.ts).
  *
- * fix (this revision): sigma_viol / governor_effort / slow_drip were being
- * written with the wrong source values — sigma_viol and governor_effort
- * were both silently set to copies of attack_pressure / effective_theta,
- * and slow_drip was set from epsilon_injected (an unrelated entropy-floor
- * mechanism). None of these three columns are read back anywhere to make
- * a live governance decision — loadKernelState() only reads last_c/r/s —
- * so this was a data-quality issue in the audit log, not a runtime safety
- * bug. Fixed going forward only; rows written before this revision keep
- * the old (incorrect) values. If you're doing historical analysis on
+ * fix: sigma_viol / governor_effort / slow_drip were being written with the
+ * wrong source values — sigma_viol and governor_effort were both silently
+ * set to copies of attack_pressure / effective_theta, and slow_drip was set
+ * from epsilon_injected (an unrelated entropy-floor mechanism). None of
+ * these three columns are read back anywhere to make a live governance
+ * decision — loadKernelState() only reads last_c/r/s — so this was a
+ * data-quality issue in the audit log, not a runtime safety bug. Fixed
+ * going forward only; rows written before this revision keep the old
+ * (incorrect) values. If you're doing historical analysis on
  * sigma_viol/governor_effort/slow_drip, treat this commit as the cutover
  * point — values before vs after are not comparable.
  *
@@ -26,11 +26,15 @@
  *                      pattern as 'slow_drip'; that detection only exists
  *                      today in the tool-call interceptor's session state,
  *                      not in text governance)
+ *
+ * fix: console.error → structured logger (matches app/api/health/route.ts
+ * pattern). Only error message + truncated stack are logged.
  */
 
 import { getClient } from './db';
 import { KernelCycleResult, KernelState } from './sovereign_kernel';
 import { TAU } from './aureonics_core';
+import { logger, errorFields } from './logger';
 
 export async function writeKernelReceipt(
   sessionId: string,
@@ -121,7 +125,7 @@ export async function writeKernelReceipt(
     });
 
   } catch (e) {
-    console.error('kernel_bridge write error:', e);
+    logger.error('kernel_bridge.write', 'receipt write failed', errorFields(e));
   }
 
   return receiptId;
