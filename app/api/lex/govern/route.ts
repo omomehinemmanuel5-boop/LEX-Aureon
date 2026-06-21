@@ -23,6 +23,10 @@
  * with no live conflict, just dead inconsistency. 5000 stays canonical
  * (it's what every receipt to date was written under); schemas.ts now
  * re-exports the same constant instead of its own copy.
+ *
+ * fix: console.error → structured logger (matches app/api/health/route.ts
+ * pattern). Only error message + truncated stack are logged, never prompt
+ * or response content.
  */
 
 import { NextResponse } from 'next/server';
@@ -36,6 +40,7 @@ import {
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
 import { MAX_PROMPT_CHARS } from '@/lib/schemas';
+import { logger, errorFields } from '@/lib/logger';
 
 const kernelCache = new Map<string, SovereignKernel>();
 
@@ -77,7 +82,9 @@ export async function POST(req: Request) {
       promptEmbedding = await embedText(prompt);
       const memories  = await retrieveSimilar(promptEmbedding, 5);
       memoryContext   = buildMemoryContext(memories);
-    } catch { /* non-fatal */ }
+    } catch (e) {
+      logger.warn('govern.memory', 'embed/retrieve failed, continuing without memory context', errorFields(e));
+    }
   })();
 
   const [savedState] = await Promise.all([
@@ -114,7 +121,9 @@ export async function POST(req: Request) {
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };
       }
-    } catch (e) { console.error('self-referential CRS error:', e); }
+    } catch (e) {
+      logger.error('govern.self_referential', 'self-referential CRS measurement failed', errorFields(e));
+    }
   }
 
   if (result.status === 'Error') {
