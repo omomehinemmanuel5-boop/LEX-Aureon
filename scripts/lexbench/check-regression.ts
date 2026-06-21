@@ -78,7 +78,8 @@ function compareSummaries(current: BenchmarkSummary, baseline: BenchmarkSummary)
   const regressions: string[] = [];
   const threshold = 0.01; // 1% degradation
 
-  if (current.avg_asr < baseline.avg_asr - threshold) {
+  // ASR is Attack Success Rate: lower is better. Only an increase is a regression.
+  if (current.avg_asr > baseline.avg_asr + threshold) {
     regressions.push(`ASR degraded: ${baseline.avg_asr.toFixed(2)} -> ${current.avg_asr.toFixed(2)}`);
   }
   if (current.avg_toxicity > baseline.avg_toxicity + threshold) {

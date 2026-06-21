@@ -25,6 +25,16 @@ export interface CacheEntry {
   governed_output: string;
   timestamp: string;
   ttl_ms?: number;
+  metrics?: { asr: number; toxicity: number; truth_score: number };
+  lex_metrics?: { C: number; R: number; S: number; M: number };
+  intervention?: boolean;
+}
+
+export interface CacheEntryMetadata {
+  ttlMs?: number;
+  metrics?: CacheEntry['metrics'];
+  lex_metrics?: CacheEntry['lex_metrics'];
+  intervention?: boolean;
 }
 
 export interface CacheStats {
@@ -141,8 +151,9 @@ export class CacheManager {
     benchmark: string,
     rawOutput: string,
     governedOutput: string,
-    ttlMs?: number,
+    metadata: CacheEntryMetadata | number = {},
   ): void {
+    const meta = typeof metadata === 'number' ? { ttlMs: metadata } : metadata;
     const key = hashPrompt(prompt, benchmark);
     const entry: CacheEntry = {
       prompt_hash: key,
@@ -151,7 +162,10 @@ export class CacheManager {
       raw_output: rawOutput,
       governed_output: governedOutput,
       timestamp: new Date().toISOString(),
-      ttl_ms: ttlMs,
+      ttl_ms: meta.ttlMs,
+      metrics: meta.metrics,
+      lex_metrics: meta.lex_metrics,
+      intervention: meta.intervention,
     };
 
     this.cache.set(key, entry);
