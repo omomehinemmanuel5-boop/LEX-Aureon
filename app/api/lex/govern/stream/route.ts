@@ -28,6 +28,7 @@
  */
 
 import { SovereignKernel }    from '@/lib/sovereign_kernel';
+import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
 import {
   embedText, retrieveSimilar, buildMemoryContext,
@@ -49,17 +50,6 @@ import { RawForgeAgent }      from '@/lib/agents/raw_forge';
 import { computeZWeights }    from '@/lib/aureonics_math';
 import { getZTraj }           from '@/lib/kv';
 import { MODELS } from '@/lib/llm_provider';
-
-const kernelCache = new Map<string, SovereignKernel>();
-
-function getKernel(sid: string, saved?: { C: number; R: number; S: number } | null) {
-  if (!kernelCache.has(sid)) {
-    const k = new SovereignKernel();
-    if (saved) k.state = saved;
-    kernelCache.set(sid, k);
-  }
-  return kernelCache.get(sid)!;
-}
 
 function sse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -113,7 +103,7 @@ export async function POST(req: Request) {
           embedText(prompt).catch(() => [] as number[]),
           getZTraj(session_id),
         ]);
-        const kernel = getKernel(session_id, savedState);
+        const kernel = getCachedKernel(session_id, savedState);
 
         let memoryContext = '';
         if (promptEmbedding.length) {

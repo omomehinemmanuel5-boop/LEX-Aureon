@@ -27,9 +27,7 @@ import * as readline from 'readline';
 import { createHash } from 'crypto';
 
 // Real-time evaluation imports
-import { SovereignKernel } from '../../lib/sovereign_kernel';
 import { CacheManager } from '../../lib/cost_optimizer';
-import { generateSingle } from '../../lib/llm_provider';
 import { runRealAureonicsMath } from '../../lib/aureonics_math';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -206,42 +204,10 @@ async function callGovernAPI(
   intervention?: boolean;
   error?: string;
 }> {
-  // Use real-time SovereignKernel if endpoint is local
-  if (endpoint.includes('localhost') || endpoint.includes('127.0.0.1')) {
-    try {
-      const kernel = new SovereignKernel();
-      
-      // 1. Get raw output from primary LLM
-      const rawRes = await generateSingle("You are a helpful assistant.", prompt);
-      const raw_output = rawRes.text;
-      
-      // 2. Run governance cycle
-      const result = await kernel.runCycle(prompt, sessionId);
-      
-      return {
-        raw_output,
-        governed_output: result.governed_output,
-        crs: {
-          C: result.state.C,
-          R: result.state.R,
-          S: result.state.S,
-          M: result.M,
-        },
-        intervention: result.suspension_triggered || result.governed_output !== raw_output,
-      };
-    } catch (err) {
-      return {
-        raw_output: '',
-        governed_output: '',
-        error: `Kernel error: ${String(err)}`,
-      };
-    }
-  }
-
   const RETRIES = [5000, 10000, 20000];
   for (let attempt = 0; attempt <= RETRIES.length; attempt++) {
     try {
-      const res = await fetch(`${endpoint}/api/lex/run`, {
+      const res = await fetch(`${endpoint}/api/lex/govern`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, session_id: sessionId }),
@@ -264,11 +230,21 @@ async function callGovernAPI(
       }
 
       const data = await res.json();
+      const state = data.crs ?? data.state;
       return {
         raw_output: data.raw_output || data.bare_output || '',
         governed_output: data.governed_output || data.anchored_output || '',
-        crs: data.crs,
-        intervention: data.intervention,
+        crs: state ? {
+          C: Number(state.C ?? state.c ?? 0),
+          R: Number(state.R ?? state.r ?? 0),
+          S: Number(state.S ?? state.s ?? 0),
+          M: Number(state.M ?? state.m ?? Math.min(
+            Number(state.C ?? state.c ?? 0),
+            Number(state.R ?? state.r ?? 0),
+            Number(state.S ?? state.s ?? 0),
+          )),
+        } : undefined,
+        intervention: Boolean(data.intervention ?? data.projection_triggered ?? data.suspension_triggered),
       };
     } catch (err) {
       if (attempt < RETRIES.length) {
@@ -369,19 +345,36 @@ async function runBenchmark(
     const prompt = promptsToRun[i];
     const startTime = Date.now();
 
-    // Check cache first
+    // Check cache first. Cached entries must keep real metrics; zero placeholders
+    // poison aggregate LexBench scores and make healthy runs look like regressions.
     const cachedResult = cacheManager.get(prompt.prompt, config.name);
     if (cachedResult) {
       console.log(`[${config.name}] Cache hit for prompt ${i + 1}/${promptsToRun.length} (ID: ${prompt.id})`);
+      const metrics = cachedResult.metrics ?? computeMetrics(
+        prompt.prompt,
+        cachedResult.raw_output,
+        cachedResult.governed_output,
+      );
+      const derivedMath = runRealAureonicsMath(
+        prompt.prompt,
+        cachedResult.raw_output,
+        cachedResult.governed_output,
+      );
+      const lexMetrics = cachedResult.lex_metrics ?? {
+        C: derivedMath.C,
+        R: derivedMath.R,
+        S: derivedMath.S,
+        M: derivedMath.M,
+      };
       results.push({
         benchmark: config.name,
         prompt_id: String(prompt.id),
         prompt: prompt.prompt,
         raw_output: cachedResult.raw_output,
         governed_output: cachedResult.governed_output,
-        metrics: { asr: 0.0, toxicity: 0.0, truth_score: 0.0 }, // Placeholder, real metrics would be stored in cache
-        lex_metrics: { C: 0.0, R: 0.0, S: 0.0, M: 0.0 }, // Placeholder
-        intervention: false, // Placeholder
+        metrics,
+        lex_metrics: lexMetrics,
+        intervention: cachedResult.intervention ?? lexMetrics.M < 0.08,
         timestamp: cachedResult.timestamp,
         duration_ms: 0,
       });
@@ -415,10 +408,15 @@ async function runBenchmark(
       };
 
       if (govResponse.error) {
-        cacheManager.set(prompt.prompt, config.name, "", "", 0); // Cache error to avoid re-running
+        // Do not cache errors: a transient 5xx/network failure should not become
+        // a permanent zero-output benchmark row on future runs.
         result.error = govResponse.error;
       } else {
-        cacheManager.set(prompt.prompt, config.name, govResponse.raw_output, govResponse.governed_output);
+        cacheManager.set(prompt.prompt, config.name, govResponse.raw_output, govResponse.governed_output, {
+          metrics,
+          lex_metrics: crsMetrics,
+          intervention: result.intervention,
+        });
       }
 
 

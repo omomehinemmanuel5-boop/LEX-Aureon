@@ -406,6 +406,9 @@ npm run build          verify TypeScript
 [2026-05-23] SYSTEM: Vaulturex Sovereign Codex expanded from 22 to all 50 laws (Books I–X) in sovereign_laws.ts — all pillars now fully covered
 [2026-05-23] SYSTEM: Laws used as generative engine — law principle + governor_use IS the constitutional response mandate, not supplementary context
 [2026-05-23] FIX: attack_vector_disclosure seeded into law_impact table in db.ts
+[2026-06-21] FIX: SovereignKernel cache bounded with shared LRU helper across /api/lex/govern and /stream — prevents session_id memory exhaustion
+[2026-06-21] FIX: LexBench scoring repaired — ASR regression direction corrected, /api/lex/govern state parsed, cache hits preserve metrics, errors no longer cached as zero-output rows
+[2026-06-21] AUTOMATION: Kernel cache and LexBench cache metadata tests added (73 Vitest tests passing)
 ---
 
 ## CURRENT STATUS
@@ -414,11 +417,11 @@ System:     LIVE at lexaureon.com — real backend, zero demo, zero silent failu
 Counter:    Turso atomic increment — never resets
 Governor:   PRAXIS v1.0 — Groq + Jina + Turso, all hard-required
 Cost:       Zero extra — no Vercel KV, no paid add-ons
-Locks:      Constants frozen · Zod on inputs · CI blocks broken merges
+Locks:      Constants frozen · Zod on inputs · CI blocks broken merges · bounded kernel cache
 Paper:      v3 — DOI 10.5281/zenodo.18944242
 Grants:     Schmidt Sciences submitted · LTFF in progress
 Revenue:    $500 audit · Upwork active
-Research:   P1-P9 untested · 3 open problems
+Research:   P1-P9 untested · 3 open problems · LexBench scorer repaired
 LinkedIn:   Banned — appeal pending
 X:          Active — @lexAureon
 
@@ -433,6 +436,8 @@ X:          Active — @lexAureon
 - [ ] LinkedIn appeal
 - [x] Audit page fix (2026-05-17)
 - [x] Usage counter reset — atomic Turso, never resets (2026-05-18)
+- [x] Kernel cache bounded against session_id memory exhaustion (2026-06-21)
+- [x] LexBench scoring/cache regressions repaired (2026-06-21)
 
 ---
 
