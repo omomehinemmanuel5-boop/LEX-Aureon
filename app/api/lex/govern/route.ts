@@ -30,7 +30,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { SovereignKernel } from '@/lib/sovereign_kernel';
+import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
 import { incrementRuns } from '@/lib/db';
 import {
@@ -41,17 +41,6 @@ import {
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
 import { MAX_PROMPT_CHARS } from '@/lib/schemas';
 import { logger, errorFields } from '@/lib/logger';
-
-const kernelCache = new Map<string, SovereignKernel>();
-
-function getKernel(sessionId: string, savedState?: { C: number; R: number; S: number } | null): SovereignKernel {
-  if (!kernelCache.has(sessionId)) {
-    const k = new SovereignKernel();
-    if (savedState) k.state = savedState;
-    kernelCache.set(sessionId, k);
-  }
-  return kernelCache.get(sessionId)!;
-}
 
 let _dbReady = false;
 async function ensureDB() {
@@ -93,7 +82,7 @@ export async function POST(req: Request) {
   ]);
 
   // ── Load kernel + run cycle (F(x,z) sync, G(x,z) async) ─────────────────
-  const kernel = getKernel(session_id, savedState);
+  const kernel = getCachedKernel(session_id, savedState);
   const result = await kernel.runCycle(prompt, memoryContext, session_id);
 
   // ── Self-referential CRS ──────────────────────────────────────────────────
