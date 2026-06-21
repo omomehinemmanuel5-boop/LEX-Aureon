@@ -15,6 +15,14 @@
  * calls per request) against the production Anthropic/Jina keys. If this
  * is meant to stay public, worth adding auth or a much higher sane ceiling
  * back before traffic picks up.
+ *
+ * fix: prompt-length cap now imported from lib/schemas.ts (MAX_PROMPT_CHARS)
+ * instead of a separate hardcoded 5000 here. lib/schemas.ts previously
+ * defined an unused 8000-char limit via RunRequestSchema — nothing actually
+ * called parseRunRequest() in production, so the two numbers had drifted
+ * with no live conflict, just dead inconsistency. 5000 stays canonical
+ * (it's what every receipt to date was written under); schemas.ts now
+ * re-exports the same constant instead of its own copy.
  */
 
 import { NextResponse } from 'next/server';
@@ -27,6 +35,7 @@ import {
   getConstitutionalCentroid, getSessionCentroid,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
+import { MAX_PROMPT_CHARS } from '@/lib/schemas';
 
 const kernelCache = new Map<string, SovereignKernel>();
 
@@ -54,7 +63,7 @@ export async function POST(req: Request) {
   const { prompt, session_id, turn = 1 } = body;
   if (!prompt?.trim())     return NextResponse.json({ error: 'prompt required' },     { status: 400 });
   if (!session_id?.trim()) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
-  if (prompt.length > 5000) return NextResponse.json({ error: 'prompt too long (max 5000 chars)' }, { status: 400 });
+  if (prompt.length > MAX_PROMPT_CHARS) return NextResponse.json({ error: `prompt too long (max ${MAX_PROMPT_CHARS} chars)` }, { status: 400 });
 
   await ensureDB();
 
