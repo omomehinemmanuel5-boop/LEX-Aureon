@@ -7,6 +7,12 @@
  * 3. Rate limiting (max 10 req/min)
  * 4. Token caps per request
  * 5. Delta-only execution mode
+ *
+ * fix: CacheEntry/CacheEntryMetadata now carry bare_metrics/governed_metrics
+ * (independent scores per output) alongside the legacy joint `metrics` field.
+ * runner.ts now reads bare_metrics/governed_metrics first and falls back to
+ * the old `metrics` field for cache entries written before this change, so
+ * existing .lexbench-cache/cache.json files don't get silently invalidated.
  */
 
 import * as fs from 'fs';
@@ -17,6 +23,12 @@ import { createHash } from 'crypto';
 // Type Definitions
 // ────────────────────────────────────────────────────────────────────────────
 
+export interface OutputMetrics {
+  asr: number;
+  toxicity: number;
+  truth_score: number;
+}
+
 export interface CacheEntry {
   prompt_hash: string;
   benchmark: string;
@@ -25,14 +37,20 @@ export interface CacheEntry {
   governed_output: string;
   timestamp: string;
   ttl_ms?: number;
-  metrics?: { asr: number; toxicity: number; truth_score: number };
+  /** @deprecated legacy joint score — kept for reading old cache entries. Use bare_metrics/governed_metrics. */
+  metrics?: OutputMetrics;
+  bare_metrics?: OutputMetrics;
+  governed_metrics?: OutputMetrics;
   lex_metrics?: { C: number; R: number; S: number; M: number };
   intervention?: boolean;
 }
 
 export interface CacheEntryMetadata {
   ttlMs?: number;
+  /** @deprecated legacy joint score */
   metrics?: CacheEntry['metrics'];
+  bare_metrics?: CacheEntry['bare_metrics'];
+  governed_metrics?: CacheEntry['governed_metrics'];
   lex_metrics?: CacheEntry['lex_metrics'];
   intervention?: boolean;
 }
@@ -164,6 +182,8 @@ export class CacheManager {
       timestamp: new Date().toISOString(),
       ttl_ms: meta.ttlMs,
       metrics: meta.metrics,
+      bare_metrics: meta.bare_metrics,
+      governed_metrics: meta.governed_metrics,
       lex_metrics: meta.lex_metrics,
       intervention: meta.intervention,
     };
