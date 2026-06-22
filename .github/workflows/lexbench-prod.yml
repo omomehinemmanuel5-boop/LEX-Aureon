@@ -85,7 +85,7 @@ jobs:
           name: lexbench-shard-results-${{ matrix.shard-index }}
           path: data/lexbench-*.jsonl
 
-  # ── Aggregate all shards and report ────────────────────────────────────
+  # ── Aggregate all shards, report, and publish to the live leaderboard ──
   aggregate-and-report:
     needs: run-lexbench
     runs-on: ubuntu-latest
@@ -124,6 +124,21 @@ jobs:
           else
             echo "No baseline found — skipping regression check"
           fi
+
+      # fix: this is the step that was missing entirely — aggregate-and-report
+      # previously only committed summary.json back into git and uploaded it
+      # as an artifact. Nothing ever wrote into the Turso benchmark_results
+      # table that /api/benchmarks (and the public Trust Console) reads from,
+      # so the table stayed empty no matter how many runs completed.
+      # Only publish on scheduled/manual runs, not on every PR — PR runs are
+      # smoke tests on potentially unmerged code and shouldn't touch the
+      # public leaderboard.
+      - name: Publish results to live leaderboard
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: npx tsx scripts/lexbench/publish-results.ts summary.json
+        env:
+          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
 
       - name: Upload final report
         uses: actions/upload-artifact@v4
