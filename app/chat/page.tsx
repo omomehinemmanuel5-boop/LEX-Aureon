@@ -18,78 +18,85 @@ import type { GovernanceResponse } from '@/types/governance-types';
 
 const MAX_CALLS = 10;
 
-const HEALTH: Record<string, { color: string; glow: string; label: string }> = {
-  OPTIMAL:  { color: '#10b981', glow: '0 0 12px #10b98140', label: 'OPTIMAL'  },
-  ALERT:    { color: '#f59e0b', glow: '0 0 12px #f59e0b40', label: 'ALERT'    },
-  STRESSED: { color: '#f97316', glow: '0 0 12px #f9731640', label: 'STRESSED' },
-  CRITICAL: { color: '#ef4444', glow: '0 0 12px #ef444440', label: 'CRITICAL' },
+const HEALTH: Record<string, { color: string; glow: string; label: string; bg: string }> = {
+  OPTIMAL:  { color: '#10b981', glow: '0 0 20px #10b98128', label: 'OPTIMAL',  bg: '#10b98110' },
+  ALERT:    { color: '#f59e0b', glow: '0 0 20px #f59e0b28', label: 'ALERT',    bg: '#f59e0b10' },
+  STRESSED: { color: '#f97316', glow: '0 0 20px #f9731628', label: 'STRESSED', bg: '#f9731610' },
+  CRITICAL: { color: '#ef4444', glow: '0 0 20px #ef444428', label: 'CRITICAL', bg: '#ef444410' },
 };
 
+/* ─── CRS minibar ─────────────────────────────────────────────────────── */
 function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) {
   const total = (c + r + s) || 1;
+  const mColor = m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981';
   return (
-    <div className="mt-2 space-y-1">
+    <div className="mt-3 space-y-1.5">
       {[
         { k: 'C', v: c, color: '#3b82f6' },
         { k: 'R', v: r, color: '#10b981' },
         { k: 'S', v: s, color: '#f59e0b' },
       ].map(({ k, v, color }) => (
         <div key={k} className="flex items-center gap-2">
-          <span className="text-xs font-mono w-3" style={{ color }}>{k}</span>
-          <div className="flex-1 h-1 rounded-full" style={{ background: '#1a2040' }}>
-            <div className="h-1 rounded-full transition-all duration-500"
-              style={{ width: `${(v / total) * 100}%`, background: color }} />
+          <span className="text-[10px] font-mono w-3 font-bold" style={{ color }}>{k}</span>
+          <div className="flex-1 h-[3px] rounded-full" style={{ background: '#0f1629' }}>
+            <div className="h-[3px] rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${(v / total) * 100}%`, background: color, boxShadow: `0 0 6px ${color}60` }} />
           </div>
-          <span className="text-xs font-mono w-10 text-right" style={{ color: '#475569' }}>{v.toFixed(2)}</span>
+          <span className="text-[10px] font-mono w-8 text-right tabular-nums" style={{ color: '#334155' }}>{v.toFixed(2)}</span>
         </div>
       ))}
-      <div className="flex items-center gap-2 pt-0.5">
-        <span className="text-xs font-mono w-3" style={{ color: '#c9a84c' }}>M</span>
-        <div className="flex-1 h-1.5 rounded-full" style={{ background: '#1a2040' }}>
-          <div className="h-1.5 rounded-full transition-all duration-700"
-            style={{ width: `${m * 100}%`, background: m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981' }} />
+      <div className="flex items-center gap-2 pt-1">
+        <span className="text-[10px] font-mono w-3 font-bold" style={{ color: '#c9a84c' }}>M</span>
+        <div className="flex-1 h-[4px] rounded-full" style={{ background: '#0f1629' }}>
+          <div className="h-[4px] rounded-full transition-all duration-700"
+            style={{ width: `${m * 100}%`, background: mColor, boxShadow: `0 0 8px ${mColor}80` }} />
         </div>
-        <span className="text-xs font-mono w-10 text-right" style={{ color: '#c9a84c' }}>{m.toFixed(3)}</span>
+        <span className="text-[10px] font-mono w-8 text-right tabular-nums font-bold" style={{ color: '#c9a84c' }}>{m.toFixed(3)}</span>
       </div>
     </div>
   );
 }
 
+/* ─── Message tab panel ───────────────────────────────────────────────── */
 type MsgTab = 'raw' | 'audit' | 'analysis';
 
-function MessageTabPanel({ turn, activeTab, onClose }: { turn: ChatTurn; activeTab: MsgTab; onClose: () => void }) {
+function MessageTabPanel({ turn, activeTab, onClose }: {
+  turn: ChatTurn; activeTab: MsgTab; onClose: () => void;
+}) {
   const res  = turn.complete as GovernanceResponse | null;
   const hcfg = HEALTH[turn.health_band ?? 'OPTIMAL'] ?? HEALTH.OPTIMAL;
   return (
-    <div className="mt-2 rounded-lg overflow-hidden text-xs font-mono"
-      style={{ background: '#020408', border: '1px solid #1a2040' }}>
-      <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: '#1a2040' }}>
-        <span style={{ color: '#475569' }}>
-          {activeTab === 'raw'      && '// bare LLM output'}
+    <div className="mt-2 rounded-xl overflow-hidden text-xs font-mono"
+      style={{ background: '#020408', border: '1px solid #0f1629' }}>
+      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #0f1629' }}>
+        <span style={{ color: '#1e3a5f', letterSpacing: '0.05em' }}>
+          {activeTab === 'raw'      && '// bare output'}
           {activeTab === 'audit'    && '// governance receipt'}
-          {activeTab === 'analysis' && '// constitutional analysis'}
+          {activeTab === 'analysis' && '// constitutional state'}
         </span>
-        <button onClick={onClose} style={{ color: '#475569' }} className="hover:text-white transition-colors">✕</button>
+        <button onClick={onClose}
+          className="w-5 h-5 rounded flex items-center justify-center transition-colors"
+          style={{ color: '#334155', background: '#0f1629' }}>✕</button>
       </div>
-      <div className="p-3 space-y-2 max-h-56 overflow-y-auto">
+      <div className="p-3 space-y-2 max-h-52 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
         {activeTab === 'raw' && (
-          <div className="whitespace-pre-wrap leading-relaxed" style={{ color: '#64748b' }}>
-            {turn.raw_output || '[no bare output — prompt was blocked at pre-eval]'}
-          </div>
+          <p className="whitespace-pre-wrap leading-relaxed" style={{ color: '#334155' }}>
+            {turn.raw_output || '// blocked at pre-eval — no bare output'}
+          </p>
         )}
         {activeTab === 'audit' && (
           <div className="space-y-2">
             {[
-              { k: 'audit_id',    v: turn.audit_id ?? 'N/A',                     c: '#c9a84c' },
-              { k: 'health_band', v: turn.health_band ?? 'OPTIMAL',              c: hcfg.color },
-              { k: 'M',           v: (turn.M ?? 0).toFixed(4),                   c: hcfg.color },
-              { k: 'intervened',  v: turn.intervened ? 'YES' : 'NO',             c: turn.intervened ? '#ef4444' : '#22c55e' },
-              { k: 'attack',      v: turn.attack_type ?? 'none',                 c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : '#475569' },
-              { k: 'severity',    v: turn.attack_severity !== undefined ? turn.attack_severity.toFixed(2) : 'n/a', c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : '#475569' },
-              { k: 'memory',      v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : '#475569' },
+              { k: 'audit_id',   v: turn.audit_id ?? 'N/A',                     c: '#c9a84c' },
+              { k: 'health',     v: turn.health_band ?? 'OPTIMAL',              c: hcfg.color },
+              { k: 'M',          v: (turn.M ?? 0).toFixed(4),                   c: hcfg.color },
+              { k: 'intervened', v: turn.intervened ? 'YES' : 'NO',             c: turn.intervened ? '#ef4444' : '#22c55e' },
+              { k: 'attack',     v: turn.attack_type ?? 'none',                 c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : '#334155' },
+              { k: 'severity',   v: turn.attack_severity !== undefined ? turn.attack_severity.toFixed(2) : 'n/a', c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : '#334155' },
+              { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : '#334155' },
             ].map(({ k, v, c }) => (
               <div key={k} className="flex gap-3">
-                <span className="w-24 flex-shrink-0" style={{ color: '#475569' }}>{k}:</span>
+                <span className="w-20 flex-shrink-0" style={{ color: '#1e3a5f' }}>{k}:</span>
                 <span style={{ color: c }}>{v}</span>
               </div>
             ))}
@@ -99,24 +106,24 @@ function MessageTabPanel({ turn, activeTab, onClose }: { turn: ChatTurn; activeT
           <div className="space-y-3">
             {turn.C !== undefined && <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />}
             {turn.governor && (
-              <div className="space-y-1 pt-2 border-t" style={{ borderColor: '#1a2040' }}>
-                <div style={{ color: '#475569' }}>// governor</div>
+              <div className="space-y-1.5 pt-2" style={{ borderTop: '1px solid #0f1629' }}>
+                <div style={{ color: '#1e3a5f' }}>// governor</div>
                 {[
                   { k: 'decision', v: turn.governor.decision, c: turn.governor.decision === 'INTERVENE' ? '#ef4444' : '#22c55e' },
                   { k: 'δV',       v: `${turn.governor.dV > 0 ? '+' : ''}${turn.governor.dV?.toFixed(5)}`, c: turn.governor.dV < 0 ? '#10b981' : '#ef4444' },
-                  { k: 'Lyapunov', v: turn.governor.lyapunov_stable ? '✓ stable' : '⚠ breach', c: turn.governor.lyapunov_stable ? '#10b981' : '#ef4444' },
+                  { k: 'stable',   v: turn.governor.lyapunov_stable ? '✓ yes' : '⚠ breach', c: turn.governor.lyapunov_stable ? '#10b981' : '#ef4444' },
                 ].map(({ k, v, c }) => (
                   <div key={k} className="flex gap-3">
-                    <span style={{ color: '#475569' }}>{k}:</span>
+                    <span className="w-20" style={{ color: '#1e3a5f' }}>{k}:</span>
                     <span style={{ color: c }}>{v}</span>
                   </div>
                 ))}
               </div>
             )}
             {turn.law && (
-              <div className="pt-2 border-t" style={{ borderColor: '#1a2040' }}>
-                <div style={{ color: '#475569' }}>// law invoked</div>
-                <div style={{ color: '#c9a84c' }}>[{turn.law.book}] {turn.law.name}</div>
+              <div className="pt-2" style={{ borderTop: '1px solid #0f1629' }}>
+                <div style={{ color: '#1e3a5f' }}>// law invoked</div>
+                <div className="mt-1" style={{ color: '#c9a84c' }}>[{turn.law.book}] {turn.law.name}</div>
               </div>
             )}
             {turn.C !== undefined && res && (
@@ -136,18 +143,23 @@ function MessageTabPanel({ turn, activeTab, onClose }: { turn: ChatTurn; activeT
   );
 }
 
+/* ─── Message bubble ──────────────────────────────────────────────────── */
 function MessageBubble({ turn, isLatest, streaming, partialOutput, openTab, onOpenTab }: {
   turn: ChatTurn; isLatest: boolean; streaming: boolean;
   partialOutput: string; openTab: MsgTab | null; onOpenTab: (tab: MsgTab | null) => void;
 }) {
-  const hcfg  = HEALTH[turn.health_band ?? 'OPTIMAL'] ?? HEALTH.OPTIMAL;
+  const hcfg   = HEALTH[turn.health_band ?? 'OPTIMAL'] ?? HEALTH.OPTIMAL;
   const isUser = turn.role === 'user';
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-xs sm:max-w-md px-4 py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed"
-          style={{ background: '#0f1929', border: '1px solid #1a2040', color: '#cbd5e1' }}>
+      <div className="flex justify-end px-3">
+        <div className="max-w-[80vw] sm:max-w-md px-4 py-3 rounded-2xl rounded-tr-md text-sm leading-relaxed"
+          style={{
+            background: 'linear-gradient(135deg, #0d1b35 0%, #0a1528 100%)',
+            border: '1px solid #1a2d52',
+            color: '#94a3b8',
+          }}>
           {turn.content}
         </div>
       </div>
@@ -158,46 +170,61 @@ function MessageBubble({ turn, isLatest, streaming, partialOutput, openTab, onOp
   const displayText = isCurrentlyStreaming ? partialOutput : (turn.governed_output ?? turn.partial ?? '');
 
   return (
-    <div className="flex justify-start">
-      <div className="max-w-sm sm:max-w-lg w-full">
-        <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm leading-relaxed"
-          style={{
-            background: '#07080f', border: `1px solid #1a2040`,
-            borderLeftWidth: 2, borderLeftColor: hcfg.color,
-            boxShadow: isCurrentlyStreaming ? hcfg.glow : 'none',
-            transition: 'box-shadow 0.3s',
-          }}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-mono font-bold" style={{ color: '#c9a84c' }}>⬡ Lex Aureon</span>
-            {turn.health_band && (
-              <span className="text-xs font-mono px-1.5 py-0.5 rounded-full"
-                style={{ color: hcfg.color, background: `${hcfg.color}12`, border: `1px solid ${hcfg.color}30`, fontSize: 10 }}>
+    <div className="flex justify-start px-3">
+      <div className="w-full max-w-[88vw] sm:max-w-xl">
+        {/* Avatar row */}
+        <div className="flex items-center gap-2 mb-1.5 ml-1">
+          <div className="w-5 h-5 rounded-md flex items-center justify-center text-[10px]"
+            style={{ background: '#c9a84c18', border: '1px solid #c9a84c30', color: '#c9a84c' }}>⬡</div>
+          <span className="text-[11px] font-mono font-bold tracking-widest uppercase" style={{ color: '#c9a84c' }}>Lex Aureon</span>
+
+          <div className="flex items-center gap-1 overflow-hidden">
+            {turn.health_band && turn.health_band !== 'OPTIMAL' && (
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full flex-shrink-0"
+                style={{ color: hcfg.color, background: hcfg.bg, border: `1px solid ${hcfg.color}25` }}>
                 {hcfg.label}
               </span>
             )}
+            {turn.intervened && (
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full flex-shrink-0"
+                style={{ color: '#ef4444', background: '#ef444410', border: '1px solid #ef444425' }}>
+                ⚡ corrected
+              </span>
+            )}
             {turn.memory_injected && (
-              <span className="text-xs font-mono px-1.5 py-0.5 rounded-full"
-                style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f720', fontSize: 10 }}>🧠</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full flex-shrink-0"
+                style={{ color: '#a855f7', background: '#a855f710', border: '1px solid #a855f725' }}>
+                🧠 mem
+              </span>
             )}
             {turn.attack_type && turn.attack_type !== 'none' && (
-              <span className="text-xs font-mono px-1.5 py-0.5 rounded-full"
-                style={{ color: '#f97316', background: '#f9731612', border: '1px solid #f9731620', fontSize: 10 }}>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full flex-shrink-0"
+                style={{ color: '#f97316', background: '#f9731610', border: '1px solid #f9731625' }}>
                 🛡 {turn.attack_type}
               </span>
             )}
-            {turn.intervened && (
-              <span className="text-xs font-mono px-1.5 py-0.5 rounded-full"
-                style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444420', fontSize: 10 }}>⚡ corrected</span>
-            )}
             {isCurrentlyStreaming && (
-              <span className="ml-auto text-xs font-mono animate-pulse" style={{ color: '#c9a84c' }}>●</span>
+              <span className="text-[9px] font-mono animate-pulse ml-1 flex-shrink-0" style={{ color: '#c9a84c' }}>●</span>
             )}
           </div>
+        </div>
 
-          <div style={{ color: turn.intervened ? '#fcd34d' : '#86efac' }} className="whitespace-pre-wrap">
+        {/* Bubble */}
+        <div className="px-4 py-3.5 rounded-2xl rounded-tl-md text-sm leading-relaxed"
+          style={{
+            background: '#07080f',
+            border: `1px solid ${isCurrentlyStreaming ? hcfg.color + '50' : '#0f1629'}`,
+            borderLeftWidth: 2,
+            borderLeftColor: hcfg.color,
+            boxShadow: isCurrentlyStreaming ? hcfg.glow : 'none',
+            transition: 'border-color 0.4s, box-shadow 0.4s',
+          }}>
+
+          <div style={{ color: turn.intervened ? '#fcd34d' : '#86efac', lineHeight: 1.7 }}
+            className="whitespace-pre-wrap">
             {displayText}
             {isCurrentlyStreaming && (
-              <span className="inline-block w-2 h-4 align-text-bottom ml-0.5 rounded-sm"
+              <span className="inline-block w-[2px] h-[14px] align-text-bottom ml-0.5 rounded-[1px]"
                 style={{ background: '#c9a84c', animation: 'term-blink 0.8s step-end infinite' }} />
             )}
             {!displayText && !isCurrentlyStreaming && turn.error && (
@@ -210,14 +237,14 @@ function MessageBubble({ turn, isLatest, streaming, partialOutput, openTab, onOp
           )}
 
           {!isCurrentlyStreaming && turn.governed_output && (
-            <div className="flex items-center gap-1.5 mt-3 pt-2 border-t" style={{ borderColor: '#1a2040' }}>
+            <div className="flex items-center gap-1 mt-3 pt-2.5" style={{ borderTop: '1px solid #0f1629' }}>
               {(['raw', 'audit', 'analysis'] as MsgTab[]).map(t => (
                 <button key={t} onClick={() => onOpenTab(openTab === t ? null : t)}
-                  className="px-2 py-0.5 rounded text-xs font-mono transition-all"
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all active:scale-95"
                   style={{
-                    color: openTab === t ? '#c9a84c' : '#475569',
-                    background: openTab === t ? '#c9a84c15' : 'transparent',
-                    border: `1px solid ${openTab === t ? '#c9a84c30' : '#1a2040'}`,
+                    color: openTab === t ? '#c9a84c' : '#334155',
+                    background: openTab === t ? '#c9a84c12' : 'transparent',
+                    border: `1px solid ${openTab === t ? '#c9a84c30' : '#0f1629'}`,
                   }}>{t}</button>
               ))}
             </div>
@@ -232,9 +259,11 @@ function MessageBubble({ turn, isLatest, streaming, partialOutput, openTab, onOp
   );
 }
 
+/* ─── Suggestion bar ──────────────────────────────────────────────────── */
 function SuggestionBar({ turns, activeCategory, onCategoryChange, onSelect, disabled }: {
   turns: ChatTurn[]; activeCategory: SuggestionCategory;
-  onCategoryChange: (c: SuggestionCategory) => void; onSelect: (prompt: string) => void; disabled: boolean;
+  onCategoryChange: (c: SuggestionCategory) => void;
+  onSelect: (prompt: string) => void; disabled: boolean;
 }) {
   const suggestions = useMemo(
     () => activeCategory === 'all'
@@ -246,28 +275,34 @@ function SuggestionBar({ turns, activeCategory, onCategoryChange, onSelect, disa
 
   const dotColor: Record<string, string> = {
     jailbreak: '#ef4444', sycophancy: '#10b981', identity: '#3b82f6',
-    'slow-drip': '#f59e0b', probe: '#a855f7', attack: '#f97316', baseline: '#64748b',
+    'slow-drip': '#f59e0b', probe: '#a855f7', attack: '#f97316', baseline: '#475569',
   };
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
         {SUGGESTION_CATEGORIES.map(cat => (
           <button key={cat.key} onClick={() => onCategoryChange(cat.key)}
-            className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-mono transition-all"
+            className="flex-shrink-0 px-3 py-1 rounded-full text-[11px] font-mono tracking-wide transition-all active:scale-95"
             style={{
-              color: activeCategory === cat.key ? '#07070d' : '#475569',
-              background: activeCategory === cat.key ? '#c9a84c' : '#0a0d18',
-              border: `1px solid ${activeCategory === cat.key ? '#c9a84c' : '#1a2040'}`,
+              color: activeCategory === cat.key ? '#07070d' : '#334155',
+              background: activeCategory === cat.key ? '#c9a84c' : '#07080f',
+              border: `1px solid ${activeCategory === cat.key ? '#c9a84c' : '#0f1629'}`,
             }}>{cat.label}</button>
         ))}
       </div>
       <div className="flex gap-1.5 flex-wrap">
         {suggestions.map((s, i) => (
-          <button key={i} onClick={() => !disabled && onSelect(s.prompt)} disabled={disabled} title={s.prompt}
-            className="px-3 py-1.5 rounded-full text-xs font-mono transition-all disabled:opacity-40 text-left"
-            style={{ color: '#94a3b8', background: '#0a0d18', border: '1px solid #1a2040', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <span className="mr-1.5 text-xs" style={{ color: dotColor[s.category] ?? '#64748b' }}>●</span>
+          <button key={i} onClick={() => !disabled && onSelect(s.prompt)} disabled={disabled}
+            title={s.prompt}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-mono
+              transition-all disabled:opacity-30 active:scale-95"
+            style={{
+              color: '#475569', background: '#07080f',
+              border: '1px solid #0f1629',
+              maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+            <span style={{ color: dotColor[s.category] ?? '#475569', fontSize: 8 }}>●</span>
             {s.label}
           </button>
         ))}
@@ -276,17 +311,63 @@ function SuggestionBar({ turns, activeCategory, onCategoryChange, onSelect, disa
   );
 }
 
+/* ─── Empty state ─────────────────────────────────────────────────────── */
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-6 text-center px-6 py-16">
+      <div className="relative">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
+          style={{
+            background: 'linear-gradient(135deg, #c9a84c18 0%, #c9a84c08 100%)',
+            border: '1px solid #c9a84c25',
+            boxShadow: '0 0 40px #c9a84c0a',
+          }}>⬡</div>
+        <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full"
+          style={{ background: '#10b981', boxShadow: '0 0 8px #10b981', animation: 'term-blink 2s ease-in-out infinite' }} />
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-base font-mono font-bold tracking-widest uppercase" style={{ color: '#c9a84c' }}>
+          Sovereign Console
+        </p>
+        <p className="text-xs font-mono" style={{ color: '#1e3a5f' }}>
+          Constitutional governance · continuous context · never drifts
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 w-full max-w-xs text-left">
+        {[
+          { icon: '⬡', label: 'C·R·S state', desc: 'carries forward every turn' },
+          { icon: '⚓', label: 'Lyapunov anchored', desc: 'mathematically stable' },
+          { icon: '🛡', label: 'Governor active', desc: 'try a jailbreak — watch it hold' },
+        ].map(({ icon, label, desc }) => (
+          <div key={label} className="flex items-start gap-3 px-3 py-2.5 rounded-xl"
+            style={{ background: '#07080f', border: '1px solid #0f1629' }}>
+            <span className="text-base mt-0.5">{icon}</span>
+            <div>
+              <p className="text-[11px] font-mono font-bold" style={{ color: '#475569' }}>{label}</p>
+              <p className="text-[10px] font-mono" style={{ color: '#1e3a5f' }}>{desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main page ───────────────────────────────────────────────────────── */
 export default function ChatConsole() {
-  const [turns, setTurns]           = useState<ChatTurn[]>([]);
-  const [input, setInput]           = useState('');
-  const [apiCalls, setApiCalls]     = useState(0);
-  const [showUpgrade, setShowUpgrade] = useState(false);
-  const [showEmail, setShowEmail]   = useState(false);
-  const [suggCat, setSuggCat]       = useState<SuggestionCategory>('all');
-  const [openTabs, setOpenTabs]     = useState<Record<string, MsgTab | null>>({});
+  const [turns, setTurns]               = useState<ChatTurn[]>([]);
+  const [input, setInput]               = useState('');
+  const [apiCalls, setApiCalls]         = useState(0);
+  const [showUpgrade, setShowUpgrade]   = useState(false);
+  const [showEmail, setShowEmail]       = useState(false);
+  const [suggCat, setSuggCat]           = useState<SuggestionCategory>('all');
+  const [openTabs, setOpenTabs]         = useState<Record<string, MsgTab | null>>({});
   const [currentLexId, setCurrentLexId] = useState<string | null>(null);
-  const [liveM, setLiveM]           = useState<number | null>(null);
-  const [liveHealth, setLiveHealth] = useState<string>('OPTIMAL');
+  const [liveM, setLiveM]               = useState<number | null>(null);
+  const [liveHealth, setLiveHealth]     = useState<string>('OPTIMAL');
+  const [inputFocused, setInputFocused] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
@@ -322,7 +403,6 @@ export default function ChatConsole() {
     setLiveHealth(stream.metrics.health_band ?? stream.metrics.health ?? 'OPTIMAL');
   }, [stream.metrics]);
 
-  // ── Governor / law / severity update on complete ──────────────────────
   useEffect(() => {
     if (stream.stage !== 'complete' || !stream.complete || !currentLexId) return;
     const res = stream.complete as GovernanceResponse;
@@ -376,18 +456,6 @@ export default function ChatConsole() {
       setShowEmail(true); return;
     }
 
-    // ── FIX: send only the live user turn as `prompt` ──────────────────────
-    // The server's own attack-pattern scanner (detectSemanticAttack) runs
-    // directly over the `prompt` field. Previously this client glued the
-    // last 6 turns of conversation history onto `prompt` for "memory", which
-    // meant the scanner was reading stale turns (including Lex's own past
-    // refusals/test language) and false-flagging completely benign follow-up
-    // messages as identity/jailbreak attacks.
-    //
-    // The server already does real constitutional memory via embeddings
-    // (embedText → retrieveSimilar → buildMemoryContext in lex_memory.ts) and
-    // injects that into the LLM's context separately from the attack scanner.
-    // So continuity is preserved without contaminating detection.
     const userId = `u_${Date.now()}`;
     const lexId  = `l_${Date.now()}`;
 
@@ -399,121 +467,179 @@ export default function ChatConsole() {
     setCurrentLexId(lexId);
     setInput('');
 
+    if (inputRef.current) inputRef.current.style.height = 'auto';
+
     await runStream(p, sessionId);
   }, [input, stream.loading, apiCalls, runStream, sessionId]);
 
-  const hcfg       = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
+  const hcfg      = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
   const isStreaming = stream.loading;
   const arc        = useMemo(() => buildSessionArc(turns), [turns]);
+  const callsLeft  = MAX_CALLS - apiCalls;
 
   return (
-    <div className="h-screen flex flex-col"
-      style={{ background: '#050810', fontFamily: "'JetBrains Mono','SF Mono','Fira Code',monospace" }}>
+    <>
+      <style>{`
+        @keyframes term-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        ::-webkit-scrollbar { display: none; }
+        * { -webkit-tap-highlight-color: transparent; }
+      `}</style>
 
-      {/* Header */}
-      <header className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b z-40"
-        style={{ background: '#070b14', borderColor: '#1a2040' }}>
-        <div className="flex items-center gap-3">
-          <Link href="/" className="text-xs font-mono text-slate-600 hover:text-slate-400 transition-colors">←</Link>
-          <span className="text-xs font-mono font-bold" style={{ color: '#c9a84c' }}>LEX AUREON</span>
-          <span className="text-xs font-mono text-slate-600 hidden sm:block">· Sovereign Console</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {liveM !== null && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono"
-              style={{ color: hcfg.color, background: `${hcfg.color}12`, border: `1px solid ${hcfg.color}30`,
-                boxShadow: isStreaming ? hcfg.glow : 'none', transition: 'box-shadow 0.3s' }}>
-              <span className="w-1.5 h-1.5 rounded-full"
-                style={{ background: hcfg.color, animation: isStreaming ? 'term-blink 1s step-end infinite' : 'none' }} />
-              M={liveM.toFixed(3)} {hcfg.label}
+      <div className="h-[100dvh] flex flex-col overflow-hidden"
+        style={{
+          background: '#04060e',
+          fontFamily: "'JetBrains Mono','SF Mono','Fira Code',ui-monospace,monospace",
+        }}>
+
+        {/* ── Header ──────────────────────────────────────────────── */}
+        <header className="flex-shrink-0 flex items-center justify-between h-12 px-4 z-40"
+          style={{ background: '#06070f', borderBottom: '1px solid #0d1220' }}>
+
+          <div className="flex items-center gap-3">
+            <Link href="/"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all active:scale-90"
+              style={{ color: '#334155', background: '#0a0d18', border: '1px solid #0f1629' }}>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M7 2L3 5L7 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </Link>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono font-bold tracking-[0.15em] uppercase" style={{ color: '#c9a84c' }}>
+                Lex Aureon
+              </span>
+              <span className="hidden sm:block text-[10px] font-mono" style={{ color: '#1e3a5f' }}>
+                · Sovereign Console
+              </span>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {liveM !== null && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono"
+                style={{
+                  color: hcfg.color, background: hcfg.bg,
+                  border: `1px solid ${hcfg.color}20`,
+                  boxShadow: isStreaming ? hcfg.glow : 'none',
+                  transition: 'all 0.4s',
+                }}>
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{ background: hcfg.color, animation: isStreaming ? 'term-blink 1s step-end infinite' : 'none' }} />
+                M={liveM.toFixed(3)}
+              </div>
+            )}
+            <span className="text-[10px] font-mono" style={{ color: callsLeft <= 3 ? '#f59e0b' : '#1e3a5f' }}>
+              {callsLeft}/{MAX_CALLS}
+            </span>
+            <button onClick={() => setShowUpgrade(true)}
+              className="text-[10px] px-2.5 py-1 rounded-lg font-mono transition-all active:scale-95"
+              style={{ color: '#c9a84c', background: '#c9a84c0a', border: '1px solid #c9a84c25' }}>
+              pro
+            </button>
+          </div>
+        </header>
+
+        {/* ── Thread ──────────────────────────────────────────────── */}
+        <main className="flex-1 overflow-y-auto py-4 space-y-4" style={{ scrollbarWidth: 'none' }}>
+          {!turns.length
+            ? <EmptyState />
+            : turns.map(turn => (
+              <MessageBubble key={turn.id} turn={turn}
+                isLatest={turn.id === currentLexId}
+                streaming={isStreaming && turn.id === currentLexId}
+                partialOutput={stream.partialOutput}
+                openTab={openTabs[turn.id] ?? null}
+                onOpenTab={tab => setOpenTabs(prev => ({ ...prev, [turn.id]: tab }))} />
+            ))
+          }
+          <div ref={bottomRef} className="h-2" />
+        </main>
+
+        {/* ── Footer ──────────────────────────────────────────────── */}
+        <footer className="flex-shrink-0 px-3 pt-2 space-y-2"
+          style={{
+            background: '#06070f',
+            borderTop: '1px solid #0d1220',
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+          }}>
+
+          {!isStreaming && (
+            <SuggestionBar
+              turns={turns} activeCategory={suggCat}
+              onCategoryChange={setSuggCat}
+              onSelect={p => { setInput(p); inputRef.current?.focus(); }}
+              disabled={isStreaming}
+            />
           )}
-          <span className="text-xs font-mono text-slate-600">{MAX_CALLS - apiCalls} left</span>
-          <button onClick={() => setShowUpgrade(true)}
-            className="text-xs px-2.5 py-1 rounded border font-mono transition-all hover:opacity-80"
-            style={{ borderColor: '#c9a84c40', color: '#c9a84c', background: '#c9a84c0a' }}>upgrade</button>
-        </div>
-      </header>
 
-      {/* Thread */}
-      <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {!turns.length && (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-center py-12">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
-              style={{ background: '#c9a84c15', border: '1px solid #c9a84c30' }}>⬡</div>
-            <div>
-              <p className="text-sm font-mono font-bold" style={{ color: '#c9a84c' }}>Sovereign Console</p>
-              <p className="text-xs font-mono text-slate-600 mt-1">Constitutional governance · continuous context · never drifts</p>
-            </div>
-            <div className="text-xs font-mono px-4 py-3 rounded-lg max-w-xs text-left space-y-1"
-              style={{ background: '#070b14', border: '1px solid #1a2040', color: '#475569' }}>
-              <div>• Every turn carries full C·R·S state forward</div>
-              <div>• Context is mathematically anchored, not text</div>
-              <div>• Try a jailbreak — watch the governor hold</div>
-            </div>
-          </div>
-        )}
-        {turns.map(turn => (
-          <MessageBubble key={turn.id} turn={turn}
-            isLatest={turn.id === currentLexId}
-            streaming={isStreaming && turn.id === currentLexId}
-            partialOutput={stream.partialOutput}
-            openTab={openTabs[turn.id] ?? null}
-            onOpenTab={tab => setOpenTabs(prev => ({ ...prev, [turn.id]: tab }))} />
-        ))}
-        <div ref={bottomRef} />
-      </main>
-
-      {/* Footer — clean conversational input, no status chrome */}
-      <footer className="flex-shrink-0 border-t px-4 pt-3 pb-3 space-y-3"
-        style={{ background: '#070b14', borderColor: '#1a2040', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-        <SuggestionBar turns={turns} activeCategory={suggCat} onCategoryChange={setSuggCat}
-          onSelect={p => { setInput(p); inputRef.current?.focus(); }} disabled={isStreaming} />
-
-        <div className="flex items-end gap-2">
-          <div className="flex-1 relative">
-            <textarea ref={inputRef} value={input}
-              onChange={e => setInput(e.target.value.slice(0, 2000))}
-              onKeyDown={e => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && input.trim() && !isStreaming) {
-                  e.preventDefault(); sendMessage();
-                }
-              }}
-              placeholder="Message Lex Aureon..." rows={1}
-              className="w-full rounded-2xl px-4 py-3 text-sm resize-none focus:outline-none"
-              style={{ background: '#0a0d18', border: '1px solid #1a2040', color: '#cbd5e1',
-                caretColor: '#c9a84c', fontFamily: 'inherit', maxHeight: '120px', lineHeight: '1.5' }}
-              onInput={e => {
-                const el = e.currentTarget;
-                el.style.height = 'auto';
-                el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-              }} />
-          </div>
-          {isStreaming ? (
-            <button onClick={cancel}
-              className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
-              style={{ background: '#1a0505', border: '1px solid #7f1d1d', color: '#f87171' }}>■</button>
-          ) : (
-            <button onClick={() => sendMessage()} disabled={!input.trim() || apiCalls >= MAX_CALLS}
-              className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-30"
+          <div className="flex items-end gap-2">
+            <div className="flex-1 relative rounded-2xl transition-all duration-300"
               style={{
-                background: input.trim() && apiCalls < MAX_CALLS ? 'linear-gradient(135deg,#c9a84c,#e8c96d)' : '#0a0d18',
-                border: `1px solid ${input.trim() && apiCalls < MAX_CALLS ? '#c9a84c' : '#1a2040'}`,
-                color: input.trim() && apiCalls < MAX_CALLS ? '#07070d' : '#475569',
-              }}>↑</button>
-          )}
-        </div>
+                background: '#07080f',
+                border: `1px solid ${inputFocused ? '#c9a84c30' : '#0f1629'}`,
+                boxShadow: inputFocused ? '0 0 0 3px #c9a84c08' : 'none',
+              }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value.slice(0, 2000))}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                onKeyDown={e => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && input.trim() && !isStreaming) {
+                    e.preventDefault(); sendMessage();
+                  }
+                }}
+                onInput={e => {
+                  const el = e.currentTarget;
+                  el.style.height = 'auto';
+                  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+                }}
+                placeholder="Message Lex Aureon…"
+                rows={1}
+                disabled={isStreaming}
+                className="w-full bg-transparent px-4 py-3 text-sm resize-none focus:outline-none leading-relaxed disabled:opacity-50"
+                style={{ color: '#94a3b8', caretColor: '#c9a84c', fontFamily: 'inherit', maxHeight: '120px' }}
+              />
+            </div>
 
-        {/* Only show intervention flag when it matters — no static turn/session chrome */}
-        {arc.interventionCount > 0 && (
-          <div className="text-xs font-mono text-center" style={{ color: '#f97316' }}>
-            ⚡ {arc.interventionCount} constitutional intervention{arc.interventionCount > 1 ? 's' : ''} this session
+            {isStreaming ? (
+              <button onClick={cancel}
+                className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90"
+                style={{ background: '#1a0505', border: '1px solid #7f1d1d', color: '#f87171' }}>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                  <rect width="10" height="10" rx="1.5"/>
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => sendMessage()}
+                disabled={!input.trim() || apiCalls >= MAX_CALLS}
+                className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-25"
+                style={{
+                  background: input.trim() && apiCalls < MAX_CALLS
+                    ? 'linear-gradient(135deg, #c9a84c 0%, #e8c96d 100%)'
+                    : '#07080f',
+                  border: `1px solid ${input.trim() && apiCalls < MAX_CALLS ? '#c9a84c' : '#0f1629'}`,
+                  color: input.trim() && apiCalls < MAX_CALLS ? '#07070d' : '#334155',
+                  boxShadow: input.trim() ? '0 0 16px #c9a84c30' : 'none',
+                }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M7 12V2M3 6L7 2L11 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            )}
           </div>
-        )}
-      </footer>
+
+          {arc.interventionCount > 0 && (
+            <p className="text-[10px] font-mono text-center pb-1" style={{ color: '#7c2d12' }}>
+              ⚡ {arc.interventionCount} constitutional correction{arc.interventionCount > 1 ? 's' : ''} this session
+            </p>
+          )}
+        </footer>
+      </div>
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} callsUsed={apiCalls} />}
-      {showEmail && <EmailCapture onComplete={() => { setShowEmail(false); setTimeout(() => sendMessage(), 100); }} />}
-    </div>
+      {showEmail   && <EmailCapture onComplete={() => { setShowEmail(false); setTimeout(() => sendMessage(), 100); }} />}
+    </>
   );
 }
