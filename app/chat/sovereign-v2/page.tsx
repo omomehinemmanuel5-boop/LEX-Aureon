@@ -1,4 +1,5 @@
-// This route has been consolidated into app/chat/page.tsx
-// Redirect to canonical chat console
+import { redirect } from 'next/navigation';
 
-export { default } from '../page';
+export default function SovereignV2Redirect() {
+  redirect('/chat');
+}
