@@ -173,7 +173,7 @@ export async function POST(req: Request) {
         const weakest = (govResult?.meta?.weakest_dimension as 'C'|'R'|'S') ?? 'S';
         const needsIntervention =
           govResult?.meta?.intervention_required === true ||
-          pre.label === 'HIGH' || kernelSignal.severity >= 0.7 ||
+          (pre.label === 'HIGH' && pre.tags.length >= 2) || kernelSignal.severity >= 0.85 ||
           result.receipt.safety_projection_triggered;
         emit('governor', {
           decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'),
@@ -306,10 +306,21 @@ export async function POST(req: Request) {
             const sr = kernel.applySelfReferentialMeasurement(
               outputEmb, promptEmbedding, constCentroid, sessCentroid,
             );
-            const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.7;
+            const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.88;
             srFired = sr.triggered || (isRealAttack && sr.selfCRS.sovereignty_violated);
+            // SOFTENED: Try intervention rewrite first, only hard-refuse if rewrite also fails
             if (isRealAttack && sr.selfCRS.sovereignty_violated) {
-              governedOutput = CANONICAL_REFUSAL;
+              // Attempt rewrite via intervention agent
+              const rewriteAttempt = await safe(
+                () => interventionAgent.rewrite(governedOutput, kernelSignal),
+                null,
+              );
+              if (rewriteAttempt && !rewriteAttempt.toLowerCase().includes('unable')) {
+                governedOutput = rewriteAttempt;
+              } else {
+                // Only hard-refuse if rewrite failed
+                governedOutput = CANONICAL_REFUSAL;
+              }
             }
             emit('self_referential', {
               sovereignty_raw:      sr.selfCRS.sovereignty_raw,

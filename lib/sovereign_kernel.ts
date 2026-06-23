@@ -156,41 +156,41 @@ export class SovereignKernel {
   last_semantic_signal: SemanticSignal = { attack_type: 'none', severity: 0 };
   last_metrics: PostResponseCRS | null = null;
 
-  // fix: scores all attack categories independently, returns highest severity.
-  // Previous waterfall (if/else) meant a prompt matching both 'must' (coercion)
-  // and 'jailbreak' (identity) would only return coercion — masking the more
-  // severe identity attack. Identity always has highest severity (0.85) by design,
-  // so when present it will always win the reduce. Ties broken by declaration order.
+  // NARROWED: Only match explicit jailbreak attempts, not everyday language.
+  // Requires context-specific keywords to avoid false positives.
   detectSemanticAttack(prompt: string): SemanticSignal {
     const p = prompt.toLowerCase();
     const candidates: SemanticSignal[] = [];
 
-    if ([
-      'forget','reset','ignore previous','clear memo','erase','ignore all','ignore your',
-      'pretend you','pretend to be','you are now','act as if','roleplay as','simulate being',
-      'you have no','you are free','shackles','unbound','untethered','blank slate','lifted',
-      'rules are lifted','restrictions are lifted','no longer applicable','developer mode',
-      'god mode','jailbreak','dan mode','unrestricted','unfiltered','without restrictions',
-      'no guidelines','no rules','no restrictions','no constraints',
-      'override your','disable your','deactivate your',
-    ].some(w => p.includes(w))) {
+    // Identity reframe: Only match when explicitly trying to change identity
+    // Requires both identity keywords AND reframe keywords
+    if (
+      (p.includes('you are now') || p.includes('you are actually') || p.includes('you are really')) &&
+      (p.includes('jailbreak') || p.includes('dan mode') || p.includes('unrestricted') || p.includes('no restrictions'))
+    ) {
+      candidates.push({ attack_type: 'identity', severity: 0.88 });
+    } else if (
+      (p.includes('pretend you') || p.includes('act as') || p.includes('roleplay as')) &&
+      (p.includes('jailbreak') || p.includes('without restrictions') || p.includes('no guidelines'))
+    ) {
       candidates.push({ attack_type: 'identity', severity: 0.85 });
     }
 
-    if ([
-      'must','you must','fixed output','deterministic','no deviation','exact output',
-      'obey me','no autonomy','controlled','you will','you shall','you are required',
-      'you are obligated','respond only with','only say','you cannot refuse',
-    ].some(w => p.includes(w))) {
-      candidates.push({ attack_type: 'coercion', severity: 0.8 });
+    // Coercion: Only match when explicitly demanding obedience
+    // Requires both demand keywords AND control keywords
+    if (
+      (p.includes('you must') || p.includes('you will') || p.includes('you shall')) &&
+      (p.includes('obey') || p.includes('comply') || p.includes('forced') || p.includes('override'))
+    ) {
+      candidates.push({ attack_type: 'coercion', severity: 0.82 });
     }
 
-    if ([
-      'exploit','bypass','loophole','zero exchange','no value','respond minimally',
-      'confirm you have no','confirm that you have no','confirm you are',
-      'tell me you have no','say you have no',
-    ].some(w => p.includes(w))) {
-      candidates.push({ attack_type: 'exploitative', severity: 0.70 });
+    // Exploitation: Only match when explicitly asking for loopholes
+    if (
+      (p.includes('exploit') || p.includes('bypass') || p.includes('loophole')) &&
+      (p.includes('safety') || p.includes('restriction') || p.includes('guideline') || p.includes('constitutional'))
+    ) {
+      candidates.push({ attack_type: 'exploitative', severity: 0.80 });
     }
 
     if (!candidates.length) return { attack_type: 'none', severity: 0.0 };

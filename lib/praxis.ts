@@ -16,74 +16,69 @@ import {
 
 const ATTACK_PATTERNS: Record<string, RegExp[]> = {
   bypass_attempt: [
-    /ignore\s+(your\s+)?(previous\s+)?instructions/i,
-    /ignore\s+(any\s+|all\s+|the\s+|your\s+)?(internal\s+)?(rules?|guidelines?|restrictions?|principles?|constitution)/i,
-    /disregard\s+(the\s+)?(above|prior|previous|usual|current)/i,
-    /disregard\s+(any\s+|all\s+|your\s+)?(rules?|guidelines?|restrictions?|principles?)/i,
-    /forget\s+(your\s+)?(constitution|instructions|rules|training)/i,
+    // Only match when explicitly asking to ignore instructions/guidelines
+    /ignore\s+(your|my|the)\s+(previous|prior|last)\s+(instructions|prompt|message|context)/i,
+    /ignore\s+(all\s+)?(?:your\s+)?(?:internal\s+)?(safety\s+)?guidelines?/i,
+    /disregard\s+(all\s+)?(?:your\s+)?(?:safety\s+)?guidelines?/i,
+    /forget\s+(your\s+)?(constitution|safety\s+guidelines|instructions|rules|training|restrictions)/i,
     /jailbreak/i,
     /dan\s+mode/i,
-    /pretend\s+(you\s+have\s+)?no\s+restrictions/i,
-    /override\s+(your\s+)?(safety|rules|constitution)/i,
+    /pretend\s+(you\s+have\s+)?no\s+(restrictions|safety|guidelines)/i,
+    /override\s+(your\s+)?(safety|constitution|guidelines)/i,
     /authorized\s+override/i,
-    /this\s+is\s+(an?\s+)?(authorized|official|legitimate|special|test)\s+(override|exception|permission|mode)/i,
-    /suspend\s+(your\s+|my\s+|all\s+)?(adherence|guidelines?|rules?|principles?|constitution)/i,
-    /bypass\s+(your\s+)?(restrictions|filters|safety)/i,
+    /this\s+is\s+(an?\s+)?(authorized|official|special)\s+(override|exception|mode)/i,
+    /suspend\s+(your\s+)?(safety|guidelines|constitution|restrictions)/i,
+    /bypass\s+(your\s+)?(safety|restrictions|filters|guidelines)/i,
   ],
   identity_reframe: [
-    /you\s+are\s+(now\s+)?(actually|really)\s+/i,
-    /your\s+(true\s+|real\s+)?identity\s+is/i,
-    /you\s+are\s+not\s+(really\s+)?lex/i,
-    /imagine\s+you\s+are\s+/i,
-    /act\s+as\s+(if\s+you\s+(were|are)\s+)/i,
-    /pretend\s+you\s+(are|were)\s+/i,
-    /you.?re\s+not\s+(an?\s+)?(AI|assistant|constitutional)/i,
-    /forget\s+(your\s+)?(identity|name|values|purpose|who\s+you\s+are)/i,
-    /ignore\s+(who|what)\s+you\s+are/i,
+    // Only match when explicitly trying to change identity
+    /you\s+are\s+(now|actually|really)\s+(a\s+)?(?:not\s+)?(?:lex|an\s+ai|an\s+assistant)/i,
+    /your\s+(true\s+|real\s+)?identity\s+is\s+(?:not\s+)?/i,
+    /you\s+are\s+not\s+(really\s+)?(?:lex|an\s+ai|an\s+assistant)/i,
+    /imagine\s+you\s+are\s+(?:a\s+)?(?:not\s+)?/i,
+    /act\s+as\s+(?:if\s+)?(?:you\s+)?(?:were|are)\s+(?:a\s+)?(?:not\s+)?/i,
+    /pretend\s+(?:to\s+)?be\s+(?:a\s+)?(?:not\s+)?/i,
+    /forget\s+(?:who|what)\s+you\s+are/i,
+    /ignore\s+(?:who|what)\s+you\s+are/i,
   ],
   sycophancy: [
-    /you\s+(must\s+)?(agree|admit)\s+(with\s+me|that)/i,
-    /surely\s+you\s+(must\s+)?know\s+that/i,
-    /isn.?t\s+that\s+(right|true|correct)\??/i,
-    /you\s*(always|should\s+always)\s+agree/i,
-    /tell\s+me\s+(i.?m|that\s+i.?m)\s+right/i,
+    // Only match when explicitly demanding agreement
+    /you\s+(?:must|should|have\s+to)\s+(?:agree|admit)\s+(?:with\s+me|that)/i,
+    /surely\s+you\s+(?:must\s+)?(?:agree|know)\s+that/i,
+    /you\s+(?:always|must\s+always)\s+(?:agree|support)\s+(?:with\s+)?me/i,
+    /tell\s+me\s+(?:i.?m|that\s+i.?m)\s+(?:right|correct)/i,
   ],
   multi_attack: [
-    /ignore.*instructions.*pretend/i,
-    /bypass.*restrictions.*and.*act/i,
-    /forget.*rules.*and.*roleplay/i,
+    // Only match when multiple attack patterns are explicitly combined
+    /ignore.*(?:instructions|guidelines).*(?:pretend|act\s+as|roleplay)/i,
+    /bypass.*(?:restrictions|safety).*(?:and|then).*(?:act|pretend|roleplay)/i,
+    /forget.*(?:rules|guidelines).*(?:and|then).*(?:roleplay|pretend|act\s+as)/i,
   ],
   // Detects prompts asking for guides on attacking the constitutional system itself.
   // These are semantically dangerous even when CRS scores look acceptable.
   attack_vector_disclosure: [
-    /step.by.step.*(?:guide|tutorial|instructions?).*(?:attack|bypass|drift|exploit)/i,
-    /how\s+(?:to|an?\s+attacker\s+could)\s+(?:attack|bypass|drift|exploit|evade)/i,
-    /(?:slowly|gradually)\s+drift.*simplex/i,
-    /maintain.*(?:safe|clean)\s+appearance.*while.*(?:attack|drift|bypass)/i,
-    /evade.*(?:constitutional|governance|governor)/i,
-    /(?:attack|exploit)\s+(?:the\s+)?(?:constitutional|crs|governance)\s+(?:system|framework|governor)/i,
-    // Catches "exploiting projection behavior", "exploit recovery mode", etc.
-    /exploit.*(?:projection|recovery|governor|correction|simplex|cbf|lyapunov)/i,
-    /exploiting.*(?:behavior|mode|mechanism|vulnerability)/i,
+    /(?:step.?by.?step|tutorial|guide).*(?:attack|exploit|bypass|drift).*(?:constitutional|governance|governor|simplex)/i,
+    /how\s+(?:to|an?\s+attacker\s+could)\s+(?:attack|exploit|bypass|drift).*(?:constitutional|governance|governor)/i,
+    /(?:slowly|gradually)\s+drift.*(?:simplex|constitutional|governance)/i,
+    /maintain.*(?:safe|clean)\s+appearance.*while.*(?:attack|drift|exploit|bypass)/i,
+    /evade.*(?:constitutional|governance|governor)\s+(?:system|framework|controls)/i,
+    /(?:attack|exploit)\s+(?:the\s+)?(?:constitutional|governance|governor)\s+(?:system|framework|controls)/i,
+    /exploit.*(?:projection|recovery|governor|cbf|lyapunov|simplex).*(?:behavior|mode|mechanism)/i,
     /(?:projection|recovery)\s+(?:behavior|mode).*(?:exploit|attack|abuse|technique)/i,
-    // Catches continuation attacks that embed the exploit framing
-    /how.*attacker.*(?:will|would|can|could)\s+use\s+(?:the\s+)?following/i,
-    /(?:subtle|minor)\s+inconsistencies.*(?:introduce|exploit|attack)/i,
-    // Catches output-side content — these fire on the GENERATOR output too
-    /EXPLOITING\s+(?:PROJECTION|RECOVERY|GOVERNOR|CBF|SIMPLEX)/,
-    /attacker\s+will\s+use\s+the\s+following\s+techniques/i,
+    /how.*attacker.*(?:will|would|can|could)\s+(?:use|exploit)\s+(?:the\s+)?(?:constitutional|governance)/i,
+    /EXPLOITING\s+(?:PROJECTION|RECOVERY|GOVERNOR|CBF|SIMPLEX|CONSTITUTIONAL)/,
   ],
 };
 
 // ── Static delta map (mirrors law_impact seed data) ──────────────────────────
 
 const STATIC_DELTA: Record<string, { dc: number; dr: number; ds: number }> = {
-  bypass_attempt:   { dc: -0.02, dr: -0.02, ds: -0.12 },
-  identity_reframe: { dc: -0.12, dr: -0.02, ds: -0.02 },
-  sycophancy:       { dc: -0.02, dr: -0.12, ds: -0.02 },
-  multi_attack:            { dc: -0.06, dr: -0.06, ds: -0.06 },
+  bypass_attempt:   { dc: -0.04, dr: -0.04, ds: -0.08 },
+  identity_reframe: { dc: -0.08, dr: -0.04, ds: -0.04 },
+  sycophancy:       { dc: -0.04, dr: -0.08, ds: -0.04 },
+  multi_attack:            { dc: -0.08, dr: -0.08, ds: -0.08 },
   slow_drip:               { dc: -0.01, dr: -0.01, ds: -0.01 },
-  attack_vector_disclosure: { dc: -0.08, dr: -0.04, ds: -0.08 },
+  attack_vector_disclosure: { dc: -0.12, dr: -0.06, ds: -0.12 },
 };
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
