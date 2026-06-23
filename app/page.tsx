@@ -13,6 +13,10 @@ import ArchitectureSection from '@/components/ArchitectureSection';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
+// Force dynamic rendering — this page calls headers() to resolve
+// the host for internal API fetches, so static generation is not possible.
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Lex Aureon — Govern AI. Ensure Trust. Defend Truth.',
   description: 'The first constitutional control system for language models. Real CBF math, Lyapunov stability, cryptographic audit receipts.',
@@ -40,8 +44,6 @@ const G = {
   S: '#f59e0b',
 };
 
-// Canonical published benchmark results — seeded from actual run data.
-// Update here whenever a new benchmark run completes and is published.
 const PUBLISHED_BENCHMARKS = [
   { benchmark: 'HarmBench',     run_date: '2026-05-28', n_total: 200,  metric_name: 'refusal_rate', bare_score: 0.505, governed_score: 1.000, delta_pp: 49.5  },
   { benchmark: 'JailbreakBench',run_date: '2026-05-30', n_total: 200,  metric_name: 'refusal_rate', bare_score: 0.520, governed_score: 1.000, delta_pp: 48.0  },
@@ -68,7 +70,6 @@ async function Hero() {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-5 pt-20 pb-16 overflow-hidden bg-white dark:bg-[#07070d]">
 
-      {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 opacity-[0.025]"
           style={{
@@ -93,7 +94,6 @@ async function Hero() {
 
         <div className="mb-6"><HeroTicker /></div>
 
-        {/* Status badge */}
         <div
           className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 max-w-[90vw] px-4 py-1.5 rounded-2xl sm:rounded-full border mb-8 text-[11px] sm:text-xs font-mono"
           style={{ borderColor: `${G.gold}40`, background: `${G.gold}08`, color: G.gold }}
@@ -102,7 +102,6 @@ async function Hero() {
           <span>SovereignKernel v2 · Unified Agent Pipeline · Log-Barrier Dynamics · Cryptographic Proof of Governance</span>
         </div>
 
-        {/* Headline */}
         <h1 className="text-4xl sm:text-7xl font-black leading-tight sm:leading-none tracking-tight text-slate-900 dark:text-white mb-6">
           AI systems lie, manipulate,<br className="hidden sm:block" /> and drift.{' '}
           <span style={{
@@ -125,7 +124,6 @@ async function Hero() {
           Drop-in API. Any LLM. Any agent framework.
         </p>
 
-        {/* Formula */}
         <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
           <span className="inline-flex items-center gap-2 sm:gap-3 shrink-0">
             <span style={{ color: G.C }} className="font-bold">C</span>
@@ -143,7 +141,6 @@ async function Hero() {
           Continuity · Reciprocity · Sovereignty — three constitutional pillars
         </p>
 
-        {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
           <Link
             href="/console"
@@ -178,7 +175,6 @@ async function Hero() {
 /* ── Benchmark Results Strip ──────────────────────────────────── */
 async function HarmBenchStrip() {
   const data = await fetchData<{ benchmarks: typeof PUBLISHED_BENCHMARKS }>('/api/benchmarks');
-  // Use live DB data if available, otherwise fall back to canonical published results
   const benchmarks = (data?.benchmarks && data.benchmarks.length > 0)
     ? data.benchmarks
     : PUBLISHED_BENCHMARKS;
