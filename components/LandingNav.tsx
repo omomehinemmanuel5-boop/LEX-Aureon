@@ -22,9 +22,12 @@ export default function LandingNav() {
 
   return (
     <nav
-      className="fixed top-0 left-0 right-0 z-50 border-b border-black/5 dark:border-white/5 backdrop-blur-xl bg-white/80 dark:bg-[#07070d]/88"
+      className="fixed top-0 left-0 right-0 z-50 border-b border-black/5 dark:border-white/5 backdrop-blur-xl bg-white/80"
+      style={{ backgroundColor: 'color-mix(in srgb, #07070d 88%, transparent)' } as React.CSSProperties}
     >
-      <div className="max-w-6xl mx-auto px-5 py-3.5 flex items-center justify-between">
+      {/* Re-apply light-mode bg via a child overlay so the inline style (dark) doesn't nuke it */}
+      <div className="absolute inset-0 bg-white/80 dark:bg-transparent pointer-events-none" />
+      <div className="relative max-w-6xl mx-auto px-5 py-3.5 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3">
           <Image src="/logo.png" alt="Lex Aureon" width={32} height={32} className="w-8 h-8 rounded-lg object-cover" />
           <div>
@@ -100,7 +103,8 @@ export default function LandingNav() {
       {/* Mobile menu */}
       {open && (
         <div
-          className="sm:hidden border-t border-black/5 dark:border-white/5 px-5 py-4 flex flex-col gap-4 bg-white/95 dark:bg-[#07070d]/97 backdrop-blur-xl"
+          className="relative sm:hidden border-t border-black/5 dark:border-white/5 px-5 py-4 flex flex-col gap-4 backdrop-blur-xl"
+          style={{ background: 'rgba(7,7,13,0.97)' }}
         >
           {NAV_LINKS.map(([label, href]) => (
             <a
