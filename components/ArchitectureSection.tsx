@@ -91,7 +91,7 @@ const MEMORY_LAYERS = [
 
 export default function ArchitectureSection() {
   return (
-    <section className="py-16 sm:py-24 px-4 sm:px-5 bg-white dark:bg-[#07070d]">
+    <section className="py-16 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
       <div className="max-w-2xl mx-auto">
 
         {/* Header */}
