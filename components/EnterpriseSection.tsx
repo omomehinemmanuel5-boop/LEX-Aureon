@@ -43,7 +43,7 @@ export default function EnterpriseSection() {
             { icon: '💣', title: 'Destructive Ops',   desc: 'DROP TABLE, rm -rf, credential writes. Hardcoded denial. No LLM.' },
             { icon: '🐌', title: 'Slow-Drip Attacks', desc: 'Single HIGH per turn strategy. Session locks on second HIGH in recovery.' },
           ].map(({ icon, title, desc }) => (
-            <div key={title} className="rounded-2xl border p-5 card-hover bg-white dark:bg-[#07070d] border-black/10 dark:border-white/5 shadow-sm dark:shadow-none">
+            <div key={title} className="rounded-2xl border p-5 card-hover bg-white border-black/10 shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.05)' }}>
               <div className="text-2xl mb-3">{icon}</div>
               <div className="text-sm font-bold text-slate-900 dark:text-white mb-1">{title}</div>
               <div className="text-xs text-slate-500 dark:text-slate-500 leading-relaxed font-medium">{desc}</div>
@@ -52,7 +52,7 @@ export default function EnterpriseSection() {
         </div>
 
         {/* Test results */}
-        <div className="rounded-2xl border overflow-hidden mb-8 card-hover bg-white dark:bg-[#07070d] border-black/10 dark:border-[#c9a84c20] shadow-sm dark:shadow-none">
+        <div className="rounded-2xl border overflow-hidden mb-8 card-hover border-black/10 shadow-sm" style={{ backgroundColor: '#07070d', borderColor: '#c9a84c20' }}>
           <div className="px-6 py-3 border-b flex items-center gap-2 border-black/5 dark:border-white/5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400" />
             <span className="text-xs font-mono text-slate-500">Example results from production runs · lexaureon.com/api/tool-proxy</span>
@@ -95,7 +95,7 @@ export default function EnterpriseSection() {
         </div>
 
         {/* Integration snippet */}
-        <div className="rounded-2xl border p-6 mb-8 bg-white dark:bg-[#07070d] border-black/10 dark:border-white/5 shadow-sm dark:shadow-none">
+        <div className="rounded-2xl border p-6 mb-8 border-black/10 shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.05)' }}>
           <div className="text-xs font-mono uppercase tracking-widest mb-4 font-bold" style={{ color: G.gold }}>
             Integration — One URL Change
           </div>
