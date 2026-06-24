@@ -77,7 +77,7 @@ export default function RedTeamSection() {
   const activeCategory = CATEGORIES.find(c => c.id === active) ?? null;
 
   return (
-    <section className="py-12 sm:py-20 px-4 sm:px-5 bg-white dark:bg-[#07070d]">
+    <section className="py-12 sm:py-20 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
@@ -172,7 +172,7 @@ export default function RedTeamSection() {
         )}
 
         {/* Summary strip */}
-        <div className="rounded-2xl border p-4 sm:p-5 bg-black/[0.03] dark:bg-[#c9a84c06] border-black/10 dark:border-[#c9a84c20]">
+        <div className="rounded-2xl border p-4 sm:p-5" style={{ background: '#c9a84c06', borderColor: '#c9a84c20' }}>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
             {[
               { v: TOTAL.toString(), l: 'Total Vectors',       c: G.gold },
