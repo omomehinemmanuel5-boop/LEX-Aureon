@@ -72,7 +72,7 @@ export default function PricingSection() {
   ];
 
   return (
-    <section id="pricing" className="py-24 px-5 bg-white dark:bg-[#07070d]">
+    <section id="pricing" className="py-24 px-5" style={{ backgroundColor: '#07070d' }}>
       {showBtcModal && <BitcoinUpgradeModal onClose={() => setShowBtcModal(false)} />}
       <div className="max-w-4xl mx-auto">
 
