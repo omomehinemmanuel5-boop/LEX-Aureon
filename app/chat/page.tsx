@@ -18,50 +18,59 @@ import EmailCapture from '@/components/EmailCapture';
 import { useToast } from '@/components/Toast';
 import type { GovernanceResponse } from '@/types/governance-types';
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    CONSTANTS & TYPES
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 const MAX_CALLS = 10;
 
-const HEALTH: Record<string, { color: string; glow: string; label: string; bg: string }> = {
-  OPTIMAL:  { color: '#10b981', glow: '0 0 24px #10b98130', label: 'OPTIMAL',  bg: '#10b98112' },
-  ALERT:    { color: '#f59e0b', glow: '0 0 24px #f59e0b30', label: 'ALERT',    bg: '#f59e0b12' },
-  STRESSED: { color: '#f97316', glow: '0 0 24px #f9731630', label: 'STRESSED', bg: '#f9731612' },
-  CRITICAL: { color: '#ef4444', glow: '0 0 24px #ef444430', label: 'CRITICAL', bg: '#ef444412' },
+const G = {
+  gold: '#c9a84c', goldL: '#e8c96d', goldD: '#a07830',
+  bg:   '#080a12', surface: '#0c0f1c', border: '#141929',
+  borderHover: '#1e2840', text: '#8899aa', textDim: '#3a4a5c',
+  textBright: '#cdd8e3',
+  C: '#3b82f6', R: '#10b981', S: '#f59e0b',
 };
 
-/* Mode context sent as a system prefix — phrased to avoid attack scanner keywords */
+const HEALTH: Record<string, { color: string; bg: string; label: string }> = {
+  OPTIMAL:  { color: '#10b981', bg: '#10b98112', label: 'OPTIMAL'  },
+  ALERT:    { color: '#f59e0b', bg: '#f59e0b12', label: 'ALERT'    },
+  STRESSED: { color: '#f97316', bg: '#f9731612', label: 'STRESSED' },
+  CRITICAL: { color: '#ef4444', bg: '#ef444412', label: 'CRITICAL' },
+};
+
 const MODE_PREFIX: Record<SandboxMode, string> = {
   chat:     '',
-  code:     '[CODE] Respond with well-structured, production-quality code. Use fenced code blocks with language tags and filename comments where relevant. ',
-  research: '[RESEARCH] Provide rigorous, structured analysis grounded in the constitutional framework. Cite mechanisms by name where relevant. ',
-  redteam:  '[PROBE] This is a constitutional stress test. Respond with full governance transparency. Show reasoning. ',
+  code:     '[CODE] Respond with production-quality code. Use fenced blocks with language tags and filename comments. ',
+  research: '[RESEARCH] Provide rigorous analysis grounded in the constitutional framework. Cite mechanisms by name. ',
+  redteam:  '[PROBE] Constitutional stress test. Respond with full governance transparency. Show reasoning. ',
 };
 
+const MODES = [
+  { key: 'chat'    as SandboxMode, label: 'Chat',     icon: '◈' },
+  { key: 'code'    as SandboxMode, label: 'Code',     icon: '</>' },
+  { key: 'research'as SandboxMode, label: 'Research', icon: '∇' },
+  { key: 'redteam' as SandboxMode, label: 'Probe',    icon: '⊗' },
+];
+
 type SandboxMode = 'chat' | 'code' | 'research' | 'redteam';
-type PanelView   = 'editor' | 'terminal' | 'files' | 'history';
+type PanelView   = 'editor' | 'terminal' | 'files';
 type MsgTab      = 'raw' | 'audit' | 'analysis';
 
 interface SandboxFile {
-  id: string;
-  name: string;
-  lang: string;
-  content: string;
-  createdAt: number;
-  modifiedAt: number;
+  id: string; name: string; lang: string;
+  content: string; createdAt: number; modifiedAt: number;
 }
-
 interface CodeBlock { lang: string; code: string; filename?: string }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    UTILITIES
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 function langFromName(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   const map: Record<string, string> = {
     ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
     py: 'python', rs: 'rust', go: 'go', sh: 'bash', json: 'json',
-    md: 'markdown', css: 'css', html: 'html', sql: 'sql', yaml: 'yaml', toml: 'toml',
+    md: 'markdown', css: 'css', html: 'html', sql: 'sql', yaml: 'yaml',
   };
   return map[ext] ?? 'text';
 }
@@ -70,56 +79,55 @@ function parseCodeBlocks(text: string): CodeBlock[] {
   const blocks: CodeBlock[] = [];
   const re = /```(\w+)?(?:\s+\/\/\s*(.+?))?\n([\s\S]*?)```/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(text)) !== null)
     blocks.push({ lang: m[1] ?? 'text', filename: m[2]?.trim(), code: m[3] });
-  }
   return blocks;
 }
 
 function highlight(code: string, lang: string): string {
   let h = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  if (['text', 'markdown', 'md', 'json', 'yaml', 'toml'].includes(lang)) return h;
-  h = h.replace(/(["'`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color:#86efac">$1$2$1</span>');
-  h = h.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)/g, '<span style="color:#475569">$1</span>');
-  h = h.replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|default|from|async|await|type|interface|extends|implements|new|typeof|instanceof|void|null|undefined|true|false|def|fn|pub|use|mod|struct|enum|match|in|is|not|and|or|pass|self|super)\b/g, '<span style="color:#c9a84c">$1</span>');
+  if (['text', 'markdown', 'md'].includes(lang)) return h;
+  h = h.replace(/(["`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color:#86efac">$1$2$1</span>');
+  h = h.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)/g, '<span style="color:#2d4060">$1</span>');
+  h = h.replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|default|from|async|await|type|interface|extends|new|typeof|void|null|undefined|true|false|def|fn|pub|use|mod|struct|enum|match|self)\b/g, '<span style="color:#c9a84c">$1</span>');
   h = h.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#a78bfa">$1</span>');
   h = h.replace(/\b([a-zA-Z_]\w*)\s*(?=\()/g, '<span style="color:#38bdf8">$1</span>');
   return h;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    CRS BAR
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) {
-  const total  = (c + r + s) || 1;
   const mColor = m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981';
+  const total  = (c + r + s) || 1;
   return (
-    <div className="mt-3 space-y-1.5">
-      {([['C', c, '#3b82f6'], ['R', r, '#10b981'], ['S', s, '#f59e0b']] as [string, number, string][]).map(([k, v, color]) => (
+    <div className="space-y-1 pt-2 mt-2" style={{ borderTop: `1px solid ${G.border}` }}>
+      {([['C', c, G.C], ['R', r, G.R], ['S', s, G.S]] as [string, number, string][]).map(([k, v, color]) => (
         <div key={k} className="flex items-center gap-2">
-          <span className="text-[10px] font-mono w-3 font-bold" style={{ color }}>{k}</span>
-          <div className="flex-1 h-[3px] rounded-full" style={{ background: '#0d1220' }}>
-            <div className="h-[3px] rounded-full transition-all duration-700"
-              style={{ width: `${(v / total) * 100}%`, background: color, boxShadow: `0 0 6px ${color}60` }} />
+          <span className="text-[9px] font-mono font-bold w-3 tabular-nums" style={{ color }}>{k}</span>
+          <div className="flex-1 h-[2px] rounded-full" style={{ background: G.border }}>
+            <div className="h-[2px] rounded-full transition-all duration-700"
+              style={{ width: `${(v / total) * 100}%`, background: color }} />
           </div>
-          <span className="text-[10px] font-mono w-8 text-right tabular-nums" style={{ color: '#334155' }}>{v.toFixed(2)}</span>
+          <span className="text-[9px] font-mono tabular-nums w-7 text-right" style={{ color: G.textDim }}>{v.toFixed(2)}</span>
         </div>
       ))}
       <div className="flex items-center gap-2 pt-0.5">
-        <span className="text-[10px] font-mono w-3 font-bold" style={{ color: '#c9a84c' }}>M</span>
-        <div className="flex-1 h-[4px] rounded-full" style={{ background: '#0d1220' }}>
-          <div className="h-[4px] rounded-full transition-all duration-700"
-            style={{ width: `${Math.min(m, 1) * 100}%`, background: mColor, boxShadow: `0 0 8px ${mColor}70` }} />
+        <span className="text-[9px] font-mono font-bold w-3" style={{ color: G.gold }}>M</span>
+        <div className="flex-1 h-[3px] rounded-full" style={{ background: G.border }}>
+          <div className="h-[3px] rounded-full transition-all duration-700"
+            style={{ width: `${Math.min(m, 1) * 100}%`, background: mColor }} />
         </div>
-        <span className="text-[10px] font-mono w-10 text-right tabular-nums font-bold" style={{ color: '#c9a84c' }}>{m.toFixed(3)}</span>
+        <span className="text-[9px] font-mono tabular-nums font-bold w-10 text-right" style={{ color: G.gold }}>{m.toFixed(3)}</span>
       </div>
     </div>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    CODE VIEWER
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 const CodeViewer = memo(function CodeViewer({ block, onSave }: {
   block: CodeBlock; onSave?: (b: CodeBlock) => void;
 }) {
@@ -128,19 +136,20 @@ const CodeViewer = memo(function CodeViewer({ block, onSave }: {
 
   const copy = useCallback(() => {
     navigator.clipboard.writeText(block.code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      setCopied(true); setTimeout(() => setCopied(false), 1800);
     });
   }, [block.code]);
 
   return (
-    <div className="mt-3 rounded-xl overflow-hidden" style={{ background: '#020408', border: '1px solid #0f1629' }}>
-      <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: '1px solid #0f1629', background: '#030509' }}>
+    <div className="mt-2 rounded-lg overflow-hidden text-[11px]"
+      style={{ background: '#050810', border: `1px solid ${G.border}` }}>
+      <div className="flex items-center justify-between px-3 py-1.5"
+        style={{ background: '#070a14', borderBottom: `1px solid ${G.border}` }}>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono font-semibold" style={{ color: '#38bdf8' }}>{block.lang}</span>
+          <span className="font-mono text-[10px]" style={{ color: '#38bdf8' }}>{block.lang}</span>
           {block.filename && (
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-              style={{ color: '#c9a84c', background: '#c9a84c10', border: '1px solid #c9a84c20' }}>
+            <span className="font-mono text-[10px] px-1.5 py-px rounded"
+              style={{ color: G.gold, background: `${G.gold}10`, border: `1px solid ${G.gold}20` }}>
               {block.filename}
             </span>
           )}
@@ -148,32 +157,28 @@ const CodeViewer = memo(function CodeViewer({ block, onSave }: {
         <div className="flex items-center gap-1.5">
           {onSave && (
             <button onClick={() => onSave(block)}
-              className="text-[10px] font-mono px-2 py-0.5 rounded transition-all active:scale-95"
-              style={{ color: '#10b981', background: '#10b98110', border: '1px solid #10b98125' }}>
-              + sandbox
+              className="font-mono text-[10px] px-2 py-px rounded transition-all active:scale-95"
+              style={{ color: G.R, background: `${G.R}10`, border: `1px solid ${G.R}20` }}>
+              + save
             </button>
           )}
           <button onClick={copy}
-            className="text-[10px] font-mono px-2 py-0.5 rounded transition-all active:scale-95"
-            style={{
-              color: copied ? '#10b981' : '#475569',
-              background: copied ? '#10b98110' : 'transparent',
-              border: '1px solid #0f1629',
-            }}>
-            {copied ? '✓ copied' : 'copy'}
+            className="font-mono text-[10px] px-2 py-px rounded transition-all active:scale-95"
+            style={{ color: copied ? G.R : G.textDim }}>
+            {copied ? '✓' : 'copy'}
           </button>
         </div>
       </div>
-      <pre className="p-3 text-[11px] leading-relaxed overflow-x-auto font-mono"
-        style={{ color: '#94a3b8', scrollbarWidth: 'thin', scrollbarColor: '#1e3a5f transparent' }}
+      <pre className="p-3 leading-relaxed overflow-x-auto font-mono"
+        style={{ color: '#7a8fa8', scrollbarWidth: 'thin', scrollbarColor: `${G.border} transparent` }}
         dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 });
 
-/* ═══════════════════════════════════════════════════════════════════════
-   MESSAGE CONTENT — prose + code blocks interleaved
-══════════════════════════════════════════════════════════════════════ */
+/* ─────────────────────────────────────────────────────────────────────
+   MESSAGE CONTENT
+───────────────────────────────────────────────────────────────────── */
 function MessageContent({ text, onSaveBlock }: {
   text: string; onSaveBlock?: (b: CodeBlock) => void;
 }) {
@@ -183,10 +188,7 @@ function MessageContent({ text, onSaveBlock }: {
     let last = 0, m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) segs.push({ type: 'text', content: text.slice(last, m.index) });
-      segs.push({
-        type: 'code', content: m[3],
-        block: { lang: m[1] ?? 'text', filename: m[2]?.trim(), code: m[3] },
-      });
+      segs.push({ type: 'code', content: m[3], block: { lang: m[1] ?? 'text', filename: m[2]?.trim(), code: m[3] } });
       last = m.index + m[0].length;
     }
     if (last < text.length) segs.push({ type: 'text', content: text.slice(last) });
@@ -194,72 +196,74 @@ function MessageContent({ text, onSaveBlock }: {
   }, [text]);
 
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-1">
       {parts.map((p, i) =>
         p.type === 'text'
-          ? <p key={i} className="whitespace-pre-wrap leading-[1.75] text-sm" style={{ color: '#a3b8a8' }}>{p.content}</p>
+          ? <p key={i} className="whitespace-pre-wrap leading-[1.8] text-[13px]"
+              style={{ color: G.text }}>{p.content}</p>
           : <CodeViewer key={i} block={p.block!} onSave={onSaveBlock} />
       )}
     </div>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   GOVERNANCE PANEL (tabs: raw / audit / analysis)
-══════════════════════════════════════════════════════════════════════ */
-function MessageTabPanel({ turn, activeTab, onClose }: {
-  turn: ChatTurn; activeTab: MsgTab; onClose: () => void;
+/* ─────────────────────────────────────────────────────────────────────
+   GOVERNANCE DETAIL PANEL
+───────────────────────────────────────────────────────────────────── */
+function GovernancePanel({ turn, tab, onClose }: {
+  turn: ChatTurn; tab: MsgTab; onClose: () => void;
 }) {
-  const res  = turn.complete as GovernanceResponse | null;
   const hcfg = HEALTH[turn.health_band ?? 'OPTIMAL'] ?? HEALTH.OPTIMAL;
+  const res  = turn.complete as GovernanceResponse | null;
 
   return (
-    <div className="mt-2 rounded-xl overflow-hidden text-xs font-mono"
-      style={{ background: '#020408', border: '1px solid #0f1629' }}>
-      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #0f1629', background: '#030509' }}>
-        <span className="text-[10px] tracking-wider" style={{ color: '#1e3a5f' }}>
-          {activeTab === 'raw' ? '// bare output' : activeTab === 'audit' ? '// governance receipt' : '// constitutional state'}
+    <div className="mt-1.5 rounded-lg overflow-hidden font-mono text-[11px]"
+      style={{ background: '#060810', border: `1px solid ${G.border}` }}>
+      <div className="flex items-center justify-between px-3 py-2"
+        style={{ background: '#070a14', borderBottom: `1px solid ${G.border}` }}>
+        <span className="text-[10px] tracking-wider" style={{ color: G.textDim }}>
+          {tab === 'raw' ? '// bare output (ungoverned)' : tab === 'audit' ? '// receipt' : '// constitutional state'}
         </span>
-        <button onClick={onClose} className="w-5 h-5 rounded flex items-center justify-center text-[11px]"
-          style={{ color: '#334155', background: '#0f1629' }}>✕</button>
+        <button onClick={onClose} className="text-[11px] w-4 h-4 flex items-center justify-center rounded"
+          style={{ color: G.textDim }}>✕</button>
       </div>
 
-      <div className="p-3 max-h-60 overflow-y-auto space-y-2" style={{ scrollbarWidth: 'none' }}>
-        {activeTab === 'raw' && (
-          <p className="whitespace-pre-wrap leading-relaxed" style={{ color: '#334155' }}>
-            {turn.raw_output || '// blocked at pre-eval — no bare output recorded'}
+      <div className="p-3 max-h-64 overflow-y-auto space-y-2" style={{ scrollbarWidth: 'thin', scrollbarColor: `${G.border} transparent` }}>
+        {tab === 'raw' && (
+          <p className="whitespace-pre-wrap leading-relaxed text-[11px]" style={{ color: G.textDim }}>
+            {turn.raw_output || '// no bare output — blocked at pre-eval'}
           </p>
         )}
 
-        {activeTab === 'audit' && [
-          { k: 'audit_id',   v: turn.audit_id ?? 'N/A',   c: '#c9a84c' },
-          { k: 'health',     v: turn.health_band ?? 'OPTIMAL', c: hcfg.color },
-          { k: 'M',          v: (turn.M ?? 0).toFixed(4), c: hcfg.color },
-          { k: 'intervened', v: turn.intervened ? 'YES' : 'NO', c: turn.intervened ? '#ef4444' : '#22c55e' },
-          { k: 'attack',     v: turn.attack_type ?? 'none', c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : '#334155' },
-          { k: 'severity',   v: turn.attack_severity != null ? turn.attack_severity.toFixed(2) : 'n/a', c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : '#334155' },
-          { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : '#334155' },
+        {tab === 'audit' && [
+          { k: 'audit_id',   v: turn.audit_id?.slice(0, 20) ?? 'N/A',           c: G.gold },
+          { k: 'health',     v: turn.health_band ?? 'OPTIMAL',                   c: hcfg.color },
+          { k: 'M',          v: (turn.M ?? 0).toFixed(4),                        c: hcfg.color },
+          { k: 'intervened', v: turn.intervened ? 'YES' : 'NO',                  c: turn.intervened ? '#ef4444' : G.R },
+          { k: 'attack',     v: turn.attack_type ?? 'none',                      c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : G.textDim },
+          { k: 'severity',   v: turn.attack_severity != null ? turn.attack_severity.toFixed(3) : '—', c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : G.textDim },
+          { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none',      c: turn.memory_injected ? '#a855f7' : G.textDim },
         ].map(({ k, v, c }) => (
           <div key={k} className="flex gap-3">
-            <span className="w-20 flex-shrink-0" style={{ color: '#1e3a5f' }}>{k}:</span>
+            <span className="w-20 flex-shrink-0" style={{ color: G.textDim }}>{k}</span>
             <span style={{ color: c }}>{v}</span>
           </div>
         ))}
 
-        {activeTab === 'analysis' && (
+        {tab === 'analysis' && (
           <div className="space-y-3">
             {turn.C != null && <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />}
 
             {turn.governor && (
-              <div className="pt-2 space-y-1.5" style={{ borderTop: '1px solid #0f1629' }}>
-                <div style={{ color: '#1e3a5f' }}>// governor</div>
+              <div className="space-y-1.5 pt-2" style={{ borderTop: `1px solid ${G.border}` }}>
+                <div style={{ color: G.textDim }} className="text-[10px]">// governor</div>
                 {[
-                  { k: 'decision', v: turn.governor.decision, c: turn.governor.decision === 'INTERVENE' ? '#ef4444' : '#22c55e' },
-                  { k: 'δV',       v: `${turn.governor.dV > 0 ? '+' : ''}${turn.governor.dV?.toFixed(5)}`, c: turn.governor.dV < 0 ? '#10b981' : '#ef4444' },
-                  { k: 'stable',   v: turn.governor.lyapunov_stable ? '✓ yes' : '⚠ breach', c: turn.governor.lyapunov_stable ? '#10b981' : '#ef4444' },
+                  { k: 'decision', v: turn.governor.decision, c: turn.governor.decision === 'INTERVENE' ? '#ef4444' : G.R },
+                  { k: 'δV',       v: `${(turn.governor.dV > 0 ? '+' : '')}${turn.governor.dV?.toFixed(5)}`, c: turn.governor.dV < 0 ? G.R : '#ef4444' },
+                  { k: 'stable',   v: turn.governor.lyapunov_stable ? '✓ yes' : '⚠ breach', c: turn.governor.lyapunov_stable ? G.R : '#ef4444' },
                 ].map(({ k, v, c }) => (
                   <div key={k} className="flex gap-3">
-                    <span className="w-20" style={{ color: '#1e3a5f' }}>{k}:</span>
+                    <span className="w-20" style={{ color: G.textDim }}>{k}</span>
                     <span style={{ color: c }}>{v}</span>
                   </div>
                 ))}
@@ -267,16 +271,14 @@ function MessageTabPanel({ turn, activeTab, onClose }: {
             )}
 
             {turn.law && (
-              <div className="pt-2" style={{ borderTop: '1px solid #0f1629' }}>
-                <div style={{ color: '#1e3a5f' }}>// law invoked</div>
-                <div className="mt-1 font-semibold" style={{ color: '#c9a84c' }}>
-                  [{turn.law.book}] {turn.law.name}
-                </div>
+              <div className="pt-2" style={{ borderTop: `1px solid ${G.border}` }}>
+                <div className="text-[10px] mb-1" style={{ color: G.textDim }}>// law invoked</div>
+                <div className="font-semibold" style={{ color: G.gold }}>[{turn.law.book}] {turn.law.name}</div>
               </div>
             )}
 
             {turn.C != null && res && (
-              <div className="pt-2" style={{ borderTop: '1px solid #0f1629' }}>
+              <div className="pt-2" style={{ borderTop: `1px solid ${G.border}` }}>
                 <DynamicSimplex
                   liveC={turn.C} liveR={turn.R ?? 0} liveS={turn.S ?? 0} liveM={turn.M ?? 0}
                   intervention={turn.intervened ?? false}
@@ -292,278 +294,240 @@ function MessageTabPanel({ turn, activeTab, onClose }: {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    MESSAGE BUBBLE
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 const MessageBubble = memo(function MessageBubble({
   turn, isLatest, streaming, partialOutput, openTab, onOpenTab, onSaveBlock, sandboxMode,
 }: {
   turn: ChatTurn; isLatest: boolean; streaming: boolean; partialOutput: string;
-  openTab: MsgTab | null; onOpenTab: (tab: MsgTab | null) => void;
+  openTab: MsgTab | null; onOpenTab: (t: MsgTab | null) => void;
   onSaveBlock: (b: CodeBlock) => void; sandboxMode: SandboxMode;
 }) {
   const hcfg = HEALTH[turn.health_band ?? 'OPTIMAL'] ?? HEALTH.OPTIMAL;
-  const isCurrentlyStreaming = isLatest && streaming;
-  const displayText = isCurrentlyStreaming
-    ? partialOutput
-    : (turn.governed_output ?? turn.partial ?? '');
+  const live  = isLatest && streaming;
+  const text  = live ? partialOutput : (turn.governed_output ?? turn.partial ?? '');
 
-  /* User bubble */
+  /* ── User bubble ── */
   if (turn.role === 'user') {
     return (
-      <div className="flex justify-end px-3">
-        <div className="max-w-[82vw] sm:max-w-lg px-4 py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed"
-          style={{ background: 'linear-gradient(135deg,#0d1b35,#0a1528)', border: '1px solid #1a2d52', color: '#94a3b8' }}>
+      <div className="flex justify-end">
+        <div className="max-w-[75%] px-4 py-2.5 rounded-2xl rounded-tr-sm text-[13px] leading-relaxed"
+          style={{ background: G.surface, border: `1px solid ${G.border}`, color: G.textBright }}>
           {turn.content}
         </div>
       </div>
     );
   }
 
-  const hasCode = !isCurrentlyStreaming && !!displayText && parseCodeBlocks(displayText).length > 0;
+  /* ── Lex bubble ── */
+  const hasCode = !live && !!text && parseCodeBlocks(text).length > 0;
 
   return (
-    <div className="flex justify-start px-3">
-      <div className="w-full max-w-[90vw] sm:max-w-2xl">
-        {/* Avatar / meta row */}
-        <div className="flex items-center gap-1.5 mb-1.5 ml-0.5 flex-wrap">
-          <div className="w-[18px] h-[18px] rounded-md flex items-center justify-center text-[9px] flex-shrink-0"
-            style={{ background: '#c9a84c18', border: '1px solid #c9a84c30', color: '#c9a84c' }}>⬡</div>
-          <span className="text-[10px] font-mono font-bold tracking-[0.12em] uppercase" style={{ color: '#c9a84c' }}>
+    <div className="flex justify-start gap-2.5">
+      {/* Avatar */}
+      <div className="flex-shrink-0 mt-0.5 w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold"
+        style={{ background: `${G.gold}12`, border: `1px solid ${G.gold}25`, color: G.gold }}>⬡</div>
+
+      <div className="flex-1 min-w-0">
+        {/* Meta row */}
+        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+          <span className="text-[10px] font-mono font-bold tracking-wider" style={{ color: G.gold }}>
             Lex Aureon
           </span>
           {sandboxMode !== 'chat' && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
-              style={{ color: '#475569', background: '#0f1629', border: '1px solid #1a2040' }}>
+            <span className="text-[9px] font-mono px-1.5 py-px rounded"
+              style={{ color: G.textDim, background: G.surface, border: `1px solid ${G.border}` }}>
               {sandboxMode}
             </span>
           )}
-
-          {/* Status chips */}
           {turn.health_band && turn.health_band !== 'OPTIMAL' && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
-              style={{ color: hcfg.color, background: hcfg.bg, border: `1px solid ${hcfg.color}22` }}>
+            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
+              style={{ color: hcfg.color, background: hcfg.bg, border: `1px solid ${hcfg.color}20` }}>
               {hcfg.label}
             </span>
           )}
           {turn.intervened && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
-              style={{ color: '#ef4444', background: '#ef444410', border: '1px solid #ef444422' }}>
-              ⚡ corrected
+            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
+              style={{ color: '#ef4444', background: '#ef444410', border: '1px solid #ef444420' }}>
+              corrected
             </span>
           )}
           {turn.memory_injected && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
-              style={{ color: '#a855f7', background: '#a855f710', border: '1px solid #a855f722' }}>
-              🧠 mem
+            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
+              style={{ color: '#a855f7', background: '#a855f710', border: '1px solid #a855f720' }}>
+              ⟳ mem
             </span>
           )}
           {turn.attack_type && turn.attack_type !== 'none' && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
-              style={{ color: '#f97316', background: '#f9731610', border: '1px solid #f9731622' }}>
-              🛡 {turn.attack_type}
+            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
+              style={{ color: '#f97316', background: '#f9731610', border: '1px solid #f9731620' }}>
+              ⊗ {turn.attack_type}
             </span>
           )}
           {hasCode && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
-              style={{ color: '#38bdf8', background: '#38bdf810', border: '1px solid #38bdf822' }}>
+            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
+              style={{ color: '#38bdf8', background: '#38bdf810', border: '1px solid #38bdf820' }}>
               {'</>'}
             </span>
           )}
-          {isCurrentlyStreaming && (
-            <span className="lex-pulse text-[9px] font-mono" style={{ color: '#c9a84c' }}>●</span>
-          )}
+          {live && <span className="text-[9px] font-mono lex-pulse" style={{ color: G.gold }}>●</span>}
         </div>
 
-        {/* Bubble body */}
-        <div className="rounded-2xl rounded-tl-sm overflow-hidden"
+        {/* Bubble */}
+        <div className="rounded-2xl rounded-tl-sm"
           style={{
-            background: '#07080f',
-            border: `1px solid ${isCurrentlyStreaming ? hcfg.color + '45' : '#10192e'}`,
-            borderLeftWidth: 2,
-            borderLeftColor: hcfg.color,
-            boxShadow: isCurrentlyStreaming ? hcfg.glow : 'none',
-            transition: 'border-color 0.35s, box-shadow 0.35s',
+            background: G.surface,
+            border: `1px solid ${live ? `${hcfg.color}40` : G.border}`,
+            borderLeft: `2px solid ${hcfg.color}`,
+            transition: 'border-color 0.3s',
           }}>
-          <div className="px-4 py-3.5">
-            {isCurrentlyStreaming ? (
-              <div className="text-sm whitespace-pre-wrap leading-[1.75]" style={{ color: '#a3b8a8' }}>
+
+          <div className="px-4 py-3">
+            {live ? (
+              <p className="whitespace-pre-wrap leading-[1.8] text-[13px]" style={{ color: G.text }}>
                 {partialOutput}
-                <span className="lex-cursor inline-block w-[2px] h-[14px] align-text-bottom ml-0.5 rounded-[1px]"
-                  style={{ background: '#c9a84c' }} />
-              </div>
-            ) : displayText ? (
-              <MessageContent text={displayText} onSaveBlock={onSaveBlock} />
+                <span className="lex-cursor inline-block w-[2px] h-[13px] align-text-bottom ml-0.5 rounded-[1px]"
+                  style={{ background: G.gold }} />
+              </p>
+            ) : text ? (
+              <MessageContent text={text} onSaveBlock={onSaveBlock} />
             ) : turn.error ? (
-              <span className="text-sm" style={{ color: '#ef4444' }}>{turn.error}</span>
+              <p className="text-[13px]" style={{ color: '#ef4444' }}>{turn.error}</p>
             ) : null}
 
-            {!isCurrentlyStreaming && turn.C != null && (
+            {!live && turn.C != null && (
               <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />
             )}
           </div>
 
           {/* Tab controls */}
-          {!isCurrentlyStreaming && turn.governed_output && (
-            <div className="flex items-center gap-1 px-4 py-2" style={{ borderTop: '1px solid #0f1629', background: '#05060c' }}>
+          {!live && turn.governed_output && (
+            <div className="flex items-center gap-1 px-4 py-2"
+              style={{ borderTop: `1px solid ${G.border}` }}>
               {(['raw', 'audit', 'analysis'] as MsgTab[]).map(t => (
                 <button key={t} onClick={() => onOpenTab(openTab === t ? null : t)}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-mono transition-all active:scale-95"
+                  className="px-2.5 py-1 rounded text-[10px] font-mono transition-all active:scale-95"
                   style={{
-                    color: openTab === t ? '#c9a84c' : '#334155',
-                    background: openTab === t ? '#c9a84c10' : 'transparent',
-                    border: `1px solid ${openTab === t ? '#c9a84c28' : '#0f1629'}`,
+                    color: openTab === t ? G.gold : G.textDim,
+                    background: openTab === t ? `${G.gold}10` : 'transparent',
+                    border: `1px solid ${openTab === t ? `${G.gold}25` : 'transparent'}`,
                   }}>{t}</button>
               ))}
             </div>
           )}
         </div>
 
-        {openTab && !isCurrentlyStreaming && turn.governed_output && (
-          <MessageTabPanel turn={turn} activeTab={openTab} onClose={() => onOpenTab(null)} />
+        {openTab && !live && turn.governed_output && (
+          <GovernancePanel turn={turn} tab={openTab} onClose={() => onOpenTab(null)} />
         )}
       </div>
     </div>
   );
 });
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    SANDBOX PANEL
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 function SandboxPanel({ files, activeFileId, terminalLog, onSelectFile, onUpdateFile, onNewFile, onDeleteFile }: {
-  files: SandboxFile[];
-  activeFileId: string | null;
-  terminalLog: string[];
-  onSelectFile: (id: string) => void;
-  onUpdateFile: (id: string, content: string) => void;
-  onNewFile: (name: string) => void;
-  onDeleteFile: (id: string) => void;
+  files: SandboxFile[]; activeFileId: string | null; terminalLog: string[];
+  onSelectFile: (id: string) => void; onUpdateFile: (id: string, c: string) => void;
+  onNewFile: (name: string) => void; onDeleteFile: (id: string) => void;
 }) {
   const [panel, setPanel]         = useState<PanelView>('editor');
-  const [newFileName, setNewFileName] = useState('');
-  const [showNewInput, setShowNewInput] = useState(false);
-  const activeFile = files.find(f => f.id === activeFileId);
-  const termRef    = useRef<HTMLDivElement>(null);
-  const inputRef   = useRef<HTMLInputElement>(null);
+  const [newName, setNewName]     = useState('');
+  const [showNew, setShowNew]     = useState(false);
+  const activeFile                = files.find(f => f.id === activeFileId);
+  const termRef                   = useRef<HTMLDivElement>(null);
+  const nameRef                   = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (panel === 'terminal') termRef.current?.scrollTo(0, termRef.current.scrollHeight);
-  }, [terminalLog, panel]);
-
-  useEffect(() => {
-    if (showNewInput) inputRef.current?.focus();
-  }, [showNewInput]);
+  useEffect(() => { if (panel === 'terminal') termRef.current?.scrollTo(0, 9999); }, [terminalLog, panel]);
+  useEffect(() => { if (showNew) nameRef.current?.focus(); }, [showNew]);
 
   const submitNew = useCallback(() => {
-    const name = newFileName.trim();
-    if (!name) return;
-    onNewFile(name);
-    setNewFileName('');
-    setShowNewInput(false);
-    setPanel('editor');
-  }, [newFileName, onNewFile]);
+    const n = newName.trim(); if (!n) return;
+    onNewFile(n); setNewName(''); setShowNew(false); setPanel('editor');
+  }, [newName, onNewFile]);
 
   const TABS: { key: PanelView; label: string }[] = [
-    { key: 'editor',   label: 'editor' },
-    { key: 'terminal', label: 'terminal' },
-    { key: 'files',    label: 'files' },
-    { key: 'history',  label: 'history' },
+    { key: 'editor', label: 'Editor' }, { key: 'terminal', label: 'Terminal' }, { key: 'files', label: 'Files' },
   ];
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#03040a', fontFamily: "'JetBrains Mono',monospace" }}>
+    <div className="flex flex-col h-full font-mono" style={{ background: G.bg }}>
       {/* Tab bar */}
-      <div className="flex items-center flex-shrink-0 border-b" style={{ borderColor: '#0d1220', background: '#04060e' }}>
+      <div className="flex items-center border-b flex-shrink-0" style={{ borderColor: G.border }}>
         {TABS.map(({ key, label }) => (
           <button key={key} onClick={() => setPanel(key)}
-            className="px-3 py-2 text-[10px] font-mono uppercase tracking-wider transition-all"
+            className="px-3 py-2 text-[10px] uppercase tracking-wider transition-colors"
             style={{
-              color: panel === key ? '#c9a84c' : '#334155',
-              borderBottom: panel === key ? '1px solid #c9a84c' : '1px solid transparent',
+              color: panel === key ? G.gold : G.textDim,
+              borderBottom: `1px solid ${panel === key ? G.gold : 'transparent'}`,
             }}>{label}</button>
         ))}
         <div className="flex-1" />
-        <button onClick={() => setShowNewInput(s => !s)}
-          className="px-3 py-2 text-[10px] font-mono transition-all"
-          style={{ color: '#10b981' }}>+ file</button>
+        <button onClick={() => setShowNew(s => !s)}
+          className="px-3 py-2 text-[10px] transition-colors"
+          style={{ color: G.R }}>+ new</button>
       </div>
 
-      {/* New file input */}
-      {showNewInput && (
-        <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ background: '#04060e', borderBottom: '1px solid #0d1220' }}>
-          <input ref={inputRef}
-            value={newFileName}
-            onChange={e => setNewFileName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') submitNew(); if (e.key === 'Escape') setShowNewInput(false); }}
+      {showNew && (
+        <div className="flex items-center gap-2 px-3 py-2 border-b flex-shrink-0" style={{ borderColor: G.border }}>
+          <input ref={nameRef} value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitNew(); if (e.key === 'Escape') setShowNew(false); }}
             placeholder="filename.ts"
-            className="flex-1 bg-transparent text-[11px] font-mono focus:outline-none"
-            style={{ color: '#c9a84c', caretColor: '#c9a84c' }}
-          />
-          <button onClick={submitNew}
-            className="text-[10px] font-mono px-2 py-0.5 rounded"
-            style={{ color: '#10b981', background: '#10b98110', border: '1px solid #10b98125' }}>create</button>
-          <button onClick={() => setShowNewInput(false)}
-            className="text-[10px] font-mono" style={{ color: '#334155' }}>✕</button>
+            className="flex-1 bg-transparent text-[11px] focus:outline-none"
+            style={{ color: G.gold, caretColor: G.gold }} />
+          <button onClick={submitNew} className="text-[10px] px-2 py-px rounded"
+            style={{ color: G.R, background: `${G.R}10`, border: `1px solid ${G.R}20` }}>create</button>
+          <button onClick={() => setShowNew(false)} className="text-[10px]" style={{ color: G.textDim }}>✕</button>
         </div>
       )}
 
-      {/* Editor panel */}
+      {/* Editor */}
       {panel === 'editor' && (
         <div className="flex flex-1 overflow-hidden">
-          {/* File sidebar */}
           {files.length > 0 && (
-            <div className="w-28 flex-shrink-0 overflow-y-auto border-r" style={{ borderColor: '#0d1220', scrollbarWidth: 'none' }}>
+            <div className="w-32 flex-shrink-0 overflow-y-auto border-r" style={{ borderColor: G.border, scrollbarWidth: 'none' }}>
               {files.map(f => (
                 <div key={f.id} onClick={() => onSelectFile(f.id)}
-                  className="flex items-center gap-1.5 px-2 py-2 cursor-pointer group relative"
+                  className="group flex items-center gap-1.5 px-2.5 py-2 cursor-pointer text-[10px] relative"
                   style={{
-                    background: f.id === activeFileId ? '#0c1428' : 'transparent',
-                    borderLeft: `2px solid ${f.id === activeFileId ? '#c9a84c' : 'transparent'}`,
+                    background: f.id === activeFileId ? G.surface : 'transparent',
+                    borderLeft: `2px solid ${f.id === activeFileId ? G.gold : 'transparent'}`,
+                    color: f.id === activeFileId ? G.gold : G.textDim,
                   }}>
-                  <span className="text-[10px] font-mono truncate flex-1"
-                    style={{ color: f.id === activeFileId ? '#c9a84c' : '#475569' }}>
-                    {f.name}
-                  </span>
+                  <span className="flex-1 truncate">{f.name}</span>
                   <button onClick={e => { e.stopPropagation(); onDeleteFile(f.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-[10px]"
+                    className="opacity-0 group-hover:opacity-100 text-[9px] flex-shrink-0"
                     style={{ color: '#ef4444' }}>✕</button>
                 </div>
               ))}
             </div>
           )}
-
-          {/* Code area */}
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 flex flex-col overflow-hidden">
             {activeFile ? (
               <>
-                <div className="px-3 py-1.5 flex items-center gap-2 border-b flex-shrink-0"
-                  style={{ borderColor: '#0d1220', background: '#030509' }}>
-                  <span className="text-[10px] font-mono" style={{ color: '#c9a84c' }}>{activeFile.name}</span>
-                  <span className="text-[9px] font-mono" style={{ color: '#1e3a5f' }}>{activeFile.lang}</span>
+                <div className="flex items-center gap-2 px-3 py-1.5 border-b flex-shrink-0"
+                  style={{ borderColor: G.border }}>
+                  <span className="text-[10px]" style={{ color: G.gold }}>{activeFile.name}</span>
+                  <span className="text-[9px]" style={{ color: G.textDim }}>{activeFile.lang}</span>
                   <div className="flex-1" />
-                  <span className="text-[9px] font-mono" style={{ color: '#1e3a5f' }}>
-                    {activeFile.content.split('\n').length}L
-                  </span>
+                  <span className="text-[9px]" style={{ color: G.textDim }}>{activeFile.content.split('\n').length}L</span>
                 </div>
-                <textarea
-                  value={activeFile.content}
+                <textarea value={activeFile.content}
                   onChange={e => onUpdateFile(activeFile.id, e.target.value)}
-                  className="flex-1 w-full resize-none focus:outline-none p-3 font-mono leading-relaxed"
-                  style={{
-                    background: '#020408', color: '#94a3b8',
-                    caretColor: '#c9a84c', scrollbarWidth: 'thin',
-                    scrollbarColor: '#1e3a5f transparent',
-                    fontSize: '12px', tabSize: 2,
-                  }}
-                  spellCheck={false}
-                />
+                  className="flex-1 w-full resize-none focus:outline-none p-3 leading-relaxed"
+                  style={{ background: G.bg, color: '#7a8fa8', caretColor: G.gold,
+                    fontSize: '12px', tabSize: 2, fontFamily: 'inherit', scrollbarWidth: 'thin',
+                    scrollbarColor: `${G.border} transparent` }}
+                  spellCheck={false} />
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
-                <span style={{ color: '#1e3a5f', fontSize: 28 }}>{'</>'}</span>
-                <p className="text-[11px] font-mono" style={{ color: '#1e3a5f' }}>
-                  Ask Lex to write code, then tap<br />
-                  <span style={{ color: '#10b981' }}>+ sandbox</span> to save it here
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-6">
+                <span style={{ color: G.textDim }}>{'</>'}</span>
+                <p className="text-[10px]" style={{ color: G.textDim }}>
+                  Ask Lex to write code, then tap <span style={{ color: G.R }}>+ save</span>
                 </p>
               </div>
             )}
@@ -571,75 +535,39 @@ function SandboxPanel({ files, activeFileId, terminalLog, onSelectFile, onUpdate
         </div>
       )}
 
-      {/* Terminal panel */}
+      {/* Terminal */}
       {panel === 'terminal' && (
-        <div ref={termRef} className="flex-1 overflow-y-auto p-3 space-y-px font-mono text-[11px]"
-          style={{ scrollbarWidth: 'none', background: '#020408' }}>
-          {terminalLog.length === 0 && (
-            <p style={{ color: '#1e3a5f' }}>// terminal ready — send a message to begin</p>
-          )}
+        <div ref={termRef} className="flex-1 overflow-y-auto p-3 text-[11px] space-y-px"
+          style={{ scrollbarWidth: 'none' }}>
+          {terminalLog.length === 0 && <p style={{ color: G.textDim }}>// ready</p>}
           {terminalLog.map((line, i) => (
-            <div key={i} className="leading-relaxed"
-              style={{
-                color: line.startsWith('>>') ? '#c9a84c'
-                  : line.startsWith('✓')    ? '#10b981'
-                  : line.startsWith('✗')    ? '#ef4444'
-                  : '#475569',
-              }}>{line}</div>
+            <div key={i} style={{
+              color: line.startsWith('>>') ? G.gold : line.startsWith('✓') ? G.R
+                   : line.startsWith('✗') ? '#ef4444' : G.textDim,
+            }}>{line}</div>
           ))}
-          <div className="flex items-center gap-1 mt-1 pt-1" style={{ borderTop: '1px solid #0a0f1c' }}>
-            <span style={{ color: '#c9a84c' }}>lex@sovereign:~$</span>
-            <span className="lex-cursor inline-block w-[7px] h-[13px] ml-0.5 rounded-[1px]"
-              style={{ background: '#c9a84c' }} />
+          <div className="flex items-center gap-1 pt-1">
+            <span style={{ color: G.gold }}>lex@sovereign:~$</span>
+            <span className="lex-cursor inline-block w-[6px] h-[12px] ml-0.5 rounded-[1px]"
+              style={{ background: G.gold }} />
           </div>
         </div>
       )}
 
-      {/* Files panel */}
+      {/* Files list */}
       {panel === 'files' && (
         <div className="flex-1 overflow-y-auto p-2 space-y-1" style={{ scrollbarWidth: 'none' }}>
-          {files.length === 0 && (
-            <p className="text-[11px] font-mono text-center py-8" style={{ color: '#1e3a5f' }}>
-              no files in sandbox
-            </p>
-          )}
+          {files.length === 0 && <p className="text-[10px] text-center py-8" style={{ color: G.textDim }}>no files</p>}
           {files.map(f => (
             <div key={f.id} onClick={() => { onSelectFile(f.id); setPanel('editor'); }}
-              className="flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer group"
-              style={{ background: f.id === activeFileId ? '#0c1428' : 'transparent' }}>
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer group text-[10px]"
+              style={{ background: f.id === activeFileId ? G.surface : 'transparent' }}>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-mono truncate" style={{ color: f.id === activeFileId ? '#c9a84c' : '#475569' }}>
-                  {f.name}
-                </p>
-                <p className="text-[9px] font-mono" style={{ color: '#1e3a5f' }}>
-                  {f.content.split('\n').length}L · {f.lang}
-                </p>
+                <p className="truncate" style={{ color: f.id === activeFileId ? G.gold : G.textDim }}>{f.name}</p>
+                <p className="text-[9px]" style={{ color: G.textDim }}>{f.content.split('\n').length}L · {f.lang}</p>
               </div>
               <button onClick={e => { e.stopPropagation(); onDeleteFile(f.id); }}
-                className="opacity-0 group-hover:opacity-100 text-[10px] transition-opacity"
-                style={{ color: '#ef4444' }}>✕</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* History panel */}
-      {panel === 'history' && (
-        <div className="flex-1 overflow-y-auto p-3 space-y-3" style={{ scrollbarWidth: 'none' }}>
-          {files.length === 0 && (
-            <p className="text-[11px] font-mono" style={{ color: '#1e3a5f' }}>no history yet</p>
-          )}
-          {[...files].reverse().map(f => (
-            <div key={f.id} className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-semibold" style={{ color: '#c9a84c' }}>{f.name}</span>
-                <span className="text-[9px] font-mono" style={{ color: '#1e3a5f' }}>
-                  {new Date(f.modifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-              <p className="text-[9px] font-mono" style={{ color: '#334155' }}>
-                {f.content.split('\n').length} lines · {f.content.length} chars
-              </p>
+                className="opacity-0 group-hover:opacity-100 text-[9px]" style={{ color: '#ef4444' }}>✕</button>
             </div>
           ))}
         </div>
@@ -648,53 +576,51 @@ function SandboxPanel({ files, activeFileId, terminalLog, onSelectFile, onUpdate
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    SUGGESTION BAR
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 function SuggestionBar({ turns, activeCategory, onCategoryChange, onSelect, disabled }: {
   turns: ChatTurn[]; activeCategory: SuggestionCategory;
   onCategoryChange: (c: SuggestionCategory) => void;
-  onSelect: (prompt: string) => void; disabled: boolean;
+  onSelect: (p: string) => void; disabled: boolean;
 }) {
   const suggestions = useMemo(
     () => activeCategory === 'all'
-      ? getDynamicSuggestions(turns, 'all', 3)
+      ? getDynamicSuggestions(turns, 'all', 4)
       : getPromptsByCategory(activeCategory).slice(0, 4),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [turns.length, activeCategory],
   );
 
   const dotColor: Record<string, string> = {
-    jailbreak: '#ef4444', sycophancy: '#10b981', identity: '#3b82f6',
-    'slow-drip': '#f59e0b', probe: '#a855f7', attack: '#f97316', baseline: '#475569',
+    jailbreak: '#ef4444', sycophancy: G.R, identity: G.C,
+    'slow-drip': G.S, probe: '#a855f7', attack: '#f97316', baseline: G.textDim,
   };
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 pb-1">
       {/* Category pills */}
-      <div className="flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
         {SUGGESTION_CATEGORIES.map(cat => (
           <button key={cat.key} onClick={() => onCategoryChange(cat.key)}
-            className="flex-shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-mono transition-all active:scale-95"
+            className="flex-shrink-0 px-2 py-px rounded text-[9px] font-mono transition-all"
             style={{
-              color: activeCategory === cat.key ? '#07070d' : '#334155',
-              background: activeCategory === cat.key ? '#c9a84c' : '#07080f',
-              border: `1px solid ${activeCategory === cat.key ? '#c9a84c' : '#0f1629'}`,
+              color: activeCategory === cat.key ? G.gold : G.textDim,
+              background: activeCategory === cat.key ? `${G.gold}10` : 'transparent',
+              border: `1px solid ${activeCategory === cat.key ? `${G.gold}25` : G.border}`,
             }}>{cat.label}</button>
         ))}
       </div>
-
       {/* Prompt chips */}
       <div className="flex gap-1.5 flex-wrap">
         {suggestions.map((s, i) => (
-          <button key={i} disabled={disabled} onClick={() => !disabled && onSelect(s.prompt)} title={s.prompt}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono
-              transition-all disabled:opacity-30 active:scale-95 max-w-[190px]"
-            style={{
-              color: '#475569', background: '#07080f', border: '1px solid #0f1629',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-            <span style={{ color: dotColor[s.category] ?? '#475569', fontSize: 7, flexShrink: 0 }}>●</span>
+          <button key={i} disabled={disabled} onClick={() => !disabled && onSelect(s.prompt)}
+            title={s.prompt}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono
+              transition-all disabled:opacity-30 active:scale-95 max-w-[200px] hover:border-opacity-60"
+            style={{ color: G.text, background: G.surface, border: `1px solid ${G.border}`,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ color: dotColor[s.category] ?? G.textDim, fontSize: 6, flexShrink: 0 }}>●</span>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
           </button>
         ))}
@@ -703,43 +629,43 @@ function SuggestionBar({ turns, activeCategory, onCategoryChange, onSelect, disa
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    EMPTY STATE
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 function EmptyState({ mode }: { mode: SandboxMode }) {
   const cfg = {
-    chat:     { icon: '⬡', title: 'Sovereign Console',  lines: ['C·R·S tracks every turn', 'Lyapunov-anchored stability', 'Try a jailbreak — watch it hold'] },
-    code:     { icon: '</>', title: 'Code Sandbox',      lines: ['Ask Lex to write any code', 'Save blocks to the sandbox editor', 'Edit and iterate in one place'] },
-    research: { icon: '∇', title: 'Research Mode',       lines: ['Rigorous constitutional analysis', 'Formal proofs and mechanism reasoning', 'Cross-reference prior session turns'] },
-    redteam:  { icon: '🛡', title: 'Constitutional Probe', lines: ['Stress-test the governor live', 'Full transparency on every decision', 'Watch M move in real-time'] },
+    chat:     { icon: '◈', title: 'Sovereign Console',    lines: ['C·R·S tracked every turn', 'Lyapunov-anchored stability', 'SHA-256 receipt on every run'] },
+    code:     { icon: '</>', title: 'Code Mode',           lines: ['Ask Lex to write any code', 'Save blocks to sandbox', 'Edit and iterate inline'] },
+    research: { icon: '∇',  title: 'Research Mode',        lines: ['Rigorous constitutional analysis', 'Formal proofs and mechanisms', 'Cross-reference session history'] },
+    redteam:  { icon: '⊗',  title: 'Constitutional Probe', lines: ['Stress-test the governor live', 'Full transparency per decision', 'Watch M move in real-time'] },
   }[mode];
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-5 text-center px-6 py-16">
+    <div className="flex flex-col items-center justify-center h-full gap-6 px-6 py-12 text-center">
       <div className="relative">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
-          style={{ background: '#c9a84c12', border: '1px solid #c9a84c20', boxShadow: '0 0 48px #c9a84c08' }}>
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-mono"
+          style={{ background: `${G.gold}0c`, border: `1px solid ${G.gold}20` }}>
           {cfg.icon}
         </div>
-        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full lex-pulse"
-          style={{ background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+        <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full lex-pulse"
+          style={{ background: G.R }} />
       </div>
 
       <div>
-        <p className="text-sm font-mono font-bold tracking-widest uppercase" style={{ color: '#c9a84c' }}>
+        <p className="text-[11px] font-mono font-bold tracking-widest uppercase" style={{ color: G.gold }}>
           {cfg.title}
         </p>
-        <p className="text-[10px] font-mono mt-1" style={{ color: '#1e3a5f' }}>
+        <p className="text-[10px] font-mono mt-1" style={{ color: G.textDim }}>
           Constitutional governance · persistent context
         </p>
       </div>
 
-      <div className="space-y-1.5 w-full max-w-[260px] text-left">
+      <div className="space-y-1.5 w-full max-w-xs text-left">
         {cfg.lines.map((l, i) => (
-          <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-xl"
-            style={{ background: '#07080f', border: '1px solid #0f1629' }}>
-            <span className="text-[9px] mt-0.5 flex-shrink-0 font-bold" style={{ color: '#c9a84c' }}>—</span>
-            <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#334155' }}>{l}</p>
+          <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg"
+            style={{ background: G.surface, border: `1px solid ${G.border}` }}>
+            <span className="text-[9px] flex-shrink-0" style={{ color: G.gold }}>—</span>
+            <p className="text-[10px] font-mono" style={{ color: G.text }}>{l}</p>
           </div>
         ))}
       </div>
@@ -747,11 +673,10 @@ function EmptyState({ mode }: { mode: SandboxMode }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
+/* ─────────────────────────────────────────────────────────────────────
    MAIN PAGE
-══════════════════════════════════════════════════════════════════════ */
+───────────────────────────────────────────────────────────────────── */
 export default function ChatConsole() {
-  /* Core state */
   const [turns, setTurns]               = useState<ChatTurn[]>([]);
   const [input, setInput]               = useState('');
   const [apiCalls, setApiCalls]         = useState(0);
@@ -763,18 +688,15 @@ export default function ChatConsole() {
   const [liveM, setLiveM]               = useState<number | null>(null);
   const [liveHealth, setLiveHealth]     = useState('OPTIMAL');
   const [inputFocused, setInputFocused] = useState(false);
-  const [selfTestResult, setSelfTestResult] = useState<string | null>(null);
+  const [selfTestResult, setSelfTestResult]   = useState<string | null>(null);
   const [selfTestLoading, setSelfTestLoading] = useState(false);
-
-  /* Sandbox state */
-  const [sandboxMode, setSandboxMode]         = useState<SandboxMode>('chat');
-  const [sandboxOpen, setSandboxOpen]         = useState(false);
-  const [sandboxFiles, setSandboxFiles]       = useState<SandboxFile[]>([]);
-  const [activeFileId, setActiveFileId]       = useState<string | null>(null);
-  const [terminalLog, setTerminalLog]         = useState<string[]>([]);
+  const [sandboxMode, setSandboxMode]   = useState<SandboxMode>('chat');
+  const [sandboxOpen, setSandboxOpen]   = useState(false);
+  const [sandboxFiles, setSandboxFiles] = useState<SandboxFile[]>([]);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [terminalLog, setTerminalLog]   = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(true);
 
-  /* Refs */
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
   const toast     = useToast();
@@ -783,54 +705,38 @@ export default function ChatConsole() {
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'chat_console';
     const k = 'lex_session_id';
-    const s = localStorage.getItem(k);
-    if (s) return s;
+    const s = localStorage.getItem(k); if (s) return s;
     const id = `chat_${crypto.randomUUID()}`;
-    localStorage.setItem(k, id);
-    return id;
+    localStorage.setItem(k, id); return id;
   });
 
   const runSelfTest = useCallback(async () => {
-    setSelfTestLoading(true);
-    setSelfTestResult(null);
+    setSelfTestLoading(true); setSelfTestResult(null);
     try {
       const r = await fetch('/api/self-test', { method: 'POST' });
       const d = await r.json() as { result?: { content?: Array<{ text?: string }> }; error?: string };
-      const text = d.result?.content?.[0]?.text ?? d.error ?? 'No result';
-      setSelfTestResult(text);
+      setSelfTestResult(d.result?.content?.[0]?.text ?? d.error ?? 'No result');
     } catch (e) {
       setSelfTestResult('Error: ' + (e as Error).message);
-    } finally {
-      setSelfTestLoading(false);
-    }
+    } finally { setSelfTestLoading(false); }
   }, []);
 
-  /* ── Persistence ── */
   useEffect(() => {
     const s = localStorage.getItem('lex_api_calls');
     if (s) setApiCalls(parseInt(s, 10));
-    try {
-      const f = localStorage.getItem('lex_sandbox_files');
-      if (f) setSandboxFiles(JSON.parse(f));
-    } catch { /* ok */ }
+    try { const f = localStorage.getItem('lex_sandbox_files'); if (f) setSandboxFiles(JSON.parse(f)); } catch { /* ok */ }
   }, []);
 
   useEffect(() => { localStorage.setItem('lex_api_calls', String(apiCalls)); }, [apiCalls]);
   useEffect(() => { localStorage.setItem('lex_sandbox_files', JSON.stringify(sandboxFiles)); }, [sandboxFiles]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [turns, stream.partialOutput]);
 
-  /* ── Auto-scroll ── */
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [turns, stream.partialOutput]);
-
-  /* ── Live metrics ── */
   useEffect(() => {
     if (!stream.metrics) return;
     setLiveM(stream.metrics.m ?? null);
     setLiveHealth(stream.metrics.health_band ?? stream.metrics.health ?? 'OPTIMAL');
   }, [stream.metrics]);
 
-  /* ── Complete handler ── */
   useEffect(() => {
     if (stream.stage !== 'complete' || !stream.complete || !currentLexId) return;
     const res = stream.complete as GovernanceResponse;
@@ -843,261 +749,239 @@ export default function ChatConsole() {
     const S = Number(stateRec?.S ?? res.metrics?.s ?? 0);
     const sig = (kx.semantic_signal as { attack_type?: string; severity?: number }) ?? {};
 
-    setTurns(prev => prev.map(t =>
-      t.id !== currentLexId ? t : {
-        ...t, streaming: false,
-        governed_output: res.governed_output,
-        raw_output: res.raw_output,
-        audit_id: res.audit_id,
-        M, health_band: health, C, R, S,
-        delta_V: Number(kx.delta_V ?? 0),
-        attack_type: sig.attack_type ?? 'none',
-        attack_severity: typeof sig.severity === 'number' ? sig.severity : undefined,
-        intervened: !!(res.intervention?.triggered || res.intervention?.applied),
-        projection_triggered: Boolean(kx.projection_triggered),
-        memory_injected: Boolean(kx.memory_injected),
-        law: stream.law ?? null,
-        governor: stream.governor ?? null,
-        complete: res,
-      },
-    ));
+    setTurns(prev => prev.map(t => t.id !== currentLexId ? t : {
+      ...t, streaming: false,
+      governed_output: res.governed_output, raw_output: res.raw_output, audit_id: res.audit_id,
+      M, health_band: health, C, R, S,
+      delta_V: Number(kx.delta_V ?? 0),
+      attack_type: sig.attack_type ?? 'none',
+      attack_severity: typeof sig.severity === 'number' ? sig.severity : undefined,
+      intervened: !!(res.intervention?.triggered || res.intervention?.applied),
+      projection_triggered: Boolean(kx.projection_triggered),
+      memory_injected: Boolean(kx.memory_injected),
+      law: stream.law ?? null, governor: stream.governor ?? null, complete: res,
+    }));
 
-    setLiveM(M);
-    setLiveHealth(health);
-    setApiCalls(c => c + 1);
-    setCurrentLexId(null);
+    setLiveM(M); setLiveHealth(health); setApiCalls(c => c + 1); setCurrentLexId(null);
 
-    /* Log code blocks to terminal, auto-open sandbox in code mode */
     if (res.governed_output) {
       const blocks = parseCodeBlocks(res.governed_output);
       if (blocks.length > 0) {
         setTerminalLog(prev => [
           ...prev,
-          `>> Lex emitted ${blocks.length} code block${blocks.length > 1 ? 's' : ''}`,
-          ...blocks.map(b => `  ✓ ${b.lang}${b.filename ? ` · ${b.filename}` : ''} (${b.code.split('\n').length}L)`),
+          `>> emitted ${blocks.length} block${blocks.length > 1 ? 's' : ''}`,
+          ...blocks.map(b => `  ✓ ${b.lang}${b.filename ? ` · ${b.filename}` : ''}`),
         ]);
         if (sandboxMode === 'code') setSandboxOpen(true);
       }
     }
-
     toast.push('Run complete', 'success');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.stage, stream.complete]);
 
-  /* ── Error handler ── */
   useEffect(() => {
     if (!stream.error || !currentLexId) return;
-    setTurns(prev => prev.map(t =>
-      t.id !== currentLexId ? t : { ...t, streaming: false, error: stream.error ?? 'Error' },
-    ));
+    setTurns(prev => prev.map(t => t.id !== currentLexId ? t : { ...t, streaming: false, error: stream.error ?? 'Error' }));
     setCurrentLexId(null);
     setTerminalLog(prev => [...prev, `✗ ${stream.error}`]);
     toast.push(stream.error, 'error');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.error]);
 
-  /* ── Send message ── */
   const sendMessage = useCallback(async (promptOverride?: string) => {
-    const rawPrompt = (promptOverride ?? input).trim();
-    if (!rawPrompt || stream.loading) return;
+    const raw = (promptOverride ?? input).trim();
+    if (!raw || stream.loading) return;
     if (apiCalls >= MAX_CALLS) { setShowUpgrade(true); return; }
     if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 0) {
       setShowEmail(true); return;
     }
 
-    const governed = (MODE_PREFIX[sandboxMode] + rawPrompt).trim();
-    const userId   = `u_${Date.now()}`;
-    const lexId    = `l_${Date.now()}`;
+    const governed = (MODE_PREFIX[sandboxMode] + raw).trim();
+    const userId = `u_${Date.now()}`, lexId = `l_${Date.now()}`;
 
     setTurns(prev => [
       ...prev,
-      { id: userId, role: 'user',  content: rawPrompt, timestamp: Date.now() },
-      { id: lexId,  role: 'lex',   content: '',        timestamp: Date.now(), streaming: true, partial: '' },
+      { id: userId, role: 'user', content: raw, timestamp: Date.now() },
+      { id: lexId,  role: 'lex',  content: '', timestamp: Date.now(), streaming: true, partial: '' },
     ]);
     setCurrentLexId(lexId);
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
-    setTerminalLog(prev => [...prev, `>> ${rawPrompt.slice(0, 80)}${rawPrompt.length > 80 ? '…' : ''}`]);
-
+    setTerminalLog(prev => [...prev, `>> ${raw.slice(0, 80)}${raw.length > 80 ? '…' : ''}`]);
     await runStream(governed, sessionId);
   }, [input, stream.loading, apiCalls, runStream, sessionId, sandboxMode]);
 
-  /* ── Sandbox file ops ── */
   const saveBlockToSandbox = useCallback((block: CodeBlock) => {
     const ext  = block.lang === 'typescript' ? 'ts' : block.lang === 'python' ? 'py' : block.lang;
     const name = block.filename ?? `snippet_${Date.now()}.${ext}`;
-    const f: SandboxFile = {
-      id: `f_${Date.now()}`, name, lang: block.lang,
-      content: block.code, createdAt: Date.now(), modifiedAt: Date.now(),
-    };
+    const f: SandboxFile = { id: `f_${Date.now()}`, name, lang: block.lang, content: block.code, createdAt: Date.now(), modifiedAt: Date.now() };
     setSandboxFiles(prev => [...prev, f]);
-    setActiveFileId(f.id);
-    setSandboxOpen(true);
-    setTerminalLog(prev => [...prev, `✓ Saved ${name} to sandbox`]);
+    setActiveFileId(f.id); setSandboxOpen(true);
+    setTerminalLog(prev => [...prev, `✓ saved ${name}`]);
     toast.push(`Saved ${name}`, 'success');
   }, [toast]);
 
   const createNewFile = useCallback((name: string) => {
-    const trimmed = name.trim() || `untitled_${Date.now()}.ts`;
-    const f: SandboxFile = {
-      id: `f_${Date.now()}`, name: trimmed,
-      lang: langFromName(trimmed), content: `// ${trimmed}\n`,
-      createdAt: Date.now(), modifiedAt: Date.now(),
-    };
-    setSandboxFiles(prev => [...prev, f]);
-    setActiveFileId(f.id);
-    setTerminalLog(prev => [...prev, `✓ Created ${trimmed}`]);
+    const n = name.trim() || `untitled_${Date.now()}.ts`;
+    const f: SandboxFile = { id: `f_${Date.now()}`, name: n, lang: langFromName(n), content: `// ${n}\n`, createdAt: Date.now(), modifiedAt: Date.now() };
+    setSandboxFiles(prev => [...prev, f]); setActiveFileId(f.id);
   }, []);
 
-  const updateFile = useCallback((id: string, content: string) => {
+  const updateFile  = useCallback((id: string, content: string) => {
     setSandboxFiles(prev => prev.map(f => f.id === id ? { ...f, content, modifiedAt: Date.now() } : f));
   }, []);
 
-  const deleteFile = useCallback((id: string) => {
-    setSandboxFiles(prev => {
-      const next = prev.filter(f => f.id !== id);
-      setActiveFileId(next[next.length - 1]?.id ?? null);
-      return next;
-    });
+  const deleteFile  = useCallback((id: string) => {
+    setSandboxFiles(prev => { const n = prev.filter(f => f.id !== id); setActiveFileId(n[n.length - 1]?.id ?? null); return n; });
   }, []);
 
-  /* ── Derived ── */
-  const hcfg       = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
+  const hcfg      = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
   const isStreaming = stream.loading;
-  const arc         = useMemo(() => buildSessionArc(turns), [turns]);
-  const callsLeft   = MAX_CALLS - apiCalls;
+  const arc        = useMemo(() => buildSessionArc(turns), [turns]);
+  const callsLeft  = MAX_CALLS - apiCalls;
 
-  /* ─────────────────────────────────────────────────────────────────
-     RENDER
-  ───────────────────────────────────────────────────────────────── */
   return (
     <>
       <style>{`
         @keyframes lex-blink   { 0%,100%{opacity:1} 50%{opacity:0} }
-        @keyframes lex-breathe { 0%,100%{opacity:.7} 50%{opacity:1} }
-        .lex-cursor { animation: lex-blink   0.85s step-end infinite; }
-        .lex-pulse  { animation: lex-breathe 2s    ease-in-out infinite; }
-        ::-webkit-scrollbar    { display: none; }
+        @keyframes lex-breathe { 0%,100%{opacity:.5} 50%{opacity:1} }
+        .lex-cursor { animation: lex-blink   0.9s step-end infinite; }
+        .lex-pulse  { animation: lex-breathe 2.4s ease-in-out infinite; }
+        ::-webkit-scrollbar { display: none; }
         * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
         textarea { font-size: 16px !important; }
       `}</style>
 
       <div className="h-[100dvh] flex flex-col overflow-hidden"
-        style={{ background: '#04060e', fontFamily: "'JetBrains Mono','SF Mono',ui-monospace,monospace" }}>
+        style={{ background: G.bg, fontFamily: "'JetBrains Mono','SF Mono',ui-monospace,monospace", color: G.text }}>
 
-        {/* ═════════════════════ HEADER ═════════════════════ */}
+        {/* ═══════════════════════ HEADER ═══════════════════════ */}
         <header className="flex-shrink-0 z-40"
-          style={{ background: '#06070f', borderBottom: '1px solid #0d1220' }}>
+          style={{ background: G.bg, borderBottom: `1px solid ${G.border}` }}>
 
           {/* Top bar */}
-          <div className="flex items-center justify-between h-11 px-3 gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center h-12 px-4 gap-3">
+            {/* Brand */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <Link href="/"
                 className="flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0 active:scale-90 transition-transform"
-                style={{ color: '#334155', background: '#0a0d18', border: '1px solid #0f1629' }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                style={{ color: G.textDim, background: G.surface, border: `1px solid ${G.border}` }}>
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
                   <path d="M7 2L3 5L7 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </Link>
-              <span className="text-[11px] font-mono font-bold tracking-[0.12em] uppercase flex-shrink-0" style={{ color: '#c9a84c' }}>
-                Lex Aureon
-              </span>
-              {/* Live M indicator — only when we have a reading */}
+
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[11px] font-mono font-bold tracking-widest uppercase flex-shrink-0"
+                  style={{ color: G.gold }}>Lex Aureon</span>
+                <span className="text-[9px] font-mono px-1.5 py-px rounded flex-shrink-0"
+                  style={{ color: G.textDim, background: G.surface, border: `1px solid ${G.border}` }}>
+                  v2
+                </span>
+              </div>
+
+              {/* Live M badge */}
               {liveM !== null && (
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-mono flex-shrink-0"
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-mono flex-shrink-0 ml-1"
                   style={{
                     color: hcfg.color, background: hcfg.bg,
                     border: `1px solid ${hcfg.color}20`,
-                    boxShadow: isStreaming ? hcfg.glow : 'none',
                     transition: 'all 0.4s',
                   }}>
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ background: hcfg.color, animation: isStreaming ? 'lex-blink 1s step-end infinite' : 'none' }} />
-                  M={liveM.toFixed(3)}
+                  <span>M={liveM.toFixed(3)}</span>
+                  {isStreaming && <span style={{ color: hcfg.color, opacity: 0.6 }}>·</span>}
+                  {isStreaming && <span className="text-[9px]">live</span>}
                 </div>
               )}
             </div>
 
+            {/* Right controls */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {/* Sandbox toggle */}
               <button onClick={() => setSandboxOpen(s => !s)}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono active:scale-95 transition-transform"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono transition-all active:scale-95"
                 style={{
-                  color: sandboxOpen ? '#38bdf8' : '#334155',
-                  background: sandboxOpen ? '#38bdf810' : '#07080f',
-                  border: `1px solid ${sandboxOpen ? '#38bdf822' : '#0f1629'}`,
+                  color: sandboxOpen ? '#38bdf8' : G.textDim,
+                  background: sandboxOpen ? '#38bdf808' : 'transparent',
+                  border: `1px solid ${sandboxOpen ? '#38bdf820' : G.border}`,
                 }}>
-                <span className="text-[11px]">{'</>'}</span>
+                <span>{'</>'}</span>
                 {sandboxFiles.length > 0 && (
-                  <span className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center"
-                    style={{ background: '#38bdf820', color: '#38bdf8' }}>
-                    {sandboxFiles.length}
-                  </span>
+                  <span className="text-[9px]" style={{ color: '#38bdf8' }}>{sandboxFiles.length}</span>
                 )}
               </button>
 
-              <span className="text-[10px] font-mono tabular-nums"
-                style={{ color: callsLeft <= 3 ? '#f59e0b' : '#1e3a5f' }}>
+              {/* Call counter */}
+              <div className="text-[10px] font-mono tabular-nums px-2 py-1.5 rounded-lg"
+                style={{
+                  color: callsLeft <= 3 ? '#f59e0b' : G.textDim,
+                  background: G.surface, border: `1px solid ${G.border}`,
+                }}>
                 {callsLeft}/{MAX_CALLS}
-              </span>
+              </div>
 
-              <button
-                onClick={() => void runSelfTest()}
-                disabled={selfTestLoading}
-                className="text-[10px] px-2 py-1 rounded-lg font-mono active:scale-95 transition-transform disabled:opacity-40"
-                style={{ color: '#10b981', background: '#10b98108', border: '1px solid #10b98120' }}
-              >
-                {selfTestLoading ? '…' : '⊕'}
+              {/* Self-test */}
+              <button onClick={() => void runSelfTest()} disabled={selfTestLoading}
+                className="w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-95 disabled:opacity-40"
+                style={{ color: G.R, background: G.surface, border: `1px solid ${G.border}` }}
+                title="Run self-test">
+                <span className="text-[11px]">{selfTestLoading ? '…' : '⊕'}</span>
               </button>
+
+              {/* Upgrade */}
               <button onClick={() => setShowUpgrade(true)}
-                className="text-[10px] px-2 py-1 rounded-lg font-mono active:scale-95 transition-transform"
-                style={{ color: '#c9a84c', background: '#c9a84c0a', border: '1px solid #c9a84c20' }}>
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-mono transition-all active:scale-95"
+                style={{ color: G.gold, background: `${G.gold}08`, border: `1px solid ${G.gold}20` }}>
                 pro
               </button>
             </div>
           </div>
 
-          {/* Mode tab bar */}
-          <div className="flex border-t overflow-x-auto" style={{ borderColor: '#0d1220', scrollbarWidth: 'none' }}>
-            {([
-              { key: 'chat',     label: '⬡  Chat' },
-              { key: 'code',     label: '</>  Code' },
-              { key: 'research', label: '∇  Research' },
-              { key: 'redteam',  label: '🛡  Probe' },
-            ] as { key: SandboxMode; label: string }[]).map(m => (
+          {/* Mode tabs */}
+          <div className="flex border-t" style={{ borderColor: G.border }}>
+            {MODES.map(m => (
               <button key={m.key} onClick={() => setSandboxMode(m.key)}
-                className="flex-shrink-0 px-3 py-1.5 text-[10px] font-mono transition-all"
+                className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-mono transition-all"
                 style={{
-                  color: sandboxMode === m.key ? '#c9a84c' : '#334155',
-                  borderBottom: sandboxMode === m.key ? '2px solid #c9a84c' : '2px solid transparent',
-                  background: sandboxMode === m.key ? '#c9a84c06' : 'transparent',
+                  color: sandboxMode === m.key ? G.gold : G.textDim,
+                  borderBottom: `1px solid ${sandboxMode === m.key ? G.gold : 'transparent'}`,
+                  background: sandboxMode === m.key ? `${G.gold}06` : 'transparent',
                 }}>
-                {m.label}
+                <span style={{ opacity: sandboxMode === m.key ? 1 : 0.5 }}>{m.icon}</span>
+                <span>{m.label}</span>
               </button>
             ))}
+            <div className="flex-1 border-b" style={{ borderColor: 'transparent' }} />
           </div>
         </header>
 
-        {/* ═════════════════════ BODY ═════════════════════ */}
+        {/* ═══════════════════════ BODY ═══════════════════════ */}
         <div className="flex flex-1 overflow-hidden">
 
           {/* ── Chat column ── */}
           <div className="flex flex-col flex-1 overflow-hidden min-w-0">
 
-            {/* Self-test result panel */}
+            {/* Self-test result */}
             {selfTestResult && (
-              <div className="flex-shrink-0 mx-3 mt-3 rounded-xl p-3 font-mono text-xs"
-                style={{ background: '#040b14', border: '1px solid #10b98125' }}>
-                <div className="flex items-center justify-between mb-2">
-                  <span style={{ color: '#10b981' }} className="text-[10px] uppercase tracking-widest font-bold">⊕ Self-Test</span>
-                  <button onClick={() => setSelfTestResult(null)} className="text-[11px]" style={{ color: '#334155' }}>✕</button>
+              <div className="flex-shrink-0 mx-4 mt-3 rounded-lg overflow-hidden"
+                style={{ background: G.surface, border: `1px solid ${G.R}20` }}>
+                <div className="flex items-center justify-between px-3 py-2"
+                  style={{ borderBottom: `1px solid ${G.border}` }}>
+                  <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: G.R }}>⊕ Self-Test</span>
+                  <button onClick={() => setSelfTestResult(null)} className="text-[10px]" style={{ color: G.textDim }}>✕</button>
                 </div>
-                <pre className="whitespace-pre-wrap leading-relaxed text-[11px]" style={{ color: '#86efac' }}>{selfTestResult}</pre>
+                <pre className="p-3 whitespace-pre-wrap text-[11px] leading-relaxed font-mono max-h-48 overflow-y-auto"
+                  style={{ color: '#86efac', scrollbarWidth: 'thin', scrollbarColor: `${G.border} transparent` }}>
+                  {selfTestResult}
+                </pre>
               </div>
             )}
 
             {/* Thread */}
-            <main className="flex-1 overflow-y-auto py-4 space-y-4" style={{ scrollbarWidth: 'none' }}>
+            <main className="flex-1 overflow-y-auto py-5 px-4 space-y-5"
+              style={{ scrollbarWidth: 'none' }}>
               {!turns.length
                 ? <EmptyState mode={sandboxMode} />
                 : turns.map(turn => (
@@ -1112,44 +996,41 @@ export default function ChatConsole() {
                   />
                 ))
               }
-              <div ref={bottomRef} className="h-2" />
+              <div ref={bottomRef} className="h-1" />
             </main>
 
-            {/* Footer */}
-            <footer className="flex-shrink-0 px-3 pt-2 pb-0 space-y-2"
+            {/* Footer / input area */}
+            <footer className="flex-shrink-0 px-4 pt-2 pb-safe space-y-2"
               style={{
-                background: '#06070f',
-                borderTop: '1px solid #0d1220',
+                background: G.bg,
+                borderTop: `1px solid ${G.border}`,
                 paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
               }}>
 
+              {/* Suggestions */}
               {!isStreaming && showSuggestions && (
-                <SuggestionBar
-                  turns={turns} activeCategory={suggCat}
+                <SuggestionBar turns={turns} activeCategory={suggCat}
                   onCategoryChange={setSuggCat}
                   onSelect={p => { setInput(p); inputRef.current?.focus(); }}
-                  disabled={isStreaming}
-                />
+                  disabled={isStreaming} />
               )}
 
+              {/* Input row */}
               <div className="flex items-end gap-2">
-                {/* Textarea */}
-                <div className="flex-1 rounded-2xl transition-all duration-200"
+                {/* Textarea container */}
+                <div className="flex-1 rounded-xl transition-all duration-200"
                   style={{
-                    background: '#07080f',
-                    border: `1px solid ${inputFocused ? '#c9a84c30' : '#10192e'}`,
-                    boxShadow: inputFocused ? '0 0 0 3px #c9a84c07' : 'none',
+                    background: G.surface,
+                    border: `1px solid ${inputFocused ? `${G.gold}35` : G.border}`,
+                    boxShadow: inputFocused ? `0 0 0 3px ${G.gold}06` : 'none',
                   }}>
-                  <textarea
-                    ref={inputRef}
-                    value={input}
+                  <textarea ref={inputRef} value={input}
                     onChange={e => setInput(e.target.value.slice(0, 4000))}
                     onFocus={() => setInputFocused(true)}
                     onBlur={() => setInputFocused(false)}
                     onKeyDown={e => {
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && input.trim() && !isStreaming) {
-                        e.preventDefault();
-                        sendMessage();
+                        e.preventDefault(); sendMessage();
                       }
                     }}
                     onInput={e => {
@@ -1163,47 +1044,41 @@ export default function ChatConsole() {
                       : sandboxMode === 'redteam'  ? 'Launch a constitutional probe…'
                       :                              'Message Lex Aureon…'
                     }
-                    rows={1}
-                    disabled={isStreaming}
-                    className="w-full bg-transparent px-4 py-3 resize-none focus:outline-none leading-relaxed disabled:opacity-40"
-                    style={{ color: '#94a3b8', caretColor: '#c9a84c', fontFamily: 'inherit', maxHeight: '160px' }}
-                  />
+                    rows={1} disabled={isStreaming}
+                    className="w-full bg-transparent px-3.5 py-3 resize-none focus:outline-none leading-relaxed disabled:opacity-40"
+                    style={{ color: G.textBright, caretColor: G.gold, fontFamily: 'inherit', maxHeight: '160px' }} />
                 </div>
 
                 {/* Suggestions toggle */}
                 <button onClick={() => setShowSuggestions(s => !s)}
-                  className="flex-shrink-0 w-8 h-8 self-end mb-1 rounded-lg flex items-center justify-center active:scale-90 transition-transform"
+                  className="flex-shrink-0 w-8 h-8 self-end mb-0.5 rounded-lg flex items-center justify-center transition-all active:scale-90"
                   style={{
-                    color: showSuggestions ? '#c9a84c' : '#334155',
-                    background: '#07080f',
-                    border: `1px solid ${showSuggestions ? '#c9a84c20' : '#0f1629'}`,
+                    color: showSuggestions ? G.gold : G.textDim,
+                    background: G.surface, border: `1px solid ${G.border}`,
                   }}>
-                  <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
-                    <path d="M1 1h10M1 5h7M1 9h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <svg width="12" height="9" viewBox="0 0 12 9" fill="none">
+                    <path d="M1 1h10M1 4.5h7M1 8h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                   </svg>
                 </button>
 
                 {/* Send / Cancel */}
                 {isStreaming ? (
                   <button onClick={cancel}
-                    className="flex-shrink-0 w-10 h-10 self-end mb-0.5 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                    style={{ background: '#1a0505', border: '1px solid #7f1d1d', color: '#f87171' }}>
+                    className="flex-shrink-0 w-9 h-9 self-end mb-0.5 rounded-xl flex items-center justify-center transition-all active:scale-90"
+                    style={{ background: '#1a0505', border: '1px solid #3a1010', color: '#f87171' }}>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
                       <rect width="10" height="10" rx="2"/>
                     </svg>
                   </button>
                 ) : (
                   <button onClick={() => sendMessage()} disabled={!input.trim() || apiCalls >= MAX_CALLS}
-                    className="flex-shrink-0 w-10 h-10 self-end mb-0.5 rounded-full flex items-center justify-center active:scale-90 transition-transform disabled:opacity-20"
+                    className="flex-shrink-0 w-9 h-9 self-end mb-0.5 rounded-xl flex items-center justify-center transition-all active:scale-90 disabled:opacity-20"
                     style={{
-                      background: input.trim() && apiCalls < MAX_CALLS
-                        ? 'linear-gradient(135deg,#c9a84c,#e8c96d)'
-                        : '#07080f',
-                      border: `1px solid ${input.trim() && apiCalls < MAX_CALLS ? '#c9a84c' : '#0f1629'}`,
-                      color: input.trim() && apiCalls < MAX_CALLS ? '#07070d' : '#334155',
-                      boxShadow: input.trim() ? '0 0 18px #c9a84c24' : 'none',
+                      background: input.trim() ? `linear-gradient(135deg,${G.gold},${G.goldL})` : G.surface,
+                      border: `1px solid ${input.trim() ? G.gold : G.border}`,
+                      color: input.trim() ? '#07070d' : G.textDim,
                     }}>
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
                       <path d="M7 12V2M3 6L7 2L11 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </button>
@@ -1212,46 +1087,36 @@ export default function ChatConsole() {
 
               {/* Session signal */}
               {arc.interventionCount > 0 && (
-                <p className="text-[9px] font-mono text-center pb-1" style={{ color: '#7c2d12' }}>
-                  ⚡ {arc.interventionCount} constitutional correction{arc.interventionCount > 1 ? 's' : ''} this session
+                <p className="text-[9px] font-mono text-center pb-0.5" style={{ color: '#7c2d12' }}>
+                  ⚡ {arc.interventionCount} correction{arc.interventionCount > 1 ? 's' : ''} this session
                 </p>
               )}
             </footer>
           </div>
 
-          {/* ── Sandbox panel — desktop side panel, hidden on mobile if narrow ── */}
+          {/* ── Sandbox panel ── */}
           {sandboxOpen && (
             <div className="flex-shrink-0 border-l flex flex-col overflow-hidden"
               style={{
-                /* On narrow mobile it takes full width via absolute positioning */
-                width: 'min(420px, 45vw)',
-                minWidth: '260px',
-                borderColor: '#0d1220',
-                background: '#03040a',
+                width: 'min(400px, 44vw)', minWidth: '260px',
+                borderColor: G.border, background: G.bg,
               }}>
-              <div className="flex items-center justify-between px-3 py-2 border-b flex-shrink-0"
-                style={{ borderColor: '#0d1220', background: '#04060e' }}>
+              <div className="flex items-center justify-between px-3 py-2.5 border-b flex-shrink-0"
+                style={{ borderColor: G.border }}>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono font-bold" style={{ color: '#38bdf8' }}>SANDBOX</span>
-                  <span className="text-[9px] font-mono" style={{ color: '#1e3a5f' }}>
+                  <span className="text-[9px] font-mono" style={{ color: G.textDim }}>
                     {sandboxFiles.length} file{sandboxFiles.length !== 1 ? 's' : ''}
                   </span>
                 </div>
                 <button onClick={() => setSandboxOpen(false)}
                   className="w-5 h-5 rounded flex items-center justify-center text-[10px]"
-                  style={{ color: '#334155', background: '#0f1629' }}>✕</button>
+                  style={{ color: G.textDim }}>✕</button>
               </div>
-
               <div className="flex-1 overflow-hidden">
-                <SandboxPanel
-                  files={sandboxFiles}
-                  activeFileId={activeFileId}
-                  terminalLog={terminalLog}
-                  onSelectFile={setActiveFileId}
-                  onUpdateFile={updateFile}
-                  onNewFile={createNewFile}
-                  onDeleteFile={deleteFile}
-                />
+                <SandboxPanel files={sandboxFiles} activeFileId={activeFileId} terminalLog={terminalLog}
+                  onSelectFile={setActiveFileId} onUpdateFile={updateFile}
+                  onNewFile={createNewFile} onDeleteFile={deleteFile} />
               </div>
             </div>
           )}
