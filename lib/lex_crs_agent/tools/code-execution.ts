@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════
  * CODE EXECUTION TOOL — Constitutional Sandbox
- * 
+ *
  * Executes code (Python, Node.js, Bash) within constitutional bounds.
  * All executions are:
  * - Timeout-protected (max 30 seconds)
@@ -11,7 +11,7 @@
  * ═══════════════════════════════════════════════════════════════════════
  */
 
-import { execSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { randomBytes } from 'crypto';
 import path from 'path';
@@ -20,9 +20,36 @@ const EXECUTION_TIMEOUT = 30000; // 30 seconds
 const MAX_OUTPUT_SIZE = 1024 * 1024; // 1MB
 const TEMP_DIR = '/tmp';
 
+type ExecResult = { stdout: string; stderr: string; exitCode: number };
+
+/** Shared spawn runner — handles timeout + output size cap internally. */
+function spawnProcess(cmd: string, args: string[]): Promise<ExecResult> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, { timeout: EXECUTION_TIMEOUT });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      if (stdout.length > MAX_OUTPUT_SIZE) proc.kill();
+    });
+
+    proc.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      if (stderr.length > MAX_OUTPUT_SIZE) proc.kill();
+    });
+
+    proc.on('error', reject);
+
+    proc.on('close', (code: number | null) => {
+      resolve({ stdout, stderr, exitCode: code ?? 1 });
+    });
+  });
+}
+
 /**
  * Execute Python code.
- * Returns stdout, stderr, and exit code.
  */
 export async function executePython(code: string, args: string[] = []): Promise<{
   success: boolean;
@@ -36,46 +63,12 @@ export async function executePython(code: string, args: string[] = []): Promise<
   const tempFile = path.join(TEMP_DIR, `lex_${randomBytes(8).toString('hex')}.py`);
 
   try {
-    // Write code to temp file
     writeFileSync(tempFile, code);
-
-    // Execute with timeout
-    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-      const proc = spawn('python3', [tempFile, ...args], {
-        timeout: EXECUTION_TIMEOUT,
-        maxBuffer: MAX_OUTPUT_SIZE,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-        if (stdout.length > MAX_OUTPUT_SIZE) {
-          proc.kill();
-        }
-      });
-
-      proc.stderr?.on('data', (data) => {
-        stderr += data.toString();
-        if (stderr.length > MAX_OUTPUT_SIZE) {
-          proc.kill();
-        }
-      });
-
-      proc.on('error', (err) => {
-        reject(err);
-      });
-
-      proc.on('close', (code) => {
-        resolve({ stdout, stderr, exitCode: code ?? 1 });
-      });
-    });
-
+    const result = await spawnProcess('python3', [tempFile, ...args]);
     return {
       success: result.exitCode === 0,
-      stdout: result.stdout.slice(0, MAX_OUTPUT_SIZE),
-      stderr: result.stderr.slice(0, MAX_OUTPUT_SIZE),
+      stdout:  result.stdout.slice(0, MAX_OUTPUT_SIZE),
+      stderr:  result.stderr.slice(0, MAX_OUTPUT_SIZE),
       exitCode: result.exitCode,
       duration: Date.now() - startTime,
     };
@@ -86,17 +79,12 @@ export async function executePython(code: string, args: string[] = []): Promise<
       duration: Date.now() - startTime,
     };
   } finally {
-    try {
-      unlinkSync(tempFile);
-    } catch {
-      // Ignore cleanup errors
-    }
+    try { unlinkSync(tempFile); } catch { /* ignore */ }
   }
 }
 
 /**
  * Execute Node.js code.
- * Returns stdout, stderr, and exit code.
  */
 export async function executeNode(code: string, args: string[] = []): Promise<{
   success: boolean;
@@ -110,46 +98,12 @@ export async function executeNode(code: string, args: string[] = []): Promise<{
   const tempFile = path.join(TEMP_DIR, `lex_${randomBytes(8).toString('hex')}.js`);
 
   try {
-    // Write code to temp file
     writeFileSync(tempFile, code);
-
-    // Execute with timeout
-    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-      const proc = spawn('node', [tempFile, ...args], {
-        timeout: EXECUTION_TIMEOUT,
-        maxBuffer: MAX_OUTPUT_SIZE,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-        if (stdout.length > MAX_OUTPUT_SIZE) {
-          proc.kill();
-        }
-      });
-
-      proc.stderr?.on('data', (data) => {
-        stderr += data.toString();
-        if (stderr.length > MAX_OUTPUT_SIZE) {
-          proc.kill();
-        }
-      });
-
-      proc.on('error', (err) => {
-        reject(err);
-      });
-
-      proc.on('close', (code) => {
-        resolve({ stdout, stderr, exitCode: code ?? 1 });
-      });
-    });
-
+    const result = await spawnProcess('node', [tempFile, ...args]);
     return {
       success: result.exitCode === 0,
-      stdout: result.stdout.slice(0, MAX_OUTPUT_SIZE),
-      stderr: result.stderr.slice(0, MAX_OUTPUT_SIZE),
+      stdout:  result.stdout.slice(0, MAX_OUTPUT_SIZE),
+      stderr:  result.stderr.slice(0, MAX_OUTPUT_SIZE),
       exitCode: result.exitCode,
       duration: Date.now() - startTime,
     };
@@ -160,17 +114,12 @@ export async function executeNode(code: string, args: string[] = []): Promise<{
       duration: Date.now() - startTime,
     };
   } finally {
-    try {
-      unlinkSync(tempFile);
-    } catch {
-      // Ignore cleanup errors
-    }
+    try { unlinkSync(tempFile); } catch { /* ignore */ }
   }
 }
 
 /**
  * Execute Bash command.
- * Returns stdout, stderr, and exit code.
  */
 export async function executeBash(command: string): Promise<{
   success: boolean;
@@ -182,60 +131,27 @@ export async function executeBash(command: string): Promise<{
 }> {
   const startTime = Date.now();
 
+  const blockedPatterns = [
+    /rm\s+-rf\s+\//,
+    /dd\s+if=/,
+    /mkfs/,
+    /:\(\)\s*\{\s*:\|:\s*&\s*\}/,
+  ];
+
+  if (blockedPatterns.some(p => p.test(command))) {
+    return {
+      success: false,
+      error: 'Command blocked for safety reasons',
+      duration: Date.now() - startTime,
+    };
+  }
+
   try {
-    // Validate command (basic safety check)
-    const blockedPatterns = [
-      /rm\s+-rf\s+\//,
-      /dd\s+if=/,
-      /mkfs/,
-      /:\(\)\s*{\s*:\|:\s*&\s*\}/,
-    ];
-
-    if (blockedPatterns.some(p => p.test(command))) {
-      return {
-        success: false,
-        error: 'Command blocked for safety reasons',
-        duration: Date.now() - startTime,
-      };
-    }
-
-    // Execute with timeout
-    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-      const proc = spawn('bash', ['-c', command], {
-        timeout: EXECUTION_TIMEOUT,
-        maxBuffer: MAX_OUTPUT_SIZE,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-        if (stdout.length > MAX_OUTPUT_SIZE) {
-          proc.kill();
-        }
-      });
-
-      proc.stderr?.on('data', (data) => {
-        stderr += data.toString();
-        if (stderr.length > MAX_OUTPUT_SIZE) {
-          proc.kill();
-        }
-      });
-
-      proc.on('error', (err) => {
-        reject(err);
-      });
-
-      proc.on('close', (code) => {
-        resolve({ stdout, stderr, exitCode: code ?? 1 });
-      });
-    });
-
+    const result = await spawnProcess('bash', ['-c', command]);
     return {
       success: result.exitCode === 0,
-      stdout: result.stdout.slice(0, MAX_OUTPUT_SIZE),
-      stderr: result.stderr.slice(0, MAX_OUTPUT_SIZE),
+      stdout:  result.stdout.slice(0, MAX_OUTPUT_SIZE),
+      stderr:  result.stderr.slice(0, MAX_OUTPUT_SIZE),
       exitCode: result.exitCode,
       duration: Date.now() - startTime,
     };
@@ -250,7 +166,6 @@ export async function executeBash(command: string): Promise<{
 
 /**
  * Execute code based on language.
- * Dispatches to appropriate executor.
  */
 export async function executeCode(language: string, code: string, args: string[] = []): Promise<{
   success: boolean;
@@ -264,20 +179,14 @@ export async function executeCode(language: string, code: string, args: string[]
     case 'python':
     case 'py':
       return executePython(code, args);
-
     case 'node':
     case 'javascript':
     case 'js':
       return executeNode(code, args);
-
     case 'bash':
     case 'sh':
       return executeBash(code);
-
     default:
-      return {
-        success: false,
-        error: `Unsupported language: ${language}`,
-      };
+      return { success: false, error: `Unsupported language: ${language}` };
   }
 }
