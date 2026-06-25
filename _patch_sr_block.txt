@@ -1,0 +1,25 @@
+            if (isRealAttack && sr.selfCRS.sovereignty_violated) {
+              // Attempt rewrite via InterventionAgent — same call pattern as step 07
+              const rewriteResult = await safe(
+                () => InterventionAgent({
+                  prompt, session_id,
+                  raw_output: governedOutput,
+                  intervention_required: true,
+                  weakest_dimension: weakest,
+                  health_band: result.health_band,
+                  trigger_reason: `Self-referential sovereignty violation: severity=${kernelSignal.severity}`,
+                  crs_state: { C: eC, R: eR, S: eS, M: eM },
+                  lyapunov_V: result.lyapunov_V,
+                  delta_V: result.delta_V,
+                  cbf_triggered: true,
+                }),
+                null,
+              );
+              const rewriteOutput = rewriteResult?.success ? rewriteResult.output : null;
+              if (rewriteOutput && !rewriteOutput.toLowerCase().includes('unable')) {
+                governedOutput = rewriteOutput;
+              } else {
+                // Only hard-refuse if rewrite also failed
+                governedOutput = CANONICAL_REFUSAL;
+              }
+            }
