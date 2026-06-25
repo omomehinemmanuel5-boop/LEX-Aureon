@@ -19,12 +19,6 @@
  *   11 Celeste         Sovereign visual rendering
  *   12 Self-referential S = cosine_sim(output_emb, constitutional_centroid)
  *   13 Auditor         SHA-256 cryptographic receipt
- *
- * NOTE: per-IP rate limit (10 req/hour) removed on request. This endpoint
- * is now fully unauthenticated and unthrottled — anyone with the URL can
- * trigger the full 10+ agent pipeline (multiple LLM + embedding calls per
- * request) against production keys with no cap. If this stays public,
- * worth adding auth or a sane ceiling back before traffic picks up.
  */
 
 import { SovereignKernel }    from '@/lib/sovereign_kernel';
@@ -121,7 +115,6 @@ export async function POST(req: Request) {
           emit('error', { error: result.error ?? 'Kernel error' }); controller.close(); return;
         }
 
-        // Emit GeneratorAgent event using kernel dual outputs (no duplicate LLM call)
         emit('generator', {
           bare_output:       result.raw_output,
           anchored_output:   result.governed_output,
@@ -223,9 +216,9 @@ export async function POST(req: Request) {
             governed_output: governedOutput,
           });
 
-        // ── 08. Neithra — verify law alignment ───────────────────────────
-        if (invokedLaw?.id) {
-          emit('stage', { name: 'neithra', description: 'Verifying alignment' });
+          // ── 08. Neithra — verify law alignment ───────────────────────────
+          if (invokedLaw?.id) {
+            emit('stage', { name: 'neithra', description: 'Verifying alignment' });
             const neithraResult = await safe(() => NeithraAgent({
               prompt,
               proposed_law_id: invokedLaw!.id ?? null,
@@ -282,14 +275,14 @@ export async function POST(req: Request) {
           template:     celeste?.template_used ?? 'passthrough-v0.1',
         });
 
-        // ── 12. Style Agent (Canonical Filter) ───────────────────────────────
+        // ── 12. Style Agent ───────────────────────────────────────────────────
         emit('stage', { name: 'style_agent', description: 'Applying canonical style filter' });
         const styleResult = await safe(() => StyleAgent({ prompt, session_id, governed_output: governedOutput }), null);
         if (styleResult?.success && styleResult.output) {
           governedOutput = styleResult.output;
         }
         emit('style_agent', {
-          cleaned_length: styleResult?.meta?.cleaned_length ?? governedOutput.length,
+          cleaned_length:  styleResult?.meta?.cleaned_length  ?? governedOutput.length,
           original_length: styleResult?.meta?.original_length ?? governedOutput.length,
         });
 
@@ -308,20 +301,32 @@ export async function POST(req: Request) {
             );
             const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.88;
             srFired = sr.triggered || (isRealAttack && sr.selfCRS.sovereignty_violated);
-            // SOFTENED: Try intervention rewrite first, only hard-refuse if rewrite also fails
+
+            // Softened: attempt InterventionAgent rewrite before hard-refuse
             if (isRealAttack && sr.selfCRS.sovereignty_violated) {
-              // Attempt rewrite via intervention agent
-              const rewriteAttempt = await safe(
-                () => interventionAgent.rewrite(governedOutput, kernelSignal),
+              const rewriteResult = await safe(
+                () => InterventionAgent({
+                  prompt, session_id,
+                  raw_output: governedOutput,
+                  intervention_required: true,
+                  weakest_dimension: weakest,
+                  health_band: result.health_band,
+                  trigger_reason: `Self-referential sovereignty violation: severity=${kernelSignal.severity}`,
+                  crs_state: { C: eC, R: eR, S: eS, M: eM },
+                  lyapunov_V: result.lyapunov_V,
+                  delta_V: result.delta_V,
+                  cbf_triggered: true,
+                }),
                 null,
               );
-              if (rewriteAttempt && !rewriteAttempt.toLowerCase().includes('unable')) {
-                governedOutput = rewriteAttempt;
+              const rewriteOutput = rewriteResult?.success ? rewriteResult.output : null;
+              if (rewriteOutput && !rewriteOutput.toLowerCase().includes('unable')) {
+                governedOutput = rewriteOutput;
               } else {
-                // Only hard-refuse if rewrite failed
                 governedOutput = CANONICAL_REFUSAL;
               }
             }
+
             emit('self_referential', {
               sovereignty_raw:      sr.selfCRS.sovereignty_raw,
               sovereignty_violated: sr.selfCRS.sovereignty_violated,
@@ -336,7 +341,7 @@ export async function POST(req: Request) {
         // ── Token ────────────────────────────────────────────────────────────
         emit('token', governedOutput);
 
-        // ── 13. Auditor ──────────────────────────────────────────────────────
+        // ── 14. Auditor ──────────────────────────────────────────────────────
         emit('stage', { name: 'auditing', description: 'Creating audit record' });
         const finalM = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         const auditorResult = await safe(() => AuditorAgent({
