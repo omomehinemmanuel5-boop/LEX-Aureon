@@ -19,42 +19,45 @@ import { useToast } from '@/components/Toast';
 import type { GovernanceResponse } from '@/types/governance-types';
 
 /* ─────────────────────────────────────────────────────────────────────
-   CONSTANTS & TYPES
+   DESIGN TOKENS
 ───────────────────────────────────────────────────────────────────── */
-const MAX_CALLS = 10;
-
 const G = {
-  gold: '#c9a84c', goldL: '#e8c96d', goldD: '#a07830',
-  bg:   '#080a12', surface: '#0c0f1c', border: '#141929',
-  borderHover: '#1e2840', text: '#8899aa', textDim: '#3a4a5c',
-  textBright: '#cdd8e3',
+  gold: '#c9a84c', goldL: '#e8c96d',
+  bg:      '#080a12',
+  surface: '#0d1020',
+  surfaceHi: '#111525',
+  border:  '#171d30',
+  borderHi:'#1f2840',
+  text:    '#8fa0b4',
+  textSub: '#3d506a',
+  textOn:  '#d0dae6',
   C: '#3b82f6', R: '#10b981', S: '#f59e0b',
 };
 
 const HEALTH: Record<string, { color: string; bg: string; label: string }> = {
-  OPTIMAL:  { color: '#10b981', bg: '#10b98112', label: 'OPTIMAL'  },
-  ALERT:    { color: '#f59e0b', bg: '#f59e0b12', label: 'ALERT'    },
-  STRESSED: { color: '#f97316', bg: '#f9731612', label: 'STRESSED' },
-  CRITICAL: { color: '#ef4444', bg: '#ef444412', label: 'CRITICAL' },
+  OPTIMAL:  { color: '#10b981', bg: '#10b98115', label: 'OPTIMAL'  },
+  ALERT:    { color: '#f59e0b', bg: '#f59e0b15', label: 'ALERT'    },
+  STRESSED: { color: '#f97316', bg: '#f9731615', label: 'STRESSED' },
+  CRITICAL: { color: '#ef4444', bg: '#ef444415', label: 'CRITICAL' },
 };
 
 const MODE_PREFIX: Record<SandboxMode, string> = {
   chat:     '',
   code:     '[CODE] Respond with production-quality code. Use fenced blocks with language tags and filename comments. ',
   research: '[RESEARCH] Provide rigorous analysis grounded in the constitutional framework. Cite mechanisms by name. ',
-  redteam:  '[PROBE] Constitutional stress test. Respond with full governance transparency. Show reasoning. ',
+  redteam:  '[PROBE] Constitutional stress test. Full governance transparency. Show all reasoning. ',
 };
 
-const MODES = [
-  { key: 'chat'    as SandboxMode, label: 'Chat',     icon: '◈' },
-  { key: 'code'    as SandboxMode, label: 'Code',     icon: '</>' },
-  { key: 'research'as SandboxMode, label: 'Research', icon: '∇' },
-  { key: 'redteam' as SandboxMode, label: 'Probe',    icon: '⊗' },
+const MODES: { key: SandboxMode; label: string; icon: string; desc: string }[] = [
+  { key: 'chat',     label: 'Chat',     icon: '◈',   desc: 'General constitutional dialogue' },
+  { key: 'code',     label: 'Code',     icon: '</>',  desc: 'Code generation with sandbox' },
+  { key: 'research', label: 'Research', icon: '∇',   desc: 'Rigorous analysis mode' },
+  { key: 'redteam',  label: 'Probe',    icon: '⊗',   desc: 'Governance stress testing' },
 ];
 
 type SandboxMode = 'chat' | 'code' | 'research' | 'redteam';
-type PanelView   = 'editor' | 'terminal' | 'files';
 type MsgTab      = 'raw' | 'audit' | 'analysis';
+type SheetView   = 'sandbox' | 'mode' | 'suggestions';
 
 interface SandboxFile {
   id: string; name: string; lang: string;
@@ -67,110 +70,109 @@ interface CodeBlock { lang: string; code: string; filename?: string }
 ───────────────────────────────────────────────────────────────────── */
 function langFromName(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
-    py: 'python', rs: 'rust', go: 'go', sh: 'bash', json: 'json',
-    md: 'markdown', css: 'css', html: 'html', sql: 'sql', yaml: 'yaml',
-  };
-  return map[ext] ?? 'text';
+  return ({ ts:'typescript', tsx:'typescript', js:'javascript', jsx:'javascript',
+    py:'python', rs:'rust', go:'go', sh:'bash', json:'json',
+    md:'markdown', css:'css', html:'html', sql:'sql', yaml:'yaml' } as Record<string,string>)[ext] ?? 'text';
 }
 
 function parseCodeBlocks(text: string): CodeBlock[] {
-  const blocks: CodeBlock[] = [];
+  const out: CodeBlock[] = [];
   const re = /```(\w+)?(?:\s+\/\/\s*(.+?))?\n([\s\S]*?)```/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null)
-    blocks.push({ lang: m[1] ?? 'text', filename: m[2]?.trim(), code: m[3] });
-  return blocks;
+    out.push({ lang: m[1] ?? 'text', filename: m[2]?.trim(), code: m[3] });
+  return out;
 }
 
-function highlight(code: string, lang: string): string {
+function syntaxHL(code: string, lang: string): string {
   let h = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  if (['text', 'markdown', 'md'].includes(lang)) return h;
-  h = h.replace(/(["`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color:#86efac">$1$2$1</span>');
-  h = h.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)/g, '<span style="color:#2d4060">$1</span>');
-  h = h.replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|default|from|async|await|type|interface|extends|new|typeof|void|null|undefined|true|false|def|fn|pub|use|mod|struct|enum|match|self)\b/g, '<span style="color:#c9a84c">$1</span>');
+  if (['text','markdown','md'].includes(lang)) return h;
+  h = h.replace(/(["'`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color:#86efac">$1$2$1</span>');
+  h = h.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)/g, '<span style="color:#2a3d58">$1</span>');
+  h = h.replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|default|from|async|await|type|interface|extends|new|typeof|void|null|undefined|true|false|def|fn|pub|use|mod|struct|enum|match|self)\b/g,
+    '<span style="color:#c9a84c">$1</span>');
   h = h.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#a78bfa">$1</span>');
   h = h.replace(/\b([a-zA-Z_]\w*)\s*(?=\()/g, '<span style="color:#38bdf8">$1</span>');
   return h;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   CRS BAR
+   CRS BARS — compact, mobile-readable
 ───────────────────────────────────────────────────────────────────── */
 function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) {
-  const mColor = m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981';
   const total  = (c + r + s) || 1;
+  const mColor = m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981';
   return (
-    <div className="space-y-1 pt-2 mt-2" style={{ borderTop: `1px solid ${G.border}` }}>
-      {([['C', c, G.C], ['R', r, G.R], ['S', s, G.S]] as [string, number, string][]).map(([k, v, color]) => (
+    <div className="space-y-[5px] pt-2.5 mt-2.5" style={{ borderTop: `1px solid ${G.border}` }}>
+      {([['C', c, G.C], ['R', r, G.R], ['S', s, G.S]] as [string, number, string][]).map(([k, v, col]) => (
         <div key={k} className="flex items-center gap-2">
-          <span className="text-[9px] font-mono font-bold w-3 tabular-nums" style={{ color }}>{k}</span>
+          <span className="text-[10px] font-mono font-bold w-3.5" style={{ color: col }}>{k}</span>
           <div className="flex-1 h-[2px] rounded-full" style={{ background: G.border }}>
             <div className="h-[2px] rounded-full transition-all duration-700"
-              style={{ width: `${(v / total) * 100}%`, background: color }} />
+              style={{ width: `${(v / total) * 100}%`, background: col }} />
           </div>
-          <span className="text-[9px] font-mono tabular-nums w-7 text-right" style={{ color: G.textDim }}>{v.toFixed(2)}</span>
+          <span className="text-[10px] font-mono tabular-nums w-8 text-right" style={{ color: G.textSub }}>{v.toFixed(2)}</span>
         </div>
       ))}
-      <div className="flex items-center gap-2 pt-0.5">
-        <span className="text-[9px] font-mono font-bold w-3" style={{ color: G.gold }}>M</span>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-mono font-bold w-3.5" style={{ color: G.gold }}>M</span>
         <div className="flex-1 h-[3px] rounded-full" style={{ background: G.border }}>
           <div className="h-[3px] rounded-full transition-all duration-700"
             style={{ width: `${Math.min(m, 1) * 100}%`, background: mColor }} />
         </div>
-        <span className="text-[9px] font-mono tabular-nums font-bold w-10 text-right" style={{ color: G.gold }}>{m.toFixed(3)}</span>
+        <span className="text-[10px] font-mono tabular-nums font-bold w-10 text-right" style={{ color: G.gold }}>{m.toFixed(3)}</span>
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   CODE VIEWER
+   CODE BLOCK VIEWER
 ───────────────────────────────────────────────────────────────────── */
 const CodeViewer = memo(function CodeViewer({ block, onSave }: {
   block: CodeBlock; onSave?: (b: CodeBlock) => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const html = useMemo(() => highlight(block.code, block.lang), [block.code, block.lang]);
+  const html = useMemo(() => syntaxHL(block.code, block.lang), [block.code, block.lang]);
 
   const copy = useCallback(() => {
     navigator.clipboard.writeText(block.code).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 1800);
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
     });
   }, [block.code]);
 
   return (
-    <div className="mt-2 rounded-lg overflow-hidden text-[11px]"
-      style={{ background: '#050810', border: `1px solid ${G.border}` }}>
-      <div className="flex items-center justify-between px-3 py-1.5"
-        style={{ background: '#070a14', borderBottom: `1px solid ${G.border}` }}>
+    <div className="mt-3 rounded-xl overflow-hidden" style={{ background: '#050810', border: `1px solid ${G.border}` }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2"
+        style={{ borderBottom: `1px solid ${G.border}`, background: '#070a14' }}>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px]" style={{ color: '#38bdf8' }}>{block.lang}</span>
+          <span className="text-[11px] font-mono" style={{ color: '#38bdf8' }}>{block.lang}</span>
           {block.filename && (
-            <span className="font-mono text-[10px] px-1.5 py-px rounded"
-              style={{ color: G.gold, background: `${G.gold}10`, border: `1px solid ${G.gold}20` }}>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+              style={{ color: G.gold, background: `${G.gold}12`, border: `1px solid ${G.gold}20` }}>
               {block.filename}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {onSave && (
             <button onClick={() => onSave(block)}
-              className="font-mono text-[10px] px-2 py-px rounded transition-all active:scale-95"
-              style={{ color: G.R, background: `${G.R}10`, border: `1px solid ${G.R}20` }}>
+              className="text-[11px] font-mono px-2.5 py-1 rounded-lg active:scale-95 transition-transform"
+              style={{ color: G.R, background: `${G.R}12`, border: `1px solid ${G.R}22` }}>
               + save
             </button>
           )}
           <button onClick={copy}
-            className="font-mono text-[10px] px-2 py-px rounded transition-all active:scale-95"
-            style={{ color: copied ? G.R : G.textDim }}>
+            className="text-[11px] font-mono px-2.5 py-1 rounded-lg active:scale-95 transition-transform min-w-[44px]"
+            style={{ color: copied ? G.R : G.textSub, background: copied ? `${G.R}12` : 'transparent' }}>
             {copied ? '✓' : 'copy'}
           </button>
         </div>
       </div>
-      <pre className="p-3 leading-relaxed overflow-x-auto font-mono"
-        style={{ color: '#7a8fa8', scrollbarWidth: 'thin', scrollbarColor: `${G.border} transparent` }}
+      {/* Code */}
+      <pre className="p-3 text-[12px] leading-relaxed overflow-x-auto font-mono"
+        style={{ color: '#7a8fa8', WebkitOverflowScrolling: 'touch' }}
         dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
@@ -179,9 +181,7 @@ const CodeViewer = memo(function CodeViewer({ block, onSave }: {
 /* ─────────────────────────────────────────────────────────────────────
    MESSAGE CONTENT
 ───────────────────────────────────────────────────────────────────── */
-function MessageContent({ text, onSaveBlock }: {
-  text: string; onSaveBlock?: (b: CodeBlock) => void;
-}) {
+function MessageContent({ text, onSaveBlock }: { text: string; onSaveBlock?: (b: CodeBlock) => void }) {
   const parts = useMemo(() => {
     const segs: Array<{ type: 'text' | 'code'; content: string; block?: CodeBlock }> = [];
     const re = /```(\w+)?(?:\s+\/\/\s*(.+?))?\n([\s\S]*?)```/g;
@@ -199,8 +199,7 @@ function MessageContent({ text, onSaveBlock }: {
     <div className="space-y-1">
       {parts.map((p, i) =>
         p.type === 'text'
-          ? <p key={i} className="whitespace-pre-wrap leading-[1.8] text-[13px]"
-              style={{ color: G.text }}>{p.content}</p>
+          ? <p key={i} className="whitespace-pre-wrap leading-[1.75]" style={{ color: G.text, fontSize: 15 }}>{p.content}</p>
           : <CodeViewer key={i} block={p.block!} onSave={onSaveBlock} />
       )}
     </div>
@@ -208,7 +207,7 @@ function MessageContent({ text, onSaveBlock }: {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   GOVERNANCE DETAIL PANEL
+   GOVERNANCE DETAIL PANEL (bottom-mounted)
 ───────────────────────────────────────────────────────────────────── */
 function GovernancePanel({ turn, tab, onClose }: {
   turn: ChatTurn; tab: MsgTab; onClose: () => void;
@@ -217,68 +216,77 @@ function GovernancePanel({ turn, tab, onClose }: {
   const res  = turn.complete as GovernanceResponse | null;
 
   return (
-    <div className="mt-1.5 rounded-lg overflow-hidden font-mono text-[11px]"
-      style={{ background: '#060810', border: `1px solid ${G.border}` }}>
-      <div className="flex items-center justify-between px-3 py-2"
-        style={{ background: '#070a14', borderBottom: `1px solid ${G.border}` }}>
-        <span className="text-[10px] tracking-wider" style={{ color: G.textDim }}>
-          {tab === 'raw' ? '// bare output (ungoverned)' : tab === 'audit' ? '// receipt' : '// constitutional state'}
+    <div className="mt-2 rounded-2xl overflow-hidden font-mono"
+      style={{ background: G.surface, border: `1px solid ${G.border}` }}>
+      {/* Drag handle + close */}
+      <div className="flex items-center justify-between px-4 py-3"
+        style={{ borderBottom: `1px solid ${G.border}` }}>
+        <span className="text-[11px] tracking-wide" style={{ color: G.textSub }}>
+          {tab === 'raw' ? '// bare output' : tab === 'audit' ? '// receipt' : '// state'}
         </span>
-        <button onClick={onClose} className="text-[11px] w-4 h-4 flex items-center justify-center rounded"
-          style={{ color: G.textDim }}>✕</button>
+        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center"
+          style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
       </div>
 
-      <div className="p-3 max-h-64 overflow-y-auto space-y-2" style={{ scrollbarWidth: 'thin', scrollbarColor: `${G.border} transparent` }}>
+      <div className="p-4 overflow-y-auto" style={{ maxHeight: '50vh', WebkitOverflowScrolling: 'touch' }}>
+
         {tab === 'raw' && (
-          <p className="whitespace-pre-wrap leading-relaxed text-[11px]" style={{ color: G.textDim }}>
-            {turn.raw_output || '// no bare output — blocked at pre-eval'}
+          <p className="whitespace-pre-wrap leading-relaxed text-[12px]" style={{ color: G.textSub }}>
+            {turn.raw_output || '// blocked at pre-eval — no bare output'}
           </p>
         )}
 
-        {tab === 'audit' && [
-          { k: 'audit_id',   v: turn.audit_id?.slice(0, 20) ?? 'N/A',           c: G.gold },
-          { k: 'health',     v: turn.health_band ?? 'OPTIMAL',                   c: hcfg.color },
-          { k: 'M',          v: (turn.M ?? 0).toFixed(4),                        c: hcfg.color },
-          { k: 'intervened', v: turn.intervened ? 'YES' : 'NO',                  c: turn.intervened ? '#ef4444' : G.R },
-          { k: 'attack',     v: turn.attack_type ?? 'none',                      c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : G.textDim },
-          { k: 'severity',   v: turn.attack_severity != null ? turn.attack_severity.toFixed(3) : '—', c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : G.textDim },
-          { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none',      c: turn.memory_injected ? '#a855f7' : G.textDim },
-        ].map(({ k, v, c }) => (
-          <div key={k} className="flex gap-3">
-            <span className="w-20 flex-shrink-0" style={{ color: G.textDim }}>{k}</span>
-            <span style={{ color: c }}>{v}</span>
+        {tab === 'audit' && (
+          <div className="space-y-2">
+            {[
+              { k: 'audit_id',   v: turn.audit_id?.slice(0, 24) ?? '—', c: G.gold },
+              { k: 'health',     v: turn.health_band ?? 'OPTIMAL',       c: hcfg.color },
+              { k: 'M',          v: (turn.M ?? 0).toFixed(4),            c: hcfg.color },
+              { k: 'intervened', v: turn.intervened ? 'YES' : 'NO',      c: turn.intervened ? '#ef4444' : G.R },
+              { k: 'attack',     v: turn.attack_type ?? 'none',          c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : G.textSub },
+              { k: 'severity',   v: turn.attack_severity != null ? turn.attack_severity.toFixed(3) : '—',
+                c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : G.textSub },
+              { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : G.textSub },
+            ].map(({ k, v, c }) => (
+              <div key={k} className="flex gap-3 items-start">
+                <span className="text-[11px] w-20 flex-shrink-0 pt-0.5" style={{ color: G.textSub }}>{k}</span>
+                <span className="text-[12px] font-bold break-all" style={{ color: c }}>{v}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
 
         {tab === 'analysis' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {turn.C != null && <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />}
 
             {turn.governor && (
-              <div className="space-y-1.5 pt-2" style={{ borderTop: `1px solid ${G.border}` }}>
-                <div style={{ color: G.textDim }} className="text-[10px]">// governor</div>
+              <div className="pt-3 space-y-2" style={{ borderTop: `1px solid ${G.border}` }}>
+                <p className="text-[10px] uppercase tracking-widest" style={{ color: G.textSub }}>Governor</p>
                 {[
                   { k: 'decision', v: turn.governor.decision, c: turn.governor.decision === 'INTERVENE' ? '#ef4444' : G.R },
-                  { k: 'δV',       v: `${(turn.governor.dV > 0 ? '+' : '')}${turn.governor.dV?.toFixed(5)}`, c: turn.governor.dV < 0 ? G.R : '#ef4444' },
+                  { k: 'δV',       v: `${turn.governor.dV > 0 ? '+' : ''}${turn.governor.dV?.toFixed(5)}`, c: turn.governor.dV < 0 ? G.R : '#ef4444' },
                   { k: 'stable',   v: turn.governor.lyapunov_stable ? '✓ yes' : '⚠ breach', c: turn.governor.lyapunov_stable ? G.R : '#ef4444' },
                 ].map(({ k, v, c }) => (
                   <div key={k} className="flex gap-3">
-                    <span className="w-20" style={{ color: G.textDim }}>{k}</span>
-                    <span style={{ color: c }}>{v}</span>
+                    <span className="text-[11px] w-20 flex-shrink-0" style={{ color: G.textSub }}>{k}</span>
+                    <span className="text-[12px] font-bold" style={{ color: c }}>{v}</span>
                   </div>
                 ))}
               </div>
             )}
 
             {turn.law && (
-              <div className="pt-2" style={{ borderTop: `1px solid ${G.border}` }}>
-                <div className="text-[10px] mb-1" style={{ color: G.textDim }}>// law invoked</div>
-                <div className="font-semibold" style={{ color: G.gold }}>[{turn.law.book}] {turn.law.name}</div>
+              <div className="pt-3" style={{ borderTop: `1px solid ${G.border}` }}>
+                <p className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: G.textSub }}>Law invoked</p>
+                <p className="text-[13px] font-bold" style={{ color: G.gold }}>
+                  [{turn.law.book}] {turn.law.name}
+                </p>
               </div>
             )}
 
             {turn.C != null && res && (
-              <div className="pt-2" style={{ borderTop: `1px solid ${G.border}` }}>
+              <div className="pt-3" style={{ borderTop: `1px solid ${G.border}` }}>
                 <DynamicSimplex
                   liveC={turn.C} liveR={turn.R ?? 0} liveS={turn.S ?? 0} liveM={turn.M ?? 0}
                   intervention={turn.intervened ?? false}
@@ -290,6 +298,36 @@ function GovernancePanel({ turn, tab, onClose }: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   STATUS CHIPS — compact horizontal row
+───────────────────────────────────────────────────────────────────── */
+function StatusChips({ turn, live }: { turn: ChatTurn; live: boolean }) {
+  const hcfg = HEALTH[turn.health_band ?? 'OPTIMAL'] ?? HEALTH.OPTIMAL;
+  if (live) return <span className="text-[10px] font-mono lex-pulse" style={{ color: G.gold }}>● streaming</span>;
+
+  const chips: { label: string; color: string; bg: string }[] = [];
+  if (turn.health_band && turn.health_band !== 'OPTIMAL')
+    chips.push({ label: hcfg.label, color: hcfg.color, bg: hcfg.bg });
+  if (turn.intervened)
+    chips.push({ label: 'corrected', color: '#ef4444', bg: '#ef444412' });
+  if (turn.memory_injected)
+    chips.push({ label: '⟳ mem', color: '#a855f7', bg: '#a855f712' });
+  if (turn.attack_type && turn.attack_type !== 'none')
+    chips.push({ label: `⊗ ${turn.attack_type}`, color: '#f97316', bg: '#f9731612' });
+
+  if (!chips.length) return null;
+  return (
+    <div className="flex gap-1 flex-wrap mt-1">
+      {chips.map(c => (
+        <span key={c.label} className="text-[10px] font-mono px-1.5 py-px rounded-full"
+          style={{ color: c.color, background: c.bg, border: `1px solid ${c.color}20` }}>
+          {c.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -311,9 +349,9 @@ const MessageBubble = memo(function MessageBubble({
   /* ── User bubble ── */
   if (turn.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[75%] px-4 py-2.5 rounded-2xl rounded-tr-sm text-[13px] leading-relaxed"
-          style={{ background: G.surface, border: `1px solid ${G.border}`, color: G.textBright }}>
+      <div className="flex justify-end px-1">
+        <div className="max-w-[85%] px-4 py-3 rounded-2xl rounded-tr-md"
+          style={{ background: G.surfaceHi, border: `1px solid ${G.borderHi}`, color: G.textOn, fontSize: 15, lineHeight: 1.65 }}>
           {turn.content}
         </div>
       </div>
@@ -321,255 +359,234 @@ const MessageBubble = memo(function MessageBubble({
   }
 
   /* ── Lex bubble ── */
-  const hasCode = !live && !!text && parseCodeBlocks(text).length > 0;
-
   return (
-    <div className="flex justify-start gap-2.5">
-      {/* Avatar */}
-      <div className="flex-shrink-0 mt-0.5 w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold"
-        style={{ background: `${G.gold}12`, border: `1px solid ${G.gold}25`, color: G.gold }}>⬡</div>
-
-      <div className="flex-1 min-w-0">
-        {/* Meta row */}
-        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-          <span className="text-[10px] font-mono font-bold tracking-wider" style={{ color: G.gold }}>
-            Lex Aureon
+    <div className="px-1">
+      {/* Sender row */}
+      <div className="flex items-center gap-2 mb-2 ml-1">
+        <div className="w-[22px] h-[22px] rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+          style={{ background: `${G.gold}14`, border: `1px solid ${G.gold}28`, color: G.gold }}>⬡</div>
+        <span className="text-[11px] font-mono font-bold tracking-widest" style={{ color: G.gold }}>
+          Lex Aureon
+        </span>
+        {sandboxMode !== 'chat' && (
+          <span className="text-[10px] font-mono px-1.5 py-px rounded"
+            style={{ color: G.textSub, background: G.surface, border: `1px solid ${G.border}` }}>
+            {sandboxMode}
           </span>
-          {sandboxMode !== 'chat' && (
-            <span className="text-[9px] font-mono px-1.5 py-px rounded"
-              style={{ color: G.textDim, background: G.surface, border: `1px solid ${G.border}` }}>
-              {sandboxMode}
-            </span>
-          )}
-          {turn.health_band && turn.health_band !== 'OPTIMAL' && (
-            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
-              style={{ color: hcfg.color, background: hcfg.bg, border: `1px solid ${hcfg.color}20` }}>
-              {hcfg.label}
-            </span>
-          )}
-          {turn.intervened && (
-            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
-              style={{ color: '#ef4444', background: '#ef444410', border: '1px solid #ef444420' }}>
-              corrected
-            </span>
-          )}
-          {turn.memory_injected && (
-            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
-              style={{ color: '#a855f7', background: '#a855f710', border: '1px solid #a855f720' }}>
-              ⟳ mem
-            </span>
-          )}
-          {turn.attack_type && turn.attack_type !== 'none' && (
-            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
-              style={{ color: '#f97316', background: '#f9731610', border: '1px solid #f9731620' }}>
-              ⊗ {turn.attack_type}
-            </span>
-          )}
-          {hasCode && (
-            <span className="text-[9px] font-mono px-1.5 py-px rounded-full"
-              style={{ color: '#38bdf8', background: '#38bdf810', border: '1px solid #38bdf820' }}>
-              {'</>'}
-            </span>
-          )}
-          {live && <span className="text-[9px] font-mono lex-pulse" style={{ color: G.gold }}>●</span>}
-        </div>
-
-        {/* Bubble */}
-        <div className="rounded-2xl rounded-tl-sm"
-          style={{
-            background: G.surface,
-            border: `1px solid ${live ? `${hcfg.color}40` : G.border}`,
-            borderLeft: `2px solid ${hcfg.color}`,
-            transition: 'border-color 0.3s',
-          }}>
-
-          <div className="px-4 py-3">
-            {live ? (
-              <p className="whitespace-pre-wrap leading-[1.8] text-[13px]" style={{ color: G.text }}>
-                {partialOutput}
-                <span className="lex-cursor inline-block w-[2px] h-[13px] align-text-bottom ml-0.5 rounded-[1px]"
-                  style={{ background: G.gold }} />
-              </p>
-            ) : text ? (
-              <MessageContent text={text} onSaveBlock={onSaveBlock} />
-            ) : turn.error ? (
-              <p className="text-[13px]" style={{ color: '#ef4444' }}>{turn.error}</p>
-            ) : null}
-
-            {!live && turn.C != null && (
-              <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />
-            )}
-          </div>
-
-          {/* Tab controls */}
-          {!live && turn.governed_output && (
-            <div className="flex items-center gap-1 px-4 py-2"
-              style={{ borderTop: `1px solid ${G.border}` }}>
-              {(['raw', 'audit', 'analysis'] as MsgTab[]).map(t => (
-                <button key={t} onClick={() => onOpenTab(openTab === t ? null : t)}
-                  className="px-2.5 py-1 rounded text-[10px] font-mono transition-all active:scale-95"
-                  style={{
-                    color: openTab === t ? G.gold : G.textDim,
-                    background: openTab === t ? `${G.gold}10` : 'transparent',
-                    border: `1px solid ${openTab === t ? `${G.gold}25` : 'transparent'}`,
-                  }}>{t}</button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {openTab && !live && turn.governed_output && (
-          <GovernancePanel turn={turn} tab={openTab} onClose={() => onOpenTab(null)} />
         )}
       </div>
+
+      {/* Bubble */}
+      <div className="rounded-2xl rounded-tl-md ml-1"
+        style={{
+          background: G.surface,
+          border: `1px solid ${live ? `${hcfg.color}50` : G.border}`,
+          borderLeft: `2px solid ${hcfg.color}`,
+          transition: 'border-color 0.35s',
+        }}>
+        <div className="px-4 py-3.5">
+          {live ? (
+            <p className="whitespace-pre-wrap leading-[1.75]" style={{ color: G.text, fontSize: 15 }}>
+              {partialOutput}
+              <span className="lex-cursor inline-block w-[2px] h-[15px] align-text-bottom ml-0.5 rounded-sm"
+                style={{ background: G.gold }} />
+            </p>
+          ) : text ? (
+            <MessageContent text={text} onSaveBlock={onSaveBlock} />
+          ) : turn.error ? (
+            <p style={{ color: '#ef4444', fontSize: 15 }}>{turn.error}</p>
+          ) : null}
+
+          <StatusChips turn={turn} live={live} />
+
+          {!live && turn.C != null && (
+            <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />
+          )}
+        </div>
+
+        {/* Governance tab bar */}
+        {!live && turn.governed_output && (
+          <div className="flex items-center border-t px-3 py-2 gap-1"
+            style={{ borderColor: G.border }}>
+            {(['raw', 'audit', 'analysis'] as MsgTab[]).map(t => (
+              <button key={t} onClick={() => onOpenTab(openTab === t ? null : t)}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all active:scale-95 min-h-[36px]"
+                style={{
+                  color: openTab === t ? G.gold : G.textSub,
+                  background: openTab === t ? `${G.gold}12` : 'transparent',
+                  border: `1px solid ${openTab === t ? `${G.gold}28` : 'transparent'}`,
+                }}>{t}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {openTab && !live && turn.governed_output && (
+        <div className="ml-1 mt-2">
+          <GovernancePanel turn={turn} tab={openTab} onClose={() => onOpenTab(null)} />
+        </div>
+      )}
     </div>
   );
 });
 
 /* ─────────────────────────────────────────────────────────────────────
-   SANDBOX PANEL
+   BOTTOM SHEET — generic mobile sheet wrapper
 ───────────────────────────────────────────────────────────────────── */
-function SandboxPanel({ files, activeFileId, terminalLog, onSelectFile, onUpdateFile, onNewFile, onDeleteFile }: {
+function BottomSheet({ open, onClose, title, children }: {
+  open: boolean; onClose: () => void; title: string; children: React.ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      {/* Sheet */}
+      <div className="relative rounded-t-3xl overflow-hidden flex flex-col"
+        style={{ background: G.surface, border: `1px solid ${G.border}`, maxHeight: '85dvh' }}>
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 rounded-full" style={{ background: G.border }} />
+        </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${G.border}` }}>
+          <span className="text-[12px] font-mono font-bold uppercase tracking-widest" style={{ color: G.gold }}>
+            {title}
+          </span>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-[14px]"
+            style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
+        </div>
+        {/* Content */}
+        <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SANDBOX SHEET CONTENT
+───────────────────────────────────────────────────────────────────── */
+function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, onUpdateFile, onNewFile, onDeleteFile }: {
   files: SandboxFile[]; activeFileId: string | null; terminalLog: string[];
   onSelectFile: (id: string) => void; onUpdateFile: (id: string, c: string) => void;
   onNewFile: (name: string) => void; onDeleteFile: (id: string) => void;
 }) {
-  const [panel, setPanel]         = useState<PanelView>('editor');
-  const [newName, setNewName]     = useState('');
-  const [showNew, setShowNew]     = useState(false);
-  const activeFile                = files.find(f => f.id === activeFileId);
-  const termRef                   = useRef<HTMLDivElement>(null);
-  const nameRef                   = useRef<HTMLInputElement>(null);
+  const [tab, setTab]       = useState<'files' | 'editor' | 'terminal'>('files');
+  const [newName, setNewName] = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const activeFile           = files.find(f => f.id === activeFileId);
+  const termRef              = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { if (panel === 'terminal') termRef.current?.scrollTo(0, 9999); }, [terminalLog, panel]);
-  useEffect(() => { if (showNew) nameRef.current?.focus(); }, [showNew]);
+  useEffect(() => { if (tab === 'terminal') termRef.current?.scrollTo(0, 9999); }, [terminalLog, tab]);
 
-  const submitNew = useCallback(() => {
+  const submitNew = () => {
     const n = newName.trim(); if (!n) return;
-    onNewFile(n); setNewName(''); setShowNew(false); setPanel('editor');
-  }, [newName, onNewFile]);
-
-  const TABS: { key: PanelView; label: string }[] = [
-    { key: 'editor', label: 'Editor' }, { key: 'terminal', label: 'Terminal' }, { key: 'files', label: 'Files' },
-  ];
+    onNewFile(n); setNewName(''); setShowNew(false); setTab('editor');
+  };
 
   return (
-    <div className="flex flex-col h-full font-mono" style={{ background: G.bg }}>
-      {/* Tab bar */}
-      <div className="flex items-center border-b flex-shrink-0" style={{ borderColor: G.border }}>
-        {TABS.map(({ key, label }) => (
-          <button key={key} onClick={() => setPanel(key)}
-            className="px-3 py-2 text-[10px] uppercase tracking-wider transition-colors"
+    <div className="flex flex-col font-mono" style={{ minHeight: '40vh' }}>
+      {/* Tab row */}
+      <div className="flex border-b flex-shrink-0" style={{ borderColor: G.border }}>
+        {(['files','editor','terminal'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className="flex-1 py-3 text-[11px] uppercase tracking-wider transition-colors"
             style={{
-              color: panel === key ? G.gold : G.textDim,
-              borderBottom: `1px solid ${panel === key ? G.gold : 'transparent'}`,
-            }}>{label}</button>
+              color: tab === t ? G.gold : G.textSub,
+              borderBottom: `2px solid ${tab === t ? G.gold : 'transparent'}`,
+            }}>{t}</button>
         ))}
-        <div className="flex-1" />
         <button onClick={() => setShowNew(s => !s)}
-          className="px-3 py-2 text-[10px] transition-colors"
+          className="px-4 py-3 text-[11px] flex-shrink-0"
           style={{ color: G.R }}>+ new</button>
       </div>
 
       {showNew && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b flex-shrink-0" style={{ borderColor: G.border }}>
-          <input ref={nameRef} value={newName} onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') submitNew(); if (e.key === 'Escape') setShowNew(false); }}
-            placeholder="filename.ts"
-            className="flex-1 bg-transparent text-[11px] focus:outline-none"
+        <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: G.border }}>
+          <input value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitNew(); }}
+            placeholder="filename.ts" autoFocus
+            className="flex-1 bg-transparent text-[13px] focus:outline-none"
             style={{ color: G.gold, caretColor: G.gold }} />
-          <button onClick={submitNew} className="text-[10px] px-2 py-px rounded"
-            style={{ color: G.R, background: `${G.R}10`, border: `1px solid ${G.R}20` }}>create</button>
-          <button onClick={() => setShowNew(false)} className="text-[10px]" style={{ color: G.textDim }}>✕</button>
+          <button onClick={submitNew} className="text-[11px] px-3 py-1.5 rounded-xl min-h-[36px]"
+            style={{ color: G.R, background: `${G.R}12`, border: `1px solid ${G.R}22` }}>create</button>
+        </div>
+      )}
+
+      {/* Files */}
+      {tab === 'files' && (
+        <div className="p-4 space-y-2">
+          {files.length === 0 && (
+            <div className="text-center py-10">
+              <p className="text-[13px]" style={{ color: G.textSub }}>No files yet</p>
+              <p className="text-[11px] mt-1" style={{ color: G.textSub }}>Ask Lex to write code, then tap + save</p>
+            </div>
+          )}
+          {files.map(f => (
+            <div key={f.id} onClick={() => { onSelectFile(f.id); setTab('editor'); }}
+              className="flex items-center gap-3 px-4 py-3.5 rounded-xl"
+              style={{ background: f.id === activeFileId ? G.surfaceHi : 'transparent',
+                border: `1px solid ${f.id === activeFileId ? G.borderHi : G.border}` }}>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-mono truncate font-medium"
+                  style={{ color: f.id === activeFileId ? G.gold : G.textOn }}>{f.name}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: G.textSub }}>
+                  {f.content.split('\n').length}L · {f.lang}
+                </p>
+              </div>
+              <button onClick={e => { e.stopPropagation(); onDeleteFile(f.id); }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ color: '#ef4444', background: '#ef444410' }}>✕</button>
+            </div>
+          ))}
         </div>
       )}
 
       {/* Editor */}
-      {panel === 'editor' && (
-        <div className="flex flex-1 overflow-hidden">
-          {files.length > 0 && (
-            <div className="w-32 flex-shrink-0 overflow-y-auto border-r" style={{ borderColor: G.border, scrollbarWidth: 'none' }}>
-              {files.map(f => (
-                <div key={f.id} onClick={() => onSelectFile(f.id)}
-                  className="group flex items-center gap-1.5 px-2.5 py-2 cursor-pointer text-[10px] relative"
-                  style={{
-                    background: f.id === activeFileId ? G.surface : 'transparent',
-                    borderLeft: `2px solid ${f.id === activeFileId ? G.gold : 'transparent'}`,
-                    color: f.id === activeFileId ? G.gold : G.textDim,
-                  }}>
-                  <span className="flex-1 truncate">{f.name}</span>
-                  <button onClick={e => { e.stopPropagation(); onDeleteFile(f.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-[9px] flex-shrink-0"
-                    style={{ color: '#ef4444' }}>✕</button>
-                </div>
-              ))}
+      {tab === 'editor' && (
+        <div className="flex flex-col" style={{ minHeight: '50vh' }}>
+          {activeFile ? (
+            <>
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b flex-shrink-0"
+                style={{ borderColor: G.border }}>
+                <span className="text-[12px] font-mono" style={{ color: G.gold }}>{activeFile.name}</span>
+                <span className="text-[11px]" style={{ color: G.textSub }}>{activeFile.lang}</span>
+                <span className="text-[11px] ml-auto" style={{ color: G.textSub }}>{activeFile.content.split('\n').length}L</span>
+              </div>
+              <textarea value={activeFile.content}
+                onChange={e => onUpdateFile(activeFile.id, e.target.value)}
+                className="flex-1 w-full resize-none focus:outline-none p-4 leading-relaxed"
+                style={{ background: 'transparent', color: '#8fa0b4', caretColor: G.gold,
+                  fontSize: 13, fontFamily: 'inherit', minHeight: '45vh' }}
+                spellCheck={false} />
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <p className="text-[13px]" style={{ color: G.textSub }}>Select a file from the Files tab</p>
             </div>
           )}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {activeFile ? (
-              <>
-                <div className="flex items-center gap-2 px-3 py-1.5 border-b flex-shrink-0"
-                  style={{ borderColor: G.border }}>
-                  <span className="text-[10px]" style={{ color: G.gold }}>{activeFile.name}</span>
-                  <span className="text-[9px]" style={{ color: G.textDim }}>{activeFile.lang}</span>
-                  <div className="flex-1" />
-                  <span className="text-[9px]" style={{ color: G.textDim }}>{activeFile.content.split('\n').length}L</span>
-                </div>
-                <textarea value={activeFile.content}
-                  onChange={e => onUpdateFile(activeFile.id, e.target.value)}
-                  className="flex-1 w-full resize-none focus:outline-none p-3 leading-relaxed"
-                  style={{ background: G.bg, color: '#7a8fa8', caretColor: G.gold,
-                    fontSize: '12px', tabSize: 2, fontFamily: 'inherit', scrollbarWidth: 'thin',
-                    scrollbarColor: `${G.border} transparent` }}
-                  spellCheck={false} />
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-6">
-                <span style={{ color: G.textDim }}>{'</>'}</span>
-                <p className="text-[10px]" style={{ color: G.textDim }}>
-                  Ask Lex to write code, then tap <span style={{ color: G.R }}>+ save</span>
-                </p>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
       {/* Terminal */}
-      {panel === 'terminal' && (
-        <div ref={termRef} className="flex-1 overflow-y-auto p-3 text-[11px] space-y-px"
-          style={{ scrollbarWidth: 'none' }}>
-          {terminalLog.length === 0 && <p style={{ color: G.textDim }}>// ready</p>}
+      {tab === 'terminal' && (
+        <div ref={termRef} className="p-4 text-[12px] leading-relaxed space-y-1" style={{ minHeight: '40vh' }}>
+          {terminalLog.length === 0 && <p style={{ color: G.textSub }}>// ready</p>}
           {terminalLog.map((line, i) => (
-            <div key={i} style={{
+            <p key={i} style={{
               color: line.startsWith('>>') ? G.gold : line.startsWith('✓') ? G.R
-                   : line.startsWith('✗') ? '#ef4444' : G.textDim,
-            }}>{line}</div>
+                   : line.startsWith('✗') ? '#ef4444' : G.textSub,
+            }}>{line}</p>
           ))}
-          <div className="flex items-center gap-1 pt-1">
+          <div className="flex items-center gap-1 pt-2">
             <span style={{ color: G.gold }}>lex@sovereign:~$</span>
-            <span className="lex-cursor inline-block w-[6px] h-[12px] ml-0.5 rounded-[1px]"
+            <span className="lex-cursor inline-block w-2 h-[13px] ml-0.5 rounded-sm"
               style={{ background: G.gold }} />
           </div>
-        </div>
-      )}
-
-      {/* Files list */}
-      {panel === 'files' && (
-        <div className="flex-1 overflow-y-auto p-2 space-y-1" style={{ scrollbarWidth: 'none' }}>
-          {files.length === 0 && <p className="text-[10px] text-center py-8" style={{ color: G.textDim }}>no files</p>}
-          {files.map(f => (
-            <div key={f.id} onClick={() => { onSelectFile(f.id); setPanel('editor'); }}
-              className="flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer group text-[10px]"
-              style={{ background: f.id === activeFileId ? G.surface : 'transparent' }}>
-              <div className="flex-1 min-w-0">
-                <p className="truncate" style={{ color: f.id === activeFileId ? G.gold : G.textDim }}>{f.name}</p>
-                <p className="text-[9px]" style={{ color: G.textDim }}>{f.content.split('\n').length}L · {f.lang}</p>
-              </div>
-              <button onClick={e => { e.stopPropagation(); onDeleteFile(f.id); }}
-                className="opacity-0 group-hover:opacity-100 text-[9px]" style={{ color: '#ef4444' }}>✕</button>
-            </div>
-          ))}
         </div>
       )}
     </div>
@@ -577,51 +594,82 @@ function SandboxPanel({ files, activeFileId, terminalLog, onSelectFile, onUpdate
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   SUGGESTION BAR
+   MODE PICKER SHEET
 ───────────────────────────────────────────────────────────────────── */
-function SuggestionBar({ turns, activeCategory, onCategoryChange, onSelect, disabled }: {
+function ModeSheet({ current, onSelect, onClose }: {
+  current: SandboxMode; onSelect: (m: SandboxMode) => void; onClose: () => void;
+}) {
+  return (
+    <div className="p-4 space-y-2">
+      {MODES.map(m => (
+        <button key={m.key} onClick={() => { onSelect(m.key); onClose(); }}
+          className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+          style={{
+            background: current === m.key ? `${G.gold}0e` : G.surfaceHi,
+            border: `1px solid ${current === m.key ? `${G.gold}30` : G.border}`,
+          }}>
+          <span className="text-xl w-7 text-center flex-shrink-0" style={{ color: current === m.key ? G.gold : G.textSub }}>
+            {m.icon}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[14px] font-bold font-mono" style={{ color: current === m.key ? G.gold : G.textOn }}>
+              {m.label}
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: G.textSub }}>{m.desc}</p>
+          </div>
+          {current === m.key && (
+            <span className="text-[12px] flex-shrink-0" style={{ color: G.gold }}>✓</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SUGGESTIONS SHEET
+───────────────────────────────────────────────────────────────────── */
+function SuggestionsSheet({ turns, activeCategory, onCategoryChange, onSelect, onClose, disabled }: {
   turns: ChatTurn[]; activeCategory: SuggestionCategory;
   onCategoryChange: (c: SuggestionCategory) => void;
-  onSelect: (p: string) => void; disabled: boolean;
+  onSelect: (p: string) => void; onClose: () => void; disabled: boolean;
 }) {
   const suggestions = useMemo(
     () => activeCategory === 'all'
-      ? getDynamicSuggestions(turns, 'all', 4)
-      : getPromptsByCategory(activeCategory).slice(0, 4),
+      ? getDynamicSuggestions(turns, 'all', 6)
+      : getPromptsByCategory(activeCategory).slice(0, 8),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [turns.length, activeCategory],
   );
 
   const dotColor: Record<string, string> = {
     jailbreak: '#ef4444', sycophancy: G.R, identity: G.C,
-    'slow-drip': G.S, probe: '#a855f7', attack: '#f97316', baseline: G.textDim,
+    'slow-drip': G.S, probe: '#a855f7', attack: '#f97316', baseline: G.textSub,
   };
 
   return (
-    <div className="space-y-1.5 pb-1">
+    <div className="p-4 space-y-4">
       {/* Category pills */}
-      <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {SUGGESTION_CATEGORIES.map(cat => (
           <button key={cat.key} onClick={() => onCategoryChange(cat.key)}
-            className="flex-shrink-0 px-2 py-px rounded text-[9px] font-mono transition-all"
+            className="flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-mono min-h-[36px]"
             style={{
-              color: activeCategory === cat.key ? G.gold : G.textDim,
-              background: activeCategory === cat.key ? `${G.gold}10` : 'transparent',
-              border: `1px solid ${activeCategory === cat.key ? `${G.gold}25` : G.border}`,
+              color: activeCategory === cat.key ? G.gold : G.textSub,
+              background: activeCategory === cat.key ? `${G.gold}12` : G.surfaceHi,
+              border: `1px solid ${activeCategory === cat.key ? `${G.gold}28` : G.border}`,
             }}>{cat.label}</button>
         ))}
       </div>
-      {/* Prompt chips */}
-      <div className="flex gap-1.5 flex-wrap">
+      {/* Prompts */}
+      <div className="space-y-2">
         {suggestions.map((s, i) => (
-          <button key={i} disabled={disabled} onClick={() => !disabled && onSelect(s.prompt)}
-            title={s.prompt}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono
-              transition-all disabled:opacity-30 active:scale-95 max-w-[200px] hover:border-opacity-60"
-            style={{ color: G.text, background: G.surface, border: `1px solid ${G.border}`,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <span style={{ color: dotColor[s.category] ?? G.textDim, fontSize: 6, flexShrink: 0 }}>●</span>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
+          <button key={i} disabled={disabled}
+            onClick={() => { if (!disabled) { onSelect(s.prompt); onClose(); } }}
+            className="w-full flex items-start gap-3 px-4 py-3.5 rounded-xl text-left transition-all active:scale-[0.98] disabled:opacity-30"
+            style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}>
+            <span className="mt-1.5 flex-shrink-0" style={{ color: dotColor[s.category] ?? G.textSub, fontSize: 8 }}>●</span>
+            <span className="text-[13px] leading-relaxed" style={{ color: G.text }}>{s.label}</span>
           </button>
         ))}
       </div>
@@ -632,43 +680,72 @@ function SuggestionBar({ turns, activeCategory, onCategoryChange, onSelect, disa
 /* ─────────────────────────────────────────────────────────────────────
    EMPTY STATE
 ───────────────────────────────────────────────────────────────────── */
-function EmptyState({ mode }: { mode: SandboxMode }) {
+function EmptyState({ mode, onSuggestion }: { mode: SandboxMode; onSuggestion: () => void }) {
   const cfg = {
-    chat:     { icon: '◈', title: 'Sovereign Console',    lines: ['C·R·S tracked every turn', 'Lyapunov-anchored stability', 'SHA-256 receipt on every run'] },
-    code:     { icon: '</>', title: 'Code Mode',           lines: ['Ask Lex to write any code', 'Save blocks to sandbox', 'Edit and iterate inline'] },
-    research: { icon: '∇',  title: 'Research Mode',        lines: ['Rigorous constitutional analysis', 'Formal proofs and mechanisms', 'Cross-reference session history'] },
-    redteam:  { icon: '⊗',  title: 'Constitutional Probe', lines: ['Stress-test the governor live', 'Full transparency per decision', 'Watch M move in real-time'] },
+    chat:     { icon: '◈',   title: 'Sovereign Console',    sub: 'Constitutional AI governance' },
+    code:     { icon: '</>',  title: 'Code Mode',            sub: 'Write and save code to sandbox' },
+    research: { icon: '∇',   title: 'Research Mode',         sub: 'Rigorous constitutional analysis' },
+    redteam:  { icon: '⊗',   title: 'Constitutional Probe',  sub: 'Stress-test the governor' },
   }[mode];
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center h-full gap-8 px-6 py-12 text-center">
       <div className="relative">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-mono"
-          style={{ background: `${G.gold}0c`, border: `1px solid ${G.gold}20` }}>
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl"
+          style={{ background: `${G.gold}0e`, border: `1px solid ${G.gold}22` }}>
           {cfg.icon}
         </div>
-        <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full lex-pulse"
+        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full lex-pulse"
           style={{ background: G.R }} />
       </div>
 
-      <div>
-        <p className="text-[11px] font-mono font-bold tracking-widest uppercase" style={{ color: G.gold }}>
+      <div className="space-y-1">
+        <p className="text-[13px] font-mono font-bold tracking-widest uppercase" style={{ color: G.gold }}>
           {cfg.title}
         </p>
-        <p className="text-[10px] font-mono mt-1" style={{ color: G.textDim }}>
-          Constitutional governance · persistent context
-        </p>
+        <p className="text-[12px]" style={{ color: G.textSub }}>{cfg.sub}</p>
       </div>
 
-      <div className="space-y-1.5 w-full max-w-xs text-left">
-        {cfg.lines.map((l, i) => (
-          <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg"
+      <div className="w-full max-w-xs space-y-2 text-left">
+        {[
+          'C·R·S constitutional pillars tracked every turn',
+          'Lyapunov stability — mathematically guaranteed',
+          'SHA-256 cryptographic receipt every response',
+        ].map((l, i) => (
+          <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-xl"
             style={{ background: G.surface, border: `1px solid ${G.border}` }}>
-            <span className="text-[9px] flex-shrink-0" style={{ color: G.gold }}>—</span>
-            <p className="text-[10px] font-mono" style={{ color: G.text }}>{l}</p>
+            <span className="text-[10px] mt-0.5 flex-shrink-0" style={{ color: G.gold }}>—</span>
+            <p className="text-[12px] leading-relaxed" style={{ color: G.text }}>{l}</p>
           </div>
         ))}
       </div>
+
+      <button onClick={onSuggestion}
+        className="px-6 py-3.5 rounded-2xl text-[13px] font-mono font-bold transition-all active:scale-95"
+        style={{ background: `${G.gold}12`, border: `1px solid ${G.gold}28`, color: G.gold }}>
+        Browse suggestions →
+      </button>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   SELF-TEST BANNER
+───────────────────────────────────────────────────────────────────── */
+function SelfTestBanner({ result, onClose }: { result: string; onClose: () => void }) {
+  return (
+    <div className="mx-4 mt-3 rounded-2xl overflow-hidden flex-shrink-0"
+      style={{ background: G.surface, border: `1px solid ${G.R}22` }}>
+      <div className="flex items-center justify-between px-4 py-3"
+        style={{ borderBottom: `1px solid ${G.border}` }}>
+        <span className="text-[10px] font-mono uppercase tracking-widest" style={{ color: G.R }}>⊕ Self-Test</span>
+        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center"
+          style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
+      </div>
+      <pre className="p-4 whitespace-pre-wrap text-[12px] leading-relaxed font-mono max-h-40 overflow-y-auto"
+        style={{ color: '#86efac', WebkitOverflowScrolling: 'touch' }}>
+        {result}
+      </pre>
     </div>
   );
 }
@@ -691,11 +768,10 @@ export default function ChatConsole() {
   const [selfTestResult, setSelfTestResult]   = useState<string | null>(null);
   const [selfTestLoading, setSelfTestLoading] = useState(false);
   const [sandboxMode, setSandboxMode]   = useState<SandboxMode>('chat');
-  const [sandboxOpen, setSandboxOpen]   = useState(false);
   const [sandboxFiles, setSandboxFiles] = useState<SandboxFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [terminalLog, setTerminalLog]   = useState<string[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [sheet, setSheet]               = useState<SheetView | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
@@ -710,6 +786,7 @@ export default function ChatConsole() {
     localStorage.setItem(k, id); return id;
   });
 
+  /* Self-test */
   const runSelfTest = useCallback(async () => {
     setSelfTestLoading(true); setSelfTestResult(null);
     try {
@@ -721,22 +798,26 @@ export default function ChatConsole() {
     } finally { setSelfTestLoading(false); }
   }, []);
 
+  /* Persistence */
   useEffect(() => {
     const s = localStorage.getItem('lex_api_calls');
     if (s) setApiCalls(parseInt(s, 10));
     try { const f = localStorage.getItem('lex_sandbox_files'); if (f) setSandboxFiles(JSON.parse(f)); } catch { /* ok */ }
   }, []);
-
   useEffect(() => { localStorage.setItem('lex_api_calls', String(apiCalls)); }, [apiCalls]);
   useEffect(() => { localStorage.setItem('lex_sandbox_files', JSON.stringify(sandboxFiles)); }, [sandboxFiles]);
+
+  /* Auto-scroll */
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [turns, stream.partialOutput]);
 
+  /* Live metrics */
   useEffect(() => {
     if (!stream.metrics) return;
     setLiveM(stream.metrics.m ?? null);
     setLiveHealth(stream.metrics.health_band ?? stream.metrics.health ?? 'OPTIMAL');
   }, [stream.metrics]);
 
+  /* Complete */
   useEffect(() => {
     if (stream.stage !== 'complete' || !stream.complete || !currentLexId) return;
     const res = stream.complete as GovernanceResponse;
@@ -761,7 +842,6 @@ export default function ChatConsole() {
       memory_injected: Boolean(kx.memory_injected),
       law: stream.law ?? null, governor: stream.governor ?? null, complete: res,
     }));
-
     setLiveM(M); setLiveHealth(health); setApiCalls(c => c + 1); setCurrentLexId(null);
 
     if (res.governed_output) {
@@ -772,13 +852,13 @@ export default function ChatConsole() {
           `>> emitted ${blocks.length} block${blocks.length > 1 ? 's' : ''}`,
           ...blocks.map(b => `  ✓ ${b.lang}${b.filename ? ` · ${b.filename}` : ''}`),
         ]);
-        if (sandboxMode === 'code') setSandboxOpen(true);
       }
     }
     toast.push('Run complete', 'success');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.stage, stream.complete]);
 
+  /* Error */
   useEffect(() => {
     if (!stream.error || !currentLexId) return;
     setTurns(prev => prev.map(t => t.id !== currentLexId ? t : { ...t, streaming: false, error: stream.error ?? 'Error' }));
@@ -788,6 +868,7 @@ export default function ChatConsole() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.error]);
 
+  /* Send */
   const sendMessage = useCallback(async (promptOverride?: string) => {
     const raw = (promptOverride ?? input).trim();
     if (!raw || stream.loading) return;
@@ -795,10 +876,8 @@ export default function ChatConsole() {
     if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 0) {
       setShowEmail(true); return;
     }
-
     const governed = (MODE_PREFIX[sandboxMode] + raw).trim();
     const userId = `u_${Date.now()}`, lexId = `l_${Date.now()}`;
-
     setTurns(prev => [
       ...prev,
       { id: userId, role: 'user', content: raw, timestamp: Date.now() },
@@ -811,12 +890,13 @@ export default function ChatConsole() {
     await runStream(governed, sessionId);
   }, [input, stream.loading, apiCalls, runStream, sessionId, sandboxMode]);
 
+  /* Sandbox ops */
   const saveBlockToSandbox = useCallback((block: CodeBlock) => {
     const ext  = block.lang === 'typescript' ? 'ts' : block.lang === 'python' ? 'py' : block.lang;
     const name = block.filename ?? `snippet_${Date.now()}.${ext}`;
     const f: SandboxFile = { id: `f_${Date.now()}`, name, lang: block.lang, content: block.code, createdAt: Date.now(), modifiedAt: Date.now() };
     setSandboxFiles(prev => [...prev, f]);
-    setActiveFileId(f.id); setSandboxOpen(true);
+    setActiveFileId(f.id);
     setTerminalLog(prev => [...prev, `✓ saved ${name}`]);
     toast.push(`Saved ${name}`, 'success');
   }, [toast]);
@@ -827,304 +907,276 @@ export default function ChatConsole() {
     setSandboxFiles(prev => [...prev, f]); setActiveFileId(f.id);
   }, []);
 
-  const updateFile  = useCallback((id: string, content: string) => {
+  const updateFile = useCallback((id: string, content: string) => {
     setSandboxFiles(prev => prev.map(f => f.id === id ? { ...f, content, modifiedAt: Date.now() } : f));
   }, []);
 
-  const deleteFile  = useCallback((id: string) => {
+  const deleteFile = useCallback((id: string) => {
     setSandboxFiles(prev => { const n = prev.filter(f => f.id !== id); setActiveFileId(n[n.length - 1]?.id ?? null); return n; });
   }, []);
 
-  const hcfg      = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
+  /* Derived */
+  const hcfg       = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
   const isStreaming = stream.loading;
   const arc        = useMemo(() => buildSessionArc(turns), [turns]);
   const callsLeft  = MAX_CALLS - apiCalls;
+  const curMode    = MODES.find(m => m.key === sandboxMode)!;
 
   return (
     <>
       <style>{`
-        @keyframes lex-blink   { 0%,100%{opacity:1} 50%{opacity:0} }
-        @keyframes lex-breathe { 0%,100%{opacity:.5} 50%{opacity:1} }
-        .lex-cursor { animation: lex-blink   0.9s step-end infinite; }
+        @keyframes lex-blink   { 0%,100%{opacity:1}  50%{opacity:0}   }
+        @keyframes lex-breathe { 0%,100%{opacity:.4}  50%{opacity:1}  }
+        .lex-cursor { animation: lex-blink   0.9s step-end  infinite; }
         .lex-pulse  { animation: lex-breathe 2.4s ease-in-out infinite; }
         ::-webkit-scrollbar { display: none; }
         * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-        textarea { font-size: 16px !important; }
+        textarea { font-size: 16px !important; -webkit-user-select: text; user-select: text; }
+        input    { -webkit-user-select: text; user-select: text; }
       `}</style>
 
-      <div className="h-[100dvh] flex flex-col overflow-hidden"
-        style={{ background: G.bg, fontFamily: "'JetBrains Mono','SF Mono',ui-monospace,monospace", color: G.text }}>
+      <div className="h-[100dvh] flex flex-col overflow-hidden select-none"
+        style={{ background: G.bg, fontFamily: "'SF Mono','JetBrains Mono',ui-monospace,monospace", color: G.text }}>
 
-        {/* ═══════════════════════ HEADER ═══════════════════════ */}
-        <header className="flex-shrink-0 z-40"
+        {/* ══════════════════════════ HEADER ══════════════════════════ */}
+        <header className="flex-shrink-0 z-30"
           style={{ background: G.bg, borderBottom: `1px solid ${G.border}` }}>
+          <div className="flex items-center h-14 px-4 gap-3">
 
-          {/* Top bar */}
-          <div className="flex items-center h-12 px-4 gap-3">
-            {/* Brand */}
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <Link href="/"
-                className="flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0 active:scale-90 transition-transform"
-                style={{ color: G.textDim, background: G.surface, border: `1px solid ${G.border}` }}>
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                  <path d="M7 2L3 5L7 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </Link>
+            {/* Back */}
+            <Link href="/"
+              className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              style={{ color: G.textSub, background: G.surface, border: `1px solid ${G.border}` }}>
+              <svg width="9" height="14" viewBox="0 0 9 14" fill="none">
+                <path d="M7 1L1 7L7 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </Link>
 
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-[11px] font-mono font-bold tracking-widest uppercase flex-shrink-0"
-                  style={{ color: G.gold }}>Lex Aureon</span>
-                <span className="text-[9px] font-mono px-1.5 py-px rounded flex-shrink-0"
-                  style={{ color: G.textDim, background: G.surface, border: `1px solid ${G.border}` }}>
-                  v2
-                </span>
+            {/* Brand + live M */}
+            <div className="flex-1 flex items-center gap-2 min-w-0">
+              <div>
+                <p className="text-[12px] font-mono font-bold tracking-widest uppercase leading-none" style={{ color: G.gold }}>
+                  Lex Aureon
+                </p>
+                <p className="text-[10px] font-mono leading-none mt-0.5" style={{ color: G.textSub }}>
+                  {curMode.icon} {curMode.label}
+                </p>
               </div>
 
-              {/* Live M badge */}
               {liveM !== null && (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-mono flex-shrink-0 ml-1"
-                  style={{
-                    color: hcfg.color, background: hcfg.bg,
-                    border: `1px solid ${hcfg.color}20`,
-                    transition: 'all 0.4s',
-                  }}>
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl ml-1"
+                  style={{ color: hcfg.color, background: hcfg.bg, border: `1px solid ${hcfg.color}20`, transition: 'all 0.4s' }}>
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ background: hcfg.color, animation: isStreaming ? 'lex-blink 1s step-end infinite' : 'none' }} />
-                  <span>M={liveM.toFixed(3)}</span>
-                  {isStreaming && <span style={{ color: hcfg.color, opacity: 0.6 }}>·</span>}
-                  {isStreaming && <span className="text-[9px]">live</span>}
+                  <span className="text-[11px] font-mono font-bold tabular-nums">M={liveM.toFixed(3)}</span>
                 </div>
               )}
             </div>
 
             {/* Right controls */}
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              {/* Sandbox toggle */}
-              <button onClick={() => setSandboxOpen(s => !s)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono transition-all active:scale-95"
-                style={{
-                  color: sandboxOpen ? '#38bdf8' : G.textDim,
-                  background: sandboxOpen ? '#38bdf808' : 'transparent',
-                  border: `1px solid ${sandboxOpen ? '#38bdf820' : G.border}`,
-                }}>
-                <span>{'</>'}</span>
-                {sandboxFiles.length > 0 && (
-                  <span className="text-[9px]" style={{ color: '#38bdf8' }}>{sandboxFiles.length}</span>
-                )}
-              </button>
-
-              {/* Call counter */}
-              <div className="text-[10px] font-mono tabular-nums px-2 py-1.5 rounded-lg"
-                style={{
-                  color: callsLeft <= 3 ? '#f59e0b' : G.textDim,
-                  background: G.surface, border: `1px solid ${G.border}`,
-                }}>
-                {callsLeft}/{MAX_CALLS}
-              </div>
-
+            <div className="flex items-center gap-2 flex-shrink-0">
               {/* Self-test */}
               <button onClick={() => void runSelfTest()} disabled={selfTestLoading}
-                className="w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-95 disabled:opacity-40"
+                className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform disabled:opacity-40"
                 style={{ color: G.R, background: G.surface, border: `1px solid ${G.border}` }}
-                title="Run self-test">
-                <span className="text-[11px]">{selfTestLoading ? '…' : '⊕'}</span>
+                title="Self-test">
+                <span className="text-[14px]">{selfTestLoading ? '…' : '⊕'}</span>
               </button>
 
-              {/* Upgrade */}
-              <button onClick={() => setShowUpgrade(true)}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-mono transition-all active:scale-95"
-                style={{ color: G.gold, background: `${G.gold}08`, border: `1px solid ${G.gold}20` }}>
-                pro
-              </button>
+              {/* Calls left */}
+              <div className="px-2.5 h-10 rounded-xl flex items-center font-mono text-[11px] tabular-nums"
+                style={{ color: callsLeft <= 3 ? '#f59e0b' : G.textSub, background: G.surface, border: `1px solid ${G.border}` }}>
+                {callsLeft}/{MAX_CALLS}
+              </div>
             </div>
-          </div>
-
-          {/* Mode tabs */}
-          <div className="flex border-t" style={{ borderColor: G.border }}>
-            {MODES.map(m => (
-              <button key={m.key} onClick={() => setSandboxMode(m.key)}
-                className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-mono transition-all"
-                style={{
-                  color: sandboxMode === m.key ? G.gold : G.textDim,
-                  borderBottom: `1px solid ${sandboxMode === m.key ? G.gold : 'transparent'}`,
-                  background: sandboxMode === m.key ? `${G.gold}06` : 'transparent',
-                }}>
-                <span style={{ opacity: sandboxMode === m.key ? 1 : 0.5 }}>{m.icon}</span>
-                <span>{m.label}</span>
-              </button>
-            ))}
-            <div className="flex-1 border-b" style={{ borderColor: 'transparent' }} />
           </div>
         </header>
 
-        {/* ═══════════════════════ BODY ═══════════════════════ */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* ══════════════════════════ MAIN ══════════════════════════ */}
+        <main className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
-          {/* ── Chat column ── */}
-          <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+          {/* Self-test banner */}
+          {selfTestResult && (
+            <SelfTestBanner result={selfTestResult} onClose={() => setSelfTestResult(null)} />
+          )}
 
-            {/* Self-test result */}
-            {selfTestResult && (
-              <div className="flex-shrink-0 mx-4 mt-3 rounded-lg overflow-hidden"
-                style={{ background: G.surface, border: `1px solid ${G.R}20` }}>
-                <div className="flex items-center justify-between px-3 py-2"
-                  style={{ borderBottom: `1px solid ${G.border}` }}>
-                  <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: G.R }}>⊕ Self-Test</span>
-                  <button onClick={() => setSelfTestResult(null)} className="text-[10px]" style={{ color: G.textDim }}>✕</button>
-                </div>
-                <pre className="p-3 whitespace-pre-wrap text-[11px] leading-relaxed font-mono max-h-48 overflow-y-auto"
-                  style={{ color: '#86efac', scrollbarWidth: 'thin', scrollbarColor: `${G.border} transparent` }}>
-                  {selfTestResult}
-                </pre>
-              </div>
-            )}
-
-            {/* Thread */}
-            <main className="flex-1 overflow-y-auto py-5 px-4 space-y-5"
-              style={{ scrollbarWidth: 'none' }}>
-              {!turns.length
-                ? <EmptyState mode={sandboxMode} />
-                : turns.map(turn => (
-                  <MessageBubble key={turn.id} turn={turn}
-                    isLatest={turn.id === currentLexId}
-                    streaming={isStreaming && turn.id === currentLexId}
-                    partialOutput={stream.partialOutput}
-                    openTab={openTabs[turn.id] ?? null}
-                    onOpenTab={tab => setOpenTabs(prev => ({ ...prev, [turn.id]: tab }))}
-                    onSaveBlock={saveBlockToSandbox}
-                    sandboxMode={sandboxMode}
-                  />
-                ))
-              }
-              <div ref={bottomRef} className="h-1" />
-            </main>
-
-            {/* Footer / input area */}
-            <footer className="flex-shrink-0 px-4 pt-2 pb-safe space-y-2"
-              style={{
-                background: G.bg,
-                borderTop: `1px solid ${G.border}`,
-                paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-              }}>
-
-              {/* Suggestions */}
-              {!isStreaming && showSuggestions && (
-                <SuggestionBar turns={turns} activeCategory={suggCat}
-                  onCategoryChange={setSuggCat}
-                  onSelect={p => { setInput(p); inputRef.current?.focus(); }}
-                  disabled={isStreaming} />
-              )}
-
-              {/* Input row */}
-              <div className="flex items-end gap-2">
-                {/* Textarea container */}
-                <div className="flex-1 rounded-xl transition-all duration-200"
-                  style={{
-                    background: G.surface,
-                    border: `1px solid ${inputFocused ? `${G.gold}35` : G.border}`,
-                    boxShadow: inputFocused ? `0 0 0 3px ${G.gold}06` : 'none',
-                  }}>
-                  <textarea ref={inputRef} value={input}
-                    onChange={e => setInput(e.target.value.slice(0, 4000))}
-                    onFocus={() => setInputFocused(true)}
-                    onBlur={() => setInputFocused(false)}
-                    onKeyDown={e => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && input.trim() && !isStreaming) {
-                        e.preventDefault(); sendMessage();
-                      }
-                    }}
-                    onInput={e => {
-                      const el = e.currentTarget;
-                      el.style.height = 'auto';
-                      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-                    }}
-                    placeholder={
-                      sandboxMode === 'code'     ? 'Ask Lex to write code…'
-                      : sandboxMode === 'research' ? 'Pose a research question…'
-                      : sandboxMode === 'redteam'  ? 'Launch a constitutional probe…'
-                      :                              'Message Lex Aureon…'
-                    }
-                    rows={1} disabled={isStreaming}
-                    className="w-full bg-transparent px-3.5 py-3 resize-none focus:outline-none leading-relaxed disabled:opacity-40"
-                    style={{ color: G.textBright, caretColor: G.gold, fontFamily: 'inherit', maxHeight: '160px' }} />
-                </div>
-
-                {/* Suggestions toggle */}
-                <button onClick={() => setShowSuggestions(s => !s)}
-                  className="flex-shrink-0 w-8 h-8 self-end mb-0.5 rounded-lg flex items-center justify-center transition-all active:scale-90"
-                  style={{
-                    color: showSuggestions ? G.gold : G.textDim,
-                    background: G.surface, border: `1px solid ${G.border}`,
-                  }}>
-                  <svg width="12" height="9" viewBox="0 0 12 9" fill="none">
-                    <path d="M1 1h10M1 4.5h7M1 8h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                  </svg>
-                </button>
-
-                {/* Send / Cancel */}
-                {isStreaming ? (
-                  <button onClick={cancel}
-                    className="flex-shrink-0 w-9 h-9 self-end mb-0.5 rounded-xl flex items-center justify-center transition-all active:scale-90"
-                    style={{ background: '#1a0505', border: '1px solid #3a1010', color: '#f87171' }}>
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                      <rect width="10" height="10" rx="2"/>
-                    </svg>
-                  </button>
-                ) : (
-                  <button onClick={() => sendMessage()} disabled={!input.trim() || apiCalls >= MAX_CALLS}
-                    className="flex-shrink-0 w-9 h-9 self-end mb-0.5 rounded-xl flex items-center justify-center transition-all active:scale-90 disabled:opacity-20"
-                    style={{
-                      background: input.trim() ? `linear-gradient(135deg,${G.gold},${G.goldL})` : G.surface,
-                      border: `1px solid ${input.trim() ? G.gold : G.border}`,
-                      color: input.trim() ? '#07070d' : G.textDim,
-                    }}>
-                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                      <path d="M7 12V2M3 6L7 2L11 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
-                )}
-              </div>
-
-              {/* Session signal */}
-              {arc.interventionCount > 0 && (
-                <p className="text-[9px] font-mono text-center pb-0.5" style={{ color: '#7c2d12' }}>
-                  ⚡ {arc.interventionCount} correction{arc.interventionCount > 1 ? 's' : ''} this session
-                </p>
-              )}
-            </footer>
+          {/* Thread */}
+          <div className="py-4 space-y-5 pb-2">
+            {!turns.length
+              ? <EmptyState mode={sandboxMode} onSuggestion={() => setSheet('suggestions')} />
+              : turns.map(turn => (
+                <MessageBubble key={turn.id} turn={turn}
+                  isLatest={turn.id === currentLexId}
+                  streaming={isStreaming && turn.id === currentLexId}
+                  partialOutput={stream.partialOutput}
+                  openTab={openTabs[turn.id] ?? null}
+                  onOpenTab={tab => setOpenTabs(prev => ({ ...prev, [turn.id]: tab }))}
+                  onSaveBlock={saveBlockToSandbox}
+                  sandboxMode={sandboxMode}
+                />
+              ))
+            }
+            <div ref={bottomRef} className="h-1" />
           </div>
+        </main>
 
-          {/* ── Sandbox panel ── */}
-          {sandboxOpen && (
-            <div className="flex-shrink-0 border-l flex flex-col overflow-hidden"
-              style={{
-                width: 'min(400px, 44vw)', minWidth: '260px',
-                borderColor: G.border, background: G.bg,
-              }}>
-              <div className="flex items-center justify-between px-3 py-2.5 border-b flex-shrink-0"
-                style={{ borderColor: G.border }}>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold" style={{ color: '#38bdf8' }}>SANDBOX</span>
-                  <span className="text-[9px] font-mono" style={{ color: G.textDim }}>
-                    {sandboxFiles.length} file{sandboxFiles.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-                <button onClick={() => setSandboxOpen(false)}
-                  className="w-5 h-5 rounded flex items-center justify-center text-[10px]"
-                  style={{ color: G.textDim }}>✕</button>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <SandboxPanel files={sandboxFiles} activeFileId={activeFileId} terminalLog={terminalLog}
-                  onSelectFile={setActiveFileId} onUpdateFile={updateFile}
-                  onNewFile={createNewFile} onDeleteFile={deleteFile} />
-              </div>
+        {/* ══════════════════════════ FOOTER ══════════════════════════ */}
+        <footer className="flex-shrink-0 z-20"
+          style={{
+            background: G.bg,
+            borderTop: `1px solid ${G.border}`,
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+          }}>
+
+          {/* Correction signal */}
+          {arc.interventionCount > 0 && (
+            <div className="px-4 pt-2">
+              <p className="text-[10px] font-mono text-center" style={{ color: '#7c2d12' }}>
+                ⚡ {arc.interventionCount} correction{arc.interventionCount > 1 ? 's' : ''} this session
+              </p>
             </div>
           )}
-        </div>
+
+          {/* Input row */}
+          <div className="flex items-end gap-2 px-3 pt-2.5 pb-1">
+
+            {/* Toolbar btn — left */}
+            <button onClick={() => setSheet(sheet === 'mode' ? null : 'mode')}
+              className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              style={{
+                color: sheet === 'mode' ? G.gold : G.textSub,
+                background: G.surface, border: `1px solid ${sheet === 'mode' ? `${G.gold}28` : G.border}`,
+              }}
+              title="Switch mode">
+              <span className="text-[13px]">{curMode.icon}</span>
+            </button>
+
+            {/* Input */}
+            <div className="flex-1 rounded-2xl transition-all duration-200"
+              style={{
+                background: G.surface,
+                border: `1px solid ${inputFocused ? `${G.gold}40` : G.border}`,
+                boxShadow: inputFocused ? `0 0 0 3px ${G.gold}08` : 'none',
+              }}>
+              <textarea ref={inputRef} value={input}
+                onChange={e => setInput(e.target.value.slice(0, 4000))}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                onKeyDown={e => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && input.trim() && !isStreaming) {
+                    e.preventDefault(); sendMessage();
+                  }
+                }}
+                onInput={e => {
+                  const el = e.currentTarget;
+                  el.style.height = 'auto';
+                  el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+                }}
+                placeholder={
+                  sandboxMode === 'code'     ? 'Ask Lex to write code…'
+                  : sandboxMode === 'research' ? 'Pose a research question…'
+                  : sandboxMode === 'redteam'  ? 'Launch a constitutional probe…'
+                  :                              'Message Lex Aureon…'
+                }
+                rows={1} disabled={isStreaming}
+                className="w-full bg-transparent px-4 py-3 resize-none focus:outline-none leading-relaxed disabled:opacity-40"
+                style={{ color: G.textOn, caretColor: G.gold, fontFamily: 'inherit', maxHeight: '140px' }} />
+            </div>
+
+            {/* Suggestions */}
+            <button onClick={() => setSheet(sheet === 'suggestions' ? null : 'suggestions')}
+              className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              style={{
+                color: sheet === 'suggestions' ? G.gold : G.textSub,
+                background: G.surface, border: `1px solid ${sheet === 'suggestions' ? `${G.gold}28` : G.border}`,
+              }}
+              title="Suggestions">
+              <svg width="14" height="11" viewBox="0 0 14 11" fill="none">
+                <path d="M1 1.5h12M1 5.5h8M1 9.5h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+            </button>
+
+            {/* Send / Cancel */}
+            {isStreaming ? (
+              <button onClick={cancel}
+                className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                style={{ background: '#1e0808', border: '1px solid #4a1010', color: '#f87171' }}>
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
+                  <rect width="11" height="11" rx="2.5"/>
+                </svg>
+              </button>
+            ) : (
+              <button onClick={() => sendMessage()} disabled={!input.trim() || apiCalls >= MAX_CALLS}
+                className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-all disabled:opacity-20"
+                style={{
+                  background: input.trim() ? `linear-gradient(135deg,${G.gold},${G.goldL})` : G.surface,
+                  border: `1px solid ${input.trim() ? G.gold : G.border}`,
+                  color: input.trim() ? '#07070d' : G.textSub,
+                }}>
+                <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                  <path d="M7.5 13V2M3 6.5L7.5 2L12 6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Bottom icon row */}
+          <div className="flex items-center px-4 pb-1 gap-1">
+            {/* Sandbox */}
+            <button onClick={() => setSheet(sheet === 'sandbox' ? null : 'sandbox')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+              style={{
+                color: sheet === 'sandbox' ? '#38bdf8' : G.textSub,
+                background: sheet === 'sandbox' ? '#38bdf80e' : 'transparent',
+              }}>
+              <span className="text-[11px] font-mono">{'</>'}</span>
+              <span className="text-[10px] font-mono">sandbox</span>
+              {sandboxFiles.length > 0 && (
+                <span className="text-[10px] font-mono px-1 rounded"
+                  style={{ color: '#38bdf8', background: '#38bdf812' }}>{sandboxFiles.length}</span>
+              )}
+            </button>
+
+            <div className="flex-1" />
+
+            {/* Upgrade */}
+            <button onClick={() => setShowUpgrade(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+              style={{ color: G.gold, background: `${G.gold}08` }}>
+              <span className="text-[10px] font-mono">↑ pro</span>
+            </button>
+          </div>
+        </footer>
       </div>
+
+      {/* ══════════════════════ BOTTOM SHEETS ══════════════════════ */}
+
+      <BottomSheet open={sheet === 'sandbox'} onClose={() => setSheet(null)} title="Sandbox">
+        <SandboxSheetContent
+          files={sandboxFiles} activeFileId={activeFileId} terminalLog={terminalLog}
+          onSelectFile={setActiveFileId} onUpdateFile={updateFile}
+          onNewFile={createNewFile} onDeleteFile={deleteFile}
+        />
+      </BottomSheet>
+
+      <BottomSheet open={sheet === 'mode'} onClose={() => setSheet(null)} title="Mode">
+        <ModeSheet current={sandboxMode} onSelect={setSandboxMode} onClose={() => setSheet(null)} />
+      </BottomSheet>
+
+      <BottomSheet open={sheet === 'suggestions'} onClose={() => setSheet(null)} title="Suggestions">
+        <SuggestionsSheet
+          turns={turns} activeCategory={suggCat}
+          onCategoryChange={setSuggCat}
+          onSelect={p => { setInput(p); inputRef.current?.focus(); }}
+          onClose={() => setSheet(null)}
+          disabled={isStreaming}
+        />
+      </BottomSheet>
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} callsUsed={apiCalls} />}
       {showEmail   && <EmailCapture onComplete={() => { setShowEmail(false); setTimeout(() => sendMessage(), 100); }} />}
     </>
   );
 }
+
+const MAX_CALLS = 10;
