@@ -3,12 +3,7 @@
 # dependencies
 /node_modules
 /.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+.pnp.js
 
 # testing
 /coverage
@@ -28,11 +23,13 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-!.env.local.example
+# local env files
+.env*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # vercel
 .vercel
@@ -40,10 +37,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# repo archives — never commit
-lexaureon-frontend.tar
-*.tar
 
 # benchmark data and results — never commit
 # (HarmBench prompts and adversarial generations stay local)
@@ -54,3 +47,7 @@ lexaureon-frontend.tar
 *.sqlite
 *.sqlite3
 local.db
+
+# scratch / patch files
+_patch_sr_block.txt
+.gitignore-scratch
