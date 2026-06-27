@@ -32,6 +32,22 @@ export const FLOOR = 1e-9;   // Prevent log(0)
 export const MU_BARRIER = 0.02; // Strength of the magnetic push from boundaries
 export const EPS_BARRIER = 1e-4; // Stability epsilon for log-barrier
 
+/**
+ * Z_RECOVERY — static coordinate-weight vector z = (z_C, z_R, z_S) used by the
+ * z-weighted Lyapunov certificate V_z (see lyapunovBarrierZ).
+ *
+ * Held at the safe-interior recovery target (the centroid). With z fixed at an
+ * interior equilibrium, V_z(x) = -Σ z_i·log(x_i) is — up to an additive
+ * constant — the relative-entropy (KL) Lyapunov function KL(z‖x) of replicator
+ * dynamics (Hofbauer & Sigmund): V_z ≥ 0, V_z = 0 iff x = z.
+ *
+ * OPEN PROBLEM (Aureonics "Three Open Problems", #3): the *dynamic* z-update
+ * rule h(x, z, law_events) that lets z track law events / recovery targets is
+ * NOT solved. z is held constant here, not derived. Do not represent this as
+ * the closed-form update rule.
+ */
+export const Z_RECOVERY: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
+
 export interface CRSState {
   C: number;
   R: number;
@@ -77,10 +93,40 @@ export function lyapunovQuadratic(s: { C: number; R: number; S: number }): numbe
 
 /**
  * Lyapunov Barrier: V = -Σ log(xᵢ) + (μ/2) Σ max(0, τ - xᵢ)²
- * Stronger theoretical certificate used in Section 11.
+ * Stronger theoretical certificate used in Section 11 (uniform-weight form).
  */
 export function lyapunovBarrier(x: [number, number, number]): number {
   const barrier = -x.reduce((s, xi) => s + Math.log(Math.max(xi, FLOOR)), 0);
+  const penalty = (MU / 2) * x.reduce((s, xi) => {
+    const violation = Math.max(0, TAU - xi);
+    return s + violation * violation;
+  }, 0);
+  return barrier + penalty;
+}
+
+/**
+ * z-WEIGHTED Lyapunov Barrier (the §11 certificate, as published):
+ *
+ *     V_z(x) = -Σ z_i·log(x_i) + (μ/2)·Σ max(0, τ - x_i)²
+ *
+ * - First term: z-weighted log-barrier. With z at an interior equilibrium
+ *   (Z_RECOVERY), this is the relative-entropy / KL Lyapunov function of
+ *   replicator dynamics up to an additive constant: ≥ 0, zero iff x = z.
+ * - Second term: control-barrier-function (CBF) penalty that diverges as any
+ *   coordinate approaches the hard floor τ, certifying floor-respecting motion
+ *   (which the quadratic candidate cannot, since min(·) is non-smooth).
+ *
+ * This is the object the audit receipts SHOULD certify — distinct from the
+ * centroid-distance quadratic, which is trivially decreased by any pull toward
+ * 1/3 and therefore confounds the controller with its own certificate.
+ *
+ * z defaults to Z_RECOVERY. See the Z_RECOVERY note re: the open z-update rule.
+ */
+export function lyapunovBarrierZ(
+  x: [number, number, number],
+  z: [number, number, number] = Z_RECOVERY
+): number {
+  const barrier = -x.reduce((s, xi, i) => s + z[i] * Math.log(Math.max(xi, FLOOR)), 0);
   const penalty = (MU / 2) * x.reduce((s, xi) => {
     const violation = Math.max(0, TAU - xi);
     return s + violation * violation;
