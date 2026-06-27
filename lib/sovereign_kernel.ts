@@ -43,7 +43,7 @@ import { fireGovernorLoop, consumePendingCorrection } from './governor_loop';
 import {
   TAU, SOFT_FLOOR, TAU_GOV, TARGET_MARGIN, THETA_0, THETA_MIN, THETA_MAX,
   THETA_ETA, THETA_BETA, SOFT_GAIN, MIN_DELTA,
-  projectToSimplex, lyapunovQuadratic, calculateGovernorG,
+  projectToSimplex, lyapunovBarrierZ, calculateGovernorG,
 } from './aureonics_core';
 
 void env; void SOFT_GAIN; void TAU_GOV;
@@ -312,8 +312,13 @@ export class SovereignKernel {
     if (total > NORMALIZATION_EPS) { this.state.C /= total; this.state.R /= total; this.state.S /= total; }
   }
 
+  // Audit certificate: the §11 z-weighted log-barrier V_z (relative-entropy +
+  // CBF penalty), NOT the centroid-distance quadratic. The quadratic was
+  // trivially decreased by the controller's own pull toward 1/3 and so could
+  // not independently certify floor-respecting motion. V_z diverges as any
+  // coordinate nears τ, so delta_V now reflects real boundary behavior.
   lyapunovCandidate(state: KernelState): number {
-    return lyapunovQuadratic({ C: state.C, R: state.R, S: state.S });
+    return lyapunovBarrierZ([state.C, state.R, state.S]);
   }
 
   assertConsistency(): void {
