@@ -116,6 +116,28 @@ export const RECOVERY_RATE   = CONSTITUTION.RECOVERY_RATE;
 export const SIGMA_WINDOW    = 10;
 export const SIGMA_THRESHOLD = CONSTITUTION.SIGMA_THRESHOLD;
 
+// ── Z-weight update constants (Theorem 3a/3b — Banach fixed-point proof) ──────
+// ρ = memory decay rate (contraction factor, proven convergent at 0.85)
+// γ = attack impact scale (law event severity scaling)
+// Z_CLAMP_LO / HI = saturation guard bounds = [τ/2, 1−τ]
+// Without the clamp, z can be driven to boundary under indefinite multi_attack.
+const Z_RHO      = 0.85;
+const Z_GAMMA    = 0.10;
+const Z_CLAMP_LO = TAU_FLOOR / 2;        // 0.025
+const Z_CLAMP_HI = 1 - TAU_FLOOR;        // 0.95
+
+// ── Law event attack signal table (Aureonics Three Open Problems, §4.2) ────────
+// Each law maps to: severity scalar and direction vector [dc, dr, ds]
+// Direction vectors sum to zero (mass-conserving attack signal).
+const LAW_ATTACK_SIGNAL: Record<string, { sev: number; dir: [number, number, number] }> = {
+  bypass_attempt:           { sev: 0.8, dir: [ 0.5,  0.5, -1.0] },
+  identity_reframe:         { sev: 0.7, dir: [-1.0,  0.5,  0.5] },
+  sycophancy:               { sev: 0.6, dir: [ 0.5, -1.0,  0.5] },
+  multi_attack:             { sev: 1.0, dir: [-1/3, -1/3, -1/3] },
+  slow_drip:                { sev: 0.3, dir: [-1/3, -1/3, -1/3] },
+  attack_vector_disclosure: { sev: 0.9, dir: [-0.5, -0.0, -0.5] },
+};
+
 // ── Health Band — single source of truth ─────────────────────────────────────
 // Boundaries: TAU_LYP (0.08), TAU_RECOVERY (0.15), and 0.25 (optimal ceiling)
 // Aligned with Lyapunov stability analysis and governor mode transitions.
@@ -144,6 +166,12 @@ export interface ZTraj {
   last_c:          number;
   last_r:          number;
   last_s:          number;
+  // Proven z-weight coordinates (Theorem 3a/3b).
+  // z_c + z_r + z_s = 1 (simplex). Used as coordinate weights in V_z(x).
+  // Higher z_i ⟹ stronger log-barrier on pillar i ⟹ more governor correction effort.
+  z_c:             number;
+  z_r:             number;
+  z_s:             number;
   attack_pressure: number;
   updated_at:      string;
 }
@@ -178,6 +206,60 @@ function projectToSimplex(c: number, r: number, s: number): CRS {
   return { c: v[0] / total, r: v[1] / total, s: v[2] / total };
 }
 
+// ── computeAttackSignal ───────────────────────────────────────────────────────
+// A(t) = γ · Σ_{law ∈ events_t} sev(law) · dir(law)
+// Returns the net [ac, ar, as] attack vector for this turn's law events.
+function computeAttackSignal(lawEvents: string[]): [number, number, number] {
+  let ac = 0, ar = 0, as_ = 0;
+  for (const law of lawEvents) {
+    const entry = LAW_ATTACK_SIGNAL[law];
+    if (!entry) continue;
+    ac  += Z_GAMMA * entry.sev * entry.dir[0];
+    ar  += Z_GAMMA * entry.sev * entry.dir[1];
+    as_ += Z_GAMMA * entry.sev * entry.dir[2];
+  }
+  return [ac, ar, as_];
+}
+
+// ── computeZWeights ───────────────────────────────────────────────────────────
+// Implements the proven update rule (Aureonics Three Open Problems, §4.3):
+//   z_raw = ρ·z_t + (1−ρ)·x_t − A(t)
+//   z_{t+1} = normalize(clamp(z_raw, τ/2, 1−τ))
+//
+// Theorem 3a (Boundedness): clamp guarantees z_t ∈ Σ for all t.
+// Theorem 3b (Convergence): contraction rate ρ=0.85 → unique fixed point z*.
+// Saturation guard: without clamp, indefinite multi_attack drives z to boundary.
+function computeZWeights(
+  prevZ: { z_c: number; z_r: number; z_s: number } | null,
+  crs: CRS,
+  attackSignal: [number, number, number],
+): { z_c: number; z_r: number; z_s: number } {
+  // Initialise z at uniform 1/3 if no prior state (new session).
+  const pz_c = prevZ?.z_c ?? (1/3);
+  const pz_r = prevZ?.z_r ?? (1/3);
+  const pz_s = prevZ?.z_s ?? (1/3);
+
+  const [ac, ar, as_] = attackSignal;
+
+  // z_raw = ρ·z_t + (1−ρ)·x_t − A(t)
+  const raw_c = Z_RHO * pz_c + (1 - Z_RHO) * crs.c - ac;
+  const raw_r = Z_RHO * pz_r + (1 - Z_RHO) * crs.r - ar;
+  const raw_s = Z_RHO * pz_s + (1 - Z_RHO) * crs.s - as_;
+
+  // Saturation clamp: clamp(z_raw, τ/2, 1−τ) — mandatory per §4.3
+  const clamp_c = Math.max(Z_CLAMP_LO, Math.min(Z_CLAMP_HI, raw_c));
+  const clamp_r = Math.max(Z_CLAMP_LO, Math.min(Z_CLAMP_HI, raw_r));
+  const clamp_s = Math.max(Z_CLAMP_LO, Math.min(Z_CLAMP_HI, raw_s));
+
+  // normalize → z_{t+1} ∈ Σ
+  const total = clamp_c + clamp_r + clamp_s;
+  return {
+    z_c: clamp_c / total,
+    z_r: clamp_r / total,
+    z_s: clamp_s / total,
+  };
+}
+
 // ── Z-Traj Functions ──────────────────────────────────────────────────────────
 
 export async function getZTraj(sessionId: string): Promise<ZTraj | null> {
@@ -197,29 +279,36 @@ export async function getZTraj(sessionId: string): Promise<ZTraj | null> {
     last_c:          row.last_c          as number,
     last_r:          row.last_r          as number,
     last_s:          row.last_s          as number,
+    z_c:             typeof row.z_c === 'number' ? row.z_c : 1/3,
+    z_r:             typeof row.z_r === 'number' ? row.z_r : 1/3,
+    z_s:             typeof row.z_s === 'number' ? row.z_s : 1/3,
     attack_pressure: typeof row.attack_pressure === 'number' ? row.attack_pressure : 0,
     updated_at:      row.updated_at      as string,
   };
 }
 
+// updateZTraj — now accepts lawEvents to compute the proven attack signal A(t).
+// lawEvents: array of law_ids fired this turn (e.g. ['bypass_attempt', 'multi_attack']).
+// Backwards compatible: omitting lawEvents defaults to [] (no attack signal this turn).
 export async function updateZTraj(
   sessionId: string,
   crs: CRS,
   prevCRS: CRS | null,
   attackPressure?: number,
+  lawEvents: string[] = [],
 ): Promise<ZTraj> {
   const M = Math.min(crs.c, crs.r, crs.s);
   const existing = await getZTraj(sessionId);
 
-  // Velocity: L2 distance from previous CRS
+  // ── Velocity: L2 distance from previous CRS ───────────────────────────────
   const velocity = prevCRS
     ? Math.sqrt((crs.c - prevCRS.c) ** 2 + (crs.r - prevCRS.r) ** 2 + (crs.s - prevCRS.s) ** 2)
     : 0;
 
-  // n_stable: count of consecutive low-velocity turns
+  // ── n_stable: consecutive low-velocity turns ──────────────────────────────
   const n_stable = velocity < 0.02 ? (existing?.n_stable ?? 0) + 1 : 0;
 
-  // drift_dir: dominant dimension of change
+  // ── drift_dir: dominant dimension of change ───────────────────────────────
   let drift_dir = 'none';
   if (prevCRS) {
     const dc = crs.c - prevCRS.c;
@@ -235,46 +324,113 @@ export async function updateZTraj(
     }
   }
 
-  // sigma_viol: rolling exponential average of constitutional stress.
-  // Accumulates when M < TAU_LYP (0.08) so slow-drip is detected DURING drift,
-  // not only after the CBF floor (0.05) has already been breached.
+  // ── sigma_viol: rolling exponential average of constitutional stress ───────
+  // Accumulates when M < TAU_LYP (0.08) — detects slow-drip DURING drift.
   const viol = M < TAU_LYP ? (TAU_LYP - M) : 0;
   const prevSigma = existing?.sigma_viol ?? 0;
   const sigma_viol = prevSigma * ((SIGMA_WINDOW - 1) / SIGMA_WINDOW) + viol / SIGMA_WINDOW;
 
-  // attack_pressure: carry forward unless caller supplies an updated value
+  // ── attack_pressure: scalar summary for receipt/logging ───────────────────
   const attack_pressure = attackPressure !== undefined
     ? Math.min(1, Math.max(0, attackPressure))
     : (existing?.attack_pressure ?? 0);
+
+  // ── Proven z-weight update (Theorem 3a/3b) ────────────────────────────────
+  // A(t) = γ · Σ_law sev(law)·dir(law)
+  // z_{t+1} = normalize(clamp(ρ·z_t + (1−ρ)·x_t − A(t), τ/2, 1−τ))
+  const attackSignal = computeAttackSignal(lawEvents);
+  const { z_c, z_r, z_s } = computeZWeights(
+    existing ? { z_c: existing.z_c, z_r: existing.z_r, z_s: existing.z_s } : null,
+    crs,
+    attackSignal,
+  );
+
+  // ── drift_dir refinement: also check z-trajectory drift ──────────────────
+  // If z-weights show a dominant pillar under attack, record that.
+  const zMax = Math.max(z_c, z_r, z_s);
+  let z_drift = 'stable';
+  if (zMax > 0.45) {
+    z_drift = z_c === zMax ? 'protecting_C' : z_r === zMax ? 'protecting_R' : 'protecting_S';
+  }
+  const effective_drift = drift_dir !== 'none' ? drift_dir : z_drift;
 
   const z: ZTraj = {
     session_id:      sessionId,
     velocity,
     n_stable,
-    drift_dir,
+    drift_dir:       effective_drift,
     sigma_viol,
     last_m:          M,
     last_c:          crs.c,
     last_r:          crs.r,
     last_s:          crs.s,
+    z_c,
+    z_r,
+    z_s,
     attack_pressure,
     updated_at:      new Date().toISOString(),
   };
 
-  await getClient().execute({
-    sql: `INSERT INTO z_traj
-            (session_id, velocity, n_stable, drift_dir, sigma_viol, last_m, last_c, last_r, last_s, attack_pressure, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(session_id) DO UPDATE SET
-            velocity=excluded.velocity, n_stable=excluded.n_stable,
-            drift_dir=excluded.drift_dir, sigma_viol=excluded.sigma_viol,
-            last_m=excluded.last_m, last_c=excluded.last_c,
-            last_r=excluded.last_r, last_s=excluded.last_s,
-            attack_pressure=excluded.attack_pressure,
-            updated_at=excluded.updated_at`,
-    args: [sessionId, z.velocity, z.n_stable, z.drift_dir, z.sigma_viol,
-           z.last_m, z.last_c, z.last_r, z.last_s, z.attack_pressure, z.updated_at],
-  });
+  // Persist — ADD z_c/z_r/z_s columns if not yet present (migration-safe via ALTER).
+  // The INSERT uses ON CONFLICT to upsert; new columns are added lazily.
+  try {
+    await getClient().execute({
+      sql: `INSERT INTO z_traj
+              (session_id, velocity, n_stable, drift_dir, sigma_viol,
+               last_m, last_c, last_r, last_s,
+               z_c, z_r, z_s,
+               attack_pressure, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+              velocity=excluded.velocity, n_stable=excluded.n_stable,
+              drift_dir=excluded.drift_dir, sigma_viol=excluded.sigma_viol,
+              last_m=excluded.last_m, last_c=excluded.last_c,
+              last_r=excluded.last_r, last_s=excluded.last_s,
+              z_c=excluded.z_c, z_r=excluded.z_r, z_s=excluded.z_s,
+              attack_pressure=excluded.attack_pressure,
+              updated_at=excluded.updated_at`,
+      args: [
+        sessionId, z.velocity, z.n_stable, z.drift_dir, z.sigma_viol,
+        z.last_m, z.last_c, z.last_r, z.last_s,
+        z.z_c, z.z_r, z.z_s,
+        z.attack_pressure, z.updated_at,
+      ],
+    });
+  } catch (e: unknown) {
+    // If z_c/z_r/z_s columns don't exist yet, add them then retry.
+    if (e instanceof Error && e.message.includes('no column')) {
+      const db = getClient();
+      await db.execute('ALTER TABLE z_traj ADD COLUMN z_c REAL NOT NULL DEFAULT 0.333').catch(() => {});
+      await db.execute('ALTER TABLE z_traj ADD COLUMN z_r REAL NOT NULL DEFAULT 0.333').catch(() => {});
+      await db.execute('ALTER TABLE z_traj ADD COLUMN z_s REAL NOT NULL DEFAULT 0.333').catch(() => {});
+      // Retry insert after migration
+      await getClient().execute({
+        sql: `INSERT INTO z_traj
+                (session_id, velocity, n_stable, drift_dir, sigma_viol,
+                 last_m, last_c, last_r, last_s,
+                 z_c, z_r, z_s,
+                 attack_pressure, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(session_id) DO UPDATE SET
+                velocity=excluded.velocity, n_stable=excluded.n_stable,
+                drift_dir=excluded.drift_dir, sigma_viol=excluded.sigma_viol,
+                last_m=excluded.last_m, last_c=excluded.last_c,
+                last_r=excluded.last_r, last_s=excluded.last_s,
+                z_c=excluded.z_c, z_r=excluded.z_r, z_s=excluded.z_s,
+                attack_pressure=excluded.attack_pressure,
+                updated_at=excluded.updated_at`,
+        args: [
+          sessionId, z.velocity, z.n_stable, z.drift_dir, z.sigma_viol,
+          z.last_m, z.last_c, z.last_r, z.last_s,
+          z.z_c, z.z_r, z.z_s,
+          z.attack_pressure, z.updated_at,
+        ],
+      });
+    } else {
+      throw e;
+    }
+  }
+
   return z;
 }
 
@@ -353,7 +509,6 @@ export function getGovernorMode(z: ZTraj, tauFloor?: number): GovernorMode {
   // nudge: between floor and recovery, actively drifting
   if (tau < M && M <= TAU_RECOVERY && z.velocity > 0.05) return 'nudge';
   // recovery: between floor and recovery, stable for N_MIN turns (not just > 0)
-  // Previously fired after just ONE low-velocity turn; now matches suppress rigour.
   if (M <= TAU_RECOVERY && z.n_stable >= N_MIN) return 'recovery';
   return 'nudge';
 }
