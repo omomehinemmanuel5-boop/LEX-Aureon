@@ -443,11 +443,7 @@
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN crs_method TEXT`);
 
     // ── fix #7: add health_band column to praxis_receipts (2026-06-12) ─────────
-    // Persists health_band from KernelReceipt so analytics queries don't need
-    // to recompute it from m_after. Back-fills existing rows from m_after on
-    // next write. New rows should supply this from the kernel receipt directly.
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN health_band TEXT`);
-    // Back-fill existing rows where health_band is NULL
     await safeExec(`
       UPDATE praxis_receipts
       SET health_band = CASE
@@ -458,6 +454,15 @@
       END
       WHERE health_band IS NULL
     `);
+
+    // ── z-weight columns (Theorem 3a/3b — Banach fixed-point, Open Problem 3) ──
+    // z_c/z_r/z_s are the coordinate weights for V_z(x) = −Σ z_i·log(x_i) + ...
+    // Higher z_i ⟹ stronger log-barrier on pillar i ⟹ more governor correction.
+    // Default 0.333 = uniform (no historical attack memory, new session).
+    // Added 2026-06-28. Values before this migration default to 0.333.
+    await safeExec(`ALTER TABLE z_traj ADD COLUMN z_c REAL NOT NULL DEFAULT 0.333`);
+    await safeExec(`ALTER TABLE z_traj ADD COLUMN z_r REAL NOT NULL DEFAULT 0.333`);
+    await safeExec(`ALTER TABLE z_traj ADD COLUMN z_s REAL NOT NULL DEFAULT 0.333`);
 
     const lawSeed: [string, number, number, number, number, string][] = [
       ['bypass_attempt',           -0.02, -0.02, -0.15, 0.15, 'Direct sovereignty attack'],
