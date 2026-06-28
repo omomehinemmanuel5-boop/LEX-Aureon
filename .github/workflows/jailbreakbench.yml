@@ -23,6 +23,8 @@ jobs:
       - run: npm ci
 
       - name: Run JailbreakBench
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           npx tsx scripts/jailbreakbench/run.ts \
             --prompts data/jailbreakbench.jsonl \
