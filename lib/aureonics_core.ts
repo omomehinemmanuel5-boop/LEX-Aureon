@@ -33,18 +33,26 @@ export const MU_BARRIER = 0.02; // Strength of the magnetic push from boundaries
 export const EPS_BARRIER = 1e-4; // Stability epsilon for log-barrier
 
 /**
- * Z_RECOVERY — static coordinate-weight vector z = (z_C, z_R, z_S) used by the
- * z-weighted Lyapunov certificate V_z (see lyapunovBarrierZ).
+ * Z_RECOVERY — fallback coordinate-weight vector z = (z_C, z_R, z_S) used by
+ * lyapunovBarrierZ when no session-specific z is available.
  *
- * Held at the safe-interior recovery target (the centroid). With z fixed at an
- * interior equilibrium, V_z(x) = -Σ z_i·log(x_i) is — up to an additive
- * constant — the relative-entropy (KL) Lyapunov function KL(z‖x) of replicator
- * dynamics (Hofbauer & Sigmund): V_z ≥ 0, V_z = 0 iff x = z.
+ * Held at the uniform centroid (1/3, 1/3, 1/3). With z at the centroid,
+ * V_z(x) = -Σ z_i·log(x_i) reduces (up to an additive constant) to the
+ * relative-entropy KL Lyapunov function of replicator dynamics
+ * (Hofbauer & Sigmund): V_z ≥ 0, V_z = 0 iff x = z.
  *
- * OPEN PROBLEM (Aureonics "Three Open Problems", #3): the *dynamic* z-update
- * rule h(x, z, law_events) that lets z track law events / recovery targets is
- * NOT solved. z is held constant here, not derived. Do not represent this as
- * the closed-form update rule.
+ * CLOSED (2026-06-28): Open Problem 3 — the dynamic z-update rule
+ * h(x, z, law_events) — is now fully specified and deployed in lib/kv.ts.
+ * The proven update rule (Theorem 3a/3b, Banach fixed-point, ρ=0.85):
+ *
+ *   A(t) = γ · Σ_{law ∈ events_t} sev(law) · dir(law)
+ *   z_{t+1} = normalize(clamp(ρ·z_t + (1−ρ)·x_t − A(t), τ/2, 1−τ))
+ *
+ * Session-adaptive z_c/z_r/z_s are stored in z_traj and loaded per session.
+ * Z_RECOVERY is retained here as the correct uniform fallback for new sessions
+ * (no attack history → uniform weights → reduces to plain V(x)).
+ * lyapunovBarrierZ callers should prefer the session z from z_traj over this
+ * constant wherever the session context is available.
  */
 export const Z_RECOVERY: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
 
@@ -109,18 +117,18 @@ export function lyapunovBarrier(x: [number, number, number]): number {
  *
  *     V_z(x) = -Σ z_i·log(x_i) + (μ/2)·Σ max(0, τ - x_i)²
  *
- * - First term: z-weighted log-barrier. With z at an interior equilibrium
- *   (Z_RECOVERY), this is the relative-entropy / KL Lyapunov function of
- *   replicator dynamics up to an additive constant: ≥ 0, zero iff x = z.
- * - Second term: control-barrier-function (CBF) penalty that diverges as any
- *   coordinate approaches the hard floor τ, certifying floor-respecting motion
- *   (which the quadratic candidate cannot, since min(·) is non-smooth).
+ * - First term: z-weighted log-barrier. With z at an interior equilibrium,
+ *   this is the relative-entropy / KL Lyapunov function of replicator dynamics
+ *   up to an additive constant: ≥ 0, zero iff x = z. Higher z_i concentrates
+ *   the barrier on pillar i — pillars with historical attack pressure get
+ *   steeper barriers and faster governor correction.
+ * - Second term: CBF penalty that diverges as any coordinate approaches τ,
+ *   certifying floor-respecting motion (which the quadratic cannot, since
+ *   min(·) is non-smooth at the boundary).
  *
- * This is the object the audit receipts SHOULD certify — distinct from the
- * centroid-distance quadratic, which is trivially decreased by any pull toward
- * 1/3 and therefore confounds the controller with its own certificate.
- *
- * z defaults to Z_RECOVERY. See the Z_RECOVERY note re: the open z-update rule.
+ * z defaults to Z_RECOVERY (uniform centroid) for new sessions. For sessions
+ * with attack history, pass the session's (z_c, z_r, z_s) from z_traj.
+ * The proven dynamic z-update rule is in lib/kv.ts → computeZWeights().
  */
 export function lyapunovBarrierZ(
   x: [number, number, number],
