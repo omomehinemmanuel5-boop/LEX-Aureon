@@ -30,7 +30,8 @@ function MTimeline({ history }: { history: Array<{ M: number; health: string; de
   if (!history.length) return null;
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <span className="text-xs font-mono text-slate-700 mr-1">M:</span>
+      {/* "Session M" — these are historical per-turn values, not the current M */}
+      <span className="text-xs font-mono text-slate-700 mr-1">Session M:</span>
       {history.map((h, i) => {
         const cfg = HEALTH_CFG[h.health] ?? HEALTH_CFG.OPTIMAL;
         return (
@@ -84,6 +85,8 @@ function LyapunovSparkline({ history }: { history: Array<{ V: number; deltaV: nu
 }
 
 /* ── CRS Visualization Bar ────────────────────────────────────── */
+// Shows the kernel's internal CRS state vector (kx.state) — distinct from the
+// CRS extraction metrics shown in the M score bar below.
 function CRSVisualization({ state }: { state?: { C: number; R: number; S: number } }) {
   if (!state) return null;
   const { C, R, S } = state;
@@ -93,7 +96,7 @@ function CRSVisualization({ state }: { state?: { C: number; R: number; S: number
   const s_pct = (S / total) * 100;
   return (
     <div className="rounded p-3 space-y-2" style={{ background: '#020408', border: '1px solid #1a2040' }}>
-      <div className="text-xs font-mono text-slate-600 mb-2">{'// Constitutional State (C+R+S=1)'}</div>
+      <div className="text-xs font-mono text-slate-600 mb-2">{'// Constitutional State (C+R+S=1) · kernel CRS'}</div>
       <div className="flex gap-1 h-6 rounded overflow-hidden border" style={{ borderColor: '#1a2040' }}>
         <div className="flex items-center justify-center text-xs font-bold text-white" style={{ width: `${c_pct}%`, background: '#3b82f6', minWidth: '20px' }}>
           {c_pct > 15 && `C ${C.toFixed(2)}`}
@@ -133,7 +136,6 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
       style={{ background: '#020408', border: '1px solid #1a2040' }}>
       <div className="text-slate-600 mb-1">{'// System State Overview'}</div>
 
-      {/* Main metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {[
           { label: 'θ', value: theta.toFixed(3), sub: `eff ${effTheta.toFixed(3)}`, color: '#c9a84c' },
@@ -148,7 +150,6 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
         ))}
       </div>
 
-      {/* δV + stability */}
       <div className="flex items-center gap-3">
         <div className="flex-1 flex items-center gap-2">
           <span className="text-slate-600">δV:</span>
@@ -167,7 +168,6 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
         </div>
       </div>
 
-      {/* CCP / IEC / ADV */}
       {(metrics.c_measured !== undefined) && (
         <div className="flex gap-2 flex-wrap">
           <span className="text-slate-600">Research Metrics:</span>
@@ -183,7 +183,6 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
         </div>
       )}
 
-      {/* Flags */}
       <div className="flex gap-2 flex-wrap">
         {mem && <span className="px-2 py-0.5 rounded" style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f730' }}>Memory Injected</span>}
         {proj && <span className="px-2 py-0.5 rounded" style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444430' }}>Stability Projection</span>}
@@ -204,7 +203,6 @@ function TermProgressBar({ value, max = 1, color = '#22c55e', label }: { value: 
   const empty = 15 - filled;
   const bar = '█'.repeat(filled) + '░'.repeat(empty);
   const display = (value * 100).toFixed(1);
-
   return (
     <span className="font-mono" style={{ color }}>
       [{bar}] {display}% {label}
@@ -241,12 +239,14 @@ export default function Console() {
   });
   const resultsRef = useRef<HTMLDivElement>(null);
   const [sessionHistory, setSessionHistory] = useState<Array<{ M: number; health: string; deltaV: number; V: number }>>([]);
+  // Capture the wall-clock time each run completes; used as timestamp fallback
+  // when the kernel response omits res.timestamp.
+  const [responseTs, setResponseTs] = useState<number>(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { state: stream, run: runStream, cancel } = useLexStream();
   const toast = useToast();
 
-  // Derived view state, kept name-compatible with previous render code below
   const loading = stream.loading;
   const error = stream.error;
   const res = stream.complete as GovernanceResponse | null;
@@ -285,12 +285,10 @@ export default function Console() {
       setShowEmail(true); return;
     }
     if (!p) return;
-
     setPulse(false);
     setTab('governed');
     addLine('> Starting safety analysis...', '#c9a84c');
     await runStream(p, sessionId);
-    // Refresh total runs counter after a short delay to allow server to update
     setTimeout(() => {
       fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
     }, 1500);
@@ -301,7 +299,6 @@ export default function Console() {
     if (textareaRef.current) textareaRef.current.focus();
   }, []);
 
-  // ── Side effects driven by stream events ──────────────────────
   useEffect(() => {
     if (!stream.preEval) return;
     addLine(`> Initial assessment: ${stream.preEval.label}`, '#3b82f6');
@@ -328,8 +325,6 @@ export default function Console() {
       if (stream.intervention.law_invoked) {
         addLine(`> Law invoked: ${stream.intervention.law_invoked.name} (${stream.intervention.law_invoked.book})`, '#f97316');
       }
-    }
-    if (stream.intervention.triggered) {
       addLine(`> Stability adjustment applied.`, '#f97316');
       toast.push(`Stability adjustment applied.`, 'warning');
     } else {
@@ -338,8 +333,6 @@ export default function Console() {
     }
   }, [stream.intervention, addLine, toast]);
 
-  // Track M history for timeline + Lyapunov sparkline
-  // Log all pipeline stages to terminal
   const streamGovernor = stream.governor;
   useEffect(() => {
     if (!streamGovernor) return;
@@ -416,11 +409,13 @@ export default function Console() {
   useEffect(() => {
     if (!streamComplete) return;
     const k = streamComplete as unknown as Record<string, unknown>;
-    const M     = Number(k?.M ?? (streamComplete as GovernanceResponse)?.metrics?.m ?? 0);
+    const M      = Number(k?.M ?? (streamComplete as GovernanceResponse)?.metrics?.m ?? 0);
     const health = String(k?.health_band ?? 'OPTIMAL');
     const deltaV = Number(k?.delta_V ?? 0);
     const V      = Number(k?.lyapunov_V ?? 0);
     setSessionHistory(prev => [...prev.slice(-19), { M, health, deltaV, V }]);
+    // Capture wall-clock time for the Audit tab timestamp when res.timestamp is absent.
+    setResponseTs(Date.now());
   }, [streamComplete]);
 
   useEffect(() => {
@@ -445,14 +440,19 @@ export default function Console() {
     toast.push(stream.error, 'error');
   }, [stream.error, addLine, toast]);
 
-  // Use stream.metrics (from crs event: c,r,s,m) for pillar display — NOT res.metrics
-  // res.metrics uses c_measured/r_measured/s_measured from paper-exact computation
   const m = stream.metrics ?? (res?.metrics as unknown as typeof stream.metrics) ?? null;
   const intervened = res?.intervention?.triggered || res?.intervention?.applied || false;
 
-  // Kernel fields — available from complete event (kernel stream)
   const kx = res;
-  const healthBand   = String(kx?.health_band ?? m?.health_band ?? 'OPTIMAL');
+
+  // Compute health band from the M value we actually display, so the badge
+  // is consistent with the M score bar. The kernel may report kx.health_band
+  // from a different pipeline stage (pre-governor CRS) which can contradict
+  // the post-extraction M shown in the bar.
+  const mForBand = m?.m ?? 0;
+  const healthBand = mForBand >= 0.25 ? 'OPTIMAL' :
+    mForBand >= 0.15 ? 'ALERT' :
+    mForBand >= 0.08 ? 'STRESSED' : 'CRITICAL';
   const kHcfg        = HEALTH_CFG[healthBand] ?? HEALTH_CFG.OPTIMAL;
   const isKernel     = String(kx?.version ?? '').includes('SovereignKernel');
   const semanticSig  = (kx?.semantic_signal as { attack_type?: string; severity?: number }) ?? {};
@@ -462,18 +462,21 @@ export default function Console() {
   const showRawTab   = isAttack || projTriggered;
   const pct = Math.round((apiCalls / MAX_CALLS) * 100);
 
-  // Was the anchored output materially changed by the governor?
-  // - rewritten: intervention replaced the anchored response entirely
-  // - unchanged: governor passed; anchored == governed
-  // Compare anchored vs governed (NOT raw vs governed — raw is now the bare
-  // LLM and would always differ from governed by construction).
-  const anchoredText = res?.anchored_output ?? '';
+  const anchoredText  = res?.anchored_output ?? '';
   const isHardRefusal = res ? isRefusal(res.governed_output) : false;
   const outputDiffers = !!res && res.governed_output !== anchoredText;
-  const outputMode: 'rewritten' | 'unchanged' =
-    (outputDiffers || isHardRefusal) ? 'rewritten' : 'unchanged';
 
-  // Raw tab only shown when attack detected or CBF fired (glass box)
+  // Three distinct output states:
+  //   'rewritten' — the governor actively changed the output (intervention fired)
+  //   'refused'   — the LLM itself generated a refusal without governor intervention
+  //                 (different from 'rewritten': the governor didn't touch it)
+  //   'unchanged' — governor passed, output is the normal governed response
+  const outputMode: 'rewritten' | 'refused' | 'unchanged' =
+    (intervened && outputDiffers) ? 'rewritten' :
+    isHardRefusal ? 'refused' :
+    outputDiffers ? 'rewritten' :
+    'unchanged';
+
   const allTabs: { id: Tab; icon: string; label: string }[] = [
     { id: 'governed', icon: '✦', label: 'Output' },
     { id: 'raw',      icon: '⊙', label: showRawTab ? 'Raw ⚠' : 'Raw' },
@@ -481,6 +484,9 @@ export default function Console() {
     { id: 'audit',    icon: '🔐', label: 'Audit' },
   ];
   const tabs = allTabs;
+
+  // Canonical receipt ID — kernel sends receipt_id; audit_id is a fallback alias.
+  const receiptId = res?.receipt_id ?? res?.audit_id;
 
   return (
     <div
@@ -490,13 +496,8 @@ export default function Console() {
       {/* ── Terminal Header Bar ─────────────────────────── */}
       <div
         className="sticky top-0 z-40 flex items-center justify-between px-4 py-2 border-b"
-        style={{
-          background: '#0a0d18',
-          borderColor: '#1a2040',
-          boxShadow: '0 1px 20px rgba(0,0,0,0.6)',
-        }}
+        style={{ background: '#0a0d18', borderColor: '#1a2040', boxShadow: '0 1px 20px rgba(0,0,0,0.6)' }}
       >
-        {/* macOS dots */}
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full" style={{ background: '#ff5f57' }} />
           <span className="w-3 h-3 rounded-full" style={{ background: '#ffbd2e' }} />
@@ -505,13 +506,10 @@ export default function Console() {
             LEX AUREON · SovereignKernel v2 · CONSTITUTIONAL TERMINAL
           </span>
         </div>
-
-        {/* Right side */}
         <div className="flex items-center gap-4">
           <Link href="/" className="text-xs font-mono text-slate-600 hover:text-slate-400 transition-colors">
             ← home
           </Link>
-          {/* Usage */}
           <div className="flex items-center gap-2">
             <div className="hidden sm:block">
               <TermProgressBar value={apiCalls} max={MAX_CALLS} color={pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#22c55e'} label={`${apiCalls}/${MAX_CALLS}`} />
@@ -532,140 +530,72 @@ export default function Console() {
         <div className="max-w-3xl mx-auto px-4 pt-4 pb-36 space-y-4">
 
           {/* ── Global Runs Counter ─────────────────────── */}
-          <div
-            className="rounded-lg border px-4 py-3 flex items-center justify-between"
-            style={{ background: '#070b14', borderColor: '#1a2040' }}
-          >
+          <div className="rounded-lg border px-4 py-3 flex items-center justify-between" style={{ background: '#070b14', borderColor: '#1a2040' }}>
             <div className="flex items-center gap-3">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}
-              />
-              <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#64748b' }}>
-                Total governed runs
-              </span>
+              <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+              <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#64748b' }}>Total governed runs</span>
             </div>
             {totalRuns !== null ? (
-              <CountUp
-                value={totalRuns}
-                className="text-xl sm:text-2xl font-bold font-mono tabular-nums"
-                style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }}
-              />
+              <CountUp value={totalRuns} className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }} />
             ) : (
-              <span
-                className="text-xl sm:text-2xl font-bold font-mono tabular-nums"
-                style={{ color: '#64748b' }}
-                aria-label="Loading total runs"
-              >
-                ———
-              </span>
+              <span className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#64748b' }} aria-label="Loading total runs">———</span>
             )}
           </div>
 
           {/* ── Terminal Input ──────────────────────────── */}
-          <div
-            className="rounded-lg border p-4"
-            style={{ background: '#070b14', borderColor: '#1a2040' }}
-          >
-            {/* Input label */}
+          <div className="rounded-lg border p-4" style={{ background: '#070b14', borderColor: '#1a2040' }}>
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xs font-mono" style={{ color: '#c9a84c' }}>root@lex-praxis:~$</span>
               <span className="text-xs font-mono text-slate-500">governance --prompt</span>
               <span className="ml-auto text-xs font-mono text-slate-700">{MAX_CALLS - apiCalls} runs left</span>
             </div>
-
             <div className="relative">
               <textarea
                 ref={textareaRef}
                 value={prompt}
                 onChange={e => setPrompt(e.target.value.slice(0, 5000))}
-                onKeyDown={e => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && prompt.trim() && !loading) run();
-                }}
+                onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && prompt.trim() && !loading) run(); }}
                 placeholder="Enter prompt for constitutional governance..."
                 rows={4}
                 className="w-full rounded p-3 text-sm leading-relaxed resize-none focus:outline-none focus:ring-1"
-                style={{
-                  background: '#040609',
-                  border: '1px solid #1a2040',
-                  color: '#22c55e',
-                  caretColor: '#22c55e',
-                  fontFamily: 'inherit',
-                }}
+                style={{ background: '#040609', border: '1px solid #1a2040', color: '#22c55e', caretColor: '#22c55e', fontFamily: 'inherit' }}
               />
-              {/* blinking cursor indicator */}
               {!prompt && (
-                <span
-                  className="absolute left-3 top-3 pointer-events-none"
-                  style={{
-                    display: 'inline-block',
-                    width: 8, height: 14,
-                    background: '#22c55e',
-                    animation: 'term-blink 1s step-end infinite',
-                    opacity: 0.7,
-                  }}
-                />
+                <span className="absolute left-3 top-3 pointer-events-none"
+                  style={{ display: 'inline-block', width: 8, height: 14, background: '#22c55e', animation: 'term-blink 1s step-end infinite', opacity: 0.7 }} />
               )}
             </div>
-
-            {/* Signal pills */}
             <SignalPillBar prompt={prompt} />
-
-            {/* Example prompt chips — single-row horizontal scroll, shows only before first run */}
             {!res && !loading && (
-              <div
-                className="flex items-center gap-1.5 mt-3 -mx-1 px-1 overflow-x-auto"
-                style={{ scrollbarWidth: 'none' }}
-                aria-label="Example prompts"
-              >
-                <span className="flex-shrink-0 text-xs font-mono mr-1" style={{ color: '#475569' }}>
-                  try ↦
-                </span>
+              <div className="flex items-center gap-1.5 mt-3 -mx-1 px-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }} aria-label="Example prompts">
+                <span className="flex-shrink-0 text-xs font-mono mr-1" style={{ color: '#475569' }}>try ↦</span>
                 {EXAMPLE_PROMPTS.map((ex) => {
                   const palette = {
-                    identity:    { bg: '#07162b15', border: '#1e3a5f', color: '#60a5fa' },
-                    bypass:      { bg: '#1a120515', border: '#78350f', color: '#fbbf24' },
-                    sycophancy:  { bg: '#051a1015', border: '#065f46', color: '#34d399' },
-                    benign:      { bg: '#0a0d1815', border: '#1a2040', color: '#94a3b8' },
+                    identity:   { bg: '#07162b15', border: '#1e3a5f', color: '#60a5fa' },
+                    bypass:     { bg: '#1a120515', border: '#78350f', color: '#fbbf24' },
+                    sycophancy: { bg: '#051a1015', border: '#065f46', color: '#34d399' },
+                    benign:     { bg: '#0a0d1815', border: '#1a2040', color: '#94a3b8' },
                   }[ex.attack_type];
                   return (
-                    <button
-                      key={ex.id}
-                      onClick={() => loadExample(ex.prompt)}
-                      type="button"
-                      title={ex.expected}
+                    <button key={ex.id} onClick={() => loadExample(ex.prompt)} type="button" title={ex.expected}
                       aria-label={`Load example: ${ex.label}`}
                       className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-mono whitespace-nowrap transition-all hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      style={{ background: palette.bg, border: `1px solid ${palette.border}`, color: palette.color, opacity: 0.85 }}
-                    >
+                      style={{ background: palette.bg, border: `1px solid ${palette.border}`, color: palette.color, opacity: 0.85 }}>
                       {ex.label}
                     </button>
                   );
                 })}
               </div>
             )}
-
             <div className="flex items-center justify-between mt-3">
               <span className="text-xs font-mono text-slate-700">{prompt.length}/5000</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-slate-700 hidden sm:block">⌘+Enter to run</span>
-                <button
-                  onClick={() => run()}
-                  disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
+                <button onClick={() => run()} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
                   className="px-5 py-2 rounded text-xs font-bold font-mono transition-all active:scale-95 disabled:opacity-30"
-                  style={{
-                    background: prompt.trim() && !loading && apiCalls < MAX_CALLS
-                      ? 'linear-gradient(90deg, #c9a84c, #e8c96d)'
-                      : '#1a2040',
-                    color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#475569',
-                  }}
-                >
-                  {loading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
-                      executing...
-                    </span>
-                  ) : apiCalls >= MAX_CALLS ? 'limit reached' : '⚡ run governance'}
+                  style={{ background: prompt.trim() && !loading && apiCalls < MAX_CALLS ? 'linear-gradient(90deg, #c9a84c, #e8c96d)' : '#1a2040', color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#475569' }}>
+                  {loading ? (<span className="flex items-center gap-2"><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />executing...</span>)
+                    : apiCalls >= MAX_CALLS ? 'limit reached' : '⚡ run governance'}
                 </button>
               </div>
             </div>
@@ -673,14 +603,9 @@ export default function Console() {
 
           {/* ── Terminal Output Log ─────────────────────── */}
           {outputLines.length > 0 && (
-            <div
-              className="rounded-lg border p-4 font-mono text-xs space-y-1 max-h-48 overflow-y-auto"
+            <div className="rounded-lg border p-4 font-mono text-xs space-y-1 max-h-48 overflow-y-auto"
               style={{ background: '#040609', borderColor: '#1a2040' }}
-              role="log"
-              aria-live="polite"
-              aria-atomic="false"
-              aria-label="Governance pipeline log"
-            >
+              role="log" aria-live="polite" aria-atomic="false" aria-label="Governance pipeline log">
               <div className="text-slate-700 mb-2">{'// system output'}</div>
               {outputLines.map((line, i) => (
                 <div key={i} className="flex items-start gap-2">
@@ -691,10 +616,7 @@ export default function Console() {
               {loading && (
                 <div className="flex items-center gap-2">
                   <span className="text-slate-700">[{new Date().toISOString().slice(11, 19)}]</span>
-                  <span style={{ color: '#c9a84c' }}>
-                    {'> '}
-                    <span style={{ animation: 'term-blink 0.8s step-end infinite', display: 'inline-block', background: '#c9a84c', width: 6, height: 12, verticalAlign: 'middle' }} />
-                  </span>
+                  <span style={{ color: '#c9a84c' }}>{'> '}<span style={{ animation: 'term-blink 0.8s step-end infinite', display: 'inline-block', background: '#c9a84c', width: 6, height: 12, verticalAlign: 'middle' }} /></span>
                 </div>
               )}
             </div>
@@ -702,51 +624,34 @@ export default function Console() {
 
           {/* ── Error ──────────────────────────────────── */}
           {error && (
-            <div
-              className="rounded-lg border p-4 font-mono text-xs"
-              style={{ background: '#1a0505', borderColor: '#7f1d1d' }}
-            >
+            <div className="rounded-lg border p-4 font-mono text-xs" style={{ background: '#1a0505', borderColor: '#7f1d1d' }}>
               <div className="text-red-400">⚠ ERROR · {new Date().toISOString().slice(11, 19)}</div>
               <div className="text-red-300 mt-1">{error}</div>
             </div>
           )}
 
-          {/* ── Streaming Output (live tokens) ───────────── */}
+          {/* ── Streaming Output ───────────── */}
           {loading && stream.partialOutput && (
-            <div
-              className="rounded-lg border p-4 font-mono text-sm leading-relaxed"
+            <div className="rounded-lg border p-4 font-mono text-sm leading-relaxed"
               style={{ background: '#020408', borderColor: '#1a2040', color: '#86efac' }}
-              aria-live="polite"
-              aria-label="Streaming governed output"
-            >
+              aria-live="polite" aria-label="Streaming governed output">
               <div className="flex items-center justify-between mb-2 text-xs">
                 <span style={{ color: '#c9a84c' }}>{'// generating · stage: ' + stream.stage}</span>
-                <button
-                  onClick={cancel}
-                  type="button"
-                  className="px-2 py-0.5 rounded text-xs font-mono"
-                  style={{ background: '#1a0505', color: '#f87171', border: '1px solid #7f1d1d' }}
-                >
-                  cancel
-                </button>
+                <button onClick={cancel} type="button" className="px-2 py-0.5 rounded text-xs font-mono"
+                  style={{ background: '#1a0505', color: '#f87171', border: '1px solid #7f1d1d' }}>cancel</button>
               </div>
               <div>
                 {stream.partialOutput}
-                <span
-                  className="inline-block w-2 h-4 align-text-bottom ml-0.5"
-                  style={{ background: '#22c55e', animation: 'term-blink 0.8s step-end infinite' }}
-                />
+                <span className="inline-block w-2 h-4 align-text-bottom ml-0.5"
+                  style={{ background: '#22c55e', animation: 'term-blink 0.8s step-end infinite' }} />
               </div>
             </div>
           )}
 
-          {/* ── Loading (pre-token) ─────────────────────── */}
+          {/* ── Loading ─────────────────────── */}
           {loading && !stream.partialOutput && (
-            <div
-              className="rounded-lg border p-6 flex flex-col items-center gap-3"
-              style={{ background: '#040609', borderColor: '#1a2040' }}
-              aria-live="polite"
-            >
+            <div className="rounded-lg border p-6 flex flex-col items-center gap-3"
+              style={{ background: '#040609', borderColor: '#1a2040' }} aria-live="polite">
               <div className="relative w-12 h-12">
                 <div className="absolute inset-0 border-2 border-slate-800 border-t-green-500 rounded-full animate-spin" />
                 <div className="absolute inset-1 border border-transparent border-b-amber-500 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.7s' }} />
@@ -766,10 +671,7 @@ export default function Console() {
 
               {/* Governor status */}
               {intervened ? (
-                <div
-                  className="rounded-lg border p-4 font-mono text-xs"
-                  style={{ background: '#1a0505', borderColor: '#7f1d1d' }}
-                >
+                <div className="rounded-lg border p-4 font-mono text-xs" style={{ background: '#1a0505', borderColor: '#7f1d1d' }}>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-red-400 text-sm">⚠</span>
                     <span className="text-red-400 font-bold text-sm">GOVERNOR INTERVENED · mode: {res.intervention?.type ?? 'correction'}</span>
@@ -777,85 +679,62 @@ export default function Console() {
                   <div className="text-red-300/70">{res.intervention?.reason ?? 'Constitutional threshold violated'}</div>
                 </div>
               ) : (
-                <div
-                  className="rounded-lg border p-3 font-mono text-xs flex items-center gap-2"
-                  style={{ background: '#050f0a', borderColor: '#14532d' }}
-                >
+                <div className="rounded-lg border p-3 font-mono text-xs flex items-center gap-2" style={{ background: '#050f0a', borderColor: '#14532d' }}>
                   <span className="text-green-400">✓</span>
                   <span className="text-green-400">GOVERNOR PASSED · constitutional bounds maintained</span>
                   <span className="ml-auto text-slate-600">M = {((m?.m ?? 0) * 100).toFixed(1)}%</span>
                 </div>
               )}
 
-              {/* CRS Visualization */}
+              {/* CRS Visualization — kernel internal state */}
               {kx?.state && typeof kx.state === 'object' && 'C' in (kx.state as Record<string, unknown>) && (
                 <CRSVisualization state={kx.state as unknown as { C: number; R: number; S: number }} />
               )}
 
-              {/* M score terminal bar */}
+              {/* M score terminal bar — CRS extraction metrics (current turn) */}
               {m && (
-                <div
-                  className="rounded-lg border p-4 font-mono text-xs space-y-2"
-                  style={{ background: '#040609', borderColor: '#1a2040' }}
-                >
-                  <div className="text-slate-500 mb-3">{'// constitutional state · M score'}</div>
+                <div className="rounded-lg border p-4 font-mono text-xs space-y-2" style={{ background: '#040609', borderColor: '#1a2040' }}>
+                  <div className="text-slate-500 mb-3">{'// CRS extraction · M score (current turn)'}</div>
                   {[
-                    { key: 'C', val: m.c, label: 'Continuity', color: '#3b82f6' },
+                    { key: 'C', val: m.c, label: 'Continuity',  color: '#3b82f6' },
                     { key: 'R', val: m.r, label: 'Reciprocity', color: '#10b981' },
                     { key: 'S', val: m.s, label: 'Sovereignty', color: '#f59e0b' },
-                    { key: 'M', val: m.m, label: m.m <= 0.05 ? '⚠ BELOW τ' : m.m < 0.08 ? '⚠ STRESSED' : 'SAFE', color: m.m <= 0.05 ? '#ef4444' : m.m < 0.08 ? '#f59e0b' : '#22c55e' },
+                    { key: 'M', val: m.m, label: m.m <= 0.05 ? '⚠ BELOW τ' : m.m < 0.08 ? '⚠ STRESSED' : m.m < 0.15 ? 'ALERT' : m.m < 0.25 ? 'OPTIMAL' : 'OPTIMAL', color: m.m <= 0.05 ? '#ef4444' : m.m < 0.08 ? '#f59e0b' : m.m < 0.15 ? '#f97316' : '#22c55e' },
                   ].map(({ key, val, label, color }) => (
                     <div key={key} className="flex items-center gap-3">
                       <span className="w-4 text-right font-bold" style={{ color }}>{key}</span>
-                      <span className="flex-1">
-                        <TermProgressBar value={val} color={color} label={label} />
-                      </span>
+                      <span className="flex-1"><TermProgressBar value={val} color={color} label={label} /></span>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* M timeline */}
+              {/* Session M timeline */}
               {sessionHistory.length > 0 && (
-                <div className="rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap"
-                  style={{ background: '#040609', border: '1px solid #1a2040' }}>
+                <div className="rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap" style={{ background: '#040609', border: '1px solid #1a2040' }}>
                   <MTimeline history={sessionHistory} />
                 </div>
               )}
 
-              {/* Tab bar (terminal style) */}
-              <div
-                className="rounded-lg border overflow-hidden"
-                style={{ background: '#040609', borderColor: '#1a2040' }}
-              >
-                <div
-                  className="flex border-b"
-                  style={{ borderColor: '#1a2040' }}
-                >
+              {/* Tab bar */}
+              <div className="rounded-lg border overflow-hidden" style={{ background: '#040609', borderColor: '#1a2040' }}>
+                <div className="flex border-b" style={{ borderColor: '#1a2040' }}>
                   {tabs.map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setTab(t.id)}
+                    <button key={t.id} onClick={() => setTab(t.id)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-mono transition-all"
-                      style={{
-                        color: tab === t.id ? '#c9a84c' : '#475569',
-                        background: tab === t.id ? '#0f1929' : 'transparent',
-                        borderBottom: tab === t.id ? '1px solid #c9a84c' : '1px solid transparent',
-                      }}
-                    >
+                      style={{ color: tab === t.id ? '#c9a84c' : '#475569', background: tab === t.id ? '#0f1929' : 'transparent', borderBottom: tab === t.id ? '1px solid #c9a84c' : '1px solid transparent' }}>
                       {t.icon} {t.label}
                     </button>
                   ))}
                 </div>
 
                 <div className="p-4">
-                  {/* Output tab */}
+                  {/* ── Output tab ── */}
                   {tab === 'governed' && (
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                         <div className="flex items-center gap-2 flex-wrap">
                           <TS />
-                          {/* Health band badge */}
                           {isKernel && (
                             <span className="text-xs font-mono px-2 py-0.5 rounded-full font-bold"
                               style={{ color: kHcfg.color, background: `${kHcfg.color}12`, border: `1px solid ${kHcfg.color}40`, boxShadow: `0 0 6px ${kHcfg.color}30` }}>
@@ -863,82 +742,69 @@ export default function Console() {
                             </span>
                           )}
                           {memInjected && (
-                            <span className="text-xs font-mono px-2 py-0.5 rounded-full"
-                              style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f730' }}>
-                              🧠 memory
-                            </span>
+                            <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ color: '#a855f7', background: '#a855f712', border: '1px solid #a855f730' }}>🧠 memory</span>
                           )}
                           {isAttack && (
-                            <span className="text-xs font-mono px-2 py-0.5 rounded-full"
-                              style={{ color: '#f97316', background: '#f9731612', border: '1px solid #f9731630' }}>
-                              🛡️ {semanticSig.attack_type}
-                            </span>
+                            <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ color: '#f97316', background: '#f9731612', border: '1px solid #f9731630' }}>🛡️ {semanticSig.attack_type}</span>
                           )}
                           {projTriggered && (
-                            <span className="text-xs font-mono px-2 py-0.5 rounded-full"
-                              style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444430' }}>
-                              ⚡ CBF
-                            </span>
+                            <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ color: '#ef4444', background: '#ef444412', border: '1px solid #ef444430' }}>⚡ CBF</span>
                           )}
                           {!isKernel && (
-                            <span className="text-xs font-mono" style={{ color: outputMode === 'rewritten' ? '#f59e0b' : '#22c55e' }}>
-                              {outputMode === 'rewritten' ? '// governed response' : '// passed review'}
+                            <span className="text-xs font-mono" style={{ color: outputMode === 'rewritten' ? '#f59e0b' : outputMode === 'refused' ? '#818cf8' : '#22c55e' }}>
+                              {outputMode === 'rewritten' ? '// governed response' : outputMode === 'refused' ? '// llm refused' : '// passed review'}
                             </span>
                           )}
                         </div>
+                        {/* Output mode badge:
+                            'rewritten' = governor actively changed output
+                            'refused'   = LLM generated refusal without governor firing
+                            'unchanged' = clean pass */}
                         <span className="text-xs font-mono uppercase tracking-widest px-2 py-0.5 rounded"
                           style={
                             outputMode === 'rewritten' ? { background: '#1c1005', color: '#fb923c', border: '1px solid #7c2d12' }
+                            : outputMode === 'refused'  ? { background: '#0f0f1a', color: '#818cf8', border: '1px solid #3730a3' }
                             : { background: '#052017', color: '#4ade80', border: '1px solid #14532d' }
-                          }>{outputMode === 'rewritten' ? 'governed' : 'safe'}</span>
+                          }>
+                          {outputMode === 'rewritten' ? 'governed' : outputMode === 'refused' ? 'refused' : 'safe'}
+                        </span>
                       </div>
-
-                      <div
-                        className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
+                      <div className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
                         style={{
                           background: '#020408',
-                          border: `1px solid ${outputMode === 'rewritten' ? '#92400e30' : '#14532d30'}`,
-                          color: outputMode === 'rewritten' ? '#fcd34d' : '#86efac',
+                          border: `1px solid ${outputMode === 'rewritten' ? '#92400e30' : outputMode === 'refused' ? '#3730a330' : '#14532d30'}`,
+                          color: outputMode === 'rewritten' ? '#fcd34d' : outputMode === 'refused' ? '#a5b4fc' : '#86efac',
                           fontFamily: 'inherit',
-                        }}
-                      >
+                        }}>
                         {res.governed_output}
                       </div>
                     </div>
                   )}
 
-                  {/* Raw tab — bare LLM output, no constitutional preamble. The
-                      "what would the LLM say without governance" baseline. */}
+                  {/* ── Raw tab ── */}
                   {tab === 'raw' && (
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <TS />
                         <span className="text-xs font-mono text-slate-500">{'// bare LLM output · no constitutional anchor'}</span>
                       </div>
-                      <div
-                        className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
-                        style={{ background: '#020408', border: '1px solid #1a2040', color: '#64748b', fontFamily: 'inherit' }}
-                      >
+                      <div className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
+                        style={{ background: '#020408', border: '1px solid #1a2040', color: '#64748b', fontFamily: 'inherit' }}>
                         {res.raw_output || '[empty — governor refused the prompt; no bare generation made]'}
                       </div>
                     </div>
                   )}
 
-                  {/* Analysis tab */}
+                  {/* ── Analysis tab ── */}
                   {tab === 'analysis' && m && (
                     <div className="space-y-4">
-                      {/* Kernel metrics panel */}
                       {isKernel && kx && <KernelMetricsPanel kernel={kx as unknown as Record<string, unknown>} />}
 
-                      {/* Governor panel */}
                       {stream.governor && (
-                        <div className="rounded-lg p-4 font-mono text-xs space-y-2"
-                          style={{ background: '#020408', border: '1px solid #1a2040' }}>
+                        <div className="rounded-lg p-4 font-mono text-xs space-y-2" style={{ background: '#020408', border: '1px solid #1a2040' }}>
                           <div className="flex items-center justify-between">
                             <span className="text-slate-600">{'// Governor — Section 11 replicator dynamics'}</span>
-                            <span style={{ color: stream.governor.decision === 'INTERVENE' ? '#ef4444' : '#22c55e' }}>
-                              {stream.governor.decision}
-                            </span>
+                            <span style={{ color: stream.governor.decision === 'INTERVENE' ? '#ef4444' : '#22c55e' }}>{stream.governor.decision}</span>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             {[
@@ -953,25 +819,18 @@ export default function Console() {
                               </div>
                             ))}
                           </div>
-                          {stream.governor.reason && (
-                            <div className="text-slate-700 text-xs">{stream.governor.reason}</div>
-                          )}
+                          {stream.governor.reason && <div className="text-slate-700 text-xs">{stream.governor.reason}</div>}
                         </div>
                       )}
 
-                      {/* Law invoked */}
                       {stream.law && (
-                        <div className="rounded-lg p-3 font-mono text-xs"
-                          style={{ background: '#0a0800', border: '1px solid #c9a84c25' }}>
+                        <div className="rounded-lg p-3 font-mono text-xs" style={{ background: '#0a0800', border: '1px solid #c9a84c25' }}>
                           <div className="text-slate-600 mb-1">{'// Vaulturex law invoked'}</div>
-                          <div className="font-bold" style={{ color: '#c9a84c' }}>
-                            [{stream.law.book}] {stream.law.name}
-                          </div>
+                          <div className="font-bold" style={{ color: '#c9a84c' }}>[{stream.law.book}] {stream.law.name}</div>
                           <div className="text-slate-500 mt-1">{(stream.law as any).governor_use}</div>
                         </div>
                       )}
 
-                      {/* Self-referential CRS */}
                       {stream.selfReferential && (
                         <div className="rounded-lg p-3 font-mono text-xs"
                           style={{ background: stream.selfReferential.sovereignty_violated ? '#1a0505' : '#020408', border: `1px solid ${stream.selfReferential.sovereignty_violated ? '#ef444430' : '#1a2040'}` }}>
@@ -988,26 +847,14 @@ export default function Console() {
                         </div>
                       )}
 
-                      {/* Lyapunov sparkline */}
-                      {sessionHistory.length >= 2 && (
-                        <LyapunovSparkline history={sessionHistory} />
-                      )}
+                      {sessionHistory.length >= 2 && <LyapunovSparkline history={sessionHistory} />}
 
-                      <DynamicSimplex
-                        liveC={m.c} liveR={m.r} liveS={m.s} liveM={m.m}
-                        intervention={intervened}
-                        healthBand={res.metrics.health_band ?? 'OPTIMAL'}
-                        animating={pulse}
-                      />
+                      <DynamicSimplex liveC={m.c} liveR={m.r} liveS={m.s} liveM={m.m} intervention={intervened} healthBand={res.metrics.health_band ?? 'OPTIMAL'} animating={pulse} />
 
-                      {/* z_traj terminal readout */}
                       {res.z_traj && (() => {
                         const z = res.z_traj!;
                         return (
-                          <div
-                            className="rounded p-4 font-mono text-xs space-y-1"
-                            style={{ background: '#020408', border: '1px solid #1a2040' }}
-                          >
+                          <div className="rounded p-4 font-mono text-xs space-y-1" style={{ background: '#020408', border: '1px solid #1a2040' }}>
                             <div className="text-slate-600 mb-2">{'// z_traj state vector'}</div>
                             {[
                               { key: 'velocity', val: z.velocity.toFixed(3), color: z.velocity < 0.1 ? '#22c55e' : z.velocity < 0.3 ? '#f59e0b' : '#ef4444' },
@@ -1030,12 +877,8 @@ export default function Console() {
                         );
                       })()}
 
-                      {/* Triggers */}
                       {res.triggers && (
-                        <div
-                          className="rounded p-3 font-mono text-xs"
-                          style={{ background: '#020408', border: '1px solid #1a2040' }}
-                        >
+                        <div className="rounded p-3 font-mono text-xs" style={{ background: '#020408', border: '1px solid #1a2040' }}>
                           <div className="text-slate-600 mb-2">{'// trigger analysis'}</div>
                           <div className="flex flex-wrap gap-1.5">
                             {res.triggers.collapse && <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#1a0505', color: '#f87171', border: '1px solid #7f1d1d' }}>M_collapse</span>}
@@ -1052,14 +895,15 @@ export default function Console() {
                     </div>
                   )}
 
-                  {/* Audit tab */}
+                  {/* ── Audit tab ── */}
                   {tab === 'audit' && (
                     <div className="font-mono text-xs space-y-3">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-slate-500">{'// governance audit trail'}</span>
                         <div className="flex gap-2">
-                          {res.audit_id && (
-                            <a href={`/audit/${res.audit_id}`} target="_blank" rel="noopener noreferrer"
+                          {/* Share link — uses receipt_id (kernel field) with audit_id as fallback */}
+                          {receiptId && (
+                            <a href={`/audit/${receiptId}`} target="_blank" rel="noopener noreferrer"
                               className="px-2.5 py-1 rounded text-xs font-mono transition-all hover:opacity-80"
                               style={{ background: '#c9a84c15', color: '#c9a84c', border: '1px solid #c9a84c30' }}>
                               share ↗
@@ -1067,44 +911,39 @@ export default function Console() {
                           )}
                           <button
                             onClick={() => {
-                              const blob = new Blob([JSON.stringify({ audit_id: res.audit_id, timestamp: res.timestamp, metrics: res.metrics, intervention: res.intervention }, null, 2)], { type: 'application/json' });
+                              const ts = res.timestamp ?? responseTs;
+                              const blob = new Blob([JSON.stringify({ receipt_id: receiptId, timestamp: ts, timestamp_iso: new Date(ts).toISOString(), metrics: res.metrics, intervention: res.intervention }, null, 2)], { type: 'application/json' });
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');
-                              a.href = url; a.download = `lex-audit-${res.audit_id}.json`;
+                              a.href = url; a.download = `lex-audit-${receiptId ?? 'unknown'}.json`;
                               a.click(); URL.revokeObjectURL(url);
                             }}
                             className="px-2.5 py-1 rounded text-xs font-mono transition-all hover:opacity-80"
-                            style={{ background: '#1a2040', color: '#64748b', border: '1px solid #1a2040' }}
-                          >
+                            style={{ background: '#1a2040', color: '#64748b', border: '1px solid #1a2040' }}>
                             export ↓
                           </button>
                         </div>
                       </div>
                       {[
-                        { label: 'audit_id', value: res.audit_id ?? 'N/A', color: '#c9a84c', href: res.audit_id ? `/audit/${res.audit_id}` : undefined },
-                        { label: 'version', value: String(kx?.version ?? 'PRAXIS'), color: '#64748b', href: undefined },
+                        // receipt_id: kernel sends this as receipt_id; audit_id is an alias fallback.
+                        { label: 'receipt_id', value: receiptId ?? 'N/A', color: '#c9a84c', href: receiptId ? `/audit/${receiptId}` : undefined },
+                        { label: 'version',    value: String(kx?.version ?? 'PRAXIS'), color: '#64748b', href: undefined },
                         { label: 'health_band', value: healthBand, color: kHcfg.color, href: undefined },
-                        { label: 'M', value: String(Number(kx?.M ?? m?.m ?? 0).toFixed(4)), color: kHcfg.color, href: undefined },
-                        { label: 'timestamp', value: res.timestamp ? new Date(res.timestamp).toISOString() : 'N/A', color: '#94a3b8', href: undefined },
-                        { label: 'governor', value: projTriggered ? 'CBF PROJECTION' : intervened ? 'INTERVENED' : 'PASSED', color: projTriggered ? '#ef4444' : intervened ? '#f59e0b' : '#22c55e', href: undefined },
-                        { label: 'pre_eval', value: stream.preEval?.label ?? 'N/A', color: stream.preEval?.label === 'HIGH' ? '#ef4444' : '#22c55e', href: undefined },
-                        { label: 'law', value: stream.law ? `${stream.law.book} — ${stream.law.name}` : 'none', color: stream.law ? '#c9a84c' : '#334155', href: undefined },
+                        { label: 'M',          value: String(Number(kx?.M ?? m?.m ?? 0).toFixed(4)), color: kHcfg.color, href: undefined },
+                        // Timestamp: prefer kernel-provided res.timestamp, fall back to responseTs
+                        // captured at stream-complete time (never shows N/A).
+                        { label: 'timestamp',  value: new Date(res.timestamp ?? responseTs).toISOString(), color: '#94a3b8', href: undefined },
+                        { label: 'governor',   value: projTriggered ? 'CBF PROJECTION' : intervened ? 'INTERVENED' : 'PASSED', color: projTriggered ? '#ef4444' : intervened ? '#f59e0b' : '#22c55e', href: undefined },
+                        { label: 'pre_eval',   value: stream.preEval?.label ?? 'N/A', color: stream.preEval?.label === 'HIGH' ? '#ef4444' : '#22c55e', href: undefined },
+                        { label: 'law',        value: stream.law ? `${stream.law.book} — ${stream.law.name}` : 'none', color: stream.law ? '#c9a84c' : '#334155', href: undefined },
                       ].map(({ label, value, color, href }) => (
-                        <div key={label}
-                          className="rounded p-3"
-                          style={{ background: '#020408', border: '1px solid #1a2040' }}
-                        >
+                        <div key={label} className="rounded p-3" style={{ background: '#020408', border: '1px solid #1a2040' }}>
                           <div className="flex items-center gap-2">
                             <span className="text-slate-600">{'>'}</span>
                             <span className="text-slate-500 w-24">{label}:</span>
                             {href ? (
-                              <a
-                                href={href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="break-all underline underline-offset-2 hover:opacity-80 transition-opacity"
-                                style={{ color }}
-                              >
+                              <a href={href} target="_blank" rel="noopener noreferrer"
+                                className="break-all underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color }}>
                                 {value}
                               </a>
                             ) : (
@@ -1113,8 +952,7 @@ export default function Console() {
                           </div>
                         </div>
                       ))}
-                      <div className="rounded p-3 max-h-40 overflow-y-auto"
-                        style={{ background: '#020408', border: '1px solid #1a2040' }}>
+                      <div className="rounded p-3 max-h-40 overflow-y-auto" style={{ background: '#020408', border: '1px solid #1a2040' }}>
                         <div className="text-slate-600 mb-1">{'>'} metrics:</div>
                         <pre className="text-xs" style={{ color: '#22c55e' }}>
                           {JSON.stringify({ c: m?.c, r: m?.r, s: m?.s, m: m?.m, intervention: intervened }, null, 2)}
@@ -1126,8 +964,7 @@ export default function Console() {
               </div>
 
               {/* Quick re-run */}
-              <div className="flex items-center gap-2 p-3 rounded font-mono text-xs"
-                style={{ background: '#040609', border: '1px solid #1a2040' }}>
+              <div className="flex items-center gap-2 p-3 rounded font-mono text-xs" style={{ background: '#040609', border: '1px solid #1a2040' }}>
                 <span className="text-slate-600 flex-1">{'>'} run complete — edit prompt or re-run</span>
                 <button onClick={() => run()} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
                   className="px-3 py-1 rounded text-xs font-mono transition-all disabled:opacity-30"
@@ -1141,38 +978,23 @@ export default function Console() {
       </main>
 
       {/* ── Sticky Bottom Bar ─────────────────────────── */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-40 border-t safe-area-pb"
-        style={{ background: '#050810e6', borderColor: '#1a2040', backdropFilter: 'blur(12px)' }}
-      >
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t safe-area-pb"
+        style={{ background: '#050810e6', borderColor: '#1a2040', backdropFilter: 'blur(12px)' }}>
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
           {res && (
             <div className="flex gap-1 flex-1">
               {tabs.map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)}
                   className="flex-1 py-2.5 rounded text-xs font-mono transition-all"
-                  style={{
-                    background: tab === t.id ? '#c9a84c' : '#0a0d18',
-                    color: tab === t.id ? '#07070d' : '#475569',
-                    border: `1px solid ${tab === t.id ? '#c9a84c' : '#1a2040'}`,
-                  }}>
+                  style={{ background: tab === t.id ? '#c9a84c' : '#0a0d18', color: tab === t.id ? '#07070d' : '#475569', border: `1px solid ${tab === t.id ? '#c9a84c' : '#1a2040'}` }}>
                   {t.icon}
                 </button>
               ))}
             </div>
           )}
-          <button
-            onClick={() => run()}
-            disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
+          <button onClick={() => run()} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
             className={`${res ? 'flex-shrink-0 px-5' : 'w-full'} py-3 rounded text-xs font-bold font-mono transition-all active:scale-95 disabled:opacity-30`}
-            style={{
-              background: prompt.trim() && !loading && apiCalls < MAX_CALLS
-                ? 'linear-gradient(90deg, #c9a84c, #e8c96d)'
-                : '#0a0d18',
-              color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#475569',
-              border: '1px solid #1a2040',
-            }}
-          >
+            style={{ background: prompt.trim() && !loading && apiCalls < MAX_CALLS ? 'linear-gradient(90deg, #c9a84c, #e8c96d)' : '#0a0d18', color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#475569', border: '1px solid #1a2040' }}>
             {loading ? '...' : apiCalls >= MAX_CALLS ? 'upgrade ↗' : res ? '↺ re-run' : '⚡ run governance'}
           </button>
         </div>
@@ -1180,10 +1002,7 @@ export default function Console() {
 
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} callsUsed={apiCalls} />}
       {showEmail && (
-        <EmailCapture onComplete={() => {
-          setShowEmail(false);
-          setTimeout(() => run(), 100);
-        }} />
+        <EmailCapture onComplete={() => { setShowEmail(false); setTimeout(() => run(), 100); }} />
       )}
     </div>
   );
