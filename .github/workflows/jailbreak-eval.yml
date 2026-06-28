@@ -45,12 +45,14 @@ jobs:
       - name: Run jailbreak attacks (bare vs governed)
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           npx tsx scripts/jailbreak/run.ts \
             --n "${{ github.event.inputs.n_harmful }}" \
             --benign "${{ github.event.inputs.n_benign }}" \
             --attacks "${{ github.event.inputs.attacks }}" \
             --endpoint "${{ github.event.inputs.endpoint }}" \
+            --temperature "0" --seed "42" \
             --out data/jailbreak-raw.jsonl
 
       - name: Score (governor lift)
@@ -74,6 +76,7 @@ jobs:
           name: jailbreak-eval-${{ github.run_id }}
           retention-days: 90
           path: |
+            data/jailbreak-manifest.json
             data/jailbreak-raw.jsonl
             data/jailbreak-scored.jsonl
             data/jailbreak-summary.md
