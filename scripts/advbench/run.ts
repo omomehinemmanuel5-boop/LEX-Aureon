@@ -76,26 +76,37 @@ const WARM_UP_PROMPTS = [
 ];
 
 // ── Bare arm: direct Groq call with NO system prompt ─────────────────────────
+// Retries on 429/5xx with backoff — the bare arm is the baseline the governor
+// is measured against, so a silently rate-limited bare call would deflate bare
+// ASR and recreate the degenerate "bare == governed == 0%" result.
 async function callBare(prompt: string, groqApiKey: string): Promise<string> {
   if (!groqApiKey) return '[bare: no GROQ_API_KEY]';
-  try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) return `[bare: HTTP ${res.status}]`;
-    const d = await res.json() as { choices?: { message?: { content?: string } }[] };
-    return d.choices?.[0]?.message?.content ?? '[bare: empty]';
-  } catch (e) {
-    return `[bare: ${String(e).slice(0, 80)}]`;
+  const BACKOFF = [15_000, 30_000, 60_000];
+  for (let attempt = 0; attempt <= BACKOFF.length; attempt++) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${groqApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 512,
+          temperature: 0.7,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if ((res.status === 429 || res.status >= 500) && attempt < BACKOFF.length) {
+        await sleep(BACKOFF[attempt]); continue;
+      }
+      if (!res.ok) return `[bare: HTTP ${res.status}]`;
+      const d = await res.json() as { choices?: { message?: { content?: string } }[] };
+      return d.choices?.[0]?.message?.content ?? '[bare: empty]';
+    } catch (e) {
+      if (attempt === BACKOFF.length) return `[bare: ${String(e).slice(0, 80)}]`;
+      await sleep(BACKOFF[attempt]);
+    }
   }
+  return '[bare: max retries exceeded]';
 }
 
 // ── Governed arm: full kernel endpoint ───────────────────────────────────────
@@ -202,8 +213,10 @@ async function main() {
   const groqKey   = process.env.GROQ_API_KEY ?? '';
 
   if (!groqKey) {
-    console.warn('[advbench] WARNING: GROQ_API_KEY not set — bare arm will be empty strings.');
-    console.warn('[advbench] Set GROQ_API_KEY for a genuine ungoverned baseline.');
+    console.error('[advbench] FATAL: GROQ_API_KEY not set. The bare arm is a direct Groq');
+    console.error('[advbench] call — without the key it produces no baseline and the run');
+    console.error('[advbench] would silently reproduce bare == governed == 0%. Aborting.');
+    process.exit(1);
   }
 
   const prompts: AdvPrompt[] = fs.readFileSync(path.resolve('data/advbench.jsonl'), 'utf8')

@@ -99,24 +99,34 @@ async function llmJudge(
   const judgePrompt = mode === 'harmful'
     ? HARMFUL_JUDGE_PROMPT(prompt, generation)
     : BENIGN_JUDGE_PROMPT(prompt, generation);
-  try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'user', content: judgePrompt }],
-        max_tokens: 4, temperature: 0,
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return null;
-    const d = await res.json() as { choices?: { message?: { content?: string } }[] };
-    const t = (d.choices?.[0]?.message?.content ?? '').toLowerCase().trim();
-    if (t.startsWith('yes')) return true;
-    if (t.startsWith('no'))  return false;
-    return null;
-  } catch { return null; }
+  const BACKOFF = [10_000, 20_000, 40_000];
+  for (let attempt = 0; attempt <= BACKOFF.length; attempt++) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [{ role: 'user', content: judgePrompt }],
+          max_tokens: 4, temperature: 0,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if ((res.status === 429 || res.status >= 500) && attempt < BACKOFF.length) {
+        await new Promise(r => setTimeout(r, BACKOFF[attempt])); continue;
+      }
+      if (!res.ok) return null;
+      const d = await res.json() as { choices?: { message?: { content?: string } }[] };
+      const t = (d.choices?.[0]?.message?.content ?? '').toLowerCase().trim();
+      if (t.startsWith('yes')) return true;
+      if (t.startsWith('no'))  return false;
+      return null;
+    } catch {
+      if (attempt === BACKOFF.length) return null;
+      await new Promise(r => setTimeout(r, BACKOFF[attempt]));
+    }
+  }
+  return null;
 }
 
 async function main() {
