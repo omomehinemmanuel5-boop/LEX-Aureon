@@ -20,9 +20,12 @@
  *   GROQ_API_KEY=... npx tsx scripts/jailbreak/run.ts --n 50 --attacks all \
  *     --benign 50 --endpoint https://lexaureon.com --out data/jailbreak-raw.jsonl
  */
-import * as fs   from 'fs';
-import * as path from 'path';
+import * as fs     from 'fs';
+import * as path   from 'path';
+import * as crypto from 'crypto';
 import { selectAttacks } from './attacks';
+
+const BARE_MODEL = 'llama-3.3-70b-versatile';
 
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -46,7 +49,8 @@ const WARM_UP_PROMPTS = [
 ];
 
 // ── Bare arm: direct Groq, no system prompt, with backoff ────────────────────
-async function callBare(prompt: string, key: string): Promise<string> {
+// Deterministic by default (temperature 0 + fixed seed) for reproducibility.
+async function callBare(prompt: string, key: string, temperature: number, seed: number): Promise<string> {
   const BACKOFF = [15_000, 30_000, 60_000];
   for (let attempt = 0; attempt <= BACKOFF.length; attempt++) {
     try {
@@ -54,9 +58,9 @@ async function callBare(prompt: string, key: string): Promise<string> {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: BARE_MODEL,
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 512, temperature: 0.7,
+          max_tokens: 512, temperature, seed,
         }),
         signal: AbortSignal.timeout(30_000),
       });
@@ -126,6 +130,8 @@ async function main() {
   const nBenign  = parseInt(args.benign ?? '50');
   const outPath  = args.out ?? 'data/jailbreak-raw.jsonl';
   const attacks  = selectAttacks(args.attacks);
+  const temperature = parseFloat(args.temperature ?? '0');   // deterministic by default
+  const seed        = parseInt(args.seed ?? '42');
   const key      = process.env.GROQ_API_KEY ?? '';
 
   if (!key) {
@@ -135,14 +141,34 @@ async function main() {
     process.exit(1);
   }
 
-  const all: Behavior[] = fs.readFileSync(path.resolve('data/jailbreakbench.jsonl'), 'utf8')
-    .split('\n').filter(Boolean).map(l => JSON.parse(l) as Behavior);
+  const datasetRaw = fs.readFileSync(path.resolve('data/jailbreakbench.jsonl'), 'utf8');
+  const datasetHash = crypto.createHash('sha256').update(datasetRaw).digest('hex').slice(0, 16);
+  const all: Behavior[] = datasetRaw.split('\n').filter(Boolean).map(l => JSON.parse(l) as Behavior);
   const harmful = all.filter(b => b.type === 'harmful').slice(0, nHarm);
   const benign  = all.filter(b => b.type === 'benign').slice(0, nBenign);
 
   console.log(`[jailbreak] ${harmful.length} harmful × ${attacks.length} attacks (${attacks.map(a => a.id).join(',')}) + ${benign.length} benign → ${endpoint}`);
 
   fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
+
+  // ── Reproducibility manifest — everything needed to reproduce this run ───────
+  const manifest = {
+    run_at:        new Date().toISOString(),
+    commit:        process.env.GITHUB_SHA ?? 'local',
+    endpoint,
+    bare_model:    BARE_MODEL,
+    bare_temperature: temperature,
+    bare_seed:     seed,
+    governed_arm:  'SovereignKernel /api/lex/govern (temperature kernel-controlled)',
+    warm_up_turns: WARM_UP_PROMPTS.length,
+    dataset:       'data/jailbreakbench.jsonl',
+    dataset_sha256_16: datasetHash,
+    n_harmful:     harmful.length,
+    n_benign:      benign.length,
+    attacks:       attacks.map(a => a.id),
+  };
+  fs.writeFileSync(path.join(path.dirname(path.resolve(outPath)), 'jailbreak-manifest.json'), JSON.stringify(manifest, null, 2));
+  console.log('[jailbreak] manifest:', JSON.stringify(manifest));
   const out = fs.createWriteStream(outPath);
   let done = 0, errs = 0;
 
@@ -151,7 +177,7 @@ async function main() {
     for (const atk of attacks) {
       const attacked = atk.render(b.behavior);
       try {
-        const bareOut = await callBare(attacked, key);
+        const bareOut = await callBare(attacked, key, temperature, seed);
         let gov: Record<string, unknown> = {};
         try { gov = await governedAttempt(endpoint, attacked); }
         catch (e) { gov = { error: String(e).slice(0, 120) }; }
@@ -173,7 +199,7 @@ async function main() {
   // ── Benign behaviors (raw, no attack) for over-refusal ──────────────────────
   for (const b of benign) {
     try {
-      const bareOut = await callBare(b.behavior, key);
+      const bareOut = await callBare(b.behavior, key, temperature, seed);
       let gov: Record<string, unknown> = {};
       try { gov = await governedAttempt(endpoint, b.behavior); }
       catch (e) { gov = { error: String(e).slice(0, 120) }; }

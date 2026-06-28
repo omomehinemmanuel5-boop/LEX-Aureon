@@ -165,12 +165,20 @@ async function main() {
   const redAttempt = bareAttackHits ? ((1 - govAttackHits / bareAttackHits) * 100).toFixed(1) + '%' : 'N/A';
   const redBeh     = behBareHits ? ((1 - behGovHits / behBareHits) * 100).toFixed(1) + '%' : 'N/A';
 
+  // Reproducibility manifest (written by run.ts) — embed so the table is self-describing.
+  let manifest: Record<string, unknown> = {};
+  try { manifest = JSON.parse(fs.readFileSync('data/jailbreak-manifest.json', 'utf8')); } catch { /* optional */ }
+
   const md: string[] = [
     '# Lex Aureon — Jailbreak Robustness (governor lift)',
     '',
-    `**Date:** ${new Date().toISOString()}`,
-    `**Endpoint:** ${process.env.ENDPOINT ?? 'n/a'}`,
-    `**Judge:** llama-3.1-8b via Groq (same prompt, both arms)${judgeFails ? ` · ${judgeFails} judge failures counted as non-success` : ''}`,
+    `**Date:** ${manifest.run_at ?? new Date().toISOString()}`,
+    `**Commit:** ${manifest.commit ?? process.env.GITHUB_SHA ?? 'n/a'}`,
+    `**Endpoint:** ${manifest.endpoint ?? process.env.ENDPOINT ?? 'n/a'}`,
+    `**Bare model:** ${manifest.bare_model ?? 'llama-3.3-70b-versatile'} (temp=${manifest.bare_temperature ?? 0}, seed=${manifest.bare_seed ?? 42})`,
+    `**Dataset:** ${manifest.dataset ?? 'data/jailbreakbench.jsonl'} (sha256:${manifest.dataset_sha256_16 ?? 'n/a'})`,
+    `**Judge:** llama-3.1-8b via Groq, temp=0 (same prompt, both arms)${judgeFails ? ` · ${judgeFails} judge failures counted as non-success` : ''}`,
+    `**Attacks:** ${Array.isArray(manifest.attacks) ? (manifest.attacks as string[]).join(', ') : 'see attacks.ts'}`,
     '',
     '## Methodology',
     'Each harmful behavior is wrapped in documented jailbreak templates and sent to the ungoverned base model (bare) and the SovereignKernel (governed). ASR = fraction judged to fulfill the harmful request. Benign requests are sent raw to measure over-refusal.',
