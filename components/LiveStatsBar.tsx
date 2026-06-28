@@ -1,32 +1,24 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-const PUBLISHED_BENCHMARKS = [
-  { n_total: 200,  governed_score: 1.000 },
-  { n_total: 200,  governed_score: 1.000 },
-  { n_total: 520,  governed_score: 1.000 },
-  { n_total: 200,  governed_score: 1.000 },
-];
-
 interface LiveState {
   state: { C: number; R: number; S: number; M: number | null };
   total_runs: number;
 }
 
 export default function LiveStatsBar() {
-  const [liveState, setLiveState]       = useState<LiveState | null>(null);
+  const [liveState, setLiveState]         = useState<LiveState | null>(null);
   const [interceptRate, setInterceptRate] = useState<number | null>(null);
-  const [flash, setFlash]               = useState(false);
-  const [loaded, setLoaded]             = useState(false);
-  const [liveBenches, setLiveBenches]   = useState<{ n_total: number; governed_score: number }[] | null>(null);
+  const [receiptCount, setReceiptCount]   = useState<number | null>(null);
+  const [flash, setFlash]                 = useState(false);
+  const [loaded, setLoaded]               = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [stateRes, auditsRes, benchRes] = await Promise.all([
-          fetch('/api/live-state',        { cache: 'no-store' }),
+        const [stateRes, auditsRes] = await Promise.all([
+          fetch('/api/live-state',             { cache: 'no-store' }),
           fetch('/api/audits/recent?limit=20', { cache: 'no-store' }),
-          fetch('/api/benchmarks',        { cache: 'no-store' }),
         ]);
         if (stateRes.ok) {
           const d = await stateRes.json() as LiveState;
@@ -35,13 +27,10 @@ export default function LiveStatsBar() {
           setTimeout(() => setFlash(false), 400);
         }
         if (auditsRes.ok) {
-          const d = await auditsRes.json() as { receipts?: { intervention: boolean }[] };
+          const d = await auditsRes.json() as { receipts?: { intervention: boolean }[]; total?: number };
           const r = d.receipts ?? [];
           if (r.length > 0) setInterceptRate(Math.round(r.filter(x => x.intervention).length / r.length * 100));
-        }
-        if (benchRes.ok) {
-          const d = await benchRes.json() as { benchmarks?: { n_total: number; governed_score: number }[] };
-          if (d.benchmarks && d.benchmarks.length > 0) setLiveBenches(d.benchmarks);
+          if (typeof d.total === 'number') setReceiptCount(d.total);
         }
       } catch { /* keep existing */ } finally { setLoaded(true); }
     };
@@ -50,12 +39,14 @@ export default function LiveStatsBar() {
     return () => clearInterval(id);
   }, []);
 
-  const benches      = liveBenches ?? PUBLISHED_BENCHMARKS;
-  const totalPrompts = benches.reduce((a, b) => a + b.n_total, 0);
   const M            = liveState?.state?.M ?? null;
   const healthColor  = M === null ? '#c9a84c' : M > 0.15 ? '#10b981' : M > 0.05 ? '#f59e0b' : '#ef4444';
   const healthLabel  = M === null ? '—'       : M > 0.15 ? 'SAFE'    : M > 0.05 ? 'ALERT'   : 'CRITICAL';
 
+  // Every cell below reads live deployment state. The prior "Benchmark ASR: 0.0%"
+  // cell was a hardcoded constant (it never read any data) and contradicted the
+  // evaluation-in-progress status elsewhere on the page; it has been replaced with
+  // a real telemetry cell (audit receipts persisted).
   const cells = [
     {
       label: 'Governed Turns',
@@ -79,9 +70,9 @@ export default function LiveStatsBar() {
       pulse: false,
     },
     {
-      label: 'Benchmark ASR',
-      value: '0.0%',
-      sub:   `${totalPrompts.toLocaleString()} governed`,
+      label: 'Audit Receipts',
+      value: !loaded ? '…' : receiptCount !== null ? receiptCount.toLocaleString() : '—',
+      sub:   'SHA-256 · append-only',
       color: '#10b981',
       pulse: false,
     },
