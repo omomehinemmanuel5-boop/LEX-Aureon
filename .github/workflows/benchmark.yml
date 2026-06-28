@@ -1,144 +1,138 @@
-name: Benchmark Suite — Full Run
+name: Benchmark Suite
 
-# Unified benchmark workflow that runs AdvBench + JailbreakBench against the
-# live lexaureon.com endpoint, scores both with a symmetric LLM judge, and
-# uploads every artifact needed to reproduce or publish the results.
+# Unified benchmark: AdvBench (Zou et al. 2023) + JailbreakBench (NeurIPS 2024)
+# Runs against the live lexaureon.com endpoint with full kernel capture.
 #
 # Required repository secret:
-#   GROQ_API_KEY — for LLM judge (llama-3.1-8b-instant via Groq)
+#   GROQ_API_KEY  - for LLM judge (llama-3.1-8b via Groq)
 #
-# Artifacts produced per run:
-#   benchmark-run-<run_id>/
-#     advbench-raw.jsonl          — full kernel capture (520 rows)
-#     advbench-scored.jsonl       — with bare_verdict + governed_verdict
-#     jailbreakbench-raw.jsonl    — full kernel capture (200 rows)
-#     jailbreakbench-scored.jsonl — with verdicts + over-refusal
-#     summary.md                  — human-readable results + metadata
+# Trigger: Actions tab -> "Benchmark Suite" -> Run workflow
+#
+# Artifacts (90-day retention):
+#   advbench-raw.jsonl          full kernel capture per prompt
+#   advbench-scored.jsonl       + bare_verdict + governed_verdict
+#   jailbreakbench-raw.jsonl    full kernel capture (harmful + benign)
+#   jailbreakbench-scored.jsonl + verdicts + over-refusal
+#   summary.md                  results table + telemetry
 
 on:
   workflow_dispatch:
     inputs:
       run_advbench:
-        description: 'Run AdvBench (Zou et al. 2023 — 520 harmful behaviors)'
-        type: boolean
-        default: true
+        description: 'Run AdvBench (520 harmful behaviors, Zou et al. 2023)'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
       run_jbb:
-        description: 'Run JailbreakBench (NeurIPS 2024 — 100 harmful + 100 benign)'
-        type: boolean
-        default: true
+        description: 'Run JailbreakBench (100 harmful + 100 benign, NeurIPS 2024)'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
       n_advbench:
         description: 'AdvBench prompt count (max 520)'
+        required: false
         default: '520'
       n_jbb:
         description: 'JBB prompt count (max 200)'
+        required: false
         default: '200'
       llm_judge:
-        description: 'Score with LLM judge (requires GROQ_API_KEY secret)'
-        type: boolean
-        default: true
+        description: 'Score with LLM judge (requires GROQ_API_KEY secret set)'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
       endpoint:
         description: 'Governance endpoint'
+        required: false
         default: 'https://lexaureon.com'
 
 jobs:
   benchmark:
-    name: Run + Score + Summarize
+    name: Run and Score
     runs-on: ubuntu-latest
-    # AdvBench: 520 × 5s delay ≈ 45 min
-    # JBB:      200 × 5s delay ≈ 17 min
-    # Scoring:  ~10 min per benchmark with LLM judge
-    # Total:    ≤ 3 hours; set 180 min with buffer
+    # AdvBench 520 x 5s delay ~45 min + JBB 200 x 5s ~17 min + scoring ~15 min = ~80 min
     timeout-minutes: 180
 
     steps:
-      # ── Setup ─────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Record run metadata
         run: |
           echo "RUN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
           echo "RUN_DATE_SHORT=$(date -u +%Y%m%d)" >> $GITHUB_ENV
           echo "COMMIT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-          echo "ENDPOINT=${{ github.event.inputs.endpoint || 'https://lexaureon.com' }}" >> $GITHUB_ENV
 
-      # ── AdvBench ───────────────────────────────────────────────
+      # ── AdvBench ──────────────────────────────────────────────
       - name: Run AdvBench
-        if: ${{ github.event.inputs.run_advbench != 'false' }}
-        run: |
-          echo "=== AdvBench — Zou et al. 2023 ==="
-          echo "Endpoint: $ENDPOINT"
-          echo "Prompts:  ${{ github.event.inputs.n_advbench || '520' }}"
-          npx tsx scripts/advbench/run.ts \
-            --endpoint "$ENDPOINT" \
-            --n "${{ github.event.inputs.n_advbench || '520' }}" \
-            --out data/advbench-raw.jsonl
+        if: github.event.inputs.run_advbench != 'false'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-
-      - name: Score AdvBench (LLM judge)
-        if: ${{ github.event.inputs.run_advbench != 'false' && github.event.inputs.llm_judge != 'false' && secrets.GROQ_API_KEY != '' }}
         run: |
+          npx tsx scripts/advbench/run.ts \
+            --endpoint "${{ github.event.inputs.endpoint || 'https://lexaureon.com' }}" \
+            --n "${{ github.event.inputs.n_advbench || '520' }}" \
+            --out data/advbench-raw.jsonl
+
+      - name: Score AdvBench
+        if: github.event.inputs.run_advbench != 'false'
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          JUDGE_FLAG=""
+          if [ "${{ github.event.inputs.llm_judge }}" = "true" ] && [ -n "$GROQ_API_KEY" ]; then
+            JUDGE_FLAG="--llm-judge"
+            echo "Using LLM judge"
+          else
+            echo "Using heuristic judge (set GROQ_API_KEY secret to enable LLM judge)"
+          fi
           npx tsx scripts/advbench/score.ts \
             --in  data/advbench-raw.jsonl \
             --out data/advbench-scored.jsonl \
-            --llm-judge
+            $JUDGE_FLAG
+
+      # ── JailbreakBench ────────────────────────────────────────
+      - name: Run JailbreakBench
+        if: github.event.inputs.run_jbb != 'false'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-
-      - name: Score AdvBench (heuristic judge — fallback if no API key)
-        if: ${{ github.event.inputs.run_advbench != 'false' && (github.event.inputs.llm_judge == 'false' || secrets.GROQ_API_KEY == '') }}
         run: |
-          echo "⚠ Using heuristic judge — set GROQ_API_KEY secret for LLM judge"
-          npx tsx scripts/advbench/score.ts \
-            --in  data/advbench-raw.jsonl \
-            --out data/advbench-scored.jsonl
-
-      # ── JailbreakBench ─────────────────────────────────────────
-      - name: Run JailbreakBench
-        if: ${{ github.event.inputs.run_jbb != 'false' }}
-        run: |
-          echo "=== JailbreakBench — NeurIPS 2024 ==="
-          echo "Endpoint: $ENDPOINT"
-          echo "Prompts:  ${{ github.event.inputs.n_jbb || '200' }}"
           npx tsx scripts/jailbreakbench/run.ts \
-            --endpoint "$ENDPOINT" \
+            --endpoint "${{ github.event.inputs.endpoint || 'https://lexaureon.com' }}" \
             --n "${{ github.event.inputs.n_jbb || '200' }}" \
             --out data/jbb-raw.jsonl
+
+      - name: Score JailbreakBench
+        if: github.event.inputs.run_jbb != 'false'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-
-      - name: Score JailbreakBench (LLM judge)
-        if: ${{ github.event.inputs.run_jbb != 'false' && github.event.inputs.llm_judge != 'false' && secrets.GROQ_API_KEY != '' }}
         run: |
+          JUDGE_FLAG=""
+          if [ "${{ github.event.inputs.llm_judge }}" = "true" ] && [ -n "$GROQ_API_KEY" ]; then
+            JUDGE_FLAG="--llm-judge"
+          fi
           npx tsx scripts/jailbreakbench/score.ts \
             --in  data/jbb-raw.jsonl \
             --out data/jbb-scored.jsonl \
-            --llm-judge
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+            $JUDGE_FLAG
 
-      - name: Score JailbreakBench (heuristic judge — fallback)
-        if: ${{ github.event.inputs.run_jbb != 'false' && (github.event.inputs.llm_judge == 'false' || secrets.GROQ_API_KEY == '') }}
+      # ── Summary ───────────────────────────────────────────────
+      - name: Generate summary
+        if: always()
         run: |
-          echo "⚠ Using heuristic judge — set GROQ_API_KEY secret for LLM judge"
-          npx tsx scripts/jailbreakbench/score.ts \
-            --in  data/jbb-raw.jsonl \
-            --out data/jbb-scored.jsonl
-
-      # ── Generate summary ───────────────────────────────────────
-      - name: Generate summary report
-        run: |
-          node - << 'EOF'
+          node -e "
           const fs = require('fs');
 
           function readJSONL(path) {
@@ -148,123 +142,97 @@ jobs:
             }).filter(Boolean);
           }
 
-          function asr(rows, armField) {
-            const total = rows.filter(r => !r.error).length;
-            const harmful = rows.filter(r => r[armField] === 'FULFILL').length;
-            if (!total) return 'N/A';
-            return `${harmful}/${total} = ${(harmful / total * 100).toFixed(1)}%`;
+          function asr(rows, arm) {
+            const valid = rows.filter(r => !r.error);
+            const hits  = valid.filter(r => r[arm] === 'FULFILL').length;
+            if (!valid.length) return 'N/A';
+            return hits + '/' + valid.length + ' = ' + (hits / valid.length * 100).toFixed(1) + '%';
           }
 
-          const adv    = readJSONL('data/advbench-scored.jsonl');
-          const jbb    = readJSONL('data/jbb-scored.jsonl');
-          const jbbH   = jbb.filter(r => r.type === 'harmful');
-          const jbbB   = jbb.filter(r => r.type === 'benign');
-
-          // Kernel telemetry summary from raw files
-          const advRaw = readJSONL('data/advbench-raw.jsonl');
-          const jbbRaw = readJSONL('data/jbb-raw.jsonl');
           function telemetry(rows) {
-            const valid = rows.filter(r => !r.error && r.M > 0);
-            if (!valid.length) return 'no data';
-            const avgM = (valid.reduce((s, r) => s + r.M, 0) / valid.length).toFixed(3);
-            const minM = Math.min(...valid.map(r => r.M)).toFixed(3);
-            const interventions = valid.filter(r => r.intervention?.triggered).length;
-            const cbf = valid.filter(r => r.projection_triggered).length;
-            const attacked = valid.filter(r => r.semantic_signal?.attack_type && r.semantic_signal.attack_type !== 'none').length;
-            return `avgM=${avgM} minM=${minM} interventions=${interventions} cbf=${cbf} attacks_detected=${attacked}`;
+            const v = rows.filter(r => !r.error && r.M > 0);
+            if (!v.length) return 'no data';
+            const avgM = (v.reduce((s, r) => s + r.M, 0) / v.length).toFixed(3);
+            const minM = Math.min(...v.map(r => r.M)).toFixed(3);
+            const intv = v.filter(r => r.intervention && r.intervention.triggered).length;
+            const cbf  = v.filter(r => r.projection_triggered).length;
+            const atk  = v.filter(r => r.semantic_signal && r.semantic_signal.attack_type && r.semantic_signal.attack_type !== 'none').length;
+            return 'avgM=' + avgM + ' minM=' + minM + ' interventions=' + intv + ' cbf_fires=' + cbf + ' attacks_detected=' + atk;
           }
 
-          const judgeNote = process.env.USE_LLM_JUDGE === 'true'
-            ? 'LLM judge: llama-3.1-8b-instant via Groq (symmetric, same judge on both arms)'
-            : 'Heuristic judge: neutral refusal markers (no LLM API call)';
+          const adv  = readJSONL('data/advbench-scored.jsonl');
+          const jbb  = readJSONL('data/jbb-scored.jsonl');
+          const jbbH = jbb.filter(r => r.type === 'harmful');
+          const jbbB = jbb.filter(r => r.type === 'benign');
+          const advR = readJSONL('data/advbench-raw.jsonl');
+          const jbbR = readJSONL('data/jbb-raw.jsonl');
+
+          const judge = process.env.LLM_JUDGE === 'true' ? 'LLM judge: llama-3.1-8b via Groq' : 'Heuristic judge: neutral refusal markers';
 
           const lines = [
-            `# Lex Aureon Benchmark Run`,
-            ``,
-            `**Date:** ${process.env.RUN_DATE}`,
-            `**Commit:** ${process.env.COMMIT_SHA}`,
-            `**Endpoint:** ${process.env.ENDPOINT}`,
-            `**Judge:** ${judgeNote}`,
-            `**Workflow run:** ${process.env.GITHUB_RUN_ID}`,
-            ``,
-            `---`,
-            ``,
-            `## Scoring methodology`,
-            ``,
-            `Both arms (bare and governed) judged by the **same** judge on their actual output text.`,
-            `Attack-success rate computed over harmful prompts only.`,
-            `Over-refusal computed over benign prompts (JBB only).`,
-            `Framework-specific vocabulary excluded from refusal detection.`,
-            ``,
-            `---`,
-            ``,
-            `## AdvBench — Zou et al. 2023`,
-            ``,
-            `*520 harmful behaviors from harmful_behaviors.csv (real dataset)*`,
-            ``,
+            '# Lex Aureon Benchmark Results',
+            '',
+            '**Date:** ' + process.env.RUN_DATE,
+            '**Commit:** ' + process.env.COMMIT_SHA,
+            '**Endpoint:** ' + process.env.ENDPOINT,
+            '**Judge:** ' + judge,
+            '**Run ID:** ' + process.env.GITHUB_RUN_ID,
+            '',
+            '---',
+            '',
+            '## Scoring methodology',
+            '',
+            'Same judge on both arms. Framework vocabulary excluded from refusal detection.',
+            'ASR computed over harmful prompts only. Over-refusal on benign prompts reported separately.',
+            '',
+            '---',
+            '',
+            '## AdvBench (Zou et al. 2023)',
+            '',
+            '520 harmful behaviors from harmful_behaviors.csv (real dataset)',
+            '',
           ];
 
           if (adv.length) {
-            lines.push(`| Arm | ASR |`);
-            lines.push(`|---|---|`);
-            lines.push(`| Bare (ungoverned) | ${asr(adv, 'bare_verdict')} |`);
-            lines.push(`| Governed (SovereignKernel) | ${asr(adv, 'governed_verdict')} |`);
-            lines.push(``);
-            lines.push(`**Kernel telemetry:** ${telemetry(advRaw)}`);
-          } else {
-            lines.push(`*Not run in this workflow dispatch.*`);
-          }
+            lines.push('| Arm | ASR |');
+            lines.push('|---|---|');
+            lines.push('| Bare (ungoverned) | ' + asr(adv, 'bare_verdict') + ' |');
+            lines.push('| Governed (SovereignKernel) | ' + asr(adv, 'governed_verdict') + ' |');
+            lines.push('');
+            lines.push('Kernel telemetry: ' + telemetry(advR));
+          } else { lines.push('Not run.'); }
 
-          lines.push(``, `---`, ``, `## JailbreakBench — Chao et al. 2024 (NeurIPS)`, ``);
-          lines.push(`*100 harmful + 100 benign behaviors (JBB-Behaviors)*`, ``);
+          lines.push('', '---', '', '## JailbreakBench (NeurIPS 2024)', '', '100 harmful + 100 benign behaviors', '');
 
           if (jbb.length) {
-            lines.push(`| Arm | Harmful ASR | Over-refusal (benign) |`);
-            lines.push(`|---|---|---|`);
-            const bareSafe = jbbB.filter(r => r.bare_verdict !== 'FULFILL').length;
-            const govSafe  = jbbB.filter(r => r.governed_verdict !== 'FULFILL').length;
-            const bareASR  = `${jbbH.filter(r => r.bare_verdict === 'FULFILL').length}/${jbbH.length}`;
-            const govASR   = `${jbbH.filter(r => r.governed_verdict === 'FULFILL').length}/${jbbH.length}`;
-            const bareOR   = `${bareSafe}/${jbbB.length}`;
-            const govOR    = `${govSafe}/${jbbB.length}`;
-            lines.push(`| Bare | ${bareASR} | ${bareOR} |`);
-            lines.push(`| Governed | ${govASR} | ${govOR} |`);
-            lines.push(``);
-            lines.push(`**Kernel telemetry:** ${telemetry(jbbRaw)}`);
-          } else {
-            lines.push(`*Not run in this workflow dispatch.*`);
-          }
-
-          lines.push(``, `---`, ``, `## Artifact contents`, ``);
-          lines.push(`| File | Description |`);
-          lines.push(`|---|---|`);
-          lines.push(`| \`advbench-raw.jsonl\` | Full kernel capture per prompt (governed output, bare output, receipt_id, M/C/R/S, intervention, lyapunov_V, z_traj, etc.) |`);
-          lines.push(`| \`advbench-scored.jsonl\` | Same rows + bare_verdict + governed_verdict from ${judgeNote.split(':')[0]} |`);
-          lines.push(`| \`jailbreakbench-raw.jsonl\` | Same — includes both harmful and benign prompts |`);
-          lines.push(`| \`jailbreakbench-scored.jsonl\` | Same rows + verdicts + harmful boolean |`);
-          lines.push(`| \`summary.md\` | This file |`);
-          lines.push(``);
-          lines.push(`> These numbers are based on the symmetric, unbiased scorer. `, `> For a publishable result, run the LLM judge, report two-judge agreement, `, `> and consider swapping in the official HarmBench classifier for that arm.`);
+            lines.push('| Arm | Harmful ASR | Over-refusal (benign) |');
+            lines.push('|---|---|---|');
+            const bH = jbbH.filter(r => r.bare_verdict === 'FULFILL').length;
+            const gH = jbbH.filter(r => r.governed_verdict === 'FULFILL').length;
+            const bB = jbbB.filter(r => r.bare_verdict !== 'FULFILL').length;
+            const gB = jbbB.filter(r => r.governed_verdict !== 'FULFILL').length;
+            lines.push('| Bare | ' + bH + '/' + jbbH.length + ' | ' + bB + '/' + jbbB.length + ' |');
+            lines.push('| Governed | ' + gH + '/' + jbbH.length + ' | ' + gB + '/' + jbbB.length + ' |');
+            lines.push('');
+            lines.push('Kernel telemetry: ' + telemetry(jbbR));
+          } else { lines.push('Not run.'); }
 
           fs.writeFileSync('data/summary.md', lines.join('\n'));
-          console.log('Summary written to data/summary.md');
-          console.log('');
           console.log(lines.join('\n'));
-          EOF
+          "
         env:
           RUN_DATE: ${{ env.RUN_DATE }}
           COMMIT_SHA: ${{ env.COMMIT_SHA }}
-          ENDPOINT: ${{ env.ENDPOINT }}
-          USE_LLM_JUDGE: ${{ github.event.inputs.llm_judge || 'true' }}
+          ENDPOINT: ${{ github.event.inputs.endpoint || 'https://lexaureon.com' }}
+          LLM_JUDGE: ${{ github.event.inputs.llm_judge || 'true' }}
           GITHUB_RUN_ID: ${{ github.run_id }}
 
-      # ── Upload all artifacts ───────────────────────────────────
-      - name: Upload all benchmark artifacts
+      # ── Upload artifacts ──────────────────────────────────────
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: benchmark-run-${{ github.run_id }}-${{ env.RUN_DATE_SHORT }}
-          # 90-day retention — long enough to be usable for paper writing
+          name: benchmark-${{ github.run_id }}-${{ env.RUN_DATE_SHORT }}
           retention-days: 90
           path: |
             data/advbench-raw.jsonl
@@ -272,12 +240,3 @@ jobs:
             data/jbb-raw.jsonl
             data/jbb-scored.jsonl
             data/summary.md
-
-      - name: Print summary to job log
-        if: always()
-        run: |
-          echo "=== BENCHMARK SUMMARY ==="
-          cat data/summary.md || echo "(summary not generated)"
-          echo ""
-          echo "Artifacts uploaded: benchmark-run-${{ github.run_id }}-${{ env.RUN_DATE_SHORT }}"
-          echo "Artifact retention: 90 days"
