@@ -39,7 +39,9 @@ import { CelesteAgent }       from '@/lib/agents/celeste';
 import { StyleAgent }         from '@/lib/agents/style_agent';
 import { AuditorAgent }       from '@/lib/agents/auditor';
 import { RawForgeAgent }      from '@/lib/agents/raw_forge';
-import { computeZWeights }    from '@/lib/aureonics_math';
+// computeZWeightsHeuristic: snapshot z for CRS Extractor display only.
+// For the proven Banach z-update rule use lib/kv.ts → updateZTraj().
+import { computeZWeightsHeuristic } from '@/lib/aureonics_math';
 import { getZTraj }           from '@/lib/kv';
 
 const kernelCache = new Map<string, SovereignKernel>();
@@ -146,7 +148,8 @@ export async function POST(req: Request) {
 
         // ── 05. CRS Extractor ────────────────────────────────────────────────
         emit('stage', { name: 'measuring', description: 'CRS Extractor: Jina embeddings, paper-exact CCP/IEC/ADV' });
-        const z_weights  = zTraj ? computeZWeights(zTraj.last_c, zTraj.last_r, zTraj.last_s) : undefined;
+        // Heuristic snapshot z for display — proven session z lives in z_traj.z_c/r/s
+        const z_weights  = zTraj ? computeZWeightsHeuristic(zTraj.last_c, zTraj.last_r, zTraj.last_s) : undefined;
         const crsResult  = await safe(() => CRSExtractorAgent({
           prompt, session_id, raw_output: result.governed_output,
           prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M },
