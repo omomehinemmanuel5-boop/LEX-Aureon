@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
 
       - name: Run AdvBench
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           npx tsx scripts/advbench/run.ts \
             --endpoint https://lexaureon.com \

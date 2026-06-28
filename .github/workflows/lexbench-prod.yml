@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # HarmBench prompts are not committed (see .gitignore) — fetch the
+      # official dataset so the prompt total includes HarmBench and the
+      # shard count is correct.
+      - name: Fetch HarmBench dataset
+        run: npx tsx scripts/harmbench/fetch-dataset.ts --out data/harmbench.jsonl
+
       - name: Determine total prompts and shards
         id: set-matrix
         run: |
@@ -60,11 +66,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Each shard runs in a fresh checkout, so re-fetch the un-committed
+      # HarmBench dataset here too.
+      - name: Fetch HarmBench dataset
+        run: npx tsx scripts/harmbench/fetch-dataset.ts --out data/harmbench.jsonl
+
       - name: Run LexBench Shard ${{ matrix.shard-index }}
         run: |
           npx tsx scripts/lexbench/runner.ts \
             --benchmark all \
-            --endpoint http://localhost:3000 \
+            --endpoint https://lexaureon.com \
             --shard-index ${{ matrix.shard-index }} \
             --shard-size ${{ needs.determine-shards.outputs.shard-size }}
         env:
