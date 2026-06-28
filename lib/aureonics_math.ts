@@ -162,11 +162,11 @@ export function computeADV(decisions: string[], complianceFlags: boolean[]): {
 /**
  * Lyapunov function — Section 11.10 exact formula
  * V(x) = -Σ log(x_i) + (μ/2) Σ max(0, τ - x_i)²
- * 
+ *
  * Two terms:
  * - Logarithmic barrier: prevents boundary collapse
  * - Quadratic penalty: penalizes threshold violations
- * 
+ *
  * dV/dt ≤ 0 when governor active → proven stable
  */
 const MU_LYP = 2.0;
@@ -190,7 +190,7 @@ export function lyapunov(C: number, R: number, S: number): number {
  * V_z(x) = -Σ zᵢ·log(xᵢ) + (μ/2)Σ max(0,τ-xᵢ)²
  *
  * When z = [1,1,1] this reduces to V(x) exactly.
- * z-weights are computed from z_traj history via computeZWeights.
+ * z-weights should come from z_traj (the proven Banach update rule in lib/kv.ts).
  * Historically weak pillars get higher z → steeper barrier → faster stabilisation.
  *
  * Proven unconditionally stable (V̇_z ≤ 0) across Monte Carlo trials — see
@@ -210,16 +210,21 @@ export function lyapunovZ(
 }
 
 /**
- * Compute z-weights from z_traj history.
- * Inverse-proportion: historically weak pillars get higher barrier weight.
- * Normalised so Σzᵢ = 3 (preserves scale with the uniform form).
+ * computeZWeightsHeuristic — inverse-proportion snapshot from current CRS.
  *
- * Properties:
- * - Equal pillars (1/3,1/3,1/3) → z = [1,1,1] → reduces to plain V(x)
- * - Weak S (0.09) vs strong C/R → z_S high → barrier steepest in S direction
- * - Faster stabilisation as z concentrates on weakest dimension (Monte Carlo verified)
+ * WARNING: This is a display/analysis heuristic only, NOT the proven z-update rule.
+ * It computes z purely from the current state snapshot using 1/x_i weighting,
+ * with no law event history, memory decay (ρ), attack signal (γ·A(t)),
+ * or the saturation clamp required by the Banach convergence proof.
+ *
+ * For the production-proven rule (Theorem 3a/3b, Banach fixed-point) use:
+ *   lib/kv.ts → updateZTraj() which computes and persists z_c/z_r/z_s
+ *
+ * Use this function only for instantaneous analytical visualisation
+ * (e.g. showing z sensitivity without session history). Do not use it
+ * to compute V_z for audit receipts or governor corrections.
  */
-export function computeZWeights(
+export function computeZWeightsHeuristic(
   last_c: number, last_r: number, last_s: number,
 ): [number, number, number] {
   const FLOOR_Z = 0.01;
@@ -324,8 +329,7 @@ export function runRealAureonicsMath(
   // Lyapunov
   const lyapunov_V = lyapunov(C, R, S);
 
-  // Health band
-  // Boundaries match deriveHealthBand() in lib/kv.ts — single source of truth
+  // Health band — boundaries match deriveHealthBand() in lib/kv.ts
   const health_band = M >= 0.25 ? 'OPTIMAL' : M >= 0.15 ? 'ALERT' : M >= 0.08 ? 'STRESSED' : 'CRITICAL';
 
   // Governor
