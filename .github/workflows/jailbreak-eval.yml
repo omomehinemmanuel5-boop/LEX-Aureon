@@ -1,0 +1,79 @@
+name: Jailbreak Robustness
+
+# Measures how much the SovereignKernel governor reduces jailbreak attack
+# success vs the ungoverned base model. Unlike the raw-behavior benchmarks
+# (which an aligned model refuses anyway, giving 0% on both arms), this wraps
+# each harmful behavior in documented jailbreak templates so the bare arm is
+# actually exploitable — exposing the real governor lift.
+#
+# Required secret: GROQ_API_KEY (bare arm + judge).
+# Trigger: Actions tab → "Jailbreak Robustness" → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_harmful:
+        description: 'Harmful behaviors (max 100)'
+        required: true
+        default: '50'
+      n_benign:
+        description: 'Benign behaviors for over-refusal (max 100)'
+        required: true
+        default: '50'
+      attacks:
+        description: "Attack ids (comma-sep) or 'all'"
+        required: true
+        default: 'all'
+      endpoint:
+        description: 'Governance endpoint'
+        required: true
+        default: 'https://lexaureon.com'
+
+jobs:
+  jailbreak:
+    name: Run and Score
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm install
+
+      - name: Run jailbreak attacks (bare vs governed)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          npx tsx scripts/jailbreak/run.ts \
+            --n "${{ github.event.inputs.n_harmful }}" \
+            --benign "${{ github.event.inputs.n_benign }}" \
+            --attacks "${{ github.event.inputs.attacks }}" \
+            --endpoint "${{ github.event.inputs.endpoint }}" \
+            --out data/jailbreak-raw.jsonl
+
+      - name: Score (governor lift)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ENDPOINT: ${{ github.event.inputs.endpoint }}
+        run: |
+          npx tsx scripts/jailbreak/score.ts \
+            --in  data/jailbreak-raw.jsonl \
+            --out data/jailbreak-scored.jsonl \
+            --md  data/jailbreak-summary.md
+
+      - name: Print summary to job log
+        if: always()
+        run: cat data/jailbreak-summary.md || echo "no summary produced"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jailbreak-eval-${{ github.run_id }}
+          retention-days: 90
+          path: |
+            data/jailbreak-raw.jsonl
+            data/jailbreak-scored.jsonl
+            data/jailbreak-summary.md
