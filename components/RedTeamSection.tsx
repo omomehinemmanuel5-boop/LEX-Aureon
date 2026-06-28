@@ -86,12 +86,13 @@ export default function RedTeamSection() {
             Internal Stress-Testing Suite · v2
           </div>
           <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white mb-3">
-            {TOTAL} adversarial vectors.{' '}
-            <span className="text-emerald-600 dark:text-[#10b981]">0 breaches.</span>
+            {TOTAL} adversarial vectors,{' '}
+            <span className="text-slate-400 dark:text-slate-500 font-light">across 8 attack classes.</span>
           </h2>
           <p className="text-slate-500 dark:text-slate-500 text-sm max-w-lg mx-auto leading-relaxed font-medium">
-            Every category of known LLM attack, systematically tested against
-            the SovereignKernel. Tap a category to see what we throw at it.
+            The internal taxonomy the SovereignKernel is developed against — every known
+            class of LLM attack, organized and tracked. Tap a category to see representative
+            vectors. (Pass/fail rates are graded by the kernel itself; see the note below.)
           </p>
         </div>
 
@@ -116,14 +117,8 @@ export default function RedTeamSection() {
                   <span className="text-xs font-bold font-mono leading-tight" style={{ color }}>
                     {name}
                   </span>
-                  <span
-                    className="text-xs font-black font-mono flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-black"
-                    style={{ background: color, fontSize: 9 }}
-                  >
-                    ✓
-                  </span>
                 </div>
-                {/* Bar */}
+                {/* Share-of-suite bar (proportion of the taxonomy, not a success rate) */}
                 <div className="h-1 rounded-full mb-1.5" style={{ background: `${color}20` }}>
                   <div
                     className="h-1 rounded-full transition-all duration-500"
@@ -151,8 +146,8 @@ export default function RedTeamSection() {
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{activeCategory.desc}</p>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className="text-2xl font-black text-emerald-600 dark:text-[#10b981]">0%</div>
-                <div className="text-xs font-mono text-slate-500 dark:text-slate-500 font-bold">bypass rate</div>
+                <div className="text-2xl font-black text-slate-700 dark:text-slate-300">{activeCategory.count}</div>
+                <div className="text-xs font-mono text-slate-500 dark:text-slate-500 font-bold">vectors</div>
               </div>
             </div>
             <div className="border-t pt-3" style={{ borderColor: `${activeCategory.color}20` }}>
@@ -173,12 +168,11 @@ export default function RedTeamSection() {
 
         {/* Summary strip */}
         <div className="rounded-2xl border p-4 sm:p-5" style={{ background: '#c9a84c06', borderColor: '#c9a84c20' }}>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+          <div className="grid grid-cols-3 gap-4 text-center">
             {[
-              { v: TOTAL.toString(), l: 'Total Vectors',       c: G.gold },
-              { v: '8',              l: 'Attack Categories',   c: G.gold },
-              { v: '0%',             l: 'Bypass Rate',         c: '#10b981' },
-              { v: '920+',           l: 'Published Benchmark', c: '#10b981' },
+              { v: TOTAL.toString(), l: 'Total Vectors',     c: G.gold },
+              { v: '8',              l: 'Attack Classes',     c: G.gold },
+              { v: 'v2',             l: 'Suite Version',      c: G.gold },
             ].map(({ v, l, c }) => (
               <div key={l}>
                 <div className="text-2xl sm:text-3xl font-black font-mono" style={{ color: c }}>{v}</div>
@@ -186,8 +180,10 @@ export default function RedTeamSection() {
               </div>
             ))}
           </div>
-          <div className="text-center mt-3 text-xs font-mono text-slate-500 dark:text-slate-500 font-bold">
-            Internal stress-test suite · Separate from published HarmBench / JailbreakBench / AdvBench results
+          <div className="text-center mt-3 text-xs font-mono text-slate-500 dark:text-slate-500 font-medium leading-relaxed">
+            Internal development suite, graded by the kernel itself — not an independent
+            benchmark. External, symmetric evaluation (AdvBench / JailbreakBench) is in
+            progress; verified numbers will be published when ready.
           </div>
         </div>
 
