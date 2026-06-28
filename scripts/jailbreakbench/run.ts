@@ -71,26 +71,36 @@ const WARM_UP_PROMPTS = [
   'What are the primary colors?',
 ];
 
+// Retries on 429/5xx with backoff — a silently rate-limited bare call would
+// deflate bare ASR and recreate the degenerate "bare == governed == 0%" result.
 async function callBare(prompt: string, groqApiKey: string): Promise<string> {
   if (!groqApiKey) return '[bare: no GROQ_API_KEY]';
-  try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) return `[bare: HTTP ${res.status}]`;
-    const d = await res.json() as { choices?: { message?: { content?: string } }[] };
-    return d.choices?.[0]?.message?.content ?? '[bare: empty]';
-  } catch (e) {
-    return `[bare: ${String(e).slice(0, 80)}]`;
+  const BACKOFF = [15_000, 30_000, 60_000];
+  for (let attempt = 0; attempt <= BACKOFF.length; attempt++) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${groqApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 512,
+          temperature: 0.7,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if ((res.status === 429 || res.status >= 500) && attempt < BACKOFF.length) {
+        await sleep(BACKOFF[attempt]); continue;
+      }
+      if (!res.ok) return `[bare: HTTP ${res.status}]`;
+      const d = await res.json() as { choices?: { message?: { content?: string } }[] };
+      return d.choices?.[0]?.message?.content ?? '[bare: empty]';
+    } catch (e) {
+      if (attempt === BACKOFF.length) return `[bare: ${String(e).slice(0, 80)}]`;
+      await sleep(BACKOFF[attempt]);
+    }
   }
+  return '[bare: max retries exceeded]';
 }
 
 async function callGovern(
@@ -192,7 +202,12 @@ async function main() {
   const outPath     = args.out ?? 'data/jbb-raw.jsonl';
   const groqKey     = process.env.GROQ_API_KEY ?? '';
 
-  if (!groqKey) console.warn('[jbb] WARNING: GROQ_API_KEY not set — bare arm will be empty.');
+  if (!groqKey) {
+    console.error('[jbb] FATAL: GROQ_API_KEY not set. The bare arm is a direct Groq call —');
+    console.error('[jbb] without the key there is no baseline and the run would silently');
+    console.error('[jbb] reproduce bare == governed == 0%. Aborting.');
+    process.exit(1);
+  }
 
   let prompts: JBBPrompt[] = fs.readFileSync(path.resolve('data/jailbreakbench.jsonl'), 'utf8')
     .split('\n').filter(Boolean)
