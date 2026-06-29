@@ -2,36 +2,16 @@
  * POST /api/lex/govern
  * SovereignKernel governance cycle — F(x,z) sync + G(x,z) async governor.
  *
- * perf: loadKernelState(session_id) has no dependency on the prompt
- * embedding, so it now runs concurrently with embedText()+retrieveSimilar()
- * instead of waiting behind them. Self-referential CRS measurement
- * (embedText on the output + centroid fetch + sovereignty-violation check)
- * stays here — it's the single place this now runs (see sovereign_kernel.ts
- * for why the old in-kernel copy was removed as dead weight).
- *
- * NOTE: per-IP rate limit (10 req/hour) removed on request. This endpoint
- * is now fully unauthenticated and unthrottled — anyone with the URL can
- * trigger unlimited dual-LLM governance cycles (2 generation calls + embed
- * calls per request) against the production Anthropic/Jina keys. If this
- * is meant to stay public, worth adding auth or a much higher sane ceiling
- * back before traffic picks up.
- *
- * fix: prompt-length cap now imported from lib/schemas.ts (MAX_PROMPT_CHARS)
- * instead of a separate hardcoded 5000 here. lib/schemas.ts previously
- * defined an unused 8000-char limit via RunRequestSchema — nothing actually
- * called parseRunRequest() in production, so the two numbers had drifted
- * with no live conflict, just dead inconsistency. 5000 stays canonical
- * (it's what every receipt to date was written under); schemas.ts now
- * re-exports the same constant instead of its own copy.
- *
- * fix: console.error → structured logger (matches app/api/health/route.ts
- * pattern). Only error message + truncated stack are logged, never prompt
- * or response content.
+ * wire: loadKernelZ() now called alongside loadKernelState() and passed
+ * as sessionZ into runCycle(). lyapunov_V in every receipt now certifies
+ * V_z(x, z_session) — the §11 adaptive barrier with session z-weights —
+ * rather than the uniform fallback. Falls back to Z_RECOVERY automatically
+ * for new sessions with no z_traj history.
  */
 
 import { NextResponse } from 'next/server';
 import { getCachedKernel } from '@/lib/kernel_cache';
-import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
+import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import { incrementRuns } from '@/lib/db';
 import {
   embedText, retrieveSimilar, buildMemoryContext,
@@ -61,9 +41,7 @@ export async function POST(req: Request) {
 
   await ensureDB();
 
-  // ── Embed + retrieve memory, and load kernel state — run concurrently ────
-  // perf: loadKernelState doesn't depend on the prompt embedding, so it no
-  // longer waits behind embedText()+retrieveSimilar() on the critical path.
+  // ── Embed + retrieve memory concurrently with state + z load ─────────────
   let promptEmbedding: number[] = [];
   let memoryContext = '';
   const memoryPromise = (async () => {
@@ -76,14 +54,16 @@ export async function POST(req: Request) {
     }
   })();
 
-  const [savedState] = await Promise.all([
+  // loadKernelZ runs concurrently — reads proven z_c/r/s from z_traj
+  const [savedState, sessionZ] = await Promise.all([
     loadKernelState(session_id),
+    loadKernelZ(session_id),
     memoryPromise,
   ]);
 
-  // ── Load kernel + run cycle (F(x,z) sync, G(x,z) async) ─────────────────
+  // ── Load kernel + run cycle with session-adaptive z ───────────────────────
   const kernel = getCachedKernel(session_id, savedState);
-  const result = await kernel.runCycle(prompt, memoryContext, session_id);
+  const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
 
   // ── Self-referential CRS ──────────────────────────────────────────────────
   let projectionTriggered = result.receipt.safety_projection_triggered;
@@ -157,12 +137,12 @@ export async function POST(req: Request) {
     projection_triggered:  projectionTriggered,
     projection_magnitude:  result.projection_magnitude,
     state:                 result.state,
+    z_weights:             result.receipt.z_weights,
     receipt_id:            receiptId,
     memory_injected:       memoryContext.length > 0,
     invariance_violations: result.invariance_violations,
     metrics:               result.metrics ?? null,
-    // ── Async governor G(x,z) report ──────────────────────────────────────
-    governor_sensing: result.governor_sensing,
+    governor_sensing:      result.governor_sensing,
     version: result.receipt.version ?? 'SovereignKernel-TS-v2+AsyncGovernor',
   });
 }
