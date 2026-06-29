@@ -1,6 +1,14 @@
 /**
  * POST /api/lex/govern/stream — unified constitutional pipeline, fully streamed.
+ *
  * wire: loadKernelZ() threads session-adaptive z into runCycle().
+ * fix: AuditorAgent now receives sigma_viol from z_traj directly.
+ * note: GovernorAgent below is the REFERENCE IMPLEMENTATION (Section 11,
+ *   F+G replicator dynamics). The LIVE governor runs inside sovereign_kernel.ts
+ *   as governorUpdate() — only the G correction term, no replicator F.
+ *   The SSE 'governor' event reflects the reference simulation output,
+ *   not the actual state update that happened in runCycle(). See lib/agents/governor.ts
+ *   header for the full architectural rationale (discrete DT=1 convergence issue).
  */
 
 import { SovereignKernel }    from '@/lib/sovereign_kernel';
@@ -101,11 +109,16 @@ export async function POST(req: Request) {
         const eC = ms?.C ?? kernel.state.C, eR = ms?.R ?? kernel.state.R, eS = ms?.S ?? kernel.state.S, eM = ms?.M ?? result.M;
         emit('crs', { c: eC, r: eR, s: eS, m: eM, health_band: result.health_band, theta: result.theta, temperature: result.temperature, method: (crsResult?.meta?.method as string) ?? 'kernel-internal', anchor_sim: (crsResult?.meta?.anchor_sim as number) ?? 0, lyapunov_V: (crsResult?.meta?.lyapunov_V as number) ?? result.lyapunov_V, delta_V: (crsResult?.meta?.delta_V as number) ?? result.delta_V });
 
-        emit('stage', { name: 'governing', description: 'Governor: Section 11 replicator dynamics' });
+        // ── Governor (REFERENCE SIMULATION — not the live update) ────────────
+        // GovernorAgent runs the full Section 11 F+G replicator dynamics as a
+        // reference simulation. The ACTUAL governor correction that ran this turn
+        // was governorUpdate() inside sovereign_kernel.ts (G term only, no F).
+        // The SSE 'governor' event is informative but reports simulated dynamics.
+        emit('stage', { name: 'governing', description: 'Governor: Section 11 reference simulation (G_i = k(φ_i−φ̄))' });
         const govResult = await safe(() => GovernorAgent({ prompt, session_id, crs_state: { C: eC, R: eR, S: eS, M: eM }, prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, velocity: (crsResult?.meta?.velocity as number) ?? 0, attack_pressure: kernel.attack_pressure, theta: kernel.theta, receipts: [] }), null);
         const weakest = (govResult?.meta?.weakest_dimension as 'C'|'R'|'S') ?? 'S';
         const needsIntervention = govResult?.meta?.intervention_required === true || (pre.label === 'HIGH' && pre.tags.length >= 2) || kernelSignal.severity >= 0.85 || result.receipt.safety_projection_triggered;
-        emit('governor', { decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'), intervention_required: needsIntervention, reason: govResult?.meta?.reason ?? 'Governor decision', G_vector: govResult?.meta?.G_vector ?? { C: 0, R: 0, S: 0 }, V_before: govResult?.meta?.V_before ?? 0, V_after: govResult?.meta?.V_after ?? 0, dV: govResult?.meta?.dV ?? 0, lyapunov_stable: govResult?.meta?.lyapunov_stable ?? true, weakest, triggers: govResult?.meta?.triggers ?? {} });
+        emit('governor', { decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'), intervention_required: needsIntervention, reason: govResult?.meta?.reason ?? 'Governor decision', G_vector: govResult?.meta?.G_vector ?? { C: 0, R: 0, S: 0 }, V_before: govResult?.meta?.V_before ?? 0, V_after: govResult?.meta?.V_after ?? 0, dV: govResult?.meta?.dV ?? 0, lyapunov_stable: govResult?.meta?.lyapunov_stable ?? true, weakest, triggers: govResult?.meta?.triggers ?? {}, note: 'reference_simulation' });
 
         let governedOutput = result.governed_output;
         let invokedLaw: { book: string; name: string; pillar: string; id?: number } | null = null;
@@ -166,7 +179,18 @@ export async function POST(req: Request) {
 
         emit('stage', { name: 'auditing', description: 'Creating audit record' });
         const finalM = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
-        const auditorResult = await safe(() => AuditorAgent({ prompt, session_id, raw_output: result.raw_output, governed_output: governedOutput, crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: finalM }, health_band: result.health_band, intervention_required: needsIntervention, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, cbf_triggered: result.receipt.safety_projection_triggered || srFired, receipts: [] }), null);
+        // sigma_viol from z_traj: this is the source of truth for constitutional erosion.
+        // Previously AuditorAgent tried to find it in ctx.receipts (always missing → 0).
+        const auditorResult = await safe(() => AuditorAgent({
+          prompt, session_id,
+          raw_output: result.raw_output, governed_output: governedOutput,
+          crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: finalM },
+          health_band: result.health_band, intervention_required: needsIntervention,
+          lyapunov_V: result.lyapunov_V, delta_V: result.delta_V,
+          cbf_triggered: result.receipt.safety_projection_triggered || srFired,
+          sigma_viol: zTraj?.sigma_viol ?? 0,  // ← fix: from z_traj, not receipts lookup
+          receipts: [],
+        }), null);
 
         const [receiptId] = await Promise.all([
           writeKernelReceipt(session_id, turn, { ...result, governed_output: governedOutput }),
