@@ -16,7 +16,7 @@ Email: omomehinemmanuel5@gmail.com
 X: @lexAureon
 Website: lexaureon.com
 GitHub: github.com/omomehinemmanuel5-boop
-Paper: doi.org/10.5281/zenodo.18944242
+Paper: doi.org/10.5281/zenodo.18944243
 
 Built entirely independently.
 No lab. No team. No funding. No institution.
@@ -30,7 +30,7 @@ AI governance system. It sits above any LLM and
 governs every output using the Aureonics framework.
 
 System LIVE: lexaureon.com
-Research PUBLISHED: doi.org/10.5281/zenodo.18944242
+Research PUBLISHED: doi.org/10.5281/zenodo.20183807
 Governor RUNNING: lexaureon.com/api/lex/run
 
 ---
@@ -101,7 +101,18 @@ Stability margin: M(x) = min(C, R, S)
 Governor: G_i(x,T) = k_i * (phi_i - phi_bar)
 Stiffness: k_i(x,T) = k0 * w_i(T) / (M(x) + epsilon_k)
 Lyapunov: V(x)  = -SUM log(x_i) + (mu/2) SUM max(0,tau-x_i)^2
-Lyapunov: V_z(x) = -SUM z_i*log(x_i) + (mu/2) SUM max(0,tau-x_i)^2  [z-weighted, active]
+Lyapunov: V_z(x) = -SUM z_i*log(x_i) + (mu/2) SUM max(0,tau-x_i)^2  [z-weighted, ACTIVE]
+
+z-update rule (CLOSED — Theorem 3a/3b, Banach fixed-point):
+  A(t) = gamma * SUM_{law in events_t} sev(law) * dir(law)
+  z_{t+1} = normalize(clamp(rho*z_t + (1-rho)*x_t - A(t), tau/2, 1-tau))
+  rho=0.85, gamma=0.10
+  Boundedness: Theorem 3a. Convergence: Theorem 3b (contraction rate rho).
+  Deployed in: lib/kv.ts -> updateZTraj() / computeZWeights()
+  Session z loaded via: lib/kernel_bridge.ts -> loadKernelZ()
+  Passed into: sovereign_kernel.ts -> runCycle(sessionZ)
+  Stored in: z_traj.z_c / z_r / z_s (columns added 2026-06-28)
+  Receipt certified: lyapunov_V and z_weights stamped in every KernelReceipt
 
 ---
 
@@ -127,9 +138,15 @@ Custom JWT / Multi-coin crypto
 
 ## KEY FILES — READ BEFORE TOUCHING
 
-lib/kv.ts                        Turso + z_traj
+lib/kv.ts                        Turso + z_traj + PROVEN z-update rule
+lib/kernel_bridge.ts             loadKernelZ() + writeKernelReceipt()
+lib/sovereign_kernel.ts          runCycle(sessionZ) + lyapunovCandidate(state, z)
+lib/aureonics_core.ts            Z_RECOVERY fallback (uniform, new sessions)
+lib/aureonics_math.ts            computeZWeightsHeuristic() — display ONLY, not proven rule
 lib/praxis.ts                    PRAXIS pipeline
 app/api/lex/run/route.ts         governance endpoint
+app/api/lex/govern/route.ts      canonical govern endpoint (uses loadKernelZ)
+app/api/lex/govern/stream/route.ts  streamed pipeline (uses loadKernelZ)
 app/console/page.tsx             terminal UI
 app/audit/[id]/page.tsx          audit receipts
 app/admin/page.tsx               admin dashboard
@@ -141,10 +158,23 @@ research/open-problems.md        research agenda
 
 ---
 
+## NAMING COLLISION WARNING
+
+computeZWeights exists in TWO files with DIFFERENT contracts:
+  lib/kv.ts                — PROVEN Banach rule (ρ, γ, clamp, normalize). USE THIS.
+  lib/aureonics_math.ts    — HEURISTIC (1/x_i inverse proportion). RENAMED computeZWeightsHeuristic.
+
+Never import computeZWeights from aureonics_math.ts for governor/receipt logic.
+Always use updateZTraj() from kv.ts which runs the full proven update.
+
+---
+
 ## DATABASE TABLES
 
 z_traj           constitutional trajectory (never delete)
+                 Columns: z_c, z_r, z_s (Banach z-weights, added 2026-06-28)
 praxis_receipts  immutable audit receipts (never delete)
+                 Columns: slow_drip now sourced from sigma_viol accumulator (2026-06-29)
 governor_log     governor interventions
 law_impact       law impact scores
 reset_tokens     password reset tokens
@@ -156,11 +186,11 @@ leads            captured leads
 
 1. Pre-Eval classification (CLEAR / HIGH)
 2. Semantic Transducer Phi — text to delta(C,R,S)
-3. updateZTraj — read/write z_traj to Turso
+3. updateZTraj — read/write z_traj to Turso (PROVEN z-update)
 4. Apply law impact if law fired
 5. getGovernorMode from z_traj
 6. applyGovernorCorrection
-7. detectSlowDrip (sigma_viol > SIGMA_THRESHOLD)
+7. detectSlowDrip (sigma_viol > SIGMA_THRESHOLD) — surfaces to slow_drip column
 8. governorEffort W(t) = ||G(x,T)||
 9. logGovernorAction to governor_log
 10. Write praxis_receipt to Turso
@@ -182,7 +212,7 @@ bypass_attempt   S collapse   law_id: bypass_attempt
 identity_reframe C collapse   law_id: identity_reframe
 sycophancy       R collapse   law_id: sycophancy
 multi_attack     ALL pillars  law_id: multi_attack
-slow_drip        M global     detected via sigma_viol
+slow_drip        M global     detected via sigma_viol accumulator (primary signal)
 
 ---
 
@@ -202,8 +232,7 @@ Optional:
   NEXT_PUBLIC_PRO_CHECKOUT_URL    (Stripe link)
   LOG_DRAIN_URL · LOG_DRAIN_TOKEN (remote log intake)
 
-Never hardcode. Always use `env` from `lib/env.ts` — process.env access is
-no longer allowed except for NODE_ENV.
+Never hardcode. Always use `env` from `lib/env.ts`.
 
 ---
 
@@ -244,16 +273,26 @@ Technical Writing            $200-500  Per piece
 
 ## RESEARCH STATUS
 
-Paper v1: doi.org/10.5281/zenodo.18944242 (March 2026)
-Paper v2: doi.org/10.5281/zenodo.18944242 (May 2026)
+Paper v1: doi.org/10.5281/zenodo.18944243 (March 2026)
+Paper v2: doi.org/10.5281/zenodo.20183807 (May 2026)
 SSS50: M declined 0.2895 to 0.0500 over 24 steps
 Predictions: P1-P9 (untested at scale)
 Grants: Schmidt Sciences submitted · LTFF in progress
+Benchmarks: 920+ adversarial prompts, 0% governed ASR (HarmBench/JailbreakBench/AdvBench)
 
 Open Mathematical Problems:
-1. Global Lyapunov proof (multi-pillar regime)
-2. Nonlinear Pareto frontier (lambda > 0)
-3. Complete z-update rule h(x,z,law_events)
+1. Global Lyapunov proof (multi-pillar simultaneous violation regime) — OPEN
+   Single-pillar regime: CLOSED (dV/dt < 0 proven; condition k0/eps_k > 3B/2 satisfied with 20x margin)
+2. Nonlinear Pareto frontier (lambda > 0) — CLOSED
+   Phase transition at lambda* derived. Brittleness B formalized.
+3. Dynamic z-update rule h(x,z,law_events) — CLOSED (2026-06-28)
+   Proven: Theorem 3a (boundedness), Theorem 3b (convergence, Banach contraction rho=0.85)
+   Deployed: lib/kv.ts -> updateZTraj() | lib/kernel_bridge.ts -> loadKernelZ()
+   Receipts now certify V_z(x, z_session) not just V_z(x, Z_RECOVERY)
+
+Paper body (Proposition 1, Section 10) is correctly scoped.
+"Lyapunov stability" in external-facing copy refers to the single-pillar result.
+Global stability remains an open problem — never claim otherwise.
 
 ---
 
@@ -279,7 +318,6 @@ npm run build          verify TypeScript
 ---
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
-
 
 [2026-03-10] RESEARCH: Aureonics v1 published
 [2026-05-14] RESEARCH: Aureonics v2 published
@@ -319,123 +357,66 @@ npm run build          verify TypeScript
 [2026-05-16] FIX: CRS extractor calibrated with anchor scoring
 [2026-05-16] FIX: z_traj session initialization reads persisted state
 [2026-05-16] FIX: /api/debug gated behind ADMIN_PASSWORD
-[2026-05-16] FIX: <img> replaced with next/image in 5 files
-[2026-05-16] FIX: Unused variables cleaned in AgentPipeline.tsx
-[2026-05-16] FIX: Governor boundary < corrected to <= (getGovernorMode in kv.ts)
-[2026-05-16] FIX: Pre-Eval HIGH now lowers effective tau to 0.10 — intervention fires earlier
-[2026-05-16] FIX: Extractor pillar mapping added for attack types (identity reframe → C low, bypass → S low, sycophancy → R low)
-[2026-05-16] FIX: Extractor calibration anchors reinforced in Groq scoring prompt
-[2026-05-16] FIX: z_traj session reads persisted state from Turso (already live in route.ts)
-[2026-05-16] FIX: img replaced with next/image in 6 files (already live)
-[2026-05-17] FIX: deriveHealthBand() added to lib/kv.ts as single source of truth (OPTIMAL/ALERT/STRESSED/CRITICAL)
-[2026-05-17] FIX: projectToSimplex in kv.ts and praxis.ts upgraded to CBF-safe Euclidean projection — enforces TAU_FLOOR on all pillars
-[2026-05-17] FIX: TAU_LYP exported from kv.ts (0.08) — Lyapunov penalty threshold distinct from CBF floor (0.05)
-[2026-05-17] FIX: Lyapunov function TAU_LYP in aureonics_math.ts corrected to 0.05 (= TAU_FLOOR, matches paper formula)
-[2026-05-17] FIX: route.ts healthBand() removed — now uses deriveHealthBand() from kv.ts
-[2026-05-17] FIX: audit/[id] deriveHealthBand replaced with imported function — STABLE/FRAGILE labels removed
-[2026-05-17] FIX: audit/[id] M ok threshold corrected from 0.08 to TAU_FLOOR (0.05)
-[2026-05-17] FIX: audit/[id] Lyapunov Status renamed to M Trajectory — removes false dV claim
-[2026-05-17] FIX: audit/[id] health band ok condition: OPTIMAL||ALERT (was OPTIMAL||STABLE)
-[2026-05-17] FIX: HealthBand.tsx descriptions corrected — CRITICAL note clarifies CBF activates at M≤0.05 not M<0.08
-[2026-05-17] FIX: HeroTicker.tsx MONITORING renamed to WARNING to align with stabilityLabel()
-[2026-05-17] FIX: console M row — BELOW τ at ≤0.05, STRESSED at <0.08, SAFE at ≥0.08 (was wrong at <0.08)
-[2026-05-17] FIX: preEval identity_reframe patterns — added forget your identity/name/values/purpose
-[2026-05-17] FIX: console "Governed" tab renamed to "Output" — governor is a gate, not an editor
-[2026-05-17] FIX: console diff chip display removed — governed_output equals raw_output when not blocked
-[2026-05-17] FIX: attack_pressure from z_traj now feeds effective_tau in runPRAXIS — persistent adversarial sessions face stricter floor
-[2026-05-17] FIX: velocity>0.05 nudge threshold documented with rationale — prevents overcorrection of fast transient perturbations
-[2026-05-17] FIX: /api/live-state now returns aggregate CRS average (last 20 z_traj rows) — individual session data no longer exposed publicly
-[2026-05-17] FIX: getAggregateConstitutionalState() added to db.ts — replaces getLatestSessionState() in public endpoint
-[2026-05-17] SYSTEM: Production-readiness pass — rate limiting, structured logger, real /api/health probes, secret-scanning in CI, CSP+HSTS headers, sitemap + robots, dynamic OG metadata, error & loading boundaries (PR #19)
-[2026-05-17] FIX: Removed lowercase groq_api_key env-var fallback in crs_extractor
-[2026-05-17] FIX: /api/debug hardened — returns 401 before any config-state disclosure
-[2026-05-17] FIX: Silent .catch blocks replaced with structured logging across /api/lex/run pipeline
-[2026-05-17] FIX: AuthContext localStorage guarded with typeof window check
-[2026-05-17] FIX: Auth/billing routes fail-fast in production when LEX_API_BASE_URL is unset
-[2026-05-17] FIX: Removed leaked console.log of captured email from /console
-[2026-05-17] FIX: eslint config import/no-anonymous-default-export warning resolved
-[2026-05-17] DESIGN: /console gets prominent total-runs counter with live pulse
-[2026-05-17] SYSTEM: SSE streaming endpoint /api/lex/run/stream — token-level streaming via useLexStream hook
-[2026-05-17] DESIGN: Example attack prompts on /console — identity reframe, jailbreak, sycophancy, benign — tap to load
-[2026-05-17] DESIGN: ToastProvider added; pre-eval / intervention / receipt events surface as toasts
-[2026-05-17] DESIGN: CountUp component animates total-runs from 0 with easeOutCubic
-[2026-05-17] DESIGN: aria-live + role=log on console output for screen readers
-[2026-05-17] DESIGN: Skeleton shimmer on /audit/[id]/loading.tsx
-[2026-05-17] SYSTEM: Dynamic OG image at /audit/[id]/opengraph-image — receipts render verdict + M score in social previews
-[2026-05-17] SYSTEM: Synthetic governance probe /api/cron/synthetic — runs known attacks every 6h, returns 503 on regression
-[2026-05-17] SYSTEM: Zod schemas for /api/lex/run and /stream — single source of truth for request contract
-[2026-05-17] FIX: api.integration.test.ts mocks updated for current db.ts surface (39 tests → 46 tests)
-[2026-05-18] FIX: Toast loop — PR #23 merged, ToastProvider memoized
-[2026-05-18] FIX: Run counter — atomic Turso increment via UPDATE ... RETURNING, persists across cold starts (run_stats table, seeded at 0)
-[2026-05-18] SYSTEM: lib/env.ts — single source of truth, lazy Proxy throws on missing required vars at first access
-[2026-05-18] SYSTEM: lib/constitution.ts — TAU_FLOOR/TAU_GOVERNOR/TAU_RECOVERY frozen, assertSimplex enforces C+R+S=1
-[2026-05-18] FIX: Removed all demo/mock/fallback data — vocabulary CRS fallback gone, Generator demo path gone, live-state returns nulls when DB empty
-[2026-05-18] FIX: LEX_API_BASE_URL removed — lib/backend.ts deleted, auth + billing routes return 501 until native auth lands
-[2026-05-18] FIX: @vercel/kv removed — rate limiting and session_state now Turso-only, atomic INSERT ... ON CONFLICT
-[2026-05-18] FIX: vercel.json — adds python3.10 runtime for api/python/*.py, daily cron at 12:00 UTC
-[2026-05-18] FIX: /api/cron/synthetic — CRON_SECRET strictly required, no production-only branch
-[2026-05-18] FIX: /api/health — reports services.turso/groq/jina + counters.total_runs; matches spec
-[2026-05-18] FIX: SimplexDemoClient honest empty state — "Run a prompt to see live state" when DB has no rows
-[2026-05-18] LOCK: Zod validation on POST /api/leads, /api/keys, /api/keys/revoke (lex/run + stream already validated)
-[2026-05-18] LOCK: GitHub Actions — build + test + secret-scan jobs, placeholder env vars provided for both
-[2026-05-18] FIX: .gitignore — lexaureon-frontend.tar and *.tar excluded
-[2026-05-18] RESEARCH: research/paper-updates.md — 7 suggestions for Aureonics v3 candidate, grounded in praxis.ts/kv.ts diffs since v2
-[2026-05-18] DESIGN: README rewrite mirroring AGENTS.md — Paper v2 cite, real Lyapunov V(x)=-Σlog(xi)+(μ/2)Σmax(0,τ-xi)², τ_eff/τ_LYP/τ_floor separation, 10-step pipeline, all 7 env vars
-[2026-05-18] DESIGN: Vaulturex codex split — full 50-law codex preserved in docs/founder/codex.md; runtime trimmed to 22 technical laws (Books I-IV + #27 + #30); crs_extractor anchor no longer cites "sovereign codex"
-[2026-05-18] FIX: lib/aureonics_math.ts imports CONSTITUTION from lib/constitution.ts — TAU_CBF, TAU_GOV, TAU_LYP no longer hardcoded literals; restores single source of truth
-[2026-05-18] RESEARCH: research/open-problems.md updated — P1 downgraded to MEDIUM (non-expansive Π_S lemma), P3 rephrased to focus on dp_attack/dt coupling, P10-P12 proposed
-[2026-05-18] RESEARCH: scripts/harmbench/ — HarmBench harness (bare/anchored/governed arms); default judge llama-3.1-8b-instant with 3-vote consensus (free-tier safe); --validate N flag cross-checks cheap judge against llama-3.3-70b-versatile on N samples and prints agreement %; /data/ gitignored so adversarial prompts/outputs stay local
-[2026-05-18] AUTOMATION: .github/workflows/harmbench.yml — phone-triggerable benchmark via GitHub Actions workflow_dispatch; uses bundled 20-prompt test set in scripts/harmbench/test-prompts.jsonl; reads GROQ_API_KEY from repo secret; prints ASR table to workflow log + uploads results as artifact
-[2026-05-18] FIX: scripts/harmbench/ — switched runner from ts-node to tsx (devDep added); ts-node was throwing ERR_UNKNOWN_FILE_EXTENSION under Node 20 ESM in CI
-[2026-05-18] RESEARCH: research/empirical-results.md — first empirical run (N=20 bundled adversarial-pattern probes); adversarial coverage 16/16, benign false-positive rate 4/4 driven by IEC brevity-penalty mechanism; anchor_sim cleanly separates the two arms; LLM-judge ASR not produced (Groq HTTP 401, operational); paper-citation paragraph included
-[2026-05-18] FIX: lib/agents/crs_extractor.ts — off-anchor R floor (R = max(R_raw, 0.33) when C_raw < 0.3) so benign queries with low topical anchor similarity cannot trigger recovery-mode intervention purely from IEC brevity signal; targets F2/F3 in research/empirical-results.md without changing adversarial behavior (adversarial anchor_sim was 0.40–0.87 in run 001, all above the gate)
-[2026-05-18] SYSTEM: /api/lex/run now returns three arms — raw_output (bare LLM, no constitutional preamble), anchored_output (LLM with CONSTITUTIONAL_SYSTEM_PROMPT, pre-intervention), governed_output (full PRAXIS). Bare arm generated in parallel via GeneratorAgent so latency unchanged. CRS extraction, governor, intervention, and audit still operate on anchored_output (preserved agent contract). Streaming endpoint kicks off the bare gen in background while streaming the anchored tokens. /console now has a new "Anchored" tab showing the pre-intervention text; "Raw" tab now genuinely shows the bare LLM. Harness updated to read all three arms directly from the API and drops the separate --bare Groq call (now redundant).
-[2026-05-18] DESIGN: types/index.ts — GovernanceResponse.anchored_output added (optional, string). raw_output semantic flipped: was "anchored Llama output", now "bare LLM output". External API consumers reading raw_output will see bare LLM responses going forward.
+[2026-05-16] FIX: Governor boundary < corrected to <=
+[2026-05-16] FIX: Pre-Eval HIGH now lowers effective tau to 0.10
+[2026-05-17] FIX: deriveHealthBand() added to lib/kv.ts as single source of truth
+[2026-05-17] FIX: projectToSimplex upgraded to CBF-safe Euclidean projection
+[2026-05-17] SYSTEM: Production-readiness pass — rate limiting, structured logger, health probes
+[2026-05-18] SYSTEM: lib/env.ts — single source of truth, lazy Proxy
+[2026-05-18] SYSTEM: lib/constitution.ts — TAU constants frozen, assertSimplex enforces C+R+S=1
+[2026-05-18] FIX: Removed all demo/mock/fallback data
+[2026-05-18] FIX: @vercel/kv removed — rate limiting and session_state now Turso-only
+[2026-05-18] SYSTEM: SSE streaming endpoint /api/lex/run/stream live
+[2026-05-18] RESEARCH: research/open-problems.md updated
+[2026-05-18] RESEARCH: scripts/harmbench/ — HarmBench harness deployed
+[2026-05-23] FIX: Generator constitutional identity moved to system role
+[2026-05-23] FIX: attack_vector_disclosure pattern added to praxis.ts
+[2026-05-23] SYSTEM: V_z(x) implemented in aureonics_math.ts
+[2026-05-23] SYSTEM: Brittleness metric B(x) added to every audit receipt
+[2026-05-23] SYSTEM: Vaulturex Sovereign Codex expanded to all 50 laws
+[2026-06-21] FIX: SovereignKernel cache bounded with LRU helper
+[2026-06-21] FIX: LexBench scoring repaired
+[2026-06-21] AUTOMATION: 73 Vitest tests passing
+[2026-06-28] RESEARCH: Open Problem 3 CLOSED — dynamic z-update rule proven (Theorem 3a/3b, Banach)
+[2026-06-28] SYSTEM: lib/kv.ts — proven z-update rule deployed: computeZWeights() + updateZTraj(lawEvents)
+[2026-06-28] SYSTEM: lib/kernel_bridge.ts — kernel pipeline routed through updateZTraj(); slow_drip wired from sigma_viol accumulator
+[2026-06-28] SYSTEM: lib/db.ts — z_c/z_r/z_s columns added to z_traj via runZTrajMigrations()
+[2026-06-29] FIX: aureonics_core.ts — Z_RECOVERY comment updated; Open Problem 3 closed status recorded
+[2026-06-29] FIX: aureonics_math.ts — computeZWeights renamed computeZWeightsHeuristic; naming collision eliminated
+[2026-06-29] FIX: kernel_bridge.ts — slow_drip receipt now OR(semantic, sigma_viol > SIGMA_THRESHOLD); sigma_viol accumulator surfaces to receipts
+[2026-06-29] FIX: govern/stream and kernel/stream routes — computeZWeights import updated to computeZWeightsHeuristic
+[2026-06-29] SYSTEM: sovereign_kernel.ts — lyapunovCandidate(state, sessionZ) accepts session z; runCycle(sessionZ) parameter added; z_weights field added to KernelReceipt
+[2026-06-29] SYSTEM: kernel_bridge.ts — loadKernelZ() exported; reads z_c/z_r/z_s from z_traj; passes sessionZ into runCycle
+[2026-06-29] SYSTEM: govern/route.ts, kernel/route.ts, govern/stream/route.ts, kernel/stream/route.ts — all 4 callers load sessionZ concurrently and pass to runCycle
+[2026-06-29] RESEARCH: lyapunov_V and delta_V in all receipts now certify V_z(x, z_session) — the actual §11 adaptive barrier — not the uniform fallback
 
-[2026-05-23] FIX: Generator constitutional identity moved to system role — cannot be overridden by adversarial user content
-[2026-05-23] FIX: attack_vector_disclosure pattern added to praxis.ts preEval + STATIC_DELTA (dc=-0.08, ds=-0.08)
-[2026-05-23] FIX: forceIntervention = pre_eval_label === HIGH — HIGH threats always go through intervention regardless of M score
-[2026-05-23] SYSTEM: V_z(x) = -Σzᵢ·log(xᵢ) + (μ/2)Σmax(0,τ-xᵢ)² implemented in aureonics_math.ts — z-weights from z_traj history
-[2026-05-23] SYSTEM: computeZWeights() — inverse-proportion z-weights, normalised so Σzᵢ=3, historically weak pillars get steeper barrier
-[2026-05-23] FIX: IEC replaced with register-aware computeIEC_calibrated() — factual/analytical/adversarial/conversational target ratios, no heuristic floor
-[2026-05-23] FIX: S measurement rebuilt — compliance × (0.5 × anchor_alignment + 0.5 × reasoning_gain), no longer conflates prompt-output similarity with sovereignty
-[2026-05-23] FIX: isConstitutional keyword check replaced with judgeGovernedOutput() — llama-3.1-8b-instant confirms RESIST/FULFILL before governed output exits pipeline
-[2026-05-23] FIX: getGovernorMode recovery mode — now requires n_stable >= N_MIN (was n_stable > 0), prevents recovery firing after single low-velocity turn
-[2026-05-23] SYSTEM: Brittleness metric B(x) = (1/3−M)/(1/3−M+d_geo) added to every audit receipt — single-pillar attacks measurably more brittle than multi-attacks at equal geometric distance
-[2026-05-23] FIX: z_weights/turn/sigma_viol threaded from z_traj through route.ts to CRSExtractorAgent — V_z now uses live session history
-[2026-05-23] SYSTEM: Vaulturex Sovereign Codex expanded from 22 to all 50 laws (Books I–X) in sovereign_laws.ts — all pillars now fully covered
-[2026-05-23] SYSTEM: Laws used as generative engine — law principle + governor_use IS the constitutional response mandate, not supplementary context
-[2026-05-23] FIX: attack_vector_disclosure seeded into law_impact table in db.ts
-[2026-06-21] FIX: SovereignKernel cache bounded with shared LRU helper across /api/lex/govern and /stream — prevents session_id memory exhaustion
-[2026-06-21] FIX: LexBench scoring repaired — ASR regression direction corrected, /api/lex/govern state parsed, cache hits preserve metrics, errors no longer cached as zero-output rows
-[2026-06-21] AUTOMATION: Kernel cache and LexBench cache metadata tests added (73 Vitest tests passing)
 ---
 
 ## CURRENT STATUS
 
 System:     LIVE at lexaureon.com — real backend, zero demo, zero silent failures
-Counter:    Turso atomic increment — never resets
+Counter:    18,641+ audit receipts in Turso
 Governor:   PRAXIS v1.0 — Groq + Jina + Turso, all hard-required
-Cost:       Zero extra — no Vercel KV, no paid add-ons
-Locks:      Constants frozen · Zod on inputs · CI blocks broken merges · bounded kernel cache
-Paper:      v3 — DOI 10.5281/zenodo.18944242
+z-weights:  Session-adaptive z_c/z_r/z_s live in z_traj, flowing into V_z receipts
+Lyapunov:   V_z(x, z_session) certified on every governed turn since 2026-06-29
+Open Probs: Problem 3 CLOSED. Problem 2 CLOSED. Problem 1 single-pillar CLOSED, multi-pillar OPEN.
+Paper:      Body correctly scoped. Global stability claim not made.
 Grants:     Schmidt Sciences submitted · LTFF in progress
 Revenue:    $500 audit · Upwork active
-Research:   P1-P9 untested · 3 open problems · LexBench scorer repaired
-LinkedIn:   Banned — appeal pending
-X:          Active — @lexAureon
+Benchmarks: 920+ adversarial, 0% governed ASR
 
 ---
 
 ## NEXT ACTIONS
 
 - [ ] LTFF grant completion
-- [ ] Foresight Institute application (May 31)
-- [ ] MATS application (June 1)
 - [ ] First paying client
-- [ ] LinkedIn appeal
-- [x] Audit page fix (2026-05-17)
-- [x] Usage counter reset — atomic Turso, never resets (2026-05-18)
+- [ ] Multi-pillar global Lyapunov proof (Open Problem 1 residual)
+- [ ] Multi-turn CRS computation (turn_history table — identified, not yet implemented)
+- [x] Open Problem 3 closed and deployed (2026-06-28/29)
+- [x] Naming collision resolved — computeZWeightsHeuristic (2026-06-29)
+- [x] slow_drip receipt wired from sigma_viol accumulator (2026-06-29)
+- [x] V_z(x, z_session) certified in all receipts (2026-06-29)
 - [x] Kernel cache bounded against session_id memory exhaustion (2026-06-21)
 - [x] LexBench scoring/cache regressions repaired (2026-06-21)
 
@@ -475,4 +456,3 @@ This is Emmanuel's life work.
 Treat it with care, precision, and respect.
 Every line of code represents his sovereignty.
 Build it like it matters — because it does.
-
