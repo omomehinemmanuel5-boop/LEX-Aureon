@@ -2,24 +2,19 @@
  * ═══════════════════════════════════════════════════════════════════════
  * lib/governor_loop.ts
  *
- * Asynchronous Governor Pre-Computation Loop
+ * Asynchronous Governor Pre-Computation Loop — turn-lag architecture.
  *
- * This is the bridge between the synchronous kernel core and the async
- * sensing layer. It implements the turn-lag architecture:
+ *   Turn t:   F(x,z) runs synchronously → output delivered
+ *             fireGovernorLoop() fires in background → G(x,z) computed
+ *   Turn t+1: consumePendingCorrection() applies G(x,z) before F(x,z)
  *
- *   Turn t:   F(x,z) runs synchronously → output delivered immediately
- *             Governor loop fires in background → G(x,z) computed
- *   Turn t+1: G(x,z) correction from turn t applied to opening state
- *             before F(x,z) runs again
- *
- * The hard floor M ≥ τ is ALWAYS guaranteed by F(x,z).
+ * Hard floor M ≥ τ is ALWAYS guaranteed by F(x,z).
  * G(x,z) is advisory — rejected if IEC filter fails or CBF would be violated.
  *
- * Per-session state is held in GovernorLoopStore (in-memory, keyed by session_id).
- *
- * fix: console.debug replaced with logger.debug — debug calls in production
- * were silently dropped by many runtimes. Important governor events now flow
- * through the structured logger which respects LOG_DRAIN_URL.
+ * wire: consumePendingCorrection now returns correction_magnitude (L2 norm
+ * of the applied delta vector). kernel_bridge.ts writes this to governor_effort
+ * in praxis_receipts, making the receipt reflect real async governor work
+ * rather than only CBF projection distance (which is 0 on ~99% of turns).
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -29,31 +24,33 @@ import { runParallelSearch } from './governor_search';
 import { TAU } from './aureonics_core';
 import { logger } from './logger';
 
-// ── Per-session pending correction ──────────────────────────────────────────
 interface PendingCorrection {
   correction:  GovernorCorrection;
-  computed_at: number; // timestamp — corrections expire after 30s (one turn)
+  computed_at: number;
 }
 
 const store = new Map<string, PendingCorrection>();
 const CORRECTION_TTL_MS = 30_000;
 
-// ── Consume pending correction for a session ─────────────────────────────────
-// Called at the START of turn t+1 before F(x,z) runs.
-// Returns the delta to apply, or null if expired/rejected/absent.
+// ── Consume pending correction ───────────────────────────────────────────────
+// Called at start of turn t+1 before F(x,z). Returns null if expired/rejected.
+// correction_magnitude = ||delta||_2 — written to governor_effort in receipts.
 export function consumePendingCorrection(
   sessionId: string,
   state:     KernelState,
-): { delta_C: number; delta_R: number; delta_S: number; reason: string } | null {
+): {
+  delta_C:              number;
+  delta_R:              number;
+  delta_S:              number;
+  reason:               string;
+  correction_magnitude: number;  // L2 norm of applied delta — for governor_effort receipt
+} | null {
   const pending = store.get(sessionId);
   if (!pending) return null;
 
   store.delete(sessionId); // Always consume — never apply twice
 
-  const age = Date.now() - pending.computed_at;
-  if (age > CORRECTION_TTL_MS) {
-    return null; // Expired — discard silently
-  }
+  if (Date.now() - pending.computed_at > CORRECTION_TTL_MS) return null;
 
   const { correction } = pending;
   if (!correction.applied) return null;
@@ -62,21 +59,22 @@ export function consumePendingCorrection(
   const newC = state.C + correction.delta_C;
   const newR = state.R + correction.delta_R;
   const newS = state.S + correction.delta_S;
-  if (Math.min(newC, newR, newS) < TAU) {
-    return null; // Would violate hard floor — reject
-  }
+  if (Math.min(newC, newR, newS) < TAU) return null;
+
+  const correction_magnitude = Math.sqrt(
+    correction.delta_C ** 2 + correction.delta_R ** 2 + correction.delta_S ** 2,
+  );
 
   return {
     delta_C: correction.delta_C,
     delta_R: correction.delta_R,
     delta_S: correction.delta_S,
     reason:  correction.reason,
+    correction_magnitude,
   };
 }
 
 // ── Fire-and-forget background sensing ──────────────────────────────────────
-// Called AFTER the synchronous kernel completes — never awaited by the caller.
-// Stores result in store for next turn's consumePendingCorrection().
 export function fireGovernorLoop(
   sessionId: string,
   state:     KernelState,
@@ -84,23 +82,15 @@ export function fireGovernorLoop(
 ): void {
   const M = Math.min(state.C, state.R, state.S);
   const T = computeTension(state);
-
-  // Only fire when uncertainty warrants sensing (saves API calls)
-  // Triggers when: M is below comfort zone OR tension is high
   const shouldSearch = M < 0.25 || T > 0.3;
-
   const N_QUERIES = shouldSearch ? 3 : 0;
 
-  // Fire async — no await, no blocking
   void (async () => {
     try {
       const results = await runParallelSearch(prompt, N_QUERIES);
       const { correction } = await runGovernorSensing(state, prompt, results);
 
-      store.set(sessionId, {
-        correction,
-        computed_at: Date.now(),
-      });
+      store.set(sessionId, { correction, computed_at: Date.now() });
 
       if (correction.applied) {
         logger.debug('governor_loop', 'correction computed', {
@@ -112,7 +102,6 @@ export function fireGovernorLoop(
         });
       }
     } catch (e) {
-      // Sensing failure is always non-fatal
       logger.debug('governor_loop', 'sensing failed (non-fatal)', {
         session_id: sessionId,
         error: String(e).slice(0, 120),
