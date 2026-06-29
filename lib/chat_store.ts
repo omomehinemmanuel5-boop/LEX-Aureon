@@ -20,6 +20,14 @@ export interface ChatTurn {
   C?: number;
   R?: number;
   S?: number;
+  // pre-governance ("before") state — raw kernel measurement prior to the
+  // governor correction / CBF projection that produced C/R/S/M above ("after").
+  // Populated from the stream route's `raw_state`/`m_before` fields. When absent
+  // (older turns, fallback), the console renders the single after-state bar.
+  rawC?: number;
+  rawR?: number;
+  rawS?: number;
+  mBefore?: number;
   delta_V?: number;
   attack_type?: string;
   attack_severity?: number;
