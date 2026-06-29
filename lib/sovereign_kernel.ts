@@ -17,26 +17,14 @@
  * Hard guarantee: M ≥ τ is enforced by F(x,z) regardless of G(x,z).
  * G(x,z) can only shift attractor basin — never violate CBF floor.
  *
- * perf: self-referential CRS measurement is computed exactly once per turn,
- * in app/api/lex/govern/route.ts (after runCycle returns, via fresh
- * embedText() calls). It used to also run inside runCycle() via
- * getCachedEmbedding(outputHash) — but that hash is for the just-generated
- * governed response, which has never been embedded before, so the cache
- * lookup was a guaranteed miss and the block was a silent no-op on every
- * call. Removed to cut 2 dead DB round-trips per governed turn.
+ * wire: consumePendingCorrection now returns correction_magnitude (L2 norm).
+ * This is stored as pending_governor_effort on the result so kernel_bridge.ts
+ * can write it to the governor_effort receipt column, making that column
+ * reflect real async governor work instead of always 0 (CBF projection only
+ * fires at the hard floor which almost never happens in healthy sessions).
  *
- * perf: selectActiveLaw() is now called at most once per turn — runCycle
- * resolves it and passes the result into buildContractContext() instead of
- * letting buildContractContext re-derive it internally (was a duplicate
- * getLawImpact() DB read on every attack-flagged turn).
- *
- * wire: lyapunovCandidate() now accepts an optional session z vector
- * [z_c, z_r, z_s] from z_traj. When provided, V_z(x) is computed with
- * the proven session-adaptive weights rather than the uniform fallback
- * Z_RECOVERY = [1/3,1/3,1/3]. This makes receipt lyapunov_V and delta_V
- * certify the actual z-weighted barrier from §11, not just its uniform
- * special case. z is loaded from z_traj inside kernel_bridge.ts and
- * passed into runCycle as the sessionZ parameter.
+ * wire: sessionZ parameter threads session-adaptive z-weights from z_traj
+ * into lyapunovCandidate() so receipt lyapunov_V certifies V_z(x, z_session).
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -68,11 +56,12 @@ export interface SemanticSignal {
 }
 
 export interface GovernorSensingReport {
-  fired:        boolean;
-  correction_applied: boolean;
-  basin_shift:  string;
-  rho:          number;
-  reason:       string;
+  fired:               boolean;
+  correction_applied:  boolean;
+  basin_shift:         string;
+  rho:                 number;
+  reason:              string;
+  correction_magnitude: number; // L2 norm of G(x,z) delta applied — written to governor_effort
 }
 
 export interface KernelReceipt {
@@ -103,8 +92,6 @@ export interface KernelReceipt {
   temperature:                 number;
   invariance_violations:       number;
   governor_sensing:            GovernorSensingReport;
-  // z-weights used to compute lyapunov_V this turn (from z_traj if available,
-  // else Z_RECOVERY uniform fallback). Stored in receipt for auditability.
   z_weights:                   [number, number, number];
   version:                     string;
 }
@@ -314,25 +301,11 @@ export class SovereignKernel {
   }
 
   /**
-   * lyapunovCandidate — computes V_z(x) = -Σ z_i·log(x_i) + (μ/2)Σmax(0,τ-x_i)²
-   *
-   * Uses session-adaptive z weights when available (from z_traj via the
-   * proven Banach update rule, lib/kv.ts → updateZTraj). Falls back to
-   * Z_RECOVERY = [1/3,1/3,1/3] for new sessions with no attack history.
-   *
-   * With session z:  V_z certifies the full §11 adaptive barrier.
-   * With Z_RECOVERY: V_z reduces to the uniform log-barrier V(x) = -Σlog(x_i)
-   *                  (up to additive constant), which is still a valid KL
-   *                  Lyapunov function for replicator dynamics.
-   *
-   * The z vector used is stamped into the receipt as z_weights for auditability.
+   * lyapunovCandidate — V_z(x) = -Σ z_i·log(x_i) + (μ/2)Σmax(0,τ-x_i)²
+   * Uses session z from z_traj when available; Z_RECOVERY otherwise.
    */
-  lyapunovCandidate(
-    state: KernelState,
-    sessionZ?: [number, number, number],
-  ): number {
-    const z = sessionZ ?? Z_RECOVERY;
-    return lyapunovBarrierZ([state.C, state.R, state.S], z);
+  lyapunovCandidate(state: KernelState, sessionZ?: [number, number, number]): number {
+    return lyapunovBarrierZ([state.C, state.R, state.S], sessionZ ?? Z_RECOVERY);
   }
 
   assertConsistency(): void {
@@ -342,10 +315,6 @@ export class SovereignKernel {
     }
   }
 
-  // ── Main governance cycle — F(x,z) + async G(x,z) ────────────────────────
-  // sessionZ: optional proven z-weights from z_traj for V_z computation.
-  //   Loaded by kernel_bridge.ts from z_traj before calling runCycle.
-  //   When absent: falls back to Z_RECOVERY (uniform, correct for new sessions).
   async runCycle(
     userPrompt: string,
     memoryContext: string = '',
@@ -355,10 +324,11 @@ export class SovereignKernel {
     this.step_counter += 1;
     this.prev_state = { ...this.state };
 
-    // ── STEP 0: Apply pending G(x,z) correction from previous turn ──────────
+    // ── STEP 0: Apply pending G(x,z) from previous turn ──────────────────────
     let governorSensing: GovernorSensingReport = {
       fired: false, correction_applied: false,
       basin_shift: 'none', rho: 0, reason: 'no_session',
+      correction_magnitude: 0,
     };
 
     if (sessionId) {
@@ -370,15 +340,17 @@ export class SovereignKernel {
         this.normalizeState();
         this.assertConsistency();
         governorSensing = {
-          fired: true, correction_applied: true,
+          fired: true,
+          correction_applied: true,
           basin_shift: 'collaborative',
           rho: 1.0,
           reason: pending.reason,
+          correction_magnitude: pending.correction_magnitude, // ← now populated
         };
       }
     }
 
-    // ── STEP 1: F(x,z) — synchronous triadic dynamics ───────────────────────
+    // ── STEP 1: F(x,z) ───────────────────────────────────────────────────────
     const M0 = Math.min(this.state.C, this.state.R, this.state.S);
     if (M0 < 0.15) this.attack_pressure = Math.min(0.5, this.attack_pressure + 0.05);
     else this.attack_pressure *= 0.92;
@@ -436,7 +408,7 @@ export class SovereignKernel {
       };
     }
 
-    // ── STEP 2: Fire async governor loop — G(x,z) for next turn ─────────────
+    // ── STEP 2: Fire async G(x,z) for next turn ───────────────────────────────
     if (sessionId) {
       fireGovernorLoop(sessionId, { ...this.state }, userPrompt);
       if (!governorSensing.correction_applied) {
@@ -508,9 +480,7 @@ export class SovereignKernel {
       this.projectToSimplex(); this.assertConsistency();
     }
 
-    // ── V_z computation with session-adaptive z ───────────────────────────────
-    // Use proven session z from z_traj when available; Z_RECOVERY otherwise.
-    // This makes lyapunov_V and delta_V certify the actual §11 adaptive barrier.
+    // ── V_z with session-adaptive z ───────────────────────────────────────────
     const activeZ: [number, number, number] = sessionZ ?? Z_RECOVERY;
     const lyapunovV = this.lyapunovCandidate(projectedState, activeZ);
     const deltaV = lyapunovV - this.prev_lyapunov_V;
