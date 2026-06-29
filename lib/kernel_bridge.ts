@@ -16,6 +16,13 @@
  * z_traj: written via proven Banach update rule (lib/kv.ts → updateZTraj).
  *
  * loadKernelZ: exported for route callers to thread session z into runCycle.
+ *
+ * crsMethod override: optional 4th arg. When the caller resolved an
+ *   authoritative CRS via the Python backend (api/python/govern.py), it passes
+ *   mergePythonCRS().crs_method here (e.g. 'python-cbf|ccp=...|iec=...|adv=...')
+ *   so the persisted crs_method column reflects which engine actually produced
+ *   the measurement. When omitted (stream route, refusal path, Python fallback),
+ *   the receipt records the TypeScript kernel string exactly as before.
  */
 
 import { getClient } from './db';
@@ -43,6 +50,7 @@ export async function writeKernelReceipt(
   sessionId: string,
   turn: number,
   result: KernelCycleResult,
+  crsMethod?: string,
 ): Promise<string> {
   const db = getClient();
   const receiptId = `KRN-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -59,6 +67,14 @@ export async function writeKernelReceipt(
   const asyncGovEffort  = result.governor_sensing.correction_magnitude ?? 0;
   const cbfProjEffort   = result.projection_magnitude ?? 0;
   const governorEffort  = Math.max(asyncGovEffort, cbfProjEffort);
+
+  // ── crs_method: Python override when present, else TS kernel string ──────
+  // The persisted tag now tells auditors which engine produced the authoritative
+  // CRS this turn. Python success → 'python-cbf|...'; fallback/stream/refusal →
+  // 'SovereignKernel-v2|θ=...|T=...'. Previously this was always the TS string,
+  // so the audit log could not distinguish Python-authoritative turns.
+  const crsMethodTag = crsMethod
+    ?? `SovereignKernel-v2|θ=${result.theta.toFixed(3)}|T=${result.temperature.toFixed(2)}`;
 
   // ── Law events for z-weight update ───────────────────────────────────────
   const lawEvents: string[] = [];
@@ -105,7 +121,7 @@ export async function writeKernelReceipt(
         slowDrip,
         governorEffort,
         sigmaViol,
-        `SovereignKernel-v2|θ=${result.theta.toFixed(3)}|T=${result.temperature.toFixed(2)}`,
+        crsMethodTag,
         new Date().toISOString(),
       ],
     });
