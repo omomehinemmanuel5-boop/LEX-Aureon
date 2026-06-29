@@ -127,6 +127,81 @@ function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) 
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   CRS DELTA — before → after governance
+   Overlays the pre-governance ("before") state as a faded bar beneath the
+   solid governed ("after") bar, with a numeric before / after / Δ row per
+   pillar plus the stability margin M. Falls back to CRSBar when no before-
+   state is present (see MessageBubble / GovernancePanel call sites).
+───────────────────────────────────────────────────────────────────── */
+function mColorOf(m: number): string {
+  return m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981';
+}
+
+function CRSDelta({ before, after }: {
+  before: { c: number; r: number; s: number; m: number };
+  after:  { c: number; r: number; s: number; m: number };
+}) {
+  const pillars: [string, number, number, string][] = [
+    ['C', before.c, after.c, G.C],
+    ['R', before.r, after.r, G.R],
+    ['S', before.s, after.s, G.S],
+  ];
+  const dM    = after.m - before.m;
+  const dCol  = (d: number) => Math.abs(d) < 0.005 ? G.textSub : d > 0 ? '#10b981' : '#ef4444';
+  const moved = Math.abs(dM) >= 0.005
+    || pillars.some(([, b, a]) => Math.abs(a - b) >= 0.005);
+
+  return (
+    <div className="space-y-[6px] pt-2.5 mt-2.5" style={{ borderTop: `1px solid ${G.border}` }}>
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: G.textSub }}>
+          before → after
+        </span>
+        <span className="text-[9px] font-mono uppercase tracking-widest"
+          style={{ color: moved ? G.gold : G.textSub }}>
+          {moved ? 'governed' : 'pass-through'}
+        </span>
+      </div>
+
+      {pillars.map(([k, b, a, col]) => {
+        const d = a - b;
+        return (
+          <div key={k} className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono font-bold w-3" style={{ color: col }}>{k}</span>
+            <span className="text-[10px] font-mono tabular-nums w-8 text-right" style={{ color: G.textSub }}>{b.toFixed(2)}</span>
+            <div className="flex-1 h-[3px] rounded-full relative" style={{ background: G.border }}>
+              <div className="absolute top-0 left-0 h-[3px] rounded-full"
+                style={{ width: `${Math.min(b, 1) * 100}%`, background: `${col}55` }} />
+              <div className="absolute top-0 left-0 h-[3px] rounded-full transition-all duration-700"
+                style={{ width: `${Math.min(a, 1) * 100}%`, background: col }} />
+            </div>
+            <span className="text-[10px] font-mono tabular-nums font-bold w-8 text-right" style={{ color: col }}>{a.toFixed(2)}</span>
+            <span className="text-[9px] font-mono tabular-nums w-10 text-right" style={{ color: dCol(d) }}>
+              {d >= 0 ? '+' : ''}{d.toFixed(2)}
+            </span>
+          </div>
+        );
+      })}
+
+      <div className="flex items-center gap-1.5 pt-0.5">
+        <span className="text-[10px] font-mono font-bold w-3" style={{ color: G.gold }}>M</span>
+        <span className="text-[10px] font-mono tabular-nums w-8 text-right" style={{ color: mColorOf(before.m) }}>{before.m.toFixed(2)}</span>
+        <div className="flex-1 h-[4px] rounded-full relative" style={{ background: G.border }}>
+          <div className="absolute top-0 left-0 h-[4px] rounded-full"
+            style={{ width: `${Math.min(before.m, 1) * 100}%`, background: `${mColorOf(before.m)}55` }} />
+          <div className="absolute top-0 left-0 h-[4px] rounded-full transition-all duration-700"
+            style={{ width: `${Math.min(after.m, 1) * 100}%`, background: mColorOf(after.m) }} />
+        </div>
+        <span className="text-[10px] font-mono tabular-nums font-bold w-8 text-right" style={{ color: mColorOf(after.m) }}>{after.m.toFixed(2)}</span>
+        <span className="text-[9px] font-mono tabular-nums w-10 text-right" style={{ color: dCol(dM) }}>
+          {dM >= 0 ? '+' : ''}{dM.toFixed(2)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    CODE BLOCK VIEWER
 ───────────────────────────────────────────────────────────────────── */
 const CodeViewer = memo(function CodeViewer({ block, onSave }: {
@@ -258,7 +333,16 @@ function GovernancePanel({ turn, tab, onClose }: {
 
         {tab === 'analysis' && (
           <div className="space-y-4">
-            {turn.C != null && <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />}
+            {turn.C != null && (
+              turn.rawC != null ? (
+                <CRSDelta
+                  before={{ c: turn.rawC, r: turn.rawR ?? 0, s: turn.rawS ?? 0, m: turn.mBefore ?? Math.min(turn.rawC, turn.rawR ?? 0, turn.rawS ?? 0) }}
+                  after={{ c: turn.C, r: turn.R ?? 0, s: turn.S ?? 0, m: turn.M ?? 0 }}
+                />
+              ) : (
+                <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />
+              )
+            )}
 
             {turn.governor && (
               <div className="pt-3 space-y-2" style={{ borderTop: `1px solid ${G.border}` }}>
@@ -400,7 +484,14 @@ const MessageBubble = memo(function MessageBubble({
           <StatusChips turn={turn} live={live} />
 
           {!live && turn.C != null && (
-            <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />
+            turn.rawC != null ? (
+              <CRSDelta
+                before={{ c: turn.rawC, r: turn.rawR ?? 0, s: turn.rawS ?? 0, m: turn.mBefore ?? Math.min(turn.rawC, turn.rawR ?? 0, turn.rawS ?? 0) }}
+                after={{ c: turn.C, r: turn.R ?? 0, s: turn.S ?? 0, m: turn.M ?? 0 }}
+              />
+            ) : (
+              <CRSBar c={turn.C} r={turn.R ?? 0} s={turn.S ?? 0} m={turn.M ?? 0} />
+            )
           )}
         </div>
 
@@ -708,7 +799,7 @@ function EmptyState({ mode, onSuggestion }: { mode: SandboxMode; onSuggestion: (
 
       <div className="w-full max-w-xs space-y-2 text-left">
         {[
-          'C·R·S constitutional pillars tracked every turn',
+          'C·R·S constitutional pillars — before vs after every turn',
           'Lyapunov stability — mathematically guaranteed',
           'SHA-256 cryptographic receipt every response',
         ].map((l, i) => (
@@ -828,12 +919,21 @@ export default function ChatConsole() {
     const C = Number(stateRec?.C ?? res.metrics?.c ?? 0);
     const R = Number(stateRec?.R ?? res.metrics?.r ?? 0);
     const S = Number(stateRec?.S ?? res.metrics?.s ?? 0);
+    // Pre-governance ("before") state from the stream route's complete event.
+    const rawRec  = kx.raw_state as Record<string, number> | undefined;
+    const rawC    = rawRec ? Number(rawRec.C) : undefined;
+    const rawR    = rawRec ? Number(rawRec.R) : undefined;
+    const rawS    = rawRec ? Number(rawRec.S) : undefined;
+    const mBefore = kx.m_before != null
+      ? Number(kx.m_before)
+      : (rawC != null && rawR != null && rawS != null ? Math.min(rawC, rawR, rawS) : undefined);
     const sig = (kx.semantic_signal as { attack_type?: string; severity?: number }) ?? {};
 
     setTurns(prev => prev.map(t => t.id !== currentLexId ? t : {
       ...t, streaming: false,
       governed_output: res.governed_output, raw_output: res.raw_output, audit_id: res.audit_id,
       M, health_band: health, C, R, S,
+      rawC, rawR, rawS, mBefore,
       delta_V: Number(kx.delta_V ?? 0),
       attack_type: sig.attack_type ?? 'none',
       attack_severity: typeof sig.severity === 'number' ? sig.severity : undefined,
