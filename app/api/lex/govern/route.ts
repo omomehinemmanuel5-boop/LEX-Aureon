@@ -15,6 +15,9 @@
  * the FPL1 classification is added to the response.
  * On Python failure (cold start, timeout), TypeScript kernel values are used.
  * Source is tagged in crs_method: 'python-cbf|...' vs 'SovereignKernel-v2|...'
+ *
+ * feat: response now includes raw_state + m_before (pre-governance "before"
+ *   state) alongside the governed state + M ("after"), matching the stream route.
  */
 
 import { NextResponse } from 'next/server';
@@ -76,6 +79,13 @@ export async function POST(req: Request) {
   if (result.status === 'Error') {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
+
+  // ── Pre-governance ("before") state ───────────────────────────────────────
+  // raw_state is the raw kernel measurement before the governor correction /
+  // CBF projection that produced result.state ("after"). Captured here because
+  // the self-referential block below may overwrite result.state/result.M.
+  const rawState = result.receipt.raw_state;
+  const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
 
   // ── Python CRS measurement (concurrent with self-referential) ────────────
   // Calls api/python/govern.py which runs the complete CCP/IEC/ADV pipeline
@@ -149,11 +159,14 @@ export async function POST(req: Request) {
   return NextResponse.json({
     governed_output:       result.governed_output,
     raw_output:            result.raw_output,
-    // CRS: Python measurement preferred; TypeScript fallback
+    // CRS: Python measurement preferred; TypeScript fallback ("after")
     M:                     mergedCRS?.M ?? result.M,
     C:                     mergedCRS?.C ?? result.state.C,
     R:                     mergedCRS?.R ?? result.state.R,
     S:                     mergedCRS?.S ?? result.state.S,
+    // Pre-governance ("before") state — raw kernel measurement
+    raw_state:             { C: rawState.C, R: rawState.R, S: rawState.S },
+    m_before:              mBefore,
     health_band:           mergedCRS?.health_band ?? result.health_band,
     weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
     crs_source:            python ? 'python-cbf' : 'typescript-kernel',
