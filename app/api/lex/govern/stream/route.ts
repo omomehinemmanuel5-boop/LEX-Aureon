@@ -3,6 +3,9 @@
  *
  * wire: loadKernelZ() threads session-adaptive z into runCycle().
  * fix: AuditorAgent now receives sigma_viol from z_traj directly.
+ * feat: complete event now carries raw_state + m_before (pre-governance "before"
+ *   state) alongside the governed state + M ("after"), so the console can render
+ *   the CRS state before vs after the governor correction / CBF projection.
  * note: GovernorAgent below is the REFERENCE IMPLEMENTATION (Section 11,
  *   F+G replicator dynamics). The LIVE governor runs inside sovereign_kernel.ts
  *   as governorUpdate() — only the G correction term, no replicator F.
@@ -94,6 +97,12 @@ export async function POST(req: Request) {
         const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
 
         if (result.status === 'Error') { emit('error', { error: result.error ?? 'Kernel error' }); controller.close(); return; }
+
+        // ── Pre-governance ("before") state — raw kernel measurement prior to
+        // the governor correction / CBF projection that yields the final state.
+        const rawState = result.receipt.raw_state;
+        const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
+        emit('crs_before', { c: rawState.C, r: rawState.R, s: rawState.S, m: mBefore });
 
         emit('generator', { bare_output: result.raw_output, anchored_output: result.governed_output, meta: { model: MODELS.PRIMARY, temperature_raw: 0.4, temperature_governed: result.temperature, attack_pressure: kernel.attack_pressure, theta: result.theta } });
         emit('raw', { output: result.raw_output });
@@ -200,7 +209,7 @@ export async function POST(req: Request) {
         const auditId = (auditorResult?.meta?.audit_id as string) ?? receiptId;
         emit('receipt', { audit_id: auditId, sha256_input: result.receipt.input_hash, sha256_output: (auditorResult?.meta?.output_hash as string) ?? '', brittleness: (auditorResult?.meta?.brittleness_B as number) ?? 0, vaulturex: vaul?.compliance_receipt ?? '' });
 
-        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: eC, r_measured: eR, s_measured: eS }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: srFired, z_weights: result.receipt.z_weights, receipt_id: auditId, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents' });
+        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: eC, r_measured: eR, s_measured: eS }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: srFired, z_weights: result.receipt.z_weights, receipt_id: auditId, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents' });
 
       } catch (e) {
         emit('error', { error: String(e) });
