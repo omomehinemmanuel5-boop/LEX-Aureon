@@ -125,8 +125,11 @@ export async function POST(req: Request) {
   }
 
   // ── Persist receipt ───────────────────────────────────────────────────────
+  // crs_method reflects the authoritative engine: mergedCRS.crs_method
+  // ('python-cbf|...') when Python succeeded and no refusal nulled it; otherwise
+  // writeKernelReceipt falls back to the TypeScript kernel string internally.
   const [receiptId] = await Promise.all([
-    writeKernelReceipt(session_id, turn, result),
+    writeKernelReceipt(session_id, turn, result, mergedCRS?.crs_method),
     incrementRuns(),
     promptEmbedding.length ? storeMemory({
       session_id, prompt,
