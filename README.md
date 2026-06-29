@@ -94,6 +94,25 @@ M < τ → Governor fires
 
 > **CRS proxy note:** the deployed CCP/IEC/ADV metrics in `lib/constitutional_metrics.ts` are computed from **lexical (bag-of-words) token overlap**, not embedding similarity. They are a fast proxy, not the embedding-based measurement described in some earlier write-ups. The embedding-based sovereignty measurement (output-to-constitutional-centroid cosine) lives separately in `lib/self_referential_crs.ts`.
 
+### CRS measurement engines, and receipts
+
+There are two CRS measurement paths, and receipts now record which one was authoritative for each turn:
+
+- **Streamed console path** (`POST /api/lex/govern/stream`, used by the live console) — the TypeScript kernel plus `CRSExtractorAgent`.
+- **Non-streamed API** (`POST /api/lex/govern`) — additionally calls a Python backend (`api/python/govern.py`) that computes CCP (cosine similarity with a decay term), IEC (population-variance entropy ratio) and ADV (normalized Shannon entropy), then runs a CBF QP filter and a short FPL1 simulation. On success that measurement is used for the response and stored memory; on cold-start/timeout the TypeScript kernel values are used. The hard `M ≥ τ` floor is always enforced by the TypeScript kernel regardless of which engine measured CRS.
+
+The persisted receipt's `crs_method` column records the engine: `python-cbf|ccp=…|iec=…|adv=…` when the Python backend was authoritative, and `SovereignKernel-v2|θ=…|T=…` otherwise (Python fallback, post-refusal, or the streamed path). This keeps the audit log honest about which engine produced each measurement, rather than always recording the TypeScript string.
+
+> **Scope note:** the Python backend is currently wired into the non-streamed `/api/lex/govern` route. The streamed path the console uses remains TypeScript-measured. Wiring Python into the stream is tracked, not yet done.
+
+### Before / after state
+
+Every governed turn now exposes the **pre-governance** state — the raw kernel measurement *before* the governor correction / CBF projection — alongside the governed ("after") result:
+
+- the API returns `raw_state` (C, R, S) and `m_before` next to the governed `state`, `C`/`R`/`S` and `M`;
+- the streamed pipeline emits a `crs_before` event and includes `raw_state`/`m_before` in the `complete` event;
+- the console renders the C·R·S·M delta (before → after) on every turn, labelling whether the turn was actually *governed* (state moved) or a *pass-through*.
+
 ### Async Governor G(x,z)
 
 The governor runs an asynchronous sensing loop alongside the synchronous kernel, implementing equation (10) of the paper:
@@ -149,7 +168,7 @@ curl -X POST http://localhost:3000/api/lex/govern \
 }
 ```
 
-Returns the governed output plus the constitutional state, `M`, health band, `V_z`/`ΔV_z`, the governor-sensing report, and a receipt id.
+Returns the governed output, the constitutional state and `M` ("after"), the pre-governance `raw_state` (C, R, S) and `m_before` ("before"), the health band, `V_z`/`ΔV_z`, `crs_source` (`python-cbf` when the Python backend was authoritative, else `typescript-kernel`), the governor-sensing report, and a receipt id.
 
 > **Security note:** this endpoint is currently unauthenticated and unthrottled against production inference keys. Add auth or a rate limit before exposing it to real traffic.
 
@@ -173,10 +192,12 @@ Returns the governed output plus the constitutional state, `M`, health band, `V_
 | §5.1 CCP | `lib/constitutional_metrics.ts` | lexical proxy (see CRS note) |
 | §5.2 IEC | `lib/governor_sensing.ts` / `constitutional_metrics.ts` | signal-reliability proxy |
 | §5.3 ADV | `lib/constitutional_metrics.ts` | decision-variance proxy |
+| §5 CRS (Python) | `api/python/govern.py` | CCP cosine-decay / IEC variance-entropy / ADV Shannon + CBF QP + FPL1; authoritative on `/api/lex/govern` when reachable |
+| Python bridge | `lib/python_bridge.ts` | `callPythonGovernor()`, `mergePythonCRS()` |
 | §6 Governor | `lib/sovereign_kernel.ts` | `governorUpdate()`, `runCycle()` |
 | §6 G(x,z) async | `lib/governor_loop.ts` | `fireGovernorLoop()`, `consumePendingCorrection()` |
 | §8 Self-referential S | `lib/self_referential_crs.ts` | embedding cosine to constitutional centroid |
-| Audit receipts | `lib/kernel_bridge.ts` | `writeKernelReceipt()` |
+| Audit receipts | `lib/kernel_bridge.ts` | `writeKernelReceipt()` — tags `crs_method` (`python-cbf` vs `SovereignKernel-v2`); records `raw_state`/`m_before` |
 
 ---
 
@@ -208,7 +229,7 @@ npm run test          # math, governor, constitution, schemas, API
 | Layer | Technology |
 |:---|:---|
 | Framework | Next.js 15 (App Router) |
-| Language | TypeScript (strict) |
+| Language | TypeScript (strict) · Python (stdlib CRS backend) |
 | Database | Turso (libSQL) |
 | LLM inference | Groq · Gemini · Mistral (fallback chain) |
 | Embeddings | Jina AI |
@@ -238,6 +259,7 @@ npm run test          # math, governor, constitution, schemas, API
 - [ ] Run HarmBench against the official walledai dataset
 - [ ] Swap in the official HarmBench classifier; report two-judge agreement
 - [ ] Add auth / rate limit to the public govern endpoint
+- [ ] Wire the Python CRS backend into the streamed `/api/lex/govern/stream` path (console traffic)
 - [ ] Establish (or bound) the relationship between deployed F(x,z) and the proven V_z gradient flow
 - [ ] Reconcile paper claims with deployment ("approximates" vs "theorem")
 
