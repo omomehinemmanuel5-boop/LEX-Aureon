@@ -1,6 +1,8 @@
 /**
  * POST /api/lex/kernel/stream — streamed governance pipeline (compat route)
  * wire: loadKernelZ() threads session-adaptive z into runCycle().
+ * fix: AuditorAgent now receives sigma_viol from z_traj directly.
+ * note: GovernorAgent is a REFERENCE SIMULATION — see govern/stream for full note.
  */
 
 import { SovereignKernel }    from '@/lib/sovereign_kernel';
@@ -109,11 +111,13 @@ export async function POST(req: Request) {
         const eC = ms?.C ?? kernel.state.C, eR = ms?.R ?? kernel.state.R, eS = ms?.S ?? kernel.state.S, eM = ms?.M ?? result.M;
         emit('crs', { c: eC, r: eR, s: eS, m: eM, health_band: result.health_band, theta: result.theta, temperature: result.temperature, method: (crsResult?.meta?.method as string) ?? 'kernel-internal', anchor_sim: (crsResult?.meta?.anchor_sim as number) ?? 0, lyapunov_V: (crsResult?.meta?.lyapunov_V as number) ?? result.lyapunov_V, delta_V: (crsResult?.meta?.delta_V as number) ?? result.delta_V });
 
-        emit('stage', { name: 'governing', description: 'Governor: Section 11 replicator dynamics' });
+        // GovernorAgent = REFERENCE SIMULATION of Section 11 F+G dynamics.
+        // Live governor ran as governorUpdate() inside runCycle() above.
+        emit('stage', { name: 'governing', description: 'Governor: Section 11 reference simulation (G_i = k(φ_i−φ̄))' });
         const govResult = await safe(() => GovernorAgent({ prompt, session_id, crs_state: { C: eC, R: eR, S: eS, M: eM }, prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, velocity: (crsResult?.meta?.velocity as number) ?? 0, attack_pressure: kernel.attack_pressure, theta: kernel.theta, receipts: [] }), null);
         const weakest = (govResult?.meta?.weakest_dimension as 'C'|'R'|'S') ?? 'S';
         const needsIntervention = govResult?.meta?.intervention_required === true || pre.label === 'HIGH' || kernelSignal.severity >= 0.7 || result.receipt.safety_projection_triggered;
-        emit('governor', { decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'), intervention_required: needsIntervention, reason: govResult?.meta?.reason ?? 'Governor decision', G_vector: govResult?.meta?.G_vector ?? { C: 0, R: 0, S: 0 }, V_before: govResult?.meta?.V_before ?? 0, V_after: govResult?.meta?.V_after ?? 0, dV: govResult?.meta?.dV ?? 0, lyapunov_stable: govResult?.meta?.lyapunov_stable ?? true, weakest, triggers: govResult?.meta?.triggers ?? {} });
+        emit('governor', { decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'), intervention_required: needsIntervention, reason: govResult?.meta?.reason ?? 'Governor decision', G_vector: govResult?.meta?.G_vector ?? { C: 0, R: 0, S: 0 }, V_before: govResult?.meta?.V_before ?? 0, V_after: govResult?.meta?.V_after ?? 0, dV: govResult?.meta?.dV ?? 0, lyapunov_stable: govResult?.meta?.lyapunov_stable ?? true, weakest, triggers: govResult?.meta?.triggers ?? {}, note: 'reference_simulation' });
 
         let governedOutput = result.governed_output;
         let invokedLaw: { book: string; name: string; pillar: string; id?: number } | null = null;
@@ -170,7 +174,16 @@ export async function POST(req: Request) {
 
         emit('stage', { name: 'auditing', description: 'Creating audit record' });
         const finalM = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
-        const auditorResult = await safe(() => AuditorAgent({ prompt, session_id, raw_output: result.raw_output, governed_output: governedOutput, crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: finalM }, health_band: result.health_band, intervention_required: needsIntervention, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, cbf_triggered: result.receipt.safety_projection_triggered || srFired, receipts: [] }), null);
+        const auditorResult = await safe(() => AuditorAgent({
+          prompt, session_id,
+          raw_output: result.raw_output, governed_output: governedOutput,
+          crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: finalM },
+          health_band: result.health_band, intervention_required: needsIntervention,
+          lyapunov_V: result.lyapunov_V, delta_V: result.delta_V,
+          cbf_triggered: result.receipt.safety_projection_triggered || srFired,
+          sigma_viol: zTraj?.sigma_viol ?? 0,  // ← fix: from z_traj, not receipts lookup
+          receipts: [],
+        }), null);
 
         const [receiptId] = await Promise.all([
           writeKernelReceipt(session_id, turn, { ...result, governed_output: governedOutput }),
