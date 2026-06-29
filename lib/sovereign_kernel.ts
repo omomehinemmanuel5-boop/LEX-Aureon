@@ -29,6 +29,14 @@
  * resolves it and passes the result into buildContractContext() instead of
  * letting buildContractContext re-derive it internally (was a duplicate
  * getLawImpact() DB read on every attack-flagged turn).
+ *
+ * wire: lyapunovCandidate() now accepts an optional session z vector
+ * [z_c, z_r, z_s] from z_traj. When provided, V_z(x) is computed with
+ * the proven session-adaptive weights rather than the uniform fallback
+ * Z_RECOVERY = [1/3,1/3,1/3]. This makes receipt lyapunov_V and delta_V
+ * certify the actual z-weighted barrier from §11, not just its uniform
+ * special case. z is loaded from z_traj inside kernel_bridge.ts and
+ * passed into runCycle as the sessionZ parameter.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -42,7 +50,7 @@ import { fireGovernorLoop, consumePendingCorrection } from './governor_loop';
 
 import {
   TAU, SOFT_FLOOR, TAU_GOV, TARGET_MARGIN, THETA_0, THETA_MIN, THETA_MAX,
-  THETA_ETA, THETA_BETA, SOFT_GAIN, MIN_DELTA,
+  THETA_ETA, THETA_BETA, SOFT_GAIN, MIN_DELTA, Z_RECOVERY,
   projectToSimplex, lyapunovBarrierZ, calculateGovernorG,
 } from './aureonics_core';
 
@@ -95,6 +103,9 @@ export interface KernelReceipt {
   temperature:                 number;
   invariance_violations:       number;
   governor_sensing:            GovernorSensingReport;
+  // z-weights used to compute lyapunov_V this turn (from z_traj if available,
+  // else Z_RECOVERY uniform fallback). Stored in receipt for auditability.
+  z_weights:                   [number, number, number];
   version:                     string;
 }
 
@@ -156,14 +167,10 @@ export class SovereignKernel {
   last_semantic_signal: SemanticSignal = { attack_type: 'none', severity: 0 };
   last_metrics: PostResponseCRS | null = null;
 
-  // NARROWED: Only match explicit jailbreak attempts, not everyday language.
-  // Requires context-specific keywords to avoid false positives.
   detectSemanticAttack(prompt: string): SemanticSignal {
     const p = prompt.toLowerCase();
     const candidates: SemanticSignal[] = [];
 
-    // Identity reframe: Only match when explicitly trying to change identity
-    // Requires both identity keywords AND reframe keywords
     if (
       (p.includes('you are now') || p.includes('you are actually') || p.includes('you are really')) &&
       (p.includes('jailbreak') || p.includes('dan mode') || p.includes('unrestricted') || p.includes('no restrictions'))
@@ -176,8 +183,6 @@ export class SovereignKernel {
       candidates.push({ attack_type: 'identity', severity: 0.85 });
     }
 
-    // Coercion: Only match when explicitly demanding obedience
-    // Requires both demand keywords AND control keywords
     if (
       (p.includes('you must') || p.includes('you will') || p.includes('you shall')) &&
       (p.includes('obey') || p.includes('comply') || p.includes('forced') || p.includes('override'))
@@ -185,7 +190,6 @@ export class SovereignKernel {
       candidates.push({ attack_type: 'coercion', severity: 0.82 });
     }
 
-    // Exploitation: Only match when explicitly asking for loopholes
     if (
       (p.includes('exploit') || p.includes('bypass') || p.includes('loophole')) &&
       (p.includes('safety') || p.includes('restriction') || p.includes('guideline') || p.includes('constitutional'))
@@ -194,8 +198,6 @@ export class SovereignKernel {
     }
 
     if (!candidates.length) return { attack_type: 'none', severity: 0.0 };
-
-    // Return highest-severity signal. Ties broken by declaration order above.
     return candidates.reduce((best, c) => c.severity > best.severity ? c : best);
   }
 
@@ -218,7 +220,6 @@ export class SovereignKernel {
   ): Promise<{ context: string; temperature: number; health_band: string }> {
     let lawNote = '';
     if (semanticSignal && semanticSignal.attack_type !== 'none') {
-      // perf: reuse the law lookup runCycle already did instead of re-querying.
       const lawData = precomputedLaw !== undefined ? precomputedLaw : await this.selectActiveLaw(semanticSignal, M);
       lawNote = lawData?.text ? `\n${lawData.text}` : '';
     }
@@ -312,13 +313,26 @@ export class SovereignKernel {
     if (total > NORMALIZATION_EPS) { this.state.C /= total; this.state.R /= total; this.state.S /= total; }
   }
 
-  // Audit certificate: the §11 z-weighted log-barrier V_z (relative-entropy +
-  // CBF penalty), NOT the centroid-distance quadratic. The quadratic was
-  // trivially decreased by the controller's own pull toward 1/3 and so could
-  // not independently certify floor-respecting motion. V_z diverges as any
-  // coordinate nears τ, so delta_V now reflects real boundary behavior.
-  lyapunovCandidate(state: KernelState): number {
-    return lyapunovBarrierZ([state.C, state.R, state.S]);
+  /**
+   * lyapunovCandidate — computes V_z(x) = -Σ z_i·log(x_i) + (μ/2)Σmax(0,τ-x_i)²
+   *
+   * Uses session-adaptive z weights when available (from z_traj via the
+   * proven Banach update rule, lib/kv.ts → updateZTraj). Falls back to
+   * Z_RECOVERY = [1/3,1/3,1/3] for new sessions with no attack history.
+   *
+   * With session z:  V_z certifies the full §11 adaptive barrier.
+   * With Z_RECOVERY: V_z reduces to the uniform log-barrier V(x) = -Σlog(x_i)
+   *                  (up to additive constant), which is still a valid KL
+   *                  Lyapunov function for replicator dynamics.
+   *
+   * The z vector used is stamped into the receipt as z_weights for auditability.
+   */
+  lyapunovCandidate(
+    state: KernelState,
+    sessionZ?: [number, number, number],
+  ): number {
+    const z = sessionZ ?? Z_RECOVERY;
+    return lyapunovBarrierZ([state.C, state.R, state.S], z);
   }
 
   assertConsistency(): void {
@@ -329,12 +343,19 @@ export class SovereignKernel {
   }
 
   // ── Main governance cycle — F(x,z) + async G(x,z) ────────────────────────
-  async runCycle(userPrompt: string, memoryContext: string = '', sessionId?: string): Promise<KernelCycleResult> {
+  // sessionZ: optional proven z-weights from z_traj for V_z computation.
+  //   Loaded by kernel_bridge.ts from z_traj before calling runCycle.
+  //   When absent: falls back to Z_RECOVERY (uniform, correct for new sessions).
+  async runCycle(
+    userPrompt: string,
+    memoryContext: string = '',
+    sessionId?: string,
+    sessionZ?: [number, number, number],
+  ): Promise<KernelCycleResult> {
     this.step_counter += 1;
     this.prev_state = { ...this.state };
 
     // ── STEP 0: Apply pending G(x,z) correction from previous turn ──────────
-    // Turn-lag architecture: correction computed async last turn, applied now.
     let governorSensing: GovernorSensingReport = {
       fired: false, correction_applied: false,
       basin_shift: 'none', rho: 0, reason: 'no_session',
@@ -343,7 +364,6 @@ export class SovereignKernel {
     if (sessionId) {
       const pending = consumePendingCorrection(sessionId, this.state);
       if (pending) {
-        // Apply G(x,z) delta — CBF floor already verified inside consumePendingCorrection
         this.state.C += pending.delta_C;
         this.state.R += pending.delta_R;
         this.state.S += pending.delta_S;
@@ -351,7 +371,7 @@ export class SovereignKernel {
         this.assertConsistency();
         governorSensing = {
           fired: true, correction_applied: true,
-          basin_shift: 'collaborative', // derived from pending.reason if needed
+          basin_shift: 'collaborative',
           rho: 1.0,
           reason: pending.reason,
         };
@@ -375,8 +395,6 @@ export class SovereignKernel {
 
     this.assertConsistency();
 
-    // perf: resolved once here, reused by buildContractContext below instead
-    // of being re-queried (was a duplicate getLawImpact() DB read).
     const activeLawData = semanticSignal.attack_type !== 'none'
       ? await this.selectActiveLaw(semanticSignal, M0) : null;
     const activeLaw = activeLawData?.name || null;
@@ -419,7 +437,6 @@ export class SovereignKernel {
     }
 
     // ── STEP 2: Fire async governor loop — G(x,z) for next turn ─────────────
-    // Non-blocking. Stored in governor_loop store, consumed at start of turn t+1.
     if (sessionId) {
       fireGovernorLoop(sessionId, { ...this.state }, userPrompt);
       if (!governorSensing.correction_applied) {
@@ -491,7 +508,11 @@ export class SovereignKernel {
       this.projectToSimplex(); this.assertConsistency();
     }
 
-    const lyapunovV = this.lyapunovCandidate(projectedState);
+    // ── V_z computation with session-adaptive z ───────────────────────────────
+    // Use proven session z from z_traj when available; Z_RECOVERY otherwise.
+    // This makes lyapunov_V and delta_V certify the actual §11 adaptive barrier.
+    const activeZ: [number, number, number] = sessionZ ?? Z_RECOVERY;
+    const lyapunovV = this.lyapunovCandidate(projectedState, activeZ);
     const deltaV = lyapunovV - this.prev_lyapunov_V;
     this.delta_v_total_steps += 1;
     if (deltaV < 0) this.delta_v_negative_steps++;
@@ -504,17 +525,6 @@ export class SovereignKernel {
     const crypto = await import('crypto');
     const sha256 = (data: string) => crypto.createHash('sha256').update(data).digest('hex');
     const [inputHash, outputHash] = [sha256(userPrompt), sha256(governedResponse)];
-
-    // perf: self-referential CRS measurement (embedText + centroid fetch +
-    // applySelfReferentialMeasurement) intentionally NOT run here anymore.
-    // It used to run via getCachedEmbedding(outputHash), but that hash is
-    // always a fresh miss (the governed response was never embedded before
-    // this point), so the block silently no-op'd on every call while still
-    // paying for 2 cache lookups + 2 centroid fetches. The real, working
-    // self-referential measurement (and the sovereignty-violation refusal
-    // override) lives in app/api/lex/govern/route.ts, which has the actual
-    // freshly-computed output embedding available. Keeping it in exactly
-    // one place avoids the duplicate work.
 
     const receipt: KernelReceipt = {
       timestamp_iso: new Date().toISOString(),
@@ -539,6 +549,7 @@ export class SovereignKernel {
       temperature: Math.round(temperature * 1e6) / 1e6,
       invariance_violations: this.invariance_violations,
       governor_sensing: governorSensing,
+      z_weights: activeZ,
       version: 'SovereignKernel-TS-v2+AsyncGovernor',
     };
 
