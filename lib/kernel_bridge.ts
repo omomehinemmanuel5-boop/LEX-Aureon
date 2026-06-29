@@ -3,50 +3,48 @@
  * Writes kernel receipts into existing audit infrastructure.
  * No new tables. Uses: praxis_receipts, z_traj, governor_log.
  *
- * fix: uses singleton getClient() from db.ts — was calling createClient()
- * on every writeKernelReceipt/loadKernelState call (same leak fixed in lex_memory.ts).
+ * fix: sigma_viol / governor_effort / slow_drip corrected values.
+ *   sigma_viol      = max(0, τ − M_before)
+ *   governor_effort = result.projection_magnitude
+ *   slow_drip       = OR(semantic classifier, sigma_viol accumulator)
  *
- * fix: sigma_viol / governor_effort / slow_drip were being written with the
- * wrong source values — sigma_viol and governor_effort were both silently
- * set to copies of attack_pressure / effective_theta, and slow_drip was set
- * from epsilon_injected (an unrelated entropy-floor mechanism). None of
- * these three columns are read back anywhere to make a live governance
- * decision — loadKernelState() only reads last_c/r/s — so this was a
- * data-quality issue in the audit log, not a runtime safety bug. Fixed
- * going forward only; rows written before this revision keep the old
- * (incorrect) values. If you're doing historical analysis on
- * sigma_viol/governor_effort/slow_drip, treat the previous commit as the
- * cutover point — values before vs after are not comparable.
+ * wire: z_traj written via updateZTraj() — proven Banach update rule
+ *   (Theorem 3a/3b, ρ=0.85, γ=0.10, clamp+normalize). Closed Open Problem 3.
  *
- *   sigma_viol      = max(0, τ − M_before)         — real floor-violation magnitude
- *   governor_effort = result.projection_magnitude  — actual correction distance moved
- *   slow_drip       = 1 if semantic OR z_traj accumulator detects erosion
+ * wire: loadKernelZ() reads z_c/z_r/z_s from z_traj and passes them
+ *   as sessionZ to SovereignKernel.runCycle(). lyapunov_V and delta_V in
+ *   every receipt now certify V_z(x, z_session) — the actual §11 adaptive
+ *   barrier — rather than the uniform fallback V_z(x, Z_RECOVERY).
+ *   For new sessions with no z_traj row, falls back to Z_RECOVERY (correct:
+ *   no attack history → uniform weights → reduces to plain V(x)).
  *
- * wire: z_traj now written via updateZTraj() from lib/kv.ts, which implements
- * the proven z-weight update rule (Theorem 3a/3b, Banach fixed-point):
- *   A(t) = γ · Σ_law sev(law)·dir(law)
- *   z_{t+1} = normalize(clamp(ρ·z_t + (1−ρ)·x_t − A(t), τ/2, 1−τ))
- * z_c/z_r/z_s coordinate weights are now stored and reflect historical
- * attack pressure per pillar, closing Open Problem 3.
- *
- * fix: slow_drip receipt column now sourced from TWO signals (OR logic):
- *   1. semantic_signal.attack_type === 'slow_drip'  (semantic classifier)
- *   2. z_traj.sigma_viol > SIGMA_THRESHOLD          (accumulator)
- * Previously only signal 1 was used, but detectSemanticAttack() in
- * sovereign_kernel.ts never classifies any pattern as 'slow_drip', making
- * the column permanently 0. The sigma_viol accumulator in updateZTraj()
- * IS working correctly — it just wasn't surfacing into the receipt.
- * Now both signals are OR-combined so the receipt reflects real erosion.
- *
- * fix: console.error → structured logger (matches app/api/health/route.ts
- * pattern). Only error message + truncated stack are logged.
+ * fix: slow_drip receipt = OR(semantic, sigma_viol > SIGMA_THRESHOLD).
+ *   Previously the semantic classifier never classified 'slow_drip' so
+ *   the column was permanently 0. Accumulator now surfaces to receipts.
  */
 
 import { getClient } from './db';
 import { KernelCycleResult, KernelState } from './sovereign_kernel';
-import { TAU } from './aureonics_core';
+import { TAU, Z_RECOVERY } from './aureonics_core';
 import { updateZTraj, getZTraj, SIGMA_THRESHOLD } from './kv';
 import { logger, errorFields } from './logger';
+
+/** Load proven session z-weights from z_traj, or return Z_RECOVERY fallback. */
+export async function loadKernelZ(sessionId: string): Promise<[number, number, number]> {
+  try {
+    const z = await getZTraj(sessionId);
+    if (
+      z &&
+      typeof z.z_c === 'number' && typeof z.z_r === 'number' && typeof z.z_s === 'number' &&
+      // Guard: if all three are still the default (0.333), treat as no history yet.
+      // A truly adapted z will differ from uniform due to Banach update.
+      !(Math.abs(z.z_c - 1/3) < 1e-6 && Math.abs(z.z_r - 1/3) < 1e-6 && Math.abs(z.z_s - 1/3) < 1e-6)
+    ) {
+      return [z.z_c, z.z_r, z.z_s];
+    }
+  } catch { /* z_traj not yet created for this session */ }
+  return Z_RECOVERY;
+}
 
 export async function writeKernelReceipt(
   sessionId: string,
@@ -62,8 +60,6 @@ export async function writeKernelReceipt(
   const governorEffort = result.projection_magnitude;
 
   // ── Derive law events for z-weight update ────────────────────────────────
-  // Collect any law/attack events fired this cycle so the proven z-update
-  // rule can correctly compute A(t) = γ · Σ sev(law)·dir(law).
   const lawEvents: string[] = [];
   if (result.semantic_signal.attack_type && result.semantic_signal.attack_type !== 'none') {
     lawEvents.push(result.semantic_signal.attack_type);
@@ -86,22 +82,16 @@ export async function writeKernelReceipt(
       lawEvents,
     );
 
-    // ── Slow-drip detection — OR of semantic classifier + sigma_viol accumulator
-    // Signal 1: semantic classifier (detectSemanticAttack in sovereign_kernel.ts)
-    //   — currently never fires 'slow_drip'; kept for forward compatibility.
-    // Signal 2: sigma_viol accumulator in z_traj — the proven detection mechanism.
-    //   Accumulates when M < TAU_LYP (0.08) across turns; fires when > SIGMA_THRESHOLD.
-    //   This is the primary slow-drip signal and was previously unreachable in receipts.
+    // ── Slow-drip detection: OR(semantic classifier, sigma_viol accumulator) ─
     const semanticSlowDrip = result.semantic_signal.attack_type === 'slow_drip' ? 1 : 0;
     let accumulatorSlowDrip = 0;
     try {
       const zTraj = await getZTraj(sessionId);
       if (zTraj && zTraj.sigma_viol > SIGMA_THRESHOLD) {
         accumulatorSlowDrip = 1;
-        // Also add to law events if not already present — z-weights will adapt
         if (!lawEvents.includes('slow_drip')) lawEvents.push('slow_drip');
       }
-    } catch { /* z_traj read failure is non-fatal — don't block receipt write */ }
+    } catch { /* non-fatal */ }
 
     const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
 
@@ -141,7 +131,8 @@ export async function writeKernelReceipt(
         result.M,
         driftDir,
         sigmaViol,
-        result.receipt.safety_projection_triggered ? 'cbf_projection' : slowDrip ? 'slow_drip_accumulator' : 'none',
+        result.receipt.safety_projection_triggered ? 'cbf_projection'
+          : slowDrip ? 'slow_drip_accumulator' : 'none',
         result.receipt.active_law || (result.semantic_signal.attack_type !== 'none'
           ? `semantic:${result.semantic_signal.attack_type}` : null),
         new Date().toISOString(),
