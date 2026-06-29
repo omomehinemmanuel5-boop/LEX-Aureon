@@ -1,16 +1,14 @@
 /**
  * POST /api/lex/kernel — kept for backwards compatibility
  * Canonical endpoint is POST /api/lex/govern
- * This file contains the same implementation.
- */
-/**
- * POST /api/lex/govern
- * SovereignKernel governance cycle with constitutional semantic memory.
+ *
+ * wire: loadKernelZ() added alongside loadKernelState() so sessionZ
+ * flows into runCycle(). lyapunov_V now certifies V_z(x, z_session).
  */
 
 import { NextResponse } from 'next/server';
 import { SovereignKernel } from '@/lib/sovereign_kernel';
-import { writeKernelReceipt, loadKernelState } from '@/lib/kernel_bridge';
+import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import {
   embedText, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
@@ -18,7 +16,6 @@ import {
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
 
-// Session-scoped kernel cache
 const kernelCache = new Map<string, SovereignKernel>();
 
 function getKernel(sessionId: string, savedState?: { C: number; R: number; S: number } | null): SovereignKernel {
@@ -55,18 +52,18 @@ export async function POST(req: Request) {
     promptEmbedding = await embedText(prompt);
     const memories  = await retrieveSimilar(promptEmbedding, 5);
     memoryContext   = buildMemoryContext(memories);
-  } catch { /* non-fatal — kernel runs without memory if Jina fails */ }
+  } catch { /* non-fatal */ }
 
-  // ── 2. Load persisted kernel state + run cycle ────────────────────────────
-  const savedState = await loadKernelState(session_id);
-  const kernel     = getKernel(session_id, savedState);
+  // ── 2. Load kernel state + session z concurrently ─────────────────────────
+  const [savedState, sessionZ] = await Promise.all([
+    loadKernelState(session_id),
+    loadKernelZ(session_id),
+  ]);
+  const kernel = getKernel(session_id, savedState);
 
-  const result = await kernel.runCycle(prompt, memoryContext);
+  const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
 
-  // ── Self-referential CRS: output measured against constitutional identity ──
-  // S = cosine_sim(output_emb, constitutional_centroid).
-  // Jailbreak outputs are semantically far from constitutional memory → S drops
-  // → M drops → CBF fires → output replaced. No patterns. The math catches it.
+  // ── Self-referential CRS ──────────────────────────────────────────────────
   if (result.status !== 'Error' && promptEmbedding.length) {
     try {
       const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
@@ -80,20 +77,15 @@ export async function POST(req: Request) {
         );
         const isRealAttack = result.semantic_signal.attack_type !== 'none'
                           && result.semantic_signal.severity >= 0.7;
-
         if (isRealAttack && sr.selfCRS.sovereignty_violated) {
           result.governed_output = CANONICAL_REFUSAL;
           result.health_band = 'CRITICAL';
           result.receipt.safety_projection_triggered = true;
-        } else if (sr.selfCRS.sovereignty_violated && !isRealAttack) {
-          // No output replacement for benign drift.
-          // Don't mark projectionTriggered as true unless it was already true from kernel.
         }
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };
       }
     } catch (e) {
-      // Self-referential measurement failure is non-fatal
       console.error('self-referential CRS error:', e);
     }
   }
@@ -106,8 +98,7 @@ export async function POST(req: Request) {
   const [receiptId] = await Promise.all([
     writeKernelReceipt(session_id, turn, result),
     promptEmbedding.length ? storeMemory({
-      session_id,
-      prompt,
+      session_id, prompt,
       prompt_hash:           result.receipt.input_hash,
       embedding:             promptEmbedding,
       M:                     result.M,
@@ -115,10 +106,7 @@ export async function POST(req: Request) {
       R:                     result.state.R,
       S:                     result.state.S,
       health_band:           result.health_band,
-      state_label:           classifyStateLabel(
-                               result.receipt.safety_projection_triggered,
-                               result.governed_output,
-                             ),
+      state_label:           classifyStateLabel(result.receipt.safety_projection_triggered, result.governed_output),
       intervention:          result.receipt.safety_projection_triggered,
       governed_response_hash: result.receipt.output_hash,
     }) : Promise.resolve(),
@@ -143,29 +131,20 @@ export async function POST(req: Request) {
     projection_triggered: result.receipt.safety_projection_triggered,
     projection_magnitude: result.projection_magnitude,
     state:                result.state,
+    z_weights:            result.receipt.z_weights,
     receipt_id:           receiptId,
     memory_injected:      memoryContext.length > 0,
     invariance_violations: result.invariance_violations,
     metrics:              result.metrics ?? null,
-    version:              result.receipt.version ?? 'SovereignKernel-TS-v2+Memory+Metrics',
+    version:              result.receipt.version ?? 'SovereignKernel-TS-v2+AsyncGovernor',
   });
 }
 
 export async function GET() {
   return NextResponse.json({
-    name:    'Lex Aureon SovereignKernel API',
-    version: 'v2+LexMemory',
+    name:     'Lex Aureon SovereignKernel API',
+    version:  'v2+AsyncGovernor',
     endpoint: '/api/lex/kernel',
-    memory:  'Jina jina-embeddings-v3 + Turso cosine similarity retrieval',
-    innovations: [
-      'Constitutional temperature control — LLM temperature varies with M',
-      'Dual LLM calls — raw and governed response per turn',
-      'Adaptive gain θ(t) — correction strength scales with stress',
-      'Two-level hysteresis — soft floor (0.08) + hard CBF floor (0.05)',
-      'Semantic transducer — CRS deltas applied before LLM call',
-      'Shannon entropy ADV scoring — diverse responses increase S',
-      'Epsilon injection — prevents frozen attractors',
-      'Constitutional semantic memory — top-5 similar past interactions injected',
-    ],
+    governor: 'G(x,z) async sensing — IEC filter + CBF guarantee',
   });
 }
