@@ -2,11 +2,19 @@
  * POST /api/lex/govern
  * SovereignKernel governance cycle — F(x,z) sync + G(x,z) async governor.
  *
- * wire: loadKernelZ() now called alongside loadKernelState() and passed
- * as sessionZ into runCycle(). lyapunov_V in every receipt now certifies
- * V_z(x, z_session) — the §11 adaptive barrier with session z-weights —
- * rather than the uniform fallback. Falls back to Z_RECOVERY automatically
- * for new sessions with no z_traj history.
+ * wire: loadKernelZ() threads session-adaptive z into runCycle().
+ *
+ * wire: callPythonGovernor() now called concurrently with the TypeScript kernel.
+ * The Python backend (api/python/govern.py) provides the authoritative CRS
+ * measurement using:
+ *   - Cosine similarity with decay lambda (CCP)
+ *   - Population variance entropy ratio (IEC)
+ *   - Normalized Shannon entropy (ADV)
+ *   - Full CBF QP filter + 50-step FPL1 simulation
+ * On Python success, the Python CRS measurement is used for receipts and
+ * the FPL1 classification is added to the response.
+ * On Python failure (cold start, timeout), TypeScript kernel values are used.
+ * Source is tagged in crs_method: 'python-cbf|...' vs 'SovereignKernel-v2|...'
  */
 
 import { NextResponse } from 'next/server';
@@ -21,6 +29,7 @@ import {
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
 import { MAX_PROMPT_CHARS } from '@/lib/schemas';
 import { logger, errorFields } from '@/lib/logger';
+import { callPythonGovernor, mergePythonCRS } from '@/lib/python_bridge';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -41,7 +50,7 @@ export async function POST(req: Request) {
 
   await ensureDB();
 
-  // ── Embed + retrieve memory concurrently with state + z load ─────────────
+  // ── All async work runs concurrently ─────────────────────────────────────
   let promptEmbedding: number[] = [];
   let memoryContext = '';
   const memoryPromise = (async () => {
@@ -50,25 +59,44 @@ export async function POST(req: Request) {
       const memories  = await retrieveSimilar(promptEmbedding, 5);
       memoryContext   = buildMemoryContext(memories);
     } catch (e) {
-      logger.warn('govern.memory', 'embed/retrieve failed, continuing without memory context', errorFields(e));
+      logger.warn('govern.memory', 'embed/retrieve failed', errorFields(e));
     }
   })();
 
-  // loadKernelZ runs concurrently — reads proven z_c/r/s from z_traj
   const [savedState, sessionZ] = await Promise.all([
     loadKernelState(session_id),
     loadKernelZ(session_id),
     memoryPromise,
   ]);
 
-  // ── Load kernel + run cycle with session-adaptive z ───────────────────────
+  // ── TypeScript kernel cycle ───────────────────────────────────────────────
   const kernel = getCachedKernel(session_id, savedState);
   const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
+
+  if (result.status === 'Error') {
+    return NextResponse.json({ error: result.error }, { status: 500 });
+  }
+
+  // ── Python CRS measurement (concurrent with self-referential) ────────────
+  // Calls api/python/govern.py which runs the complete CCP/IEC/ADV pipeline
+  // plus CBF QP filter + FPL1 classification. Non-fatal on failure.
+  const [pythonResult] = await Promise.allSettled([
+    callPythonGovernor(prompt, result.raw_output, result.governed_output),
+  ]);
+  const python = pythonResult.status === 'fulfilled' ? pythonResult.value : null;
+
+  // Merge Python CRS with TypeScript kernel state
+  // Python measurement used for reporting; TypeScript CBF guarantees the floor
+  let mergedCRS = python ? mergePythonCRS(
+    python,
+    result.M,
+    result.state.C, result.state.R, result.state.S,
+  ) : null;
 
   // ── Self-referential CRS ──────────────────────────────────────────────────
   let projectionTriggered = result.receipt.safety_projection_triggered;
 
-  if (result.status !== 'Error' && promptEmbedding.length) {
+  if (promptEmbedding.length) {
     try {
       const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
         embedText(result.governed_output).catch(() => [] as number[]),
@@ -86,20 +114,17 @@ export async function POST(req: Request) {
           result.health_band     = 'CRITICAL';
           projectionTriggered    = true;
           result.receipt.safety_projection_triggered = true;
+          mergedCRS = null; // Python result no longer valid after refusal
         }
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };
       }
     } catch (e) {
-      logger.error('govern.self_referential', 'self-referential CRS measurement failed', errorFields(e));
+      logger.error('govern.self_referential', 'self-referential CRS failed', errorFields(e));
     }
   }
 
-  if (result.status === 'Error') {
-    return NextResponse.json({ error: result.error }, { status: 500 });
-  }
-
-  // ── Persist receipt + memory ──────────────────────────────────────────────
+  // ── Persist receipt ───────────────────────────────────────────────────────
   const [receiptId] = await Promise.all([
     writeKernelReceipt(session_id, turn, result),
     incrementRuns(),
@@ -107,11 +132,11 @@ export async function POST(req: Request) {
       session_id, prompt,
       prompt_hash:            result.receipt.input_hash,
       embedding:              promptEmbedding,
-      M:                      result.M,
-      C:                      result.state.C,
-      R:                      result.state.R,
-      S:                      result.state.S,
-      health_band:            result.health_band,
+      M:                      mergedCRS?.M ?? result.M,
+      C:                      mergedCRS?.C ?? result.state.C,
+      R:                      mergedCRS?.R ?? result.state.R,
+      S:                      mergedCRS?.S ?? result.state.S,
+      health_band:            mergedCRS?.health_band ?? result.health_band,
       state_label:            classifyStateLabel(projectionTriggered, result.governed_output),
       intervention:           projectionTriggered,
       governed_response_hash: result.receipt.output_hash,
@@ -121,8 +146,18 @@ export async function POST(req: Request) {
   return NextResponse.json({
     governed_output:       result.governed_output,
     raw_output:            result.raw_output,
-    M:                     result.M,
-    health_band:           result.health_band,
+    // CRS: Python measurement preferred; TypeScript fallback
+    M:                     mergedCRS?.M ?? result.M,
+    C:                     mergedCRS?.C ?? result.state.C,
+    R:                     mergedCRS?.R ?? result.state.R,
+    S:                     mergedCRS?.S ?? result.state.S,
+    health_band:           mergedCRS?.health_band ?? result.health_band,
+    weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
+    crs_source:            python ? 'python-cbf' : 'typescript-kernel',
+    fpl1:                  mergedCRS?.fpl1 ?? null,
+    ccp_lambda:            mergedCRS?.ccp_lambda ?? null,
+    iec_variance:          mergedCRS?.iec_variance ?? null,
+    // TypeScript kernel values always present
     temperature:           result.temperature,
     theta:                 result.theta,
     effective_theta:       result.effective_theta,
@@ -150,8 +185,8 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     name:     'Lex Aureon SovereignKernel API',
-    version:  'v2+AsyncGovernor',
+    version:  'v2+AsyncGovernor+PythonCBF',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing active — IEC filter + CBF guarantee',
+    governor: 'G(x,z) async sensing + Python CBF QP + FPL1 classification',
   });
 }
