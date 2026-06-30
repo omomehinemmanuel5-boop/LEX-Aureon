@@ -10,6 +10,7 @@ import EnterpriseSection from '@/components/EnterpriseSection';
 import LiveStatsBar from '@/components/LiveStatsBar';
 import RedTeamSection from '@/components/RedTeamSection';
 import ArchitectureSection from '@/components/ArchitectureSection';
+import BenchmarkResults from '@/components/BenchmarkResults';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
@@ -165,40 +166,6 @@ async function Hero() {
   );
 }
 
-/* ── Evaluation Status Strip ──────────────────────────────────────
-   Replaces the prior "0.0% ASR" hero strip. The earlier published
-   benchmark numbers were produced by scorers that did not judge the
-   governed arm on the same basis as the baseline, so they are withheld
-   until the symmetric re-scoring run completes. This strip states the
-   honest current status instead of an unsupported headline figure.     */
-function EvaluationStatusStrip() {
-  return (
-    <div className="w-full py-14 border-y border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-[#0d0d1a]">
-      <div className="max-w-3xl mx-auto px-5 text-center">
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-          <span className="text-xs font-mono text-amber-700 dark:text-amber-400 uppercase tracking-widest font-bold">
-            Adversarial evaluation — in progress
-          </span>
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mb-4">
-          Benchmarks are being re-run under symmetric judging.
-        </h2>
-        <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto mb-4">
-          We are re-scoring AdvBench (Zou et al. 2023) and JailbreakBench so that the
-          baseline and governed arms are judged by the <span className="font-bold">same</span> external
-          judge on their actual output text, with attack-success measured over harmful
-          prompts only and over-refusal on benign prompts reported separately. Prior
-          figures that did not meet this bar have been withheld rather than displayed.
-        </p>
-        <p className="text-xs font-mono text-slate-400 dark:text-slate-500">
-          Real, symmetric numbers will be published here and in the paper once the run completes.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 /* ── Six Capabilities ──────────────────────────────────────────── */
 function ComparisonSection() {
   const caps = [
@@ -329,7 +296,7 @@ export default function LandingPage() {
     <main className="min-h-screen selection:bg-amber-500/30" style={{ backgroundColor: '#07070d' }}>
       <LandingNav />
       <Hero />
-      <EvaluationStatusStrip />
+      <BenchmarkResults compact />
       <ComparisonSection />
       <ArchitectureSection />
       <LiveStatsBar />
@@ -361,6 +328,7 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-wrap justify-center gap-x-10 gap-y-4 text-xs font-mono text-slate-400 font-bold uppercase tracking-widest">
             <Link href="/console" className="hover:text-white transition-colors">Console</Link>
+            <Link href="/benchmarks" className="hover:text-white transition-colors">Benchmarks</Link>
             <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paper</a>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
           </div>
