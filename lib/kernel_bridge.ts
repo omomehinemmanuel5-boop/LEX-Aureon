@@ -23,8 +23,23 @@
  *   so the persisted crs_method column reflects which engine actually produced
  *   the measurement. When omitted (stream route, refusal path, Python fallback),
  *   the receipt records the TypeScript kernel string exactly as before.
+ *
+ * SHA-256 receipt (added 2026-06-30): every praxis_receipts row now carries the
+ *   cryptographic proof on the same row as the governance record:
+ *     input_hash   — SHA-256 of the prompt   (from result.receipt.input_hash)
+ *     output_hash  — SHA-256 of the output   (from result.receipt.output_hash)
+ *     receipt_hash — SHA-256(state ‖ input_hash ‖ output_hash)
+ *   Previously the SHA-256 hashes were computed by the kernel and written only
+ *   into lex_memory (prompt_hash / governed_response_hash); the receipt itself
+ *   carried no hash and the older audit_log path (saveAudit) was no longer
+ *   called by the live routes. This consolidates the proof onto the receipt —
+ *   one receipt system, cryptographically verifiable, single source of truth.
+ *   The bound receipt_hash lets an auditor recompute and confirm that a given
+ *   (state, input, output) triple produced exactly this receipt. Columns are
+ *   added idempotently; rows written before this change have NULL hashes.
  */
 
+import { createHash } from 'crypto';
 import { getClient } from './db';
 import { KernelCycleResult, KernelState } from './sovereign_kernel';
 import { TAU, Z_RECOVERY } from './aureonics_core';
@@ -46,6 +61,34 @@ export async function loadKernelZ(sessionId: string): Promise<[number, number, n
   return Z_RECOVERY;
 }
 
+// ── SHA-256 receipt columns — added idempotently, once per warm lambda ──────
+let _hashColsReady = false;
+async function ensureHashColumns(db: ReturnType<typeof getClient>): Promise<void> {
+  if (_hashColsReady) return;
+  const safeAlter = async (sql: string) => {
+    try { await db.execute(sql); } catch { /* column already exists */ }
+  };
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN input_hash TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN output_hash TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN receipt_hash TEXT');
+  _hashColsReady = true;
+}
+
+/**
+ * Cryptographic receipt hash: binds the governed state to the input and output
+ * hashes. SHA-256(state ‖ input_hash ‖ output_hash), state serialized at fixed
+ * precision so the digest is reproducible by an independent auditor.
+ */
+function computeReceiptHash(
+  state: { C: number; R: number; S: number },
+  M: number,
+  inputHash: string,
+  outputHash: string,
+): string {
+  const stateStr = `C=${state.C.toFixed(6)},R=${state.R.toFixed(6)},S=${state.S.toFixed(6)},M=${M.toFixed(6)}`;
+  return createHash('sha256').update(`${stateStr}‖${inputHash}‖${outputHash}`).digest('hex');
+}
+
 export async function writeKernelReceipt(
   sessionId: string,
   turn: number,
@@ -58,6 +101,14 @@ export async function writeKernelReceipt(
 
   const mBefore = Math.min(result.receipt.raw_state.C, result.receipt.raw_state.R, result.receipt.raw_state.S);
   const sigmaViol = Math.max(0, TAU - mBefore);
+
+  // ── SHA-256 receipt material ─────────────────────────────────────────────
+  // input_hash / output_hash are already computed by the kernel (used elsewhere
+  // for lex_memory). receipt_hash binds them to the governed ("after") state, so
+  // the receipt itself is cryptographically verifiable.
+  const inputHash   = r.input_hash ?? '';
+  const outputHash  = r.output_hash ?? '';
+  const receiptHash = computeReceiptHash(result.state, result.M, inputHash, outputHash);
 
   // ── governor_effort: max(async G correction, CBF projection) ─────────────
   // Async G(x,z) magnitude: non-zero on turns where sensing fired last turn
@@ -86,6 +137,8 @@ export async function writeKernelReceipt(
   }
 
   try {
+    await ensureHashColumns(db);
+
     // ── Update z_traj (proven Banach rule) BEFORE receipt write ──────────────
     const currentCRS = { c: result.state.C, r: result.state.R, s: result.state.S };
     const prevCRS    = { c: r.raw_state.C, r: r.raw_state.R, s: r.raw_state.S };
@@ -105,13 +158,14 @@ export async function writeKernelReceipt(
 
     const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
 
-    // ── Write receipt ─────────────────────────────────────────────────────────
+    // ── Write receipt (now including SHA-256 proof columns) ────────────────────
     await db.execute({
       sql: `INSERT OR IGNORE INTO praxis_receipts
               (receipt_id, session_id, turn, pre_eval_label,
                m_before, m_after, governor_mode, intervention,
-               slow_drip, governor_effort, sigma_viol, crs_method, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               slow_drip, governor_effort, sigma_viol, crs_method,
+               input_hash, output_hash, receipt_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         receiptId, sessionId, turn, 'CLEAR',
         mBefore,
@@ -122,6 +176,9 @@ export async function writeKernelReceipt(
         governorEffort,
         sigmaViol,
         crsMethodTag,
+        inputHash,
+        outputHash,
+        receiptHash,
         new Date().toISOString(),
       ],
     });
