@@ -1,42 +1,39 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+/**
+ * GET /api/benchmarks
+ *
+ * Public read endpoint — the single source of truth for benchmark numbers.
+ * Returns the latest scored row per (benchmark, metric_name) from the
+ * benchmark_results table. The landing page and dashboard poll this; the README
+ * points here rather than carrying its own copy of the figures.
+ *
+ * Empty array is a valid, honest response: it means no run has been scored and
+ * published yet. Consumers render that as "evaluation in progress" — never as
+ * a zero score.
+ */
+
+import { NextResponse } from 'next/server';
+import { getBenchmarkResults } from '@/lib/benchmark_results';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET() {
   try {
-    const result = await db.execute('SELECT * FROM benchmark_results ORDER BY run_date DESC');
-    return NextResponse.json({ benchmarks: result.rows });
-  } catch (error) {
-    console.error('Error fetching benchmarks:', error);
-    return NextResponse.json({ benchmarks: [], error: 'Database unavailable' }, { status: 503 });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization');
-  const adminPassword = process.env.ADMIN_PASSWORD;
-
-  if (!authHeader || authHeader !== `Bearer ${adminPassword}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  try {
-    const body = await req.json();
-    const { benchmark, run_date, n_total, metric_name, bare_score, governed_score, delta_pp, notes } = body;
-
-    if (!benchmark || !run_date || !metric_name) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    await db.execute({
-      sql: `INSERT INTO benchmark_results 
-            (benchmark, run_date, n_total, metric_name, bare_score, governed_score, delta_pp, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [benchmark, run_date, n_total, metric_name, bare_score, governed_score, delta_pp, notes ?? ''],
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error inserting benchmark result:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    const results = await getBenchmarkResults();
+    return NextResponse.json(
+      {
+        ok: true,
+        count: results.length,
+        published: results.length > 0,
+        results,
+        fetched_at: new Date().toISOString(),
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, count: 0, published: false, results: [], error: String(e).slice(0, 200) },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }
