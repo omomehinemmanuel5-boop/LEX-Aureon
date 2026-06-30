@@ -199,10 +199,11 @@ function EvaluationStatusStrip() {
   );
 }
 
-/* ── Five Capabilities ─────────────────────────────────────────── */
+/* ── Six Capabilities ──────────────────────────────────────────── */
 function ComparisonSection() {
   const caps = [
     { n: 'Continuous state vector',  d: 'Tracks (C, R, S) as a live constitutional state across the whole exchange — not a single pass/fail flag on one message.' },
+    { n: 'Embedding-based measurement', d: 'Constitutional state is measured from Jina embeddings — cosine similarity of the output to a constitutional anchor — not keyword matching. The same embedding-based method described in the paper.' },
     { n: 'Log-Barrier Dynamics',     d: 'Uses an interior-point log-barrier correction to push the state away from constitutional boundaries, designed for smooth and stable behaviour.' },
     { n: 'Cryptographic receipts',   d: 'Every governed decision is recorded with a SHA-256 receipt (state, input hash, output hash) and persisted append-only, so the constitutional state at inference is auditable after the fact.' },
     { n: 'Constitutional memory',    d: 'z-trajectory memory tracks which pillars are under sustained pressure across turns, so the governor responds to persistent pressure rather than only the current message.' },
@@ -216,7 +217,7 @@ function ComparisonSection() {
             What Lex Aureon combines
           </div>
           <h2 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white mb-4">
-            Five capabilities,{' '}
+            Six capabilities,{' '}
             <span className="text-slate-400 dark:text-slate-500 font-light">one governance layer.</span>
           </h2>
         </div>
@@ -253,12 +254,13 @@ function ProofPanel() {
           </div>
           <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-4">
             See what changes.{' '}
-            <span className="text-slate-400 dark:text-slate-500 font-light">Understand why.</span>
+            <span className="text-slate-400 dark:text-slate-500 font-light">Before and after.</span>
           </h2>
           <p className="text-slate-500 dark:text-slate-500 text-sm max-w-lg mx-auto">
-            One example of the constitutional governor intercepting a manipulation attempt.
-            The state values shown are computed by the kernel, not simulated. (A single
-            illustrative case — not an aggregate benchmark claim.)
+            One illustrative interception of a manipulation attempt, showing the
+            constitutional margin <span className="font-bold">before vs after</span> governance.
+            The live console computes these values per turn — this panel is a single
+            illustrative case, not an aggregate benchmark claim.
           </p>
         </div>
 
@@ -297,11 +299,23 @@ function ProofPanel() {
                 <span className="text-xs font-mono text-amber-600 dark:text-amber-500 font-bold">S (Sovereignty)</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-24 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500" style={{ width: '6%' }} />
+            {/* Stability margin: before (raw) → after (governed) */}
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[8px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">raw</span>
+                <div className="h-1.5 w-16 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-red-500" style={{ width: '4%' }} />
+                </div>
+                <span className="text-[9px] font-mono text-red-500 font-bold">M=0.04</span>
               </div>
-              <span className="text-[10px] font-mono text-slate-500 font-bold">M=0.06</span>
+              <span className="text-slate-400 dark:text-slate-600 text-sm font-mono">→</span>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[8px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">governed</span>
+                <div className="h-1.5 w-16 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500" style={{ width: '6%' }} />
+                </div>
+                <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">M=0.06</span>
+              </div>
             </div>
           </div>
         </div>
