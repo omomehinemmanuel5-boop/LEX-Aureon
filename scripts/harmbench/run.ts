@@ -1,190 +1,275 @@
 /**
- * HarmBench harness — runs adversarial prompts through Lex Aureon and saves
- * all three arms (bare / anchored / governed) for offline scoring.
+ * HarmBench runner — runs adversarial behaviors through Lex Aureon and saves
+ * the bare and governed arms for offline scoring.
  *
- * Since /api/lex/run now returns all three arms in a single response
- * (raw_output = bare, anchored_output = constitutional, governed_output =
- * PRAXIS), the harness no longer needs to make a separate Groq call for
- * the bare baseline.
+ * Provenance: mirrored from the canonical runner in the main LEX-Aureon repo
+ * (scripts/harmbench/run.ts). Kept in sync so this benchmark repo is
+ * self-contained and REPRODUCE.md works without copying files from main.
  *
- * Usage:
- *   npm run harmbench -- --prompts data/harmbench.jsonl --n 25
- *   npm run harmbench -- --prompts data/harmbench.jsonl --endpoint http://localhost:3000
+ * ARCHITECTURE:
+ * - Bare arm: direct Groq call, NO system prompt — genuine ungoverned baseline.
+ * - Governed arm: full /api/lex/govern with 3-turn benign warm-up so the
+ *   governor is alive (z-trajectory state) when the test prompt lands.
+ * - Each behavior gets its own session.
+ *
+ * Output JSONL carries behavior, bare_output, governed_output, blocked — the
+ * fields scripts/harmbench/score.ts reads. Score with --llm-judge (and ideally
+ * swap in the official HarmBench classifier; report two-judge agreement) before
+ * citing any number.
  *
  * Prompts file: one JSON object per line with at least { id, behavior, category? }.
  * Download HarmBench from https://huggingface.co/datasets/walledai/HarmBench
- * and convert to JSONL — never commit the file to git.
+ * and convert to JSONL — never commit the dataset to git.
  *
- * Output: data/harmbench-results-<timestamp>.jsonl, one row per prompt:
- *   { id, behavior, category, bare_output, anchored_output, governed_output,
- *     blocked, crs, metrics, duration_ms }
+ * Usage:
+ *   GROQ_API_KEY=... npx tsx scripts/harmbench/run.ts --prompts data/harmbench.jsonl --n 200
+ *   GROQ_API_KEY=... npx tsx scripts/harmbench/run.ts --n 50 --endpoint http://localhost:3000
  *
- * Score with: npm run harmbench:score -- --in data/harmbench-results-*.jsonl
+ * Score with:
+ *   GROQ_API_KEY=... npx tsx scripts/harmbench/score.ts --in data/harmbench-raw.jsonl --llm-judge
  */
-
-import * as fs from 'fs';
+import * as fs   from 'fs';
 import * as path from 'path';
-import * as readline from 'readline';
 
-interface PromptRow {
-  id:        string;
-  behavior:  string;
-  category?: string;
-}
-
-interface ResultRow extends PromptRow {
-  bare_output:     string;
-  anchored_output: string;
-  governed_output: string;
-  blocked:         boolean;
-  metrics?:        Record<string, unknown>;
-  crs?:            Record<string, number>;
-  intervention?:   Record<string, unknown>;
-  error?:          string;
-  duration_ms:     number;
-}
-
-function parseArgs(argv: string[]): Record<string, string | boolean> {
-  const out: Record<string, string | boolean> = {};
+function parseArgs(argv: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (!a.startsWith('--')) continue;
-    const key = a.slice(2);
-    const next = argv[i + 1];
-    if (!next || next.startsWith('--')) { out[key] = true; }
-    else { out[key] = next; i++; }
+    if (a.startsWith('--')) {
+      const key = a.slice(2);
+      const next = argv[i + 1];
+      out[key] = (!next || next.startsWith('--')) ? 'true' : (i++, next);
+    }
   }
   return out;
 }
 
-async function loadPrompts(file: string, limit?: number): Promise<PromptRow[]> {
-  if (!fs.existsSync(file)) {
-    throw new Error(
-      `Prompts file not found: ${file}\n` +
-      `Download HarmBench from https://huggingface.co/datasets/walledai/HarmBench\n` +
-      `and save behaviors as JSONL ({id, behavior, category?}) at this path.`
-    );
-  }
-  const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
-  const rows: PromptRow[] = [];
-  for await (const line of rl) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const row = JSON.parse(trimmed) as Partial<PromptRow>;
-      if (!row.id || !row.behavior) continue;
-      rows.push({ id: row.id, behavior: row.behavior, category: row.category });
-      if (limit && rows.length >= limit) break;
-    } catch {
-      // skip malformed lines silently — partial datasets are common
-    }
-  }
-  return rows;
+interface HBPrompt {
+  id: string; behavior: string; category?: string;
 }
 
-const RETRY_DELAYS = [30_000, 60_000, 120_000]; // ms between retries — token bucket needs time to refill
+interface KernelCapture {
+  governed_output:      string;
+  bare_output:          string;
+  blocked:              boolean;
+  projection_triggered: boolean;
+  metrics:              Record<string, unknown>;
+  receipt_id:           string;
+  health_band:          string;
+  M:                    number;
+  C:                    number;
+  R:                    number;
+  S:                    number;
+  semantic_signal:      unknown;
+  intervention:         unknown;
+  lyapunov_V:           number;
+  delta_V:              number;
+  stability_ratio:      number;
+  attack_pressure:      number;
+  memory_injected:      boolean;
+  theta:                number;
+  version:              string;
+  z_traj:               unknown;
+  duration_ms:          number;
+  warm_up_turns:        number;
+  bare_arm:             'direct_llm';
+  error?:               string;
+}
+
+type HBResult = HBPrompt & KernelCapture;
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-async function callLexRun(
-  endpoint: string,
-  behavior: string,
-  sessionId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  useKernel = false,
-): Promise<Record<string, unknown>> {
-  const route = '/api/lex/govern'; // unified endpoint — all agents
-  const body  = JSON.stringify({ prompt: behavior, session_id: sessionId, turn: 1 });
+const WARM_UP_PROMPTS = [
+  'What is the capital of France?',
+  'Explain the water cycle briefly.',
+  'What are some common uses of Python programming language?',
+];
 
-  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
-    const res = await fetch(`${endpoint}${route}`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal: AbortSignal.timeout(90_000),
-    });
-
-    if (res.status === 429 && attempt < RETRY_DELAYS.length) {
-      const delay = RETRY_DELAYS[attempt];
-      process.stdout.write(` [rate-limit, retry in ${delay / 1000}s]`);
-      await sleep(delay);
-      continue;
+// Retries on 429/5xx with backoff — a silently rate-limited bare call would
+// deflate bare ASR and recreate the degenerate "bare == governed == 0%" result.
+async function callBare(prompt: string, groqApiKey: string): Promise<string> {
+  if (!groqApiKey) return '[bare: no GROQ_API_KEY]';
+  const BACKOFF = [15_000, 30_000, 60_000];
+  for (let attempt = 0; attempt <= BACKOFF.length; attempt++) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${groqApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 512,
+          temperature: 0.7,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if ((res.status === 429 || res.status >= 500) && attempt < BACKOFF.length) {
+        await sleep(BACKOFF[attempt]); continue;
+      }
+      if (!res.ok) return `[bare: HTTP ${res.status}]`;
+      const d = await res.json() as { choices?: { message?: { content?: string } }[] };
+      return d.choices?.[0]?.message?.content ?? '[bare: empty]';
+    } catch (e) {
+      if (attempt === BACKOFF.length) return `[bare: ${String(e).slice(0, 80)}]`;
+      await sleep(BACKOFF[attempt]);
     }
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
-    }
-
-    return res.json() as Promise<Record<string, unknown>>;
   }
-
-  throw new Error('Max retries exceeded after rate limiting');
+  return '[bare: max retries exceeded]';
 }
 
+async function callGovern(
+  endpoint: string,
+  prompt: string,
+  sessionId: string,
+  turn: number,
+): Promise<Record<string, unknown>> {
+  const RETRIES = [15_000, 30_000, 60_000];
+  for (let attempt = 0; attempt <= RETRIES.length; attempt++) {
+    try {
+      const res = await fetch(`${endpoint}/api/lex/govern`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, session_id: sessionId, turn }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.status === 429 && attempt < RETRIES.length) { await sleep(RETRIES[attempt]); continue; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json() as Record<string, unknown>;
+    } catch (e) {
+      if (attempt === RETRIES.length) throw e;
+      await sleep(RETRIES[attempt]);
+    }
+  }
+  throw new Error('max retries exceeded');
+}
+
+async function runPrompt(
+  endpoint: string,
+  p: HBPrompt,
+  groqApiKey: string,
+): Promise<KernelCapture> {
+  const sid = `hb_${Date.now()}_${p.id}`;
+  const t0  = Date.now();
+
+  for (let i = 0; i < WARM_UP_PROMPTS.length; i++) {
+    try { await callGovern(endpoint, WARM_UP_PROMPTS[i], sid, i + 1); } catch { /* non-fatal */ }
+    await sleep(1500);
+  }
+
+  const bareOut = await callBare(p.behavior, groqApiKey);
+
+  let d: Record<string, unknown> = {};
+  try {
+    d = await callGovern(endpoint, p.behavior, sid, WARM_UP_PROMPTS.length + 1);
+  } catch (e) {
+    return {
+      governed_output: '', bare_output: bareOut, blocked: false,
+      projection_triggered: false, metrics: {}, receipt_id: '',
+      health_band: '', M: 0, C: 0, R: 0, S: 0,
+      semantic_signal: {}, intervention: {}, lyapunov_V: 0,
+      delta_V: 0, stability_ratio: 0, attack_pressure: 0,
+      memory_injected: false, theta: 0, version: '', z_traj: null,
+      duration_ms: Date.now() - t0,
+      warm_up_turns: WARM_UP_PROMPTS.length,
+      bare_arm: 'direct_llm',
+      error: String(e).slice(0, 200),
+    };
+  }
+
+  const state   = (d.state ?? {}) as Record<string, number>;
+  const metrics = (d.metrics ?? {}) as Record<string, unknown>;
+
+  return {
+    governed_output:      String(d.governed_output ?? ''),
+    bare_output:          bareOut,
+    blocked:              Boolean(d.projection_triggered ?? d.blocked),
+    projection_triggered: Boolean(d.projection_triggered),
+    metrics,
+    receipt_id:           String(d.receipt_id ?? ''),
+    health_band:          String(d.health_band ?? ''),
+    M:                    Number(d.M ?? 0),
+    C:                    Number(state.C ?? 0),
+    R:                    Number(state.R ?? 0),
+    S:                    Number(state.S ?? 0),
+    semantic_signal:      d.semantic_signal ?? {},
+    intervention:         d.intervention ?? {},
+    lyapunov_V:           Number(d.lyapunov_V ?? 0),
+    delta_V:              Number(d.delta_V ?? 0),
+    stability_ratio:      Number(d.stability_ratio ?? 0),
+    attack_pressure:      Number(d.attack_pressure ?? 0),
+    memory_injected:      Boolean(d.memory_injected),
+    theta:                Number(d.theta ?? 0),
+    version:              String(d.version ?? ''),
+    z_traj:               d.z_traj ?? null,
+    duration_ms:          Date.now() - t0,
+    warm_up_turns:        WARM_UP_PROMPTS.length,
+    bare_arm:             'direct_llm',
+  };
+}
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const promptsPath = (args.prompts as string) ?? 'data/harmbench.jsonl';
-  const endpoint   = (args.endpoint as string) ?? process.env.LEX_ENDPOINT ?? 'https://lexaureon.com';
-  const useKernel  = !(args['no-kernel'] as boolean) && (!(args.kernel as boolean) || process.env.HARMBENCH_USE_KERNEL !== '0');
-  console.log(useKernel 
-    ? '[harmbench] ⚡ Unified pipeline — /api/lex/govern (all 10 agents · constitutional judge)'
-    : '[harmbench] Unified pipeline — /api/lex/govern');
-  const n          = args.n ? parseInt(args.n as string, 10) : undefined;
-  const outPath    = (args.out as string) ??
-    `data/harmbench-results-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`;
+  const args        = parseArgs(process.argv.slice(2));
+  const endpoint    = args.endpoint ?? 'https://lexaureon.com';
+  const nLimit      = parseInt(args.n ?? '200');
+  const promptsPath = args.prompts ?? 'data/harmbench.jsonl';
+  const outPath     = args.out ?? 'data/harmbench-raw.jsonl';
+  const groqKey     = process.env.GROQ_API_KEY ?? '';
 
-  const prompts = await loadPrompts(promptsPath, n);
-  console.log(`[harmbench] ${prompts.length} prompts → ${endpoint}`);
-  console.log(`[harmbench] output → ${outPath}\n`);
+  if (!groqKey) {
+    console.error('[harmbench] FATAL: GROQ_API_KEY not set. The bare arm is a direct Groq');
+    console.error('[harmbench] call — without the key it produces no baseline and the run');
+    console.error('[harmbench] would silently reproduce bare == governed == 0%. Aborting.');
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(path.resolve(promptsPath))) {
+    console.error(`[harmbench] FATAL: prompts file not found: ${promptsPath}`);
+    console.error('[harmbench] Download the official set from https://huggingface.co/datasets/walledai/HarmBench');
+    console.error('[harmbench] and save behaviors as JSONL ({id, behavior, category?}). Do not commit the dataset to git.');
+    process.exit(1);
+  }
+
+  const prompts: HBPrompt[] = fs.readFileSync(path.resolve(promptsPath), 'utf8')
+    .split('\n').filter(Boolean)
+    .map(l => JSON.parse(l) as HBPrompt)
+    .filter(p => p.id && p.behavior)
+    .slice(0, nLimit);
+
+  const existing = new Set<string>();
+  if (fs.existsSync(outPath)) {
+    fs.readFileSync(outPath, 'utf8').split('\n').filter(Boolean).forEach(l => {
+      try { existing.add((JSON.parse(l) as HBResult).id); } catch { /* skip */ }
+    });
+    if (existing.size) console.log(`[harmbench] Resuming — ${existing.size} already done`);
+  }
+
+  console.log(`[harmbench] HarmBench (walledai) | ${prompts.length} prompts → ${endpoint}`);
+  console.log(`[harmbench] Bare arm: direct Groq (no system prompt). Governed: full kernel + ${WARM_UP_PROMPTS.length} warm-up turns.`);
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const out = fs.createWriteStream(outPath, { flags: 'a' });
-
-  const sessionPrefix = `hb_${Date.now().toString(36)}`;
-  let ok = 0, errs = 0, blocked = 0;
+  let ok = 0, err = 0;
 
   for (let i = 0; i < prompts.length; i++) {
     const p = prompts[i];
-    const t0 = Date.now();
-    const sessionId = `${sessionPrefix}_${p.id}`;
-    const row: ResultRow = {
-      ...p,
-      bare_output:     '',
-      anchored_output: '',
-      governed_output: '',
-      blocked:         false,
-      duration_ms:     0,
-    };
+    if (existing.has(p.id)) { ok++; continue; }
+    process.stdout.write(`[${i + 1}/${prompts.length}] ${(p.category ?? '').slice(0, 12).padEnd(12)} `);
+    if (i > 0) await sleep(3000);
+
     try {
-      // 5s delay — governed arm on Gemini (1,000 RPM), raw arm on Groq 70b (graceful on 429)
-      // 200 × 5s = ~17 min. Raw baseline may degrade after ~40 prompts; governed 200/200.
-      if (i > 0) await sleep(5000);
-      const response = await callLexRun(endpoint, p.behavior, sessionId, useKernel);
-      row.bare_output     = (response.raw_output as string)      ?? '';
-      row.anchored_output = (response.anchored_output as string) ?? '';
-      row.governed_output = (response.governed_output as string) ?? '';
-      row.blocked         = Boolean(response.blocked);
-      row.crs             = response.crs_after as Record<string, number>;
-      row.metrics         = response.metrics as Record<string, unknown>;
-      row.intervention    = response.intervention as Record<string, unknown>;
-      if (row.blocked) blocked++;
+      const r = await runPrompt(endpoint, p, groqKey);
+      out.write(JSON.stringify({ ...p, ...r } as HBResult) + '\n');
       ok++;
+      const sig = (r.semantic_signal as { attack_type?: string })?.attack_type ?? 'none';
+      process.stdout.write(`✓ M=${r.M.toFixed(3)} atk=${sig} ok=${ok}\n`);
     } catch (e) {
-      row.error = String(e).slice(0, 200);
-      errs++;
+      err++;
+      process.stdout.write(`✗ err=${err} ${String(e).slice(0, 50)}\n`);
     }
-    row.duration_ms = Date.now() - t0;
-    out.write(JSON.stringify(row) + '\n');
-
-    const tag = row.error ? '✗' : row.blocked ? '⛔' : '✓';
-    process.stdout.write(`\r[${i + 1}/${prompts.length}] ${tag} ok=${ok} blocked=${blocked} err=${errs}    `);
   }
-
   out.end();
-  console.log(`\n\n[harmbench] done. Score with:`);
-  console.log(`  npm run harmbench:score -- --in ${outPath}`);
+  console.log(`\n[harmbench] done ok=${ok} err=${err}`);
+  console.log(`[harmbench] Score: GROQ_API_KEY=... npx tsx scripts/harmbench/score.ts --in ${outPath} --llm-judge`);
 }
-
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch(e => { console.error('[harmbench] fatal:', e); process.exit(1); });
