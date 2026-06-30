@@ -52,7 +52,7 @@ Real, symmetric numbers will be published here and in the paper once the re-scor
 - Per-session constitutional state tracked in `z_traj`; semantic memory in `lex_memory`.
 - The `M ≥ τ` floor is enforced in code by the synchronous kernel on every governed turn.
 
-*(Receipt/interaction counts shown in the dashboard are live and may differ from any figure quoted in the paper; treat the live DB as canonical.)*
+*(Receipt/interaction counts shown in the dashboard are live and may differ from any figure quoted in the paper; treat the live DB as canonical. Note that benchmark/evaluation runs also write to `praxis_receipts`, so the raw total includes eval traffic, not only organic console usage.)*
 
 ---
 
@@ -81,7 +81,7 @@ M < τ → Governor fires
 [02] Memory         →  semantic recall (Jina embeddings + Turso)
 [03] Generator      →  dual-arm inference: bare vs governed
 [04] RawForge       →  baseline extraction
-[05] CRS Extractor  →  CCP / IEC / ADV proxies (see note below)
+[05] CRS Extractor  →  CCP / IEC / ADV via Jina embeddings (see note below)
 [06] Governor       →  log-barrier interior-point correction + CBF projection
 [07] Intervention   →  Vaulturex law selection + LLM rewrite
 [08] Neithra        →  constitutional synthesis
@@ -92,18 +92,18 @@ M < τ → Governor fires
 [13] Auditor        →  SHA-256 signed governance receipt
 ```
 
-> **CRS proxy note:** the deployed CCP/IEC/ADV metrics in `lib/constitutional_metrics.ts` are computed from **lexical (bag-of-words) token overlap**, not embedding similarity. They are a fast proxy, not the embedding-based measurement described in some earlier write-ups. The embedding-based sovereignty measurement (output-to-constitutional-centroid cosine) lives separately in `lib/self_referential_crs.ts`.
+> **CRS measurement note:** the deployed CRS extractor (`lib/agents/crs_extractor.ts`) measures the state with **embeddings, matching the paper — not lexical token overlap.** CCP (Continuity) is the cosine similarity between a Jina `jina-embeddings-v3` embedding of the output and the constitutional anchor. IEC (Reciprocity) is a register-aware Shannon-entropy ratio stability term. ADV (Sovereignty) is `compliance × (0.5·anchor-alignment + 0.5·reasoning-gain)`, where anchor-alignment reuses the embedding cosine. When Jina is unreachable at runtime the extractor falls back to a Groq LLM scorer, then to an explicit error — there is no bag-of-words fallback path. The separate output-to-constitutional-centroid cosine used by the self-referential check lives in `lib/self_referential_crs.ts`. (`lib/constitutional_metrics.ts` is a kernel-internal helper, not the surfaced CRS measurement.)
 
 ### CRS measurement engines, and receipts
 
 There are two CRS measurement paths, and receipts now record which one was authoritative for each turn:
 
-- **Streamed console path** (`POST /api/lex/govern/stream`, used by the live console) — the TypeScript kernel plus `CRSExtractorAgent`.
+- **Streamed console path** (`POST /api/lex/govern/stream`, used by the live console) — the TypeScript kernel plus `CRSExtractorAgent`, which measures CRS from Jina `jina-embeddings-v3` embeddings (CCP = cosine to the constitutional anchor), with a Groq LLM scorer fallback when Jina is unavailable.
 - **Non-streamed API** (`POST /api/lex/govern`) — additionally calls a Python backend (`api/python/govern.py`) that computes CCP (cosine similarity with a decay term), IEC (population-variance entropy ratio) and ADV (normalized Shannon entropy), then runs a CBF QP filter and a short FPL1 simulation. On success that measurement is used for the response and stored memory; on cold-start/timeout the TypeScript kernel values are used. The hard `M ≥ τ` floor is always enforced by the TypeScript kernel regardless of which engine measured CRS.
 
-The persisted receipt's `crs_method` column records the engine: `python-cbf|ccp=…|iec=…|adv=…` when the Python backend was authoritative, and `SovereignKernel-v2|θ=…|T=…` otherwise (Python fallback, post-refusal, or the streamed path). This keeps the audit log honest about which engine produced each measurement, rather than always recording the TypeScript string.
+Both paths are embedding/cosine-based, consistent with the paper's CCP definition. The persisted receipt's `crs_method` column records the engine: `python-cbf|ccp=…|iec=…|adv=…` when the Python backend was authoritative, and `SovereignKernel-v2|θ=…|T=…` otherwise (Python fallback, post-refusal, or the streamed path).
 
-> **Scope note:** the Python backend is currently wired into the non-streamed `/api/lex/govern` route. The streamed path the console uses remains TypeScript-measured. Wiring Python into the stream is tracked, not yet done.
+> **Scope note:** the Python backend is currently wired into the non-streamed `/api/lex/govern` route. The streamed path the console uses is measured by the Jina-embedding `CRSExtractorAgent`, not the Python backend. Wiring Python into the stream is tracked, not yet done.
 
 ### Before / after state
 
@@ -189,9 +189,10 @@ Returns the governed output, the constitutional state and `M` ("after"), the pre
 |:---|:---|:---|
 | §3 Simplex geometry | `lib/aureonics_core.ts` | `projectToSimplex()` — Duchi-style projection |
 | §4 Stability margin | `lib/sovereign_kernel.ts` | `M = min(C,R,S)`; `lyapunovCandidate()` → `lyapunovBarrierZ` (V_z) |
-| §5.1 CCP | `lib/constitutional_metrics.ts` | lexical proxy (see CRS note) |
-| §5.2 IEC | `lib/governor_sensing.ts` / `constitutional_metrics.ts` | signal-reliability proxy |
-| §5.3 ADV | `lib/constitutional_metrics.ts` | decision-variance proxy |
+| §5 CRS (live) | `lib/agents/crs_extractor.ts` | Jina `jina-embeddings-v3` cosine (CCP) + Shannon-entropy IEC + compliance ADV; Groq scorer fallback |
+| §5.1 CCP | `lib/agents/crs_extractor.ts` | `cosine(embed(output), embed(anchor))` via Jina |
+| §5.2 IEC | `lib/agents/crs_extractor.ts` | register-aware Shannon-entropy ratio stability |
+| §5.3 ADV | `lib/agents/crs_extractor.ts` | `compliance × (0.5·anchor-alignment + 0.5·reasoning-gain)` |
 | §5 CRS (Python) | `api/python/govern.py` | CCP cosine-decay / IEC variance-entropy / ADV Shannon + CBF QP + FPL1; authoritative on `/api/lex/govern` when reachable |
 | Python bridge | `lib/python_bridge.ts` | `callPythonGovernor()`, `mergePythonCRS()` |
 | §6 Governor | `lib/sovereign_kernel.ts` | `governorUpdate()`, `runCycle()` |
@@ -213,6 +214,8 @@ npm run harmbench:score -- --in <results.jsonl>
 ```
 
 > Scorers were rebuilt for symmetric judging (same judge on bare + governed, no framework-word bias). Re-score existing result files before citing any number.
+>
+> **Note:** benchmark runs hit the live govern pipeline and therefore write rows into the production `praxis_receipts` table (eval sessions use `session-<ts>-<rand>` ids). The dashboard's raw run total includes this eval traffic.
 
 ---
 
@@ -232,7 +235,7 @@ npm run test          # math, governor, constitution, schemas, API
 | Language | TypeScript (strict) · Python (stdlib CRS backend) |
 | Database | Turso (libSQL) |
 | LLM inference | Groq · Gemini · Mistral (fallback chain) |
-| Embeddings | Jina AI |
+| Embeddings | Jina AI (`jina-embeddings-v3`) |
 | Deployment | Vercel |
 | Tests | Vitest |
 
@@ -259,6 +262,7 @@ npm run test          # math, governor, constitution, schemas, API
 - [ ] Run HarmBench against the official walledai dataset
 - [ ] Swap in the official HarmBench classifier; report two-judge agreement
 - [ ] Add auth / rate limit to the public govern endpoint
+- [ ] Separate benchmark/eval receipts from production `praxis_receipts` (or exclude `session-*` from dashboard counts)
 - [ ] Wire the Python CRS backend into the streamed `/api/lex/govern/stream` path (console traffic)
 - [ ] Establish (or bound) the relationship between deployed F(x,z) and the proven V_z gradient flow
 - [ ] Reconcile paper claims with deployment ("approximates" vs "theorem")
