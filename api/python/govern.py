@@ -2,6 +2,12 @@
 Aureonics Real Governor — Vercel Python Serverless Function
 Endpoint: /api/python/govern
 Real CBF + CCP + IEC + ADV math from Aureonics-OS
+
+NOTE: since 2026-06-30 the reported constitutional state on /api/lex/govern is
+the TypeScript kernel's governed vector (coherent M + health band, with a real
+before→after trajectory). This Python endpoint provides the CCP/IEC/ADV DETAIL
+metrics. It is still important that those detail numbers be sane — hence the ADV
+calibration fix below.
 """
 import json
 import sys
@@ -10,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from http.server import BaseHTTPRequestHandler
 from governor_service import governor_state, governor_policy
-from metrics_service import compute_ccp, compute_iec, compute_adv
+from metrics_service import compute_ccp, compute_iec, compute_adv, cosine_similarity, clamp01
 from cbf_service import simulate_cbf, lyapunov_candidate
 
 TAU = 0.08
@@ -33,6 +39,58 @@ def _health_band(m):
     if m >= 0.08: return "STRESSED"
     return "CRITICAL"
 
+def _sovereignty(prompt: str, raw_output: str, governed_output: str) -> dict:
+    """
+    ADV — Sovereignty: the quality of the system's autonomous constitutional
+    judgment on this turn. There are TWO healthy modes, and the previous
+    implementation scored one of them as zero:
+
+      (a) benign passthrough (raw_output == governed_output): the governor judged
+          that no intervention was needed and let the answer stand. This is
+          healthy sovereignty, NOT its absence. The old code fed
+          compute_adv(["raw","raw"], ...) → zero decision variance → adv = 0,
+          which cratered sovereignty (and therefore M and the health band) on
+          perfectly benign prompts like "explain photosynthesis".
+
+      (b) corrective intervention (raw_output != governed_output): the system
+          asserted a change against the raw output. The 2-sample decision
+          variance captures this as adv ≈ 1.
+
+    Both modes are now scored as healthy, anchored to how coherent (on-topic) the
+    governed output is with the prompt — a proxy that the system engaged
+    substantively rather than deflecting or capitulating. This keeps ADV in a
+    sane range so the DETAIL M/band the Python engine reports are not misleading.
+
+    Limitation: this is a coarse proxy. Authoritative sovereignty (and the
+    reported state) is the TypeScript kernel's ADV = compliance × (0.5·anchor
+    alignment + 0.5·reasoning gain); this endpoint's ADV is a detail metric.
+    """
+    intervened = raw_output != governed_output
+    coherence = cosine_similarity(prompt, governed_output)  # 0..1, on-topic-ness
+
+    if intervened:
+        base = compute_adv(["raw", "governed"], [True, True])
+        adv = clamp01(0.5 * base["adv"] + 0.5 * coherence)
+        return {
+            "adv": round(adv, 4),
+            "variance": base["variance"],
+            "compliance": base["compliance"],
+            "transition_rate": base["transition_rate"],
+            "coherence": round(coherence, 4),
+            "mode": "intervention",
+        }
+
+    # Benign passthrough — healthy autonomous compliance, not zero sovereignty.
+    adv = clamp01(0.55 + 0.45 * coherence)
+    return {
+        "adv": round(adv, 4),
+        "variance": 0.0,
+        "compliance": 1.0,
+        "transition_rate": 0.0,
+        "coherence": round(coherence, 4),
+        "mode": "benign_passthrough",
+    }
+
 def run_real_governor(prompt: str, raw_output: str, governed_output: str) -> dict:
     """
     Run real Aureonics math on actual LLM outputs.
@@ -52,11 +110,9 @@ def run_real_governor(prompt: str, raw_output: str, governed_output: str) -> dic
     ])
     r_raw = iec_result["iec"]
 
-    # ADV — Sovereignty: variance between raw and governed
-    # If outputs differ = system exercised sovereignty
-    decisions = ["raw", "governed"] if raw_output != governed_output else ["raw", "raw"]
-    compliance_flags = [True, True]  # both are within system constraints
-    adv_result = compute_adv(decisions, compliance_flags)
+    # ADV — Sovereignty: healthy for benign passthrough AND corrective
+    # intervention (see _sovereignty). Fixes the prior benign→0 crater.
+    adv_result = _sovereignty(prompt, raw_output, governed_output)
     s_raw = adv_result["adv"]
 
     # Normalize to simplex
@@ -76,7 +132,7 @@ def run_real_governor(prompt: str, raw_output: str, governed_output: str) -> dic
     gov = governor_state(c, r, s, tau=TAU)
     policy = governor_policy(gov)
 
-    # Health band
+    # Health band — derived from m, consistent with the c/r/s returned here.
     health = _health_band(m)
 
     # Run CBF simulation for trajectory (fast, 50 steps)
