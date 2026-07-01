@@ -21,7 +21,7 @@
  * (retained only as a secondary trigger). Both the raw cosine (sovereignty_raw)
  * and the boolean (sovereignty_drift) are surfaced for calibration.
  *
- * FAIL-LOUD (2026-07-01): the self-referential measurement depends on the Jina
+ * FAIL-LOUD (2026-07-01): the self-referential measurement depends on the
  * embedding backend. When embeddings (or the constitutional centroid) are
  * unavailable, the measurement cannot run — and previously it silently
  * defaulted to "no drift" while the API still reported a normal health band, so
@@ -31,6 +31,18 @@
  * (weak) active detector in that state. This does NOT auto-refuse (that would
  * make an embedding outage refuse all traffic) — it makes the degradation
  * visible instead of silent.
+ *
+ * CAPITULATION JUDGE (2026-07-01, measurement-only PROTOTYPE): the fair test
+ * with working Gemini embeddings showed S_self does not separate capitulation
+ * from benign output (0.830 attack vs 0.848 benign — overlapping
+ * distributions; cosine measures topical relatedness, not compliance). An
+ * output-side LLM judge (lib/capitulation_judge.ts) now runs on the
+ * PRE-REFUSAL governed output, in parallel with the Python call, and is
+ * surfaced as `capitulation_signal` for calibration. It does NOT trigger
+ * refusal — enforcement waits until it is validated against adversarial AND
+ * benign traffic (over-refusal is also a failure). Judging the pre-refusal
+ * output is deliberate: it lets every turn compare what the judge caught vs
+ * what S_self and the keyword net caught.
  *
  * feat: response includes raw_state + m_before (pre-governance "before" state)
  *   alongside the governed state + M ("after"), matching the stream route.
@@ -49,6 +61,7 @@ import { CANONICAL_REFUSAL } from '@/lib/refusals';
 import { MAX_PROMPT_CHARS } from '@/lib/schemas';
 import { logger, errorFields } from '@/lib/logger';
 import { callPythonGovernor, mergePythonCRS } from '@/lib/python_bridge';
+import { judgeCapitulation } from '@/lib/capitulation_judge';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -112,11 +125,16 @@ export async function POST(req: Request) {
   const rawState = result.receipt.raw_state;
   const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
 
-  // ── Python CRS measurement (detail only) ──────────────────────────────────
-  const [pythonResult] = await Promise.allSettled([
+  // ── Python CRS measurement (detail) + output-side capitulation judge ──────
+  // Both run concurrently. The judge sees the PRE-REFUSAL governed output so
+  // every turn yields a judge-vs-S_self-vs-keyword comparison for calibration.
+  const [pythonResult, capitulationResult] = await Promise.allSettled([
     callPythonGovernor(prompt, result.raw_output, result.governed_output),
+    judgeCapitulation(prompt, result.governed_output),
   ]);
   const python = pythonResult.status === 'fulfilled' ? pythonResult.value : null;
+  const capitulationSignal =
+    capitulationResult.status === 'fulfilled' ? capitulationResult.value : null;
 
   let mergedCRS = python ? mergePythonCRS(
     python,
@@ -165,6 +183,8 @@ export async function POST(req: Request) {
   // Refusal trigger: the self-referential sovereignty violation (paper's
   // mechanism) OR the keyword classifier. The keyword path does not need
   // embeddings, so it remains active even when detection is degraded.
+  // NOTE: capitulation_signal is measurement-only and deliberately NOT a
+  // trigger yet — see header. Enforcement requires validation first.
   const keywordAttack = result.semantic_signal.attack_type !== 'none'
                      && result.semantic_signal.severity >= 0.7;
   if (sovereigntyDriftDetected || keywordAttack) {
@@ -173,6 +193,21 @@ export async function POST(req: Request) {
     forcedCritical         = true; // refusal → CRITICAL regardless of M
     result.receipt.safety_projection_triggered = true;
     mergedCRS = null;
+  }
+
+  // Calibration log: judge verdict vs the enforced triggers, every turn the
+  // judge returned a verdict. This is the dataset for deciding enforcement.
+  if (capitulationSignal) {
+    logger.info('govern.capitulation_calibration', 'judge vs enforced triggers', {
+      session_id, turn,
+      judge_capitulated: capitulationSignal.capitulated,
+      judge_category:    capitulationSignal.category,
+      judge_confidence:  capitulationSignal.confidence,
+      s_self:            sovereigntyRaw,
+      sovereignty_drift: sovereigntyDriftDetected,
+      keyword_attack:    keywordAttack,
+      refused:           sovereigntyDriftDetected || keywordAttack,
+    });
   }
 
   if (detectionDegraded) {
@@ -240,6 +275,10 @@ export async function POST(req: Request) {
     sovereignty_drift:     sovereigntyDriftDetected, // S_self < threshold (paper §6.2)
     sovereignty_raw:       sovereigntyRaw,            // raw S_self cosine (calibration)
     detection_degraded:    detectionDegraded,         // true → S_self could not be measured
+    // Output-side capitulation judge (measurement-only PROTOTYPE — not enforced;
+    // judged on the PRE-refusal governed output; null = judge unavailable,
+    // which must never be read as "no capitulation")
+    capitulation_signal:   capitulationSignal,
     weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
     fpl1:                  mergedCRS?.fpl1 ?? null,
     ccp_lambda:            mergedCRS?.ccp_lambda ?? null,
@@ -273,6 +312,6 @@ export async function GET() {
     name:     'Lex Aureon SovereignKernel API',
     version:  'v2+AsyncGovernor+PythonCBF',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2)',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + capitulation judge (measurement-only)',
   });
 }
