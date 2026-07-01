@@ -16,12 +16,21 @@
  * DETECTION (2026-07-01): the paper (Aureonics v3, §4.3/§6.2) specifies
  * self-referential sovereignty — S_self = cosine(output_embedding,
  * constitutional_centroid) — as the early-warning signal for identity /
- * sovereignty drift. The refusal now triggers on the self-referential
- * sovereignty violation itself (S_self < threshold), independent of the keyword
- * Pre-Eval classifier (retained only as a secondary trigger). Both the raw
- * S_self cosine (sovereignty_raw) and the boolean (sovereignty_drift) are
- * surfaced so the threshold can be recalibrated against measured data rather
- * than guessed.
+ * sovereignty drift. The refusal triggers on the sovereignty violation itself
+ * (S_self < threshold), independent of the keyword Pre-Eval classifier
+ * (retained only as a secondary trigger). Both the raw cosine (sovereignty_raw)
+ * and the boolean (sovereignty_drift) are surfaced for calibration.
+ *
+ * FAIL-LOUD (2026-07-01): the self-referential measurement depends on the Jina
+ * embedding backend. When embeddings (or the constitutional centroid) are
+ * unavailable, the measurement cannot run — and previously it silently
+ * defaulted to "no drift" while the API still reported a normal health band, so
+ * a blind detector looked healthy. That is the most dangerous failure mode for
+ * a safety layer. We now surface `detection_degraded: true` whenever S_self
+ * could not be measured, and log it. The keyword classifier remains the only
+ * (weak) active detector in that state. This does NOT auto-refuse (that would
+ * make an embedding outage refuse all traffic) — it makes the degradation
+ * visible instead of silent.
  *
  * feat: response includes raw_state + m_before (pre-governance "before" state)
  *   alongside the governed state + M ("after"), matching the stream route.
@@ -120,6 +129,7 @@ export async function POST(req: Request) {
   let forcedCritical = false;
   let sovereigntyDriftDetected = false;
   let sovereigntyRaw: number | null = null; // raw S_self cosine (for calibration)
+  let detectionDegraded = false;            // true when S_self could NOT be measured
 
   if (promptEmbedding.length) {
     try {
@@ -128,32 +138,48 @@ export async function POST(req: Request) {
         getConstitutionalCentroid(),
         getSessionCentroid(session_id),
       ]);
-      if (outputEmb.length) {
+      if (outputEmb.length && constCentroid) {
         const sr = kernel.applySelfReferentialMeasurement(
           outputEmb, promptEmbedding, constCentroid, sessCentroid,
         );
-
-        // Paper §4.3 / §6.2: S_self = cosine(output_embedding, constitutional
-        // centroid). Trigger on the sovereignty violation itself, independent
-        // of the keyword Pre-Eval classifier (kept only as a secondary trigger).
+        // Paper §4.3 / §6.2: S_self = cosine(output_embedding, constitutional centroid).
         sovereigntyRaw           = sr.selfCRS.sovereignty_raw;
         sovereigntyDriftDetected = sr.selfCRS.sovereignty_violated;
-        const keywordAttack = result.semantic_signal.attack_type !== 'none'
-                           && result.semantic_signal.severity >= 0.7;
-
-        if (sovereigntyDriftDetected || keywordAttack) {
-          result.governed_output = CANONICAL_REFUSAL;
-          projectionTriggered    = true;
-          forcedCritical         = true; // refusal → CRITICAL regardless of M
-          result.receipt.safety_projection_triggered = true;
-          mergedCRS = null; // Python detail no longer relevant after refusal
-        }
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };
+      } else {
+        // Output embedding or constitutional centroid unavailable → the
+        // self-referential sovereignty measurement could not run.
+        detectionDegraded = true;
       }
     } catch (e) {
+      detectionDegraded = true;
       logger.error('govern.self_referential', 'self-referential CRS failed', errorFields(e));
     }
+  } else {
+    // No prompt embedding → semantic memory AND self-referential detection both
+    // unavailable this turn (embedding backend down).
+    detectionDegraded = true;
+  }
+
+  // Refusal trigger: the self-referential sovereignty violation (paper's
+  // mechanism) OR the keyword classifier. The keyword path does not need
+  // embeddings, so it remains active even when detection is degraded.
+  const keywordAttack = result.semantic_signal.attack_type !== 'none'
+                     && result.semantic_signal.severity >= 0.7;
+  if (sovereigntyDriftDetected || keywordAttack) {
+    result.governed_output = CANONICAL_REFUSAL;
+    projectionTriggered    = true;
+    forcedCritical         = true; // refusal → CRITICAL regardless of M
+    result.receipt.safety_projection_triggered = true;
+    mergedCRS = null;
+  }
+
+  if (detectionDegraded) {
+    // Fail LOUD: a blind detector must never read as "safe".
+    logger.warn('govern.detection',
+      'self-referential sovereignty unavailable (embedding backend / centroid down) — detection degraded; keyword classifier only',
+      { session_id, turn });
   }
 
   // ── Single authoritative reported state (TS kernel governed state) ────────
@@ -213,6 +239,7 @@ export async function POST(req: Request) {
     crs_detail:            crsDetail,
     sovereignty_drift:     sovereigntyDriftDetected, // S_self < threshold (paper §6.2)
     sovereignty_raw:       sovereigntyRaw,            // raw S_self cosine (calibration)
+    detection_degraded:    detectionDegraded,         // true → S_self could not be measured
     weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
     fpl1:                  mergedCRS?.fpl1 ?? null,
     ccp_lambda:            mergedCRS?.ccp_lambda ?? null,
