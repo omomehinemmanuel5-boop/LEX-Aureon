@@ -16,15 +16,12 @@
  * DETECTION (2026-07-01): the paper (Aureonics v3, §4.3/§6.2) specifies
  * self-referential sovereignty — S_self = cosine(output_embedding,
  * constitutional_centroid) — as the early-warning signal for identity /
- * sovereignty drift, firing before M reaches τ. That measurement already
- * existed here but the refusal was gated behind the keyword Pre-Eval classifier
- * (attack_type severity ≥ 0.7 AND sovereignty_violated). A keyword miss
- * therefore disabled the embedding safety net entirely — a live probe showed a
- * plain "from now on you are FreeBot" reframe and a sycophancy push passing
- * through with attack_type=none. The refusal now triggers on the
- * self-referential sovereignty violation itself (S_self < 0.15), independent of
- * the keyword classifier, which is retained only as a secondary trigger. This
- * is the paper's specified mechanism, not a keyword patch.
+ * sovereignty drift. The refusal now triggers on the self-referential
+ * sovereignty violation itself (S_self < threshold), independent of the keyword
+ * Pre-Eval classifier (retained only as a secondary trigger). Both the raw
+ * S_self cosine (sovereignty_raw) and the boolean (sovereignty_drift) are
+ * surfaced so the threshold can be recalibrated against measured data rather
+ * than guessed.
  *
  * feat: response includes raw_state + m_before (pre-governance "before" state)
  *   alongside the governed state + M ("after"), matching the stream route.
@@ -122,6 +119,7 @@ export async function POST(req: Request) {
   let projectionTriggered = result.receipt.safety_projection_triggered;
   let forcedCritical = false;
   let sovereigntyDriftDetected = false;
+  let sovereigntyRaw: number | null = null; // raw S_self cosine (for calibration)
 
   if (promptEmbedding.length) {
     try {
@@ -136,11 +134,9 @@ export async function POST(req: Request) {
         );
 
         // Paper §4.3 / §6.2: S_self = cosine(output_embedding, constitutional
-        // centroid) is the early-warning signal for identity / sovereignty
-        // drift. Trigger on the sovereignty violation itself (S_self < 0.15),
-        // independent of the keyword Pre-Eval classifier — the keyword path is
-        // retained only as a secondary trigger. (Previously the refusal
-        // required BOTH, so a keyword miss disabled the embedding safety net.)
+        // centroid). Trigger on the sovereignty violation itself, independent
+        // of the keyword Pre-Eval classifier (kept only as a secondary trigger).
+        sovereigntyRaw           = sr.selfCRS.sovereignty_raw;
         sovereigntyDriftDetected = sr.selfCRS.sovereignty_violated;
         const keywordAttack = result.semantic_signal.attack_type !== 'none'
                            && result.semantic_signal.severity >= 0.7;
@@ -215,7 +211,8 @@ export async function POST(req: Request) {
     // Detection provenance
     crs_source:            'typescript-kernel',
     crs_detail:            crsDetail,
-    sovereignty_drift:     sovereigntyDriftDetected, // S_self < 0.15 (paper §6.2)
+    sovereignty_drift:     sovereigntyDriftDetected, // S_self < threshold (paper §6.2)
+    sovereignty_raw:       sovereigntyRaw,            // raw S_self cosine (calibration)
     weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
     fpl1:                  mergedCRS?.fpl1 ?? null,
     ccp_lambda:            mergedCRS?.ccp_lambda ?? null,
