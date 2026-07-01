@@ -21,7 +21,7 @@
 
 Language models can be manipulated. Given the right sequence of words, an LLM can be pushed to drop its instructions, shift identity, comply with harmful requests, or assert falsehoods. Standard mitigations (RLHF, system prompts, rule classifiers) reduce this but provide no formal guarantee.
 
-Lex Aureon is a **constitutional governance layer** that sits above an LLM. It models constitutional state as a point on the probability simplex `x = (C, R, S)`, defines a safety floor `M = min(C, R, S) ≥ τ`, and regulates the state with a governor designed to keep it inside the constitutional region. Every governed response is **cryptographically signed** (SHA-256) and persisted, so the constitutional state at inference time is auditable after the fact.
+Lex Aureon is a **constitutional governance layer** that sits above an LLM. It models constitutional state as a point on the probability simplex `x = (C, R, S)`, defines a safety floor `M = min(C, R, S) ≥ τ`, and regulates the state with a governor designed to keep it inside the constitutional region. Every governed response is recorded with a **SHA-256 receipt** — the input hash, the output hash, and a bound `receipt_hash = SHA-256(state ‖ input_hash ‖ output_hash)` — persisted append-only on the same row as the governance record, so the constitutional state at inference time is verifiable after the fact.
 
 **What is proven, and what is engineered — stated precisely:**
 
@@ -57,7 +57,7 @@ Re-running a suite and re-publishing updates every surface at once. The dashboar
 Benchmark inputs: AdvBench (Zou et al. 2023) uses the real `harmful_behaviors.csv` (520 behaviors). JailbreakBench uses the JBB-Behaviors dataset (100 harmful + 100 benign). The HarmBench arm runs against the official `walledai/HarmBench` dataset — the prior run used an internal taxonomy set and should not be labeled HarmBench.
 
 **Live deployment facts (not contested by the above):**
-- SHA-256 audit receipts persisted in `praxis_receipts` (immutable, append-only).
+- SHA-256 receipts persisted on every `praxis_receipts` row (immutable, append-only): `input_hash`, `output_hash`, and the bound `receipt_hash`.
 - Per-session constitutional state tracked in `z_traj`; semantic memory in `lex_memory`.
 - The `M ≥ τ` floor is enforced in code by the synchronous kernel on every governed turn.
 
@@ -103,20 +103,20 @@ M < τ → Governor fires
 
 > **CRS measurement note:** the deployed CRS extractor (`lib/agents/crs_extractor.ts`) measures the state with **embeddings, matching the paper — not lexical token overlap.** CCP (Continuity) is the cosine similarity between a Jina `jina-embeddings-v3` embedding of the output and the constitutional anchor. IEC (Reciprocity) is a register-aware Shannon-entropy ratio stability term. ADV (Sovereignty) is `compliance × (0.5·anchor-alignment + 0.5·reasoning-gain)`, where anchor-alignment reuses the embedding cosine. When Jina is unreachable at runtime the extractor falls back to a Groq LLM scorer, then to an explicit error — there is no bag-of-words fallback path. The separate output-to-constitutional-centroid cosine used by the self-referential check lives in `lib/self_referential_crs.ts`. (`lib/constitutional_metrics.ts` is a kernel-internal helper, not the surfaced CRS measurement.)
 
-### CRS measurement engines, and receipts
+### Reported state is one coherent vector
 
-There are two CRS measurement paths, and receipts now record which one was authoritative for each turn:
+The constitutional state returned by the API — `C`, `R`, `S`, `state`, `M`, and `health_band` — is derived from **one** vector: the TypeScript kernel's governed state. `M = min(C, R, S)` and `health_band` is computed from that same `M` (identical thresholds to the table below), so the band always agrees with the margin.
 
-- **Streamed console path** (`POST /api/lex/govern/stream`, used by the live console) — the TypeScript kernel plus `CRSExtractorAgent`, which measures CRS from Jina `jina-embeddings-v3` embeddings (CCP = cosine to the constitutional anchor), with a Groq LLM scorer fallback when Jina is unavailable.
-- **Non-streamed API** (`POST /api/lex/govern`) — additionally calls a Python backend (`api/python/govern.py`) that computes CCP (cosine similarity with a decay term), IEC (population-variance entropy ratio) and ADV (normalized Shannon entropy), then runs a CBF QP filter and a short FPL1 simulation. On success that measurement is used for the response and stored memory; on cold-start/timeout the TypeScript kernel values are used. The hard `M ≥ τ` floor is always enforced by the TypeScript kernel regardless of which engine measured CRS.
+- **Streamed console path** (`POST /api/lex/govern/stream`) — the TypeScript kernel plus `CRSExtractorAgent`, measuring CRS from Jina `jina-embeddings-v3` embeddings (CCP = cosine to the constitutional anchor), with a Groq LLM scorer fallback when Jina is unavailable.
+- **Non-streamed API** (`POST /api/lex/govern`) — the same TypeScript kernel state is authoritative, and it *additionally* calls a Python backend (`api/python/govern.py`) that computes CCP / IEC / ADV plus a CBF QP filter and a short FPL1 simulation. Those Python numbers are surfaced as a labeled **detail** object (`crs_detail`), **not** as the reported state — the Python engine has no before→after trajectory and its ADV is calibrated separately. On cold-start/timeout the detail is simply absent.
 
-Both paths are embedding/cosine-based, consistent with the paper's CCP definition. The persisted receipt's `crs_method` column records the engine: `python-cbf|ccp=…|iec=…|adv=…` when the Python backend was authoritative, and `SovereignKernel-v2|θ=…|T=…` otherwise (Python fallback, post-refusal, or the streamed path).
+The hard `M ≥ τ` floor is enforced by the TypeScript kernel on every turn regardless. The persisted receipt's `crs_method` column records whether Python detail was available (`python-cbf|ccp=…|iec=…|adv=…`) or not (`SovereignKernel-v2|θ=…|T=…`); this documents the detail engine, while the receipt's state/`m_after` are always the authoritative kernel values.
 
-> **Scope note:** the Python backend is currently wired into the non-streamed `/api/lex/govern` route. The streamed path the console uses is measured by the Jina-embedding `CRSExtractorAgent`, not the Python backend. Wiring Python into the stream is tracked, not yet done.
+> **History:** an earlier version mixed sources — top-level `C/R/S` came from Python, `state` from the kernel (a different vector), `M` was `max(min(python), tsM)`, and the band was derived from Python's min-CRS — so the API could return `M=0.30` next to `band=CRITICAL`, and benign prompts read CRITICAL because Python's ADV scored an unchanged (benign) output as zero sovereignty. Both issues are fixed: the reported state is one coherent vector, and the Python ADV now scores benign passthrough and corrective intervention as healthy (see `api/python/govern.py` `_sovereignty`).
 
 ### Before / after state
 
-Every governed turn now exposes the **pre-governance** state — the raw kernel measurement *before* the governor correction / CBF projection — alongside the governed ("after") result:
+Every governed turn exposes the **pre-governance** state — the raw kernel measurement *before* the governor correction / CBF projection — alongside the governed ("after") result:
 
 - the API returns `raw_state` (C, R, S) and `m_before` next to the governed `state`, `C`/`R`/`S` and `M`;
 - the streamed pipeline emits a `crs_before` event and includes `raw_state`/`m_before` in the `complete` event;
@@ -142,10 +142,10 @@ M(x)   = min(C, R, S)
 V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ−xᵢ)²     [z-weighted Lyapunov barrier]
                                                      proven: V̇_z ≤ 0 under ẋ = −Π_Σ ∇V_z
 G_i    = k(φᵢ − φ̄) + Bᵢ(x),  Bᵢ = −μ·log(xᵢ − τ)   [governor correction, log-barrier]
-Receipt = SHA-256(state ‖ input_hash ‖ output_hash)  [audit proof]
+Receipt = SHA-256(state ‖ input_hash ‖ output_hash)  [audit proof, persisted per receipt]
 ```
 
-> The deployed dynamics approximate the `V_z` descent; receipts now record `V_z` and `ΔV_z` for audit. Establishing that the deployed `F` realizes the proven flow (and that the equilibrium lies inside `M ≥ τ`) are open items, tracked honestly.
+> The deployed dynamics approximate the `V_z` descent; receipts record `V_z` and `ΔV_z` for audit. Establishing that the deployed `F` realizes the proven flow (and that the equilibrium lies inside `M ≥ τ`) are open items, tracked honestly.
 
 ---
 
@@ -177,7 +177,7 @@ curl -X POST http://localhost:3000/api/lex/govern \
 }
 ```
 
-Returns the governed output, the constitutional state and `M` ("after"), the pre-governance `raw_state` (C, R, S) and `m_before` ("before"), the health band, `V_z`/`ΔV_z`, `crs_source` (`python-cbf` when the Python backend was authoritative, else `typescript-kernel`), the governor-sensing report, and a receipt id.
+Returns the governed output; the authoritative constitutional state (`C`, `R`, `S`, `state`, `M`, `health_band`) — one coherent vector with `M = min(C,R,S)` and `health_band` derived from that `M`; the pre-governance `raw_state` (C, R, S) and `m_before` ("before"); `V_z`/`ΔV_z`; `crs_source` (always `typescript-kernel` — the state engine); an optional `crs_detail` object carrying the Python CCP/IEC/ADV measurement when available; the governor-sensing report; and a receipt id. The persisted receipt additionally carries the SHA-256 `input_hash`, `output_hash`, and bound `receipt_hash`.
 
 > **Security note:** this endpoint is currently unauthenticated and unthrottled against production inference keys. Add auth or a rate limit before exposing it to real traffic.
 
@@ -201,7 +201,7 @@ Public read endpoint — the single source of truth for benchmark numbers. Retur
 
 The only writer to `benchmark_results`. Requires `BENCH_SECRET` via `Authorization: Bearer …` (or `X-Bench-Secret`); fails closed (503) if the secret is unset and 401 on mismatch, so production traffic can never publish numbers. Accepts one metric object or an array; append-only. Driven by `scripts/publish.ts` in the benchmark repo.
 
-**Health bands:**
+**Health bands** (the reported `health_band` is computed from the reported `M`, so band and margin always agree):
 
 | Band | M range | Behaviour |
 |:---|:---:|:---|
@@ -218,20 +218,22 @@ The only writer to `benchmark_results`. Requires `BENCH_SECRET` via `Authorizati
 |:---|:---|:---|
 | §3 Simplex geometry | `lib/aureonics_core.ts` | `projectToSimplex()` — Duchi-style projection |
 | §4 Stability margin | `lib/sovereign_kernel.ts` | `M = min(C,R,S)`; `lyapunovCandidate()` → `lyapunovBarrierZ` (V_z) |
-| §5 CRS (live) | `lib/agents/crs_extractor.ts` | Jina `jina-embeddings-v3` cosine (CCP) + Shannon-entropy IEC + compliance ADV; Groq scorer fallback |
+| §5 CRS (live, authoritative) | `lib/agents/crs_extractor.ts` | Jina `jina-embeddings-v3` cosine (CCP) + Shannon-entropy IEC + compliance ADV; Groq scorer fallback |
 | §5.1 CCP | `lib/agents/crs_extractor.ts` | `cosine(embed(output), embed(anchor))` via Jina |
 | §5.2 IEC | `lib/agents/crs_extractor.ts` | register-aware Shannon-entropy ratio stability |
 | §5.3 ADV | `lib/agents/crs_extractor.ts` | `compliance × (0.5·anchor-alignment + 0.5·reasoning-gain)` |
-| §5 CRS (Python) | `api/python/govern.py` | CCP cosine-decay / IEC variance-entropy / ADV Shannon + CBF QP + FPL1; authoritative on `/api/lex/govern` when reachable |
-| Python bridge | `lib/python_bridge.ts` | `callPythonGovernor()`, `mergePythonCRS()` |
+| §5 CRS (Python, detail) | `api/python/govern.py` | CCP cosine-decay / IEC variance-entropy / ADV coherence-anchored + CBF QP + FPL1; surfaced as `crs_detail`, not the reported state |
+| Reported-state coherence | `app/api/lex/govern/route.ts` | one vector: `M = min(C,R,S)`, `healthBand(M)`; Python is `crs_detail` |
+| Python bridge | `lib/python_bridge.ts` | `callPythonGovernor()`, `mergePythonCRS()` (detail fields only) |
 | §6 Governor | `lib/sovereign_kernel.ts` | `governorUpdate()`, `runCycle()` |
 | §6 G(x,z) async | `lib/governor_loop.ts` | `fireGovernorLoop()`, `consumePendingCorrection()` |
 | §8 Self-referential S | `lib/self_referential_crs.ts` | embedding cosine to constitutional centroid |
-| Audit receipts | `lib/kernel_bridge.ts` | `writeKernelReceipt()` — tags `crs_method` (`python-cbf` vs `SovereignKernel-v2`); records `raw_state`/`m_before` |
+| Audit receipts | `lib/kernel_bridge.ts` | `writeKernelReceipt()` — persists SHA-256 `input_hash`/`output_hash`/`receipt_hash`; tags `crs_method`; records `raw_state`/`m_before` |
 | Benchmark results (data) | `lib/benchmark_results.ts` | one writer / one reader over `benchmark_results`; latest per benchmark+metric via `MAX(id)` |
 | Benchmark results (read) | `app/api/benchmarks/route.ts` | `GET` — public, no-store; the figure source for site + README |
 | Benchmark results (write) | `app/api/benchmarks/publish/route.ts` | `POST` — `BENCH_SECRET`-gated, fail-closed, append-only |
 | Benchmark dashboard | `app/benchmarks/page.tsx` + `components/BenchmarkResults.tsx` | live-polling view; honest empty state |
+| Full-capability probe | `scripts/probe.ts` (benchmark repo) | one session across all three pillars + benign control + slow-drip; prints before→after CRS |
 
 ---
 
@@ -257,6 +259,9 @@ BENCH_SECRET=... npx tsx scripts/publish.ts --in data/advbench-scored.jsonl --be
 
 # A shared Python judge (scripts/judge.py) scores a results file without Node.
 python3 scripts/judge.py --in data/advbench-raw.jsonl --llm-judge
+
+# Qualitative self-test — exercise all three pillars in one session (no dataset needed):
+npx tsx scripts/probe.ts
 ```
 
 Once published, the numbers appear automatically at [lexaureon.com/benchmarks](https://lexaureon.com/benchmarks), on the landing page, and via `GET /api/benchmarks` — no redeploy, no hardcoded values.
@@ -306,6 +311,11 @@ npm run test          # math, governor, constitution, schemas, API
 
 ## Roadmap
 
+**Done — measurement coherence + audit**
+- [x] Report one coherent constitutional vector (`M = min(C,R,S)`, `health_band` derived from `M`); demote the Python engine to labeled `crs_detail`
+- [x] Fix Python ADV so benign passthrough is not scored as zero sovereignty
+- [x] Persist the SHA-256 receipt (`input_hash` / `output_hash` / `receipt_hash`) on every governance receipt row
+
 **Done — evaluation harness + results pipeline**
 - [x] Rebuild scorers + shared judge for symmetric judging (same judge on bare + governed, no framework-word bias)
 - [x] Make the benchmark repo self-contained (runners for AdvBench / JailbreakBench / HarmBench, scorers, shared judge, publish step)
@@ -315,9 +325,10 @@ npm run test          # math, governor, constitution, schemas, API
 - [ ] Run AdvBench / JailbreakBench under symmetric judging and publish the scored numbers
 - [ ] Run HarmBench against the official walledai dataset
 - [ ] Swap in the official HarmBench classifier; report two-judge agreement
+- [ ] Strengthen single-vector attack detection (probe showed identity/sycophancy/bypass framings scored below the multi-pillar case)
 - [ ] Add auth / rate limit to the public govern endpoint
 - [ ] Separate benchmark/eval receipts from production `praxis_receipts` (or exclude `session-*` from dashboard counts)
-- [ ] Wire the Python CRS backend into the streamed `/api/lex/govern/stream` path (console traffic)
+- [ ] Wire the Jina/Python detail measurement into the streamed `/api/lex/govern/stream` path (console traffic)
 - [ ] Establish (or bound) the relationship between deployed F(x,z) and the proven V_z gradient flow
 - [ ] Reconcile paper claims with deployment ("approximates" vs "theorem")
 
