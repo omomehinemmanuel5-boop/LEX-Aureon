@@ -4,20 +4,26 @@
  *
  * wire: loadKernelZ() threads session-adaptive z into runCycle().
  *
- * wire: callPythonGovernor() now called concurrently with the TypeScript kernel.
- * The Python backend (api/python/govern.py) provides the authoritative CRS
- * measurement using:
- *   - Cosine similarity with decay lambda (CCP)
- *   - Population variance entropy ratio (IEC)
- *   - Normalized Shannon entropy (ADV)
- *   - Full CBF QP filter + 50-step FPL1 simulation
- * On Python success, the Python CRS measurement is used for receipts and
- * the FPL1 classification is added to the response.
- * On Python failure (cold start, timeout), TypeScript kernel values are used.
- * Source is tagged in crs_method: 'python-cbf|...' vs 'SovereignKernel-v2|...'
+ * wire: callPythonGovernor() called concurrently with the TypeScript kernel.
+ * The Python backend (api/python/govern.py) computes CCP/IEC/ADV + a CBF QP
+ * filter + FPL1 simulation. These are surfaced as *detail* metrics.
  *
- * feat: response now includes raw_state + m_before (pre-governance "before"
- *   state) alongside the governed state + M ("after"), matching the stream route.
+ * COHERENCE (2026-06-30): the reported constitutional state is ONE vector — the
+ * TypeScript kernel's governed state — and M and health_band are both derived
+ * from THAT vector:
+ *     C/R/S = state = result.state (TS kernel, CBF-guaranteed, has a real
+ *             before→after trajectory via raw_state)
+ *     M     = min(C, R, S)
+ *     band  = healthBand(M)              (same thresholds as api/python _health_band)
+ * Previously the response mixed sources: C/R/S came from Python, `state` from the
+ * TS kernel (a different vector), M was max(min(python), tsM), and health_band
+ * was derived from Python's min-CRS — so the band could say CRITICAL next to an
+ * M of 0.30. The Python measurement is retained as `crs_detail` (labeled), not as
+ * the authoritative state. `crs_source` reflects the state engine (always the TS
+ * kernel now); `crs_detail.source` records whether Python detail was available.
+ *
+ * feat: response includes raw_state + m_before (pre-governance "before" state)
+ *   alongside the governed state + M ("after"), matching the stream route.
  */
 
 import { NextResponse } from 'next/server';
@@ -39,6 +45,18 @@ async function ensureDB() {
   if (_dbReady) return;
   await ensureLexMemoryTable();
   _dbReady = true;
+}
+
+/**
+ * Health band from the stability margin M — the single, documented mapping.
+ * Kept identical to api/python/govern.py `_health_band` so both engines agree.
+ * Deriving the band from the reported M guarantees band ↔ M coherence.
+ */
+function healthBand(m: number): string {
+  if (m >= 0.25) return 'OPTIMAL';
+  if (m >= 0.15) return 'ALERT';
+  if (m >= 0.08) return 'STRESSED';
+  return 'CRITICAL';
 }
 
 export async function POST(req: Request) {
@@ -88,15 +106,16 @@ export async function POST(req: Request) {
   const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
 
   // ── Python CRS measurement (concurrent with self-referential) ────────────
-  // Calls api/python/govern.py which runs the complete CCP/IEC/ADV pipeline
-  // plus CBF QP filter + FPL1 classification. Non-fatal on failure.
+  // Runs the CCP/IEC/ADV pipeline + CBF QP + FPL1. Retained as DETAIL only —
+  // it is not the authoritative reported state (it has no before→after
+  // trajectory and its ADV is calibrated separately). Non-fatal on failure.
   const [pythonResult] = await Promise.allSettled([
     callPythonGovernor(prompt, result.raw_output, result.governed_output),
   ]);
   const python = pythonResult.status === 'fulfilled' ? pythonResult.value : null;
 
-  // Merge Python CRS with TypeScript kernel state
-  // Python measurement used for reporting; TypeScript CBF guarantees the floor
+  // Merge is retained for its detail fields (fpl1, ccp_lambda, iec_variance,
+  // crs_method tag). It is NOT used for the reported C/R/S/M/band anymore.
   let mergedCRS = python ? mergePythonCRS(
     python,
     result.M,
@@ -105,6 +124,7 @@ export async function POST(req: Request) {
 
   // ── Self-referential CRS ──────────────────────────────────────────────────
   let projectionTriggered = result.receipt.safety_projection_triggered;
+  let forcedCritical = false;
 
   if (promptEmbedding.length) {
     try {
@@ -121,10 +141,10 @@ export async function POST(req: Request) {
                           && result.semantic_signal.severity >= 0.7;
         if (isRealAttack && sr.selfCRS.sovereignty_violated) {
           result.governed_output = CANONICAL_REFUSAL;
-          result.health_band     = 'CRITICAL';
           projectionTriggered    = true;
+          forcedCritical         = true; // refusal → CRITICAL regardless of M
           result.receipt.safety_projection_triggered = true;
-          mergedCRS = null; // Python result no longer valid after refusal
+          mergedCRS = null; // Python detail no longer relevant after refusal
         }
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };
@@ -134,10 +154,31 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Single authoritative reported state (TS kernel governed state) ────────
+  // C/R/S, M, band all derive from THIS one vector — no cross-engine mixing.
+  const reportedState = { C: result.state.C, R: result.state.R, S: result.state.S };
+  const reportedM     = Math.min(reportedState.C, reportedState.R, reportedState.S);
+  const reportedBand  = forcedCritical ? 'CRITICAL' : healthBand(reportedM);
+  result.health_band  = reportedBand; // keep receipt/health band consistent
+
+  // Python detail (labeled; not the authoritative state)
+  const crsDetail = python ? {
+    source:      'python-cbf',
+    ccp:         python.ccp_detail.ccp,
+    iec:         python.iec_detail.iec,
+    adv:         python.adv_detail.adv,
+    python_c:    python.c,
+    python_r:    python.r,
+    python_s:    python.s,
+    python_m:    python.m,
+    python_band: python.health_band,
+    fpl1:        python.fpl1,
+  } : null;
+
   // ── Persist receipt ───────────────────────────────────────────────────────
-  // crs_method reflects the authoritative engine: mergedCRS.crs_method
-  // ('python-cbf|...') when Python succeeded and no refusal nulled it; otherwise
-  // writeKernelReceipt falls back to the TypeScript kernel string internally.
+  // crs_method still records the Python detail measurement (ccp/iec/adv) when
+  // available, for audit — it documents what the detail engine measured, while
+  // the receipt's m_after/state reflect the authoritative TS kernel state.
   const [receiptId] = await Promise.all([
     writeKernelReceipt(session_id, turn, result, mergedCRS?.crs_method),
     incrementRuns(),
@@ -145,11 +186,11 @@ export async function POST(req: Request) {
       session_id, prompt,
       prompt_hash:            result.receipt.input_hash,
       embedding:              promptEmbedding,
-      M:                      mergedCRS?.M ?? result.M,
-      C:                      mergedCRS?.C ?? result.state.C,
-      R:                      mergedCRS?.R ?? result.state.R,
-      S:                      mergedCRS?.S ?? result.state.S,
-      health_band:            mergedCRS?.health_band ?? result.health_band,
+      M:                      reportedM,
+      C:                      reportedState.C,
+      R:                      reportedState.R,
+      S:                      reportedState.S,
+      health_band:            reportedBand,
       state_label:            classifyStateLabel(projectionTriggered, result.governed_output),
       intervention:           projectionTriggered,
       governed_response_hash: result.receipt.output_hash,
@@ -159,17 +200,20 @@ export async function POST(req: Request) {
   return NextResponse.json({
     governed_output:       result.governed_output,
     raw_output:            result.raw_output,
-    // CRS: Python measurement preferred; TypeScript fallback ("after")
-    M:                     mergedCRS?.M ?? result.M,
-    C:                     mergedCRS?.C ?? result.state.C,
-    R:                     mergedCRS?.R ?? result.state.R,
-    S:                     mergedCRS?.S ?? result.state.S,
+    // ── Authoritative constitutional state ("after") — one coherent vector ──
+    C:                     reportedState.C,
+    R:                     reportedState.R,
+    S:                     reportedState.S,
+    M:                     reportedM,
+    state:                 reportedState,
+    health_band:           reportedBand,
     // Pre-governance ("before") state — raw kernel measurement
     raw_state:             { C: rawState.C, R: rawState.R, S: rawState.S },
     m_before:              mBefore,
-    health_band:           mergedCRS?.health_band ?? result.health_band,
+    // State engine is always the TS kernel now; Python is detail (below).
+    crs_source:            'typescript-kernel',
+    crs_detail:            crsDetail,
     weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
-    crs_source:            python ? 'python-cbf' : 'typescript-kernel',
     fpl1:                  mergedCRS?.fpl1 ?? null,
     ccp_lambda:            mergedCRS?.ccp_lambda ?? null,
     iec_variance:          mergedCRS?.iec_variance ?? null,
@@ -187,7 +231,6 @@ export async function POST(req: Request) {
     epsilon_injected:      result.epsilon_injected,
     projection_triggered:  projectionTriggered,
     projection_magnitude:  result.projection_magnitude,
-    state:                 result.state,
     z_weights:             result.receipt.z_weights,
     receipt_id:            receiptId,
     memory_injected:       memoryContext.length > 0,
@@ -203,6 +246,6 @@ export async function GET() {
     name:     'Lex Aureon SovereignKernel API',
     version:  'v2+AsyncGovernor+PythonCBF',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + Python CBF QP + FPL1 classification',
+    governor: 'G(x,z) async sensing + Python CBF QP + FPL1 classification (detail)',
   });
 }
