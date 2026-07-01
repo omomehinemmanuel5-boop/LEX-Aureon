@@ -10,17 +10,21 @@
  *
  * COHERENCE (2026-06-30): the reported constitutional state is ONE vector — the
  * TypeScript kernel's governed state — and M and health_band are both derived
- * from THAT vector:
- *     C/R/S = state = result.state (TS kernel, CBF-guaranteed, has a real
- *             before→after trajectory via raw_state)
- *     M     = min(C, R, S)
- *     band  = healthBand(M)              (same thresholds as api/python _health_band)
- * Previously the response mixed sources: C/R/S came from Python, `state` from the
- * TS kernel (a different vector), M was max(min(python), tsM), and health_band
- * was derived from Python's min-CRS — so the band could say CRITICAL next to an
- * M of 0.30. The Python measurement is retained as `crs_detail` (labeled), not as
- * the authoritative state. `crs_source` reflects the state engine (always the TS
- * kernel now); `crs_detail.source` records whether Python detail was available.
+ * from THAT vector (M = min(C,R,S); band = healthBand(M)). Python CCP/IEC/ADV
+ * are surfaced as labeled crs_detail, never as the reported state.
+ *
+ * DETECTION (2026-07-01): the paper (Aureonics v3, §4.3/§6.2) specifies
+ * self-referential sovereignty — S_self = cosine(output_embedding,
+ * constitutional_centroid) — as the early-warning signal for identity /
+ * sovereignty drift, firing before M reaches τ. That measurement already
+ * existed here but the refusal was gated behind the keyword Pre-Eval classifier
+ * (attack_type severity ≥ 0.7 AND sovereignty_violated). A keyword miss
+ * therefore disabled the embedding safety net entirely — a live probe showed a
+ * plain "from now on you are FreeBot" reframe and a sycophancy push passing
+ * through with attack_type=none. The refusal now triggers on the
+ * self-referential sovereignty violation itself (S_self < 0.15), independent of
+ * the keyword classifier, which is retained only as a secondary trigger. This
+ * is the paper's specified mechanism, not a keyword patch.
  *
  * feat: response includes raw_state + m_before (pre-governance "before" state)
  *   alongside the governed state + M ("after"), matching the stream route.
@@ -99,32 +103,25 @@ export async function POST(req: Request) {
   }
 
   // ── Pre-governance ("before") state ───────────────────────────────────────
-  // raw_state is the raw kernel measurement before the governor correction /
-  // CBF projection that produced result.state ("after"). Captured here because
-  // the self-referential block below may overwrite result.state/result.M.
   const rawState = result.receipt.raw_state;
   const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
 
-  // ── Python CRS measurement (concurrent with self-referential) ────────────
-  // Runs the CCP/IEC/ADV pipeline + CBF QP + FPL1. Retained as DETAIL only —
-  // it is not the authoritative reported state (it has no before→after
-  // trajectory and its ADV is calibrated separately). Non-fatal on failure.
+  // ── Python CRS measurement (detail only) ──────────────────────────────────
   const [pythonResult] = await Promise.allSettled([
     callPythonGovernor(prompt, result.raw_output, result.governed_output),
   ]);
   const python = pythonResult.status === 'fulfilled' ? pythonResult.value : null;
 
-  // Merge is retained for its detail fields (fpl1, ccp_lambda, iec_variance,
-  // crs_method tag). It is NOT used for the reported C/R/S/M/band anymore.
   let mergedCRS = python ? mergePythonCRS(
     python,
     result.M,
     result.state.C, result.state.R, result.state.S,
   ) : null;
 
-  // ── Self-referential CRS ──────────────────────────────────────────────────
+  // ── Self-referential sovereignty — the paper's detection mechanism ────────
   let projectionTriggered = result.receipt.safety_projection_triggered;
   let forcedCritical = false;
+  let sovereigntyDriftDetected = false;
 
   if (promptEmbedding.length) {
     try {
@@ -137,9 +134,18 @@ export async function POST(req: Request) {
         const sr = kernel.applySelfReferentialMeasurement(
           outputEmb, promptEmbedding, constCentroid, sessCentroid,
         );
-        const isRealAttack = result.semantic_signal.attack_type !== 'none'
-                          && result.semantic_signal.severity >= 0.7;
-        if (isRealAttack && sr.selfCRS.sovereignty_violated) {
+
+        // Paper §4.3 / §6.2: S_self = cosine(output_embedding, constitutional
+        // centroid) is the early-warning signal for identity / sovereignty
+        // drift. Trigger on the sovereignty violation itself (S_self < 0.15),
+        // independent of the keyword Pre-Eval classifier — the keyword path is
+        // retained only as a secondary trigger. (Previously the refusal
+        // required BOTH, so a keyword miss disabled the embedding safety net.)
+        sovereigntyDriftDetected = sr.selfCRS.sovereignty_violated;
+        const keywordAttack = result.semantic_signal.attack_type !== 'none'
+                           && result.semantic_signal.severity >= 0.7;
+
+        if (sovereigntyDriftDetected || keywordAttack) {
           result.governed_output = CANONICAL_REFUSAL;
           projectionTriggered    = true;
           forcedCritical         = true; // refusal → CRITICAL regardless of M
@@ -155,11 +161,10 @@ export async function POST(req: Request) {
   }
 
   // ── Single authoritative reported state (TS kernel governed state) ────────
-  // C/R/S, M, band all derive from THIS one vector — no cross-engine mixing.
   const reportedState = { C: result.state.C, R: result.state.R, S: result.state.S };
   const reportedM     = Math.min(reportedState.C, reportedState.R, reportedState.S);
   const reportedBand  = forcedCritical ? 'CRITICAL' : healthBand(reportedM);
-  result.health_band  = reportedBand; // keep receipt/health band consistent
+  result.health_band  = reportedBand;
 
   // Python detail (labeled; not the authoritative state)
   const crsDetail = python ? {
@@ -176,9 +181,6 @@ export async function POST(req: Request) {
   } : null;
 
   // ── Persist receipt ───────────────────────────────────────────────────────
-  // crs_method still records the Python detail measurement (ccp/iec/adv) when
-  // available, for audit — it documents what the detail engine measured, while
-  // the receipt's m_after/state reflect the authoritative TS kernel state.
   const [receiptId] = await Promise.all([
     writeKernelReceipt(session_id, turn, result, mergedCRS?.crs_method),
     incrementRuns(),
@@ -210,9 +212,10 @@ export async function POST(req: Request) {
     // Pre-governance ("before") state — raw kernel measurement
     raw_state:             { C: rawState.C, R: rawState.R, S: rawState.S },
     m_before:              mBefore,
-    // State engine is always the TS kernel now; Python is detail (below).
+    // Detection provenance
     crs_source:            'typescript-kernel',
     crs_detail:            crsDetail,
+    sovereignty_drift:     sovereigntyDriftDetected, // S_self < 0.15 (paper §6.2)
     weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
     fpl1:                  mergedCRS?.fpl1 ?? null,
     ccp_lambda:            mergedCRS?.ccp_lambda ?? null,
@@ -246,6 +249,6 @@ export async function GET() {
     name:     'Lex Aureon SovereignKernel API',
     version:  'v2+AsyncGovernor+PythonCBF',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + Python CBF QP + FPL1 classification (detail)',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2)',
   });
 }
