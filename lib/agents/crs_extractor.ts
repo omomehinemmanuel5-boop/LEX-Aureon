@@ -5,10 +5,11 @@
  * Cannot: modify output, generate content, or sign receipts.
  * Cannot: apply corrections or make governance decisions.
  * Measures: C (CCP), R (IEC), S (ADV), M, V_z, delta_V, velocity
- * Math: paper-exact — cosine similarity via Jina jina-embeddings-v3
+ * Math: paper-exact — cosine similarity via provider-agnostic embeddings
+ *       (Gemini gemini-embedding-001 by default, Jina fallback — see lex_memory)
  * ═══════════════════════════════════════════════════════════════
  *
- * C = CCP: cosine_sim(embed(output), embed(ANCHOR)) via Jina
+ * C = CCP: cosine_sim(embed(output), embed(ANCHOR)) via the shared embedText provider
  * R = IEC: register-aware entropy ratio stability
  * S = ADV: compliance × (0.5 × anchor_alignment + 0.5 × reasoning_gain)
  * V = V_z: −Σzᵢ·log(xᵢ) + (μ/2)Σmax(0,τ−xᵢ)² with z-weights from z_traj
@@ -18,6 +19,7 @@ import { AgentContext, AgentResult, CRSState } from './types';
 import { projectToSimplex, lyapunov, lyapunovZ } from '../aureonics_math';
 import { env } from '../env';
 import { MODELS } from '../llm_provider';
+import { embedTexts, activeEmbedModel } from '../lex_memory';
 
 // ── Constitutional Anchor ─────────────────────────────────────────────────
 // This string defines what "constitutionally grounded" means for measurement.
@@ -64,29 +66,11 @@ function complianceScore(output: string): number {
   return Math.max(0, 1 - hits * 0.35);
 }
 
-// ── Jina Embeddings ───────────────────────────────────────────────────────
-async function getEmbeddings(texts: string[]): Promise<number[][]> {
-  const key = env.JINA_API_KEY;
-
-  const res = await fetch('https://api.jina.ai/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: 'jina-embeddings-v3',
-      task: 'text-matching',
-      input: texts,
-      dimensions: 256, // small = fast + cheap
-    }),
-    signal: AbortSignal.timeout(10000),
-  });
-
-  if (!res.ok) throw new Error(`Jina ${res.status}`);
-  const data = await res.json() as { data: { embedding: number[] }[] };
-  return data.data.map(d => d.embedding);
-}
+// ── Embeddings ─────────────────────────────────────────────────────────────
+// Uses the shared provider-agnostic embedText/embedTexts from lex_memory
+// (Gemini gemini-embedding-001 by default, Jina fallback). The ANCHOR is a fixed
+// string, so after the first call it is served from the embedding cache and only
+// the output embedding is a live request.
 
 // ── Real cosine similarity on embedding vectors ───────────────────────────
 function cosineSim(a: number[], b: number[]): number {
@@ -114,7 +98,7 @@ function shannonEntropy(text: string): number {
   }, 0);
 }
 
-// ── Groq LLM scoring — calibrated fallback when Jina is unavailable at runtime ───
+// ── Groq LLM scoring — calibrated fallback when embeddings are unavailable ───────
 async function groqCRS(
   output: string,
   prompt: string,
@@ -268,8 +252,8 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
   try {
     if (!ctx.raw_output) throw new Error('No raw output to extract from');
 
-    // ── Get real embeddings for C and S ──────────────────────
-    const [anchorEmbed, outputEmbed] = await getEmbeddings([
+    // ── Get real embeddings for C and S (provider-agnostic) ──
+    const [anchorEmbed, outputEmbed] = await embedTexts([
       ANCHOR,
       ctx.raw_output,
     ]);
@@ -350,7 +334,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
         semantic_signal: { type: 'none', severity: 0 },
         adv_gain: S_raw,
         health_band,
-        method: 'jina-embeddings-v3 + shannon-iec + adv-compliance',
+        method: `${activeEmbedModel()} + shannon-iec + adv-compliance`,
         reasoning_gain: Math.min(1.0, (shannonEntropy(ctx.raw_output) / Math.max(shannonEntropy(ctx.prompt || ''), 0.1)) / 1.5),
         compliance_score: compliance,
         anchor_sim: C_raw,
@@ -367,7 +351,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
       },
     };
   } catch (e) {
-    // Jina unavailable — try Groq LLM scorer before vocabulary fallback
+    // Embeddings unavailable — try Groq LLM scorer before failing
     const llm = ctx.raw_output ? await groqCRS(ctx.raw_output, ctx.prompt || '') : null;
     if (llm) {
       const [C, R, S] = projectToSimplex([llm.C, llm.R, llm.S], 0.05);
@@ -398,7 +382,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
           semantic_signal: { type: 'none', severity: 0 },
           adv_gain: S,
           health_band,
-          method: 'groq-llama-3.1-8b-instant (jina unavailable)',
+          method: 'groq-llama-3.1-8b-instant (embeddings unavailable)',
           triggers: {
             collapse: M < 0.08,
             velocity: velocity > 0.15,
@@ -411,12 +395,8 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
         },
       };
     }
-    // Jina down AND Groq scoring failed — surface as an explicit failure.
+    // Embeddings down AND Groq scoring failed — surface as an explicit failure.
     // No hardcoded centroid fallback. The caller logs and the user sees a real error.
     return { success: false, error: `CRS extraction failed: ${String(e)}`, duration_ms: Date.now() - t };
   }
 }
-
-
-
-
