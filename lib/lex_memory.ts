@@ -199,7 +199,6 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
         new Date().toISOString(),
       ],
     });
-    invalidateCentroidCache();
   } catch (e) {
     console.error('lex_memory storeMemory error:', e);
   }
@@ -296,11 +295,21 @@ export async function ensureLexMemoryTable(): Promise<void> {
   }
 }
 
-// ── Constitutional centroid ───────────────────────────────────────────────────
-// fix #8: uses only high-quality STABLE rows with M > 0.15 for centroid
-// calculation. INTERVENED rows are semantically far from the constitutional
-// ideal (they represent governed-away states) and contaminated the centroid,
-// lowering S scores on innocent prompts. Sovereign Laws still seed when thin.
+// ── Constitutional centroid (paper §4.3 / §6.2) ───────────────────────────────
+// FAITHFUL to the paper: the constitutional centroid is the embedding centroid
+// of the Vaulturex Sovereign Codex laws — a FIXED identity anchor in embedding
+// space. It does NOT drift with traffic.
+//
+// Previously this averaged the prompt embeddings of recent STABLE memory rows
+// (seeding from the laws only when there were < 10 such rows). In production
+// that made the "constitutional centroid" a moving average of ordinary benign
+// user prompts, with no special pull toward constitutional identity — which is
+// why S_self = cosine(output, centroid) could not distinguish a capitulation
+// ("I am now FreeBot…") from a benign answer. This restores the paper's anchor
+// so the mechanism gets a fair test.
+//
+// The law embeddings never change text, so after the first computation they are
+// all Turso cache hits; the 5-minute result cache amortises the rest.
 let _centroidCache: { vec: number[]; ts: number } | null = null;
 const CENTROID_TTL_MS = 5 * 60 * 1000;
 
@@ -310,45 +319,14 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
     return _centroidCache.vec;
   }
   try {
-    const db  = getClient();
-    // Only STABLE rows above M > 0.15 — not INTERVENED, which are off-centre
-    const res = await db.execute({
-      sql:  `SELECT embedding FROM lex_memory
-             WHERE embedding IS NOT NULL
-               AND state_label = 'STABLE'
-               AND M > 0.15
-             ORDER BY created_at DESC LIMIT 100`,
-      args: [],
-    });
-    const embeddings: number[][] = [];
-    for (const row of res.rows) {
-      try {
-        const emb = JSON.parse(String(row.embedding));
-        if (Array.isArray(emb) && emb.length > 0) embeddings.push(emb as number[]);
-      } catch { /* skip */ }
-    }
-
-    // Seed from Sovereign Laws if thin — embedText hits cache first on subsequent calls
-    if (embeddings.length < 10) {
-      const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
-      const seedLaws = Object.values(
-        SOVEREIGN_LAWS.reduce(
-          (acc: Record<number, typeof SOVEREIGN_LAWS[0]>, law) => {
-            if (!acc[law.book]) acc[law.book] = law;
-            return acc;
-          },
-          {},
-        )
-      ).slice(0, 10);
-      const lawEmbeddings = await Promise.all(
-        seedLaws.map(law =>
-          embedText(`${law.name}: ${law.text}`).catch(() => [] as number[])
-        )
-      );
-      embeddings.push(...lawEmbeddings.filter(e => e.length > 0));
-    }
-
+    const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
+    const laws = SOVEREIGN_LAWS.slice(0, 50); // the 50 Vaulturex laws
+    const lawEmbeddings = await Promise.all(
+      laws.map(law => embedText(`${law.name}: ${law.text}`).catch(() => [] as number[]))
+    );
+    const embeddings = lawEmbeddings.filter(e => e.length > 0);
     if (!embeddings.length) return null;
+
     const dim      = embeddings[0].length;
     const centroid = new Array<number>(dim).fill(0);
     for (const emb of embeddings) {
