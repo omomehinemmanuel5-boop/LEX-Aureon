@@ -172,7 +172,7 @@ function ComparisonSection() {
     { n: 'Continuous state vector',  d: 'Tracks (C, R, S) as a live constitutional state across the whole exchange — not a single pass/fail flag on one message.' },
     { n: 'Embedding-based measurement', d: 'Constitutional state is measured from Jina embeddings — cosine similarity of the output to a constitutional anchor — not keyword matching. The same embedding-based method described in the paper.' },
     { n: 'Log-Barrier Dynamics',     d: 'Uses an interior-point log-barrier correction to push the state away from constitutional boundaries, designed for smooth and stable behaviour.' },
-    { n: 'Cryptographic receipts',   d: 'Every governed decision is recorded with a SHA-256 receipt (state, input hash, output hash) and persisted append-only, so the constitutional state at inference is auditable after the fact.' },
+    { n: 'Cryptographic receipts',   d: 'Every governed turn writes a SHA-256 receipt — the input hash, the output hash, and a bound hash over the constitutional state — persisted append-only on the same row, so any decision can be independently re-verified after the fact.' },
     { n: 'Constitutional memory',    d: 'z-trajectory memory tracks which pillars are under sustained pressure across turns, so the governor responds to persistent pressure rather than only the current message.' },
     { n: 'No retraining required',   d: 'Runs as a layer above any LLM — GPT, Claude, Gemini, Llama, Mistral — with no fine-tuning and no model changes.' },
   ];
@@ -286,6 +286,12 @@ function ProofPanel() {
             </div>
           </div>
         </div>
+
+        <p className="text-center text-[11px] font-mono text-slate-500 dark:text-slate-600 mt-6">
+          Reported margin and health band are derived from one coherent state vector (M = min C,R,S).
+          Watch it live in the <Link href="/console" className="text-amber-500 hover:text-amber-400 transition-colors">console</Link>,
+          or see aggregate results on the <Link href="/benchmarks" className="text-amber-500 hover:text-amber-400 transition-colors">benchmarks</Link> page.
+        </p>
       </div>
     </section>
   );
