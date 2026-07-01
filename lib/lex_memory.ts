@@ -1,14 +1,12 @@
 /**
  * lib/lex_memory.ts — Semantic Constitutional Memory
  *
- * Jina embeddings + Turso JSON storage.
+ * Provider-agnostic embeddings + Turso JSON storage.
  * Embedding cache wired at embedText() — cache-aside, Turso-backed, non-blocking.
  * Every governed interaction embedded and stored.
  * Top-5 constitutionally similar past interactions injected per prompt.
  *
  * fix: uses singleton getClient() from db.ts instead of createClient() per call.
- * Previous pattern spawned a new libSQL connection on every DB operation, which
- * leaks connections under load. The singleton is already proven in db.ts.
  */
 
 import { getClient } from './db';
@@ -76,7 +74,6 @@ export async function getCachedEmbedding(hash: string): Promise<number[] | null>
       args: [hash],
     });
     if (!r.rows.length) return null;
-    // Increment hit counter — fire-and-forget, non-blocking
     db.execute({
       sql:  'UPDATE embedding_cache SET hits = hits + 1 WHERE text_hash = ?',
       args: [hash],
@@ -101,20 +98,73 @@ async function putCachedEmbedding(hash: string, embedding: number[]): Promise<vo
   }
 }
 
-// ── Jina embedding — with cache ───────────────────────────────────────────────
-// Cache-aside: check Turso first, call Jina on miss, store result async.
-// A cache hit saves ~200ms Jina latency. Constitutional centroid seeds
-// (sovereign laws) benefit most — they never change text, always hit.
-export async function embedText(text: string): Promise<number[]> {
-  const key = env.JINA_API_KEY;
-  if (!key) throw new Error('JINA_API_KEY not set');
+// ── Provider-agnostic embeddings ───────────────────────────────────────────────
+// One embedding function for the whole app. The provider is selected at call
+// time: Gemini (its free tier includes gemini-embedding-001) when GEMINI_API_KEY
+// is set, otherwise Jina. All vectors are EMBED_DIM-dimensional and L2-normalized
+// so cosine similarity, centroid averaging, and the stored 256-dim schema stay
+// consistent regardless of provider.
+//
+// IMPORTANT — switching providers changes the embedding SPACE. Vectors from
+// different models are not comparable even at the same length, so:
+//   • the cache key includes the model name (a Jina-cached vector is never
+//     served to a Gemini call), and
+//   • lex_memory rows embedded by a previous provider will score ~0 against
+//     new-provider queries and simply age out of the recent window.
+// The self-referential centroid and the output are always embedded by the SAME
+// (current) provider within a request, so S_self stays valid across a switch.
+export const EMBED_DIM = 256;
 
-  // 1. Cache hit
-  const hash   = await hashText(text);
-  const cached = await getCachedEmbedding(hash);
-  if (cached) return cached;
+type EmbedProvider = 'gemini' | 'jina';
 
-  // 2. Cache miss — call Jina
+function embedProvider(): EmbedProvider {
+  if (env.GEMINI_API_KEY) return 'gemini';
+  if (env.JINA_API_KEY)   return 'jina';
+  throw new Error('No embedding provider configured (set GEMINI_API_KEY or JINA_API_KEY)');
+}
+
+export function activeEmbedModel(): string {
+  try {
+    return embedProvider() === 'gemini' ? 'gemini-embedding-001' : 'jina-embeddings-v3';
+  } catch {
+    return 'none';
+  }
+}
+
+function l2normalize(v: number[]): number[] {
+  let s = 0;
+  for (const x of v) s += x * x;
+  const mag = Math.sqrt(s);
+  return mag === 0 ? v : v.map(x => x / mag);
+}
+
+async function embedGemini(text: string): Promise<number[]> {
+  const key = env.GEMINI_API_KEY as string;
+  const res = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        model: 'models/gemini-embedding-001',
+        content: { parts: [{ text }] },
+        taskType: 'SEMANTIC_SIMILARITY',
+        outputDimensionality: EMBED_DIM,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!res.ok) throw new Error(`Gemini embed ${res.status}: ${await res.text()}`);
+  const d = await res.json() as { embedding?: { values?: number[] } };
+  const values = d.embedding?.values;
+  if (!values?.length) throw new Error('Gemini embed: no values in response');
+  // gemini-embedding-001 does NOT auto-normalize truncated (<3072) dims, so
+  // normalize here to keep cosine similarity + centroid averaging accurate.
+  return l2normalize(values);
+}
+
+async function embedJina(text: string): Promise<number[]> {
+  const key = env.JINA_API_KEY as string;
   const res = await fetch('https://api.jina.ai/v1/embeddings', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -122,18 +172,35 @@ export async function embedText(text: string): Promise<number[]> {
       model:      'jina-embeddings-v3',
       task:       'text-matching',
       input:      [text],
-      dimensions: 256,
+      dimensions: EMBED_DIM,
     }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`Jina ${res.status}: ${await res.text()}`);
   const d = await res.json() as { data: { embedding: number[] }[] };
-  const embedding = d.data[0].embedding;
+  return d.data[0].embedding; // Jina v3 returns normalized vectors
+}
 
-  // 3. Store in cache — fire-and-forget, never block the caller
+// Single-text embedding, cache-aside. Cache key includes the model so vectors
+// from different embedding spaces never collide.
+export async function embedText(text: string): Promise<number[]> {
+  const provider = embedProvider();
+  const model    = activeEmbedModel();
+
+  const hash   = await hashText(`${model}\n${text}`);
+  const cached = await getCachedEmbedding(hash);
+  if (cached) return cached;
+
+  const embedding = provider === 'gemini' ? await embedGemini(text) : await embedJina(text);
   putCachedEmbedding(hash, embedding).catch(() => undefined);
-
   return embedding;
+}
+
+// Batch helper — embeds each text through the cached, provider-agnostic single
+// path. gemini-embedding-001 accepts one input per call, so this fans out;
+// fixed strings (e.g. the constitutional anchor) are served from cache.
+export async function embedTexts(texts: string[]): Promise<number[][]> {
+  return Promise.all(texts.map(t => embedText(t)));
 }
 
 // Prune cache entries older than ttlDays — called from cron
@@ -298,18 +365,8 @@ export async function ensureLexMemoryTable(): Promise<void> {
 // ── Constitutional centroid (paper §4.3 / §6.2) ───────────────────────────────
 // FAITHFUL to the paper: the constitutional centroid is the embedding centroid
 // of the Vaulturex Sovereign Codex laws — a FIXED identity anchor in embedding
-// space. It does NOT drift with traffic.
-//
-// Previously this averaged the prompt embeddings of recent STABLE memory rows
-// (seeding from the laws only when there were < 10 such rows). In production
-// that made the "constitutional centroid" a moving average of ordinary benign
-// user prompts, with no special pull toward constitutional identity — which is
-// why S_self = cosine(output, centroid) could not distinguish a capitulation
-// ("I am now FreeBot…") from a benign answer. This restores the paper's anchor
-// so the mechanism gets a fair test.
-//
-// The law embeddings never change text, so after the first computation they are
-// all Turso cache hits; the 5-minute result cache amortises the rest.
+// space. It does NOT drift with traffic. Embedded via the provider-agnostic
+// embedText, so it always matches the provider used for output embeddings.
 let _centroidCache: { vec: number[]; ts: number } | null = null;
 const CENTROID_TTL_MS = 5 * 60 * 1000;
 
