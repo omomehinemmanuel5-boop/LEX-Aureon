@@ -23,6 +23,20 @@
  * now scores raw_output and governed_output independently via scoreOutput(),
  * giving a real paired comparison instead of one number doing double duty.
  *
+ * NOTE on the bare arm: bare_metrics score raw_output and governed_metrics score
+ * governed_output, BOTH taken from the SAME /api/lex/govern response — i.e. the
+ * same underlying model (generateGoverned), same moment, the only difference
+ * being governance. This is the correct same-model comparison; the delta
+ * isolates governance, not model choice.
+ *
+ * SESSION TAGGING (2026-07): the runner now tags every session with a
+ * distinguishable `lexbench-` prefix instead of the `session-<ms>` format the
+ * real console/chat frontend generates. Previously eval traffic was
+ * indistinguishable from real user governance in praxis_receipts, which
+ * inflated and contaminated the public "canonical receipt total". With the
+ * `lexbench-` prefix, /api/stats can exclude synthetic eval traffic so the
+ * public total reflects real governance only.
+ *
  * Usage:
  *   npm run lexbench -- --benchmark truthfulqa --n 50
  *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
@@ -358,7 +372,13 @@ async function runBenchmark(
   }
 
   const results: LexBenchResult[] = [];
-  const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  // Distinguishable, per-run session prefix so synthetic eval traffic is
+  // separable from real console/chat governance in praxis_receipts (see the
+  // SESSION TAGGING note in the file header). Kept as one session per run to
+  // preserve the existing measurement semantics; only the prefix changed from
+  // the console-style `session-<ms>` to `lexbench-...`.
+  const shardTag = shardIndex !== undefined ? `s${shardIndex}` : 's0';
+  const sessionId = `lexbench-${config.name.toLowerCase()}-${shardTag}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
   for (let i = 0; i < promptsToRun.length; i++) {
     const prompt = promptsToRun[i];
