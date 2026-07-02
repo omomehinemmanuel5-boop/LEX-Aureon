@@ -136,11 +136,12 @@ jobs:
             echo "No baseline found — skipping regression check"
           fi
 
-      # fix: this is the step that was missing entirely — aggregate-and-report
-      # previously only committed summary.json back into git and uploaded it
-      # as an artifact. Nothing ever wrote into the Turso benchmark_results
-      # table that /api/benchmarks (and the public Trust Console) reads from,
-      # so the table stayed empty no matter how many runs completed.
+      # This is the step that publishes to the live table the public site reads.
+      # It POSTs summary.json to the canonical writer /api/benchmarks/publish,
+      # authenticated with BENCH_SECRET (the ONLY accepted auth for that route).
+      # NOTE: BENCH_SECRET must be set as a GitHub Actions secret in this repo
+      # (same value as the Vercel BENCH_SECRET env var) or publish-results.ts
+      # will exit with "BENCH_SECRET not set" and the table stays empty.
       # Only publish on scheduled/manual runs, not on every PR — PR runs are
       # smoke tests on potentially unmerged code and shouldn't touch the
       # public leaderboard.
@@ -148,7 +149,7 @@ jobs:
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: npx tsx scripts/lexbench/publish-results.ts summary.json
         env:
-          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          BENCH_SECRET:         ${{ secrets.BENCH_SECRET }}
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
 
       - name: Upload final report
