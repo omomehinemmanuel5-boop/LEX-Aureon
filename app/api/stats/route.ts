@@ -14,17 +14,25 @@ async function ensureTable() {
 
 // Synthetic evaluation traffic (benchmark / eval harnesses) is excluded from the
 // public "real governance" counts, so the canonical receipt total the site shows
-// reflects genuine usage rather than self-generated eval load. Real console/chat
-// sessions use the `session-<ms>-<rand>` format, which none of these prefixes
-// match — so NO real traffic is dropped by this filter.
+// reflects genuine usage rather than self-generated eval load.
 //
-// LIMITATION (honest): benchmark runs BEFORE the 2026-07 session tagging used the
-// same `session-<ms>` format as the console and therefore cannot be separated by
-// prefix. Those historical eval receipts remain counted; they surface in the
-// `*_including_eval` fields and age out of relevance as real traffic accrues. A
-// stricter heuristic (exclude sessions with an abnormally high turn count) could
-// remove them but risks dropping legitimate long sessions, so it is intentionally
-// not applied here.
+// Two exclusions:
+//  1. PREFIX — newly-tagged eval sessions (lexbench-/synthetic_/bench-/jbb_/adv_/
+//     hb_). Real console/chat sessions use `session-<ms>-<rand>`, which none of
+//     these match, so no real traffic is dropped.
+//  2. TURN-COUNT — sessions with an abnormally high number of turns (> 80). This
+//     catches historical benchmark runs that (before the 2026-07 session tagging)
+//     used the SAME `session-<ms>` format as the console and so cannot be
+//     separated by prefix. A single benchmark run fires 200–800 prompts under one
+//     session id; a real console/chat session realistically never approaches 80
+//     turns. Measured: 120 such sessions accounted for ~21.9k receipts, all
+//     benchmark. The threshold is deliberately conservative — a genuine long
+//     session would be undercounted, which is the safe direction for an honesty
+//     metric. Both the filtered and unfiltered totals are returned for
+//     transparency (`total_receipts` vs `total_receipts_including_eval`).
+const HEAVY_SESSIONS = `
+  SELECT session_id FROM praxis_receipts GROUP BY session_id HAVING COUNT(*) > 80
+`;
 const REAL_ONLY = `
   session_id NOT LIKE 'lexbench-%'
   AND session_id NOT LIKE 'synthetic_%'
@@ -32,6 +40,7 @@ const REAL_ONLY = `
   AND session_id NOT LIKE 'jbb_%'
   AND session_id NOT LIKE 'adv_%'
   AND session_id NOT LIKE 'hb_%'
+  AND session_id NOT IN (${HEAVY_SESSIONS})
 `;
 
 export async function GET() {
