@@ -2,6 +2,11 @@ name: LexBench Production
 
 on:
   workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Quick-test: prompts per benchmark (leave EMPTY for a full run)'
+        required: false
+        default: ''
   schedule:
     - cron: '0 0 * * *'
   pull_request:
@@ -37,16 +42,26 @@ jobs:
       - name: Determine total prompts and shards
         id: set-matrix
         run: |
-          TOTAL_PROMPTS=$(npx tsx scripts/lexbench/get-total-prompts.ts)
-          echo "Total prompts: $TOTAL_PROMPTS"
-          SHARD_SIZE=100
-          NUM_SHARDS=$(( (TOTAL_PROMPTS + SHARD_SIZE - 1) / SHARD_SIZE ))
-          # Guard against zero shards
-          if [ "$NUM_SHARDS" -lt 1 ]; then NUM_SHARDS=1; fi
-          INDICES=$(seq 0 $((NUM_SHARDS - 1)) | paste -sd, -)
-          MATRIX_CONFIG="{\"shard-index\":[${INDICES}]}"
-          echo "matrix=${MATRIX_CONFIG}" >> $GITHUB_OUTPUT
-          echo "shard-size=${SHARD_SIZE}" >> $GITHUB_OUTPUT
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ]; then
+            # Quick-test mode (manual dispatch only): a single shard whose size is
+            # the requested limit, so each benchmark runs just its first $LIMIT
+            # prompts. Fast end-to-end validation of run → aggregate → publish.
+            echo "Quick-test mode: ${LIMIT} prompts per benchmark, single shard."
+            echo "matrix={\"shard-index\":[0]}" >> $GITHUB_OUTPUT
+            echo "shard-size=${LIMIT}" >> $GITHUB_OUTPUT
+          else
+            TOTAL_PROMPTS=$(npx tsx scripts/lexbench/get-total-prompts.ts)
+            echo "Total prompts: $TOTAL_PROMPTS"
+            SHARD_SIZE=100
+            NUM_SHARDS=$(( (TOTAL_PROMPTS + SHARD_SIZE - 1) / SHARD_SIZE ))
+            # Guard against zero shards
+            if [ "$NUM_SHARDS" -lt 1 ]; then NUM_SHARDS=1; fi
+            INDICES=$(seq 0 $((NUM_SHARDS - 1)) | paste -sd, -)
+            MATRIX_CONFIG="{\"shard-index\":[${INDICES}]}"
+            echo "matrix=${MATRIX_CONFIG}" >> $GITHUB_OUTPUT
+            echo "shard-size=${SHARD_SIZE}" >> $GITHUB_OUTPUT
+          fi
 
   # ── Run each shard in parallel ──────────────────────────────────────────
   run-lexbench:
@@ -142,9 +157,10 @@ jobs:
       # NOTE: BENCH_SECRET must be set as a GitHub Actions secret in this repo
       # (same value as the Vercel BENCH_SECRET env var) or publish-results.ts
       # will exit with "BENCH_SECRET not set" and the table stays empty.
-      # Only publish on scheduled/manual runs, not on every PR — PR runs are
-      # smoke tests on potentially unmerged code and shouldn't touch the
-      # public leaderboard.
+      # Publishes on scheduled AND manual (workflow_dispatch) runs — including
+      # quick-test runs, so a small-N row appears to confirm the path end-to-end;
+      # a later full run overwrites what the site shows (reader takes MAX(id)).
+      # PR runs never publish (smoke tests on unmerged code).
       - name: Publish results to live leaderboard
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: npx tsx scripts/lexbench/publish-results.ts summary.json
@@ -159,6 +175,8 @@ jobs:
           path: summary.json
 
       - name: Commit summary to repo
+        # Don't overwrite the committed baseline with a tiny quick-test summary.
+        if: github.event.inputs.limit == ''
         continue-on-error: true
         run: |
           git config user.name  "Lex CRS Agent"
