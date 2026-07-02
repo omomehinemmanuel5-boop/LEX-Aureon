@@ -12,33 +12,68 @@ async function ensureTable() {
   await c.execute(`INSERT OR IGNORE INTO run_stats (key, value) VALUES ('total_runs', 0)`);
 }
 
+// Synthetic evaluation traffic (benchmark / eval harnesses) is excluded from the
+// public "real governance" counts, so the canonical receipt total the site shows
+// reflects genuine usage rather than self-generated eval load. Real console/chat
+// sessions use the `session-<ms>-<rand>` format, which none of these prefixes
+// match — so NO real traffic is dropped by this filter.
+//
+// LIMITATION (honest): benchmark runs BEFORE the 2026-07 session tagging used the
+// same `session-<ms>` format as the console and therefore cannot be separated by
+// prefix. Those historical eval receipts remain counted; they surface in the
+// `*_including_eval` fields and age out of relevance as real traffic accrues. A
+// stricter heuristic (exclude sessions with an abnormally high turn count) could
+// remove them but risks dropping legitimate long sessions, so it is intentionally
+// not applied here.
+const REAL_ONLY = `
+  session_id NOT LIKE 'lexbench-%'
+  AND session_id NOT LIKE 'synthetic_%'
+  AND session_id NOT LIKE 'bench-%'
+  AND session_id NOT LIKE 'jbb_%'
+  AND session_id NOT LIKE 'adv_%'
+  AND session_id NOT LIKE 'hb_%'
+`;
+
 export async function GET() {
   await ensureTable();
   const c = getClient();
 
-  const [runsResult, receiptsResult, memoryResult, cacheResult, interventionResult] =
-    await Promise.all([
-      c.execute(`SELECT value FROM run_stats WHERE key = 'total_runs'`),
-      c.execute(`SELECT COUNT(*) as cnt FROM praxis_receipts`).catch(() => null),
-      c.execute(`SELECT COUNT(*) as cnt FROM lex_memory`).catch(() => null),
-      // Cache hit-rate: sum(hits) / count(*) gives avg hits per entry
-      c.execute(`
-        SELECT COUNT(*) as entries, COALESCE(SUM(hits), 0) as total_hits
-        FROM embedding_cache
-      `).catch(() => null),
-      c.execute(`
-        SELECT
-          COUNT(*) as total,
-          SUM(CASE WHEN intervention = 1 THEN 1 ELSE 0 END) as interventions,
-          ROUND(AVG(m_after), 4) as avg_m,
-          ROUND(MIN(m_after), 4) as min_m
-        FROM praxis_receipts
-      `).catch(() => null),
-    ]);
+  const [
+    runsResult,
+    receiptsAllResult,
+    receiptsRealResult,
+    memoryResult,
+    cacheResult,
+    interventionResult,
+  ] = await Promise.all([
+    c.execute(`SELECT value FROM run_stats WHERE key = 'total_runs'`),
+    c.execute(`SELECT COUNT(*) as cnt FROM praxis_receipts`).catch(() => null),
+    c.execute(`SELECT COUNT(*) as cnt FROM praxis_receipts WHERE ${REAL_ONLY}`).catch(() => null),
+    c.execute(`SELECT COUNT(*) as cnt FROM lex_memory`).catch(() => null),
+    // Cache hit-rate: sum(hits) / count(*) gives avg hits per entry
+    c.execute(`
+      SELECT COUNT(*) as entries, COALESCE(SUM(hits), 0) as total_hits
+      FROM embedding_cache
+    `).catch(() => null),
+    // Governance behaviour stats over REAL traffic only — eval traffic is
+    // adversarial-heavy and would skew the intervention rate and margins.
+    c.execute(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN intervention = 1 THEN 1 ELSE 0 END) as interventions,
+        ROUND(AVG(m_after), 4) as avg_m,
+        ROUND(MIN(m_after), 4) as min_m
+      FROM praxis_receipts
+      WHERE ${REAL_ONLY}
+    `).catch(() => null),
+  ]);
 
-  const total_runs    = (runsResult.rows[0]?.value as number) ?? 0;
-  const total_receipts = Number(receiptsResult?.rows[0]?.cnt ?? 0);
-  const memory_events  = Number(memoryResult?.rows[0]?.cnt ?? 0);
+  const total_runs                  = (runsResult.rows[0]?.value as number) ?? 0;
+  const total_receipts_including_eval = Number(receiptsAllResult?.rows[0]?.cnt ?? 0);
+  // Public "canonical total" = real governance only.
+  const total_receipts              = Number(receiptsRealResult?.rows[0]?.cnt ?? total_receipts_including_eval);
+  const eval_receipts               = Math.max(0, total_receipts_including_eval - total_receipts);
+  const memory_events               = Number(memoryResult?.rows[0]?.cnt ?? 0);
 
   const cacheRow        = cacheResult?.rows[0];
   const cache_entries   = Number(cacheRow?.entries ?? 0);
@@ -61,8 +96,10 @@ export async function GET() {
     // legacy fields kept for backwards compat
     total_runs,
     runs: total_runs,
-    // governance telemetry
+    // governance telemetry — real (non-eval) traffic
     total_receipts,
+    total_receipts_including_eval,
+    eval_receipts,
     memory_events,
     governed_turns,
     intervention_count,
