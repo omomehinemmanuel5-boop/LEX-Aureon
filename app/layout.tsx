@@ -31,8 +31,12 @@ export const metadata: Metadata = {
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Pinch-zoom is allowed (up to 5x) for readability — important on mobile,
+  // and required for accessibility. Do not disable user scaling.
+  maximumScale: 5,
+  userScalable: true,
+  // Match the mobile browser chrome to the near-black theme.
+  themeColor: '#07070d',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
