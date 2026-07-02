@@ -18,14 +18,21 @@ import { headers } from 'next/headers';
 // the host for internal API fetches, so static generation is not possible.
 export const dynamic = 'force-dynamic';
 
+// Canonical host is https://www.lexaureon.com (the apex 307-redirects to www).
+// metadataBase + alternates.canonical make every generated URL and the canonical
+// tag point at the www host, so crawlers see one consistent canonical origin.
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.lexaureon.com'),
   title: 'Lex Aureon — Govern AI. Ensure Trust. Defend Truth.',
   description: 'A constitutional control layer for language models. CBF math, a provably stable Lyapunov barrier, and cryptographic SHA-256 audit receipts.',
+  alternates: {
+    canonical: 'https://www.lexaureon.com',
+  },
   openGraph: {
     title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
     description: 'A constitutional governance layer for language models and agentic systems: simplex state, a provably stable Lyapunov barrier, and cryptographic audit receipts. Adversarial evaluation in progress under symmetric judging.',
     images: [{ url: '/logo.png', width: 1080, height: 1080 }],
-    url: 'https://lexaureon.com',
+    url: 'https://www.lexaureon.com',
     type: 'website',
   },
   twitter: {
@@ -170,7 +177,7 @@ async function Hero() {
 function ComparisonSection() {
   const caps = [
     { n: 'Continuous state vector',  d: 'Tracks (C, R, S) as a live constitutional state across the whole exchange — not a single pass/fail flag on one message.' },
-    { n: 'Embedding-based measurement', d: 'Constitutional state is measured from Jina embeddings — cosine similarity of the output to a constitutional anchor — not keyword matching. The same embedding-based method described in the paper.' },
+    { n: 'Embedding-based measurement', d: 'Constitutional state is measured from embeddings — cosine similarity of the output to a constitutional anchor — not keyword matching. Provider-agnostic (currently Gemini gemini-embedding-001), the same embedding-based method described in the paper.' },
     { n: 'Log-Barrier Dynamics',     d: 'Uses an interior-point log-barrier correction to push the state away from constitutional boundaries, designed for smooth and stable behaviour.' },
     { n: 'Cryptographic receipts',   d: 'Every governed turn writes a SHA-256 receipt — the input hash, the output hash, and a bound hash over the constitutional state — persisted append-only on the same row, so any decision can be independently re-verified after the fact.' },
     { n: 'Constitutional memory',    d: 'z-trajectory memory tracks which pillars are under sustained pressure across turns, so the governor responds to persistent pressure rather than only the current message.' },
