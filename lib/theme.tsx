@@ -13,10 +13,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark');
 
   useEffect(() => {
-    // Respect system preference on first load
+    // Dark (near-black) is the primary, canonical theme. We default to it
+    // regardless of the device's system preference so the polished black
+    // experience is what every visitor sees first — a phone set to light mode
+    // no longer flips the site into the less-refined light theme on load.
+    // An explicit user choice (the toggle, persisted in localStorage) is always
+    // respected, so light mode remains fully available for anyone who wants it.
     const stored = localStorage.getItem('lex-theme') as Theme | null;
-    const system = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    const initial = stored ?? system;
+    const initial = stored ?? 'dark';
     setTheme(initial);
     document.documentElement.setAttribute('data-theme', initial);
   }, []);
