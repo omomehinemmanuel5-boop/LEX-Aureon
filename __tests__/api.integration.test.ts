@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MAX_PROMPT_CHARS } from '../lib/schemas';
 
 // ── Mock Turso DB ─────────────────────────────────────────────────────────────
 const mockClient = {
@@ -84,7 +85,10 @@ describe('API integration', () => {
     const req = new Request('http://localhost/api/lex/govern', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt: 'a'.repeat(8001), session_id: 's1' }),
+      // Cap + 1 so this is rejected at validation regardless of the cap value —
+      // otherwise the route accepts it and proceeds to generation, and the test
+      // times out instead of asserting the 400.
+      body: JSON.stringify({ prompt: 'a'.repeat(MAX_PROMPT_CHARS + 1), session_id: 's1' }),
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
