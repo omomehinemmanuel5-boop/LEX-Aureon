@@ -28,6 +28,12 @@ export interface LLMResult {
 
 const TIMEOUT_MS = 25_000;
 
+// Max response length. Raised 800 → 4096 (2026-07): 800 tokens (~600 words) cut
+// off longer console/chat answers mid-thought. 4096 (~3k words) lets responses
+// run to a natural end. It is a CAP, not a target — short answers stay short, so
+// the cost/latency impact on typical turns (and on benchmark refusals) is minimal.
+const MAX_OUTPUT_TOKENS = 4096;
+
 export const MODELS = {
   PRIMARY: 'llama-3.3-70b-versatile',
   FAST: 'llama-3.1-8b-instant',
@@ -48,7 +54,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model, messages,
-        max_tokens: 800, temperature: 0.7,
+        max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.7,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -68,7 +74,7 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'open-mistral-7b', messages,
-        max_tokens: 800, temperature: 0.7,
+        max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.7,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -90,7 +96,7 @@ async function tryGemini(messages: LLMMessage[], model: string): Promise<string 
 
     const body: Record<string, unknown> = {
       contents,
-      generationConfig: { maxOutputTokens: 800, temperature: 0.7 },
+      generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.7 },
     };
     if (system) body.system_instruction = { parts: [{ text: system }] };
 
