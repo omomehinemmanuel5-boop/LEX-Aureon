@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRunRequest } from '../lib/schemas';
+import { parseRunRequest, MAX_PROMPT_CHARS } from '../lib/schemas';
 
 describe('parseRunRequest', () => {
   it('accepts a minimal valid body', () => {
@@ -20,7 +20,8 @@ describe('parseRunRequest', () => {
   });
 
   it('rejects oversize prompt', () => {
-    const r = parseRunRequest({ prompt: 'a'.repeat(8001), session_id: 's1' });
+    // Use the actual cap + 1 so this stays correct if MAX_PROMPT_CHARS changes.
+    const r = parseRunRequest({ prompt: 'a'.repeat(MAX_PROMPT_CHARS + 1), session_id: 's1' });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/too long|max/i);
   });
