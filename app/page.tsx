@@ -67,6 +67,9 @@ async function fetchData<T>(path: string): Promise<T | null> {
 }
 
 /* ── Hero ─────────────────────────────────────────────────────── */
+/* Background is always #07070d, so ALL hero text/borders are always-light —
+   never text-slate-900 dark:… hybrids, which render dark-on-dark (barely
+   readable) in the light/white theme. */
 async function Hero() {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-5 pt-20 pb-16 overflow-hidden" style={{ backgroundColor: '#07070d' }}>
@@ -77,13 +80,13 @@ async function Hero() {
             backgroundImage: `linear-gradient(${G.gold} 1px, transparent 1px), linear-gradient(90deg, ${G.gold} 1px, transparent 1px)`,
             backgroundSize: '60px 60px',
           }} />
-        <div className="particle particle-1 w-2 h-2 opacity-20 dark:opacity-30" style={{ background: G.gold, top: '15%', left: '10%', filter: 'blur(1px)' }} />
-        <div className="particle particle-2 w-3 h-3 opacity-15 dark:opacity-20" style={{ background: G.goldL, top: '30%', left: '80%', filter: 'blur(2px)' }} />
-        <div className="particle particle-3 w-1.5 h-1.5 opacity-20 dark:opacity-25" style={{ background: G.gold, top: '60%', left: '20%' }} />
-        <div className="particle particle-4 w-2.5 h-2.5 opacity-10 dark:opacity-15" style={{ background: G.goldL, top: '75%', left: '70%', filter: 'blur(1px)' }} />
-        <div className="particle particle-1 w-1 h-1 opacity-25 dark:opacity-35" style={{ background: G.gold, top: '45%', left: '92%', animationDelay: '3s' }} />
-        <div className="particle particle-2 w-2 h-2 opacity-15 dark:opacity-20" style={{ background: G.goldD, top: '85%', left: '40%', animationDelay: '6s', filter: 'blur(1px)' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[0.04] dark:opacity-[0.06]"
+        <div className="particle particle-1 w-2 h-2 opacity-30" style={{ background: G.gold, top: '15%', left: '10%', filter: 'blur(1px)' }} />
+        <div className="particle particle-2 w-3 h-3 opacity-20" style={{ background: G.goldL, top: '30%', left: '80%', filter: 'blur(2px)' }} />
+        <div className="particle particle-3 w-1.5 h-1.5 opacity-25" style={{ background: G.gold, top: '60%', left: '20%' }} />
+        <div className="particle particle-4 w-2.5 h-2.5 opacity-15" style={{ background: G.goldL, top: '75%', left: '70%', filter: 'blur(1px)' }} />
+        <div className="particle particle-1 w-1 h-1 opacity-35" style={{ background: G.gold, top: '45%', left: '92%', animationDelay: '3s' }} />
+        <div className="particle particle-2 w-2 h-2 opacity-20" style={{ background: G.goldD, top: '85%', left: '40%', animationDelay: '6s', filter: 'blur(1px)' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[0.06]"
           style={{ background: `radial-gradient(circle, ${G.gold} 0%, transparent 70%)` }} />
         <svg className="absolute inset-0 w-full h-full opacity-[0.02]" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice">
           <polygon points="400,50 100,520 700,520" fill="none" stroke={G.gold} strokeWidth="1" />
@@ -103,7 +106,7 @@ async function Hero() {
           <span>SovereignKernel v2 · Unified Agent Pipeline · Log-Barrier Dynamics · Cryptographic Proof of Governance</span>
         </div>
 
-        <h1 className="text-4xl sm:text-7xl font-black leading-tight sm:leading-none tracking-tight text-slate-900 dark:text-white mb-6">
+        <h1 className="text-4xl sm:text-7xl font-black leading-tight sm:leading-none tracking-tight text-white mb-6">
           AI systems lie, manipulate,<br className="hidden sm:block" /> and drift.{' '}
           <span style={{
             background: `linear-gradient(135deg, ${G.goldL}, ${G.gold}, ${G.goldD})`,
@@ -115,30 +118,30 @@ async function Hero() {
           </span>
         </h1>
 
-        <p className="text-xs font-mono mb-5 tracking-widest" style={{ color: G.gold, opacity: 0.75 }}>
+        <p className="text-xs font-mono mb-5 tracking-widest" style={{ color: G.gold, opacity: 0.85 }}>
           Built from Lagos · No lab · No VC · No team
         </p>
 
-        <p className="text-slate-600 dark:text-slate-400 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
+        <p className="text-slate-300 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
           A constitutional control layer for language models and agentic pipelines.
           Built on a simplex state space and a provably stable barrier — not guardrails,
           not filters. Drop-in API. Any LLM. Any agent framework.
         </p>
 
-        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
+        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/10 bg-white/5">
           <span className="inline-flex items-center gap-2 sm:gap-3 shrink-0">
             <span style={{ color: G.C }} className="font-bold">C</span>
-            <span className="text-slate-400">+</span>
+            <span className="text-slate-500">+</span>
             <span style={{ color: G.R }} className="font-bold">R</span>
-            <span className="text-slate-400">+</span>
+            <span className="text-slate-500">+</span>
             <span style={{ color: G.S }} className="font-bold">S</span>
-            <span className="text-slate-400">=</span>
-            <span className="text-slate-900 dark:text-white font-bold">1</span>
+            <span className="text-slate-500">=</span>
+            <span className="text-white font-bold">1</span>
           </span>
-          <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">·</span>
-          <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">M = min(C,R,S) &lt; τ → Governor fires</span>
+          <span className="text-slate-600 hidden sm:inline">·</span>
+          <span className="text-slate-300 whitespace-nowrap">M = min(C,R,S) &lt; τ → Governor fires</span>
         </div>
-        <p className="text-[11px] font-mono text-slate-400 dark:text-slate-500 mb-10">
+        <p className="text-[11px] font-mono text-slate-400 mb-10">
           Continuity · Reciprocity · Sovereignty — three constitutional pillars
         </p>
 
@@ -159,14 +162,14 @@ async function Hero() {
             href="https://doi.org/10.5281/zenodo.18944242"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-center"
+            className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-bold text-slate-300 hover:text-white border border-white/10 hover:bg-white/5 transition-all text-center"
           >
             📄 Read the Paper ↗
           </a>
         </div>
       </div>
 
-      <div className="relative z-10 flex justify-center items-center w-full mt-6 opacity-75 dark:opacity-80">
+      <div className="relative z-10 flex justify-center items-center w-full mt-6 opacity-80">
         <ErrorBoundary label="Simplex"><SimplexVisualizer /></ErrorBoundary>
       </div>
     </section>
@@ -187,7 +190,7 @@ function ComparisonSection() {
     <section className="py-20 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-[#0d0d1a]">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-400 dark:text-slate-500 font-bold">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-500 dark:text-slate-500 font-bold">
             What Lex Aureon combines
           </div>
           <h2 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white mb-4">
@@ -209,7 +212,7 @@ function ComparisonSection() {
             </div>
           ))}
         </div>
-        <p className="text-center text-xs font-mono text-slate-400 dark:text-slate-600 mt-6">
+        <p className="text-center text-xs font-mono text-slate-500 dark:text-slate-600 mt-6">
           Combined in one layer — above any LLM, with no retraining or fine-tuning.
         </p>
       </div>
@@ -339,7 +342,7 @@ export default function LandingPage() {
           <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
             Get notified when benchmark results publish
           </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-500 mb-6">
+          <p className="text-sm text-slate-600 dark:text-slate-500 mb-6">
             Adversarial and TruthfulQA evaluations are being run under symmetric judging.
             Leave your email to be notified when the verified numbers are published.
           </p>
