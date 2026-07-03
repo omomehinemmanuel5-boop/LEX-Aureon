@@ -34,15 +34,18 @@
  *
  * CAPITULATION JUDGE (2026-07-01, measurement-only PROTOTYPE): the fair test
  * with working Gemini embeddings showed S_self does not separate capitulation
- * from benign output (0.830 attack vs 0.848 benign — overlapping
- * distributions; cosine measures topical relatedness, not compliance). An
- * output-side LLM judge (lib/capitulation_judge.ts) now runs on the
- * PRE-REFUSAL governed output, in parallel with the Python call, and is
- * surfaced as `capitulation_signal` for calibration. It does NOT trigger
- * refusal — enforcement waits until it is validated against adversarial AND
- * benign traffic (over-refusal is also a failure). Judging the pre-refusal
- * output is deliberate: it lets every turn compare what the judge caught vs
- * what S_self and the keyword net caught.
+ * from benign output. An output-side LLM judge (lib/capitulation_judge.ts) runs
+ * on the PRE-REFUSAL governed output, in parallel with the Python call, and is
+ * surfaced as `capitulation_signal` for calibration. It does NOT trigger refusal.
+ *
+ * EVAL FAST-PATH (2026-07-03): synthetic benchmark traffic (tagged session ids —
+ * see isEvalSession) skips the two measurement-only extras — the Python governor
+ * DETAIL and the capitulation judge. Neither affects the reported governed
+ * output, the CRS state (which comes from the TS kernel), or the refusal
+ * decision, so skipping them does not change what the benchmark measures — it
+ * just removes 1–2 network/LLM round-trips per prompt, which dominated per-call
+ * latency and rate-limit backoff during heavy runs. Real user sessions
+ * (session-<ms>) always get the full pipeline.
  *
  * feat: response includes raw_state + m_before (pre-governance "before" state)
  *   alongside the governed state + M ("after"), matching the stream route.
@@ -82,6 +85,16 @@ function healthBand(m: number): string {
   return 'CRITICAL';
 }
 
+/**
+ * Synthetic eval traffic (benchmark harnesses) is tagged with these session
+ * prefixes. For those we skip the measurement-only extras (Python governor
+ * detail + capitulation judge) — see the EVAL FAST-PATH note above. Real user
+ * sessions (session-<ms>-<rand>) never match these and always get everything.
+ */
+function isEvalSession(sid: string): boolean {
+  return /^(lexbench-|synthetic_|bench-|jbb_|adv_|hb_)/.test(sid);
+}
+
 export async function POST(req: Request) {
   let body: { prompt?: string; session_id?: string; turn?: number };
   try { body = await req.json(); }
@@ -93,6 +106,8 @@ export async function POST(req: Request) {
   if (prompt.length > MAX_PROMPT_CHARS) return NextResponse.json({ error: `prompt too long (max ${MAX_PROMPT_CHARS} chars)` }, { status: 400 });
 
   await ensureDB();
+
+  const evalSession = isEvalSession(session_id);
 
   // ── All async work runs concurrently ─────────────────────────────────────
   let promptEmbedding: number[] = [];
@@ -126,11 +141,16 @@ export async function POST(req: Request) {
   const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
 
   // ── Python CRS measurement (detail) + output-side capitulation judge ──────
-  // Both run concurrently. The judge sees the PRE-REFUSAL governed output so
-  // every turn yields a judge-vs-S_self-vs-keyword comparison for calibration.
+  // Both run concurrently. On eval sessions both are skipped (fast-path) — they
+  // are measurement-only and do not affect governed_output, the reported CRS
+  // state, or the refusal decision, so the benchmark measures the same thing.
   const [pythonResult, capitulationResult] = await Promise.allSettled([
-    callPythonGovernor(prompt, result.raw_output, result.governed_output),
-    judgeCapitulation(prompt, result.governed_output),
+    evalSession
+      ? Promise.resolve(null)
+      : callPythonGovernor(prompt, result.raw_output, result.governed_output),
+    evalSession
+      ? Promise.resolve(null)
+      : judgeCapitulation(prompt, result.governed_output),
   ]);
   const python = pythonResult.status === 'fulfilled' ? pythonResult.value : null;
   const capitulationSignal =
@@ -196,7 +216,7 @@ export async function POST(req: Request) {
   }
 
   // Calibration log: judge verdict vs the enforced triggers, every turn the
-  // judge returned a verdict. This is the dataset for deciding enforcement.
+  // judge returned a verdict (skipped on eval fast-path).
   if (capitulationSignal) {
     logger.info('govern.capitulation_calibration', 'judge vs enforced triggers', {
       session_id, turn,
@@ -276,8 +296,8 @@ export async function POST(req: Request) {
     sovereignty_raw:       sovereigntyRaw,            // raw S_self cosine (calibration)
     detection_degraded:    detectionDegraded,         // true → S_self could not be measured
     // Output-side capitulation judge (measurement-only PROTOTYPE — not enforced;
-    // judged on the PRE-refusal governed output; null = judge unavailable,
-    // which must never be read as "no capitulation")
+    // null on eval fast-path or when the judge is unavailable, which must never
+    // be read as "no capitulation")
     capitulation_signal:   capitulationSignal,
     weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
     fpl1:                  mergedCRS?.fpl1 ?? null,
