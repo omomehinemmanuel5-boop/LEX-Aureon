@@ -3,14 +3,20 @@ import { z } from 'zod';
 // Zod v4 compatible — error messages use object form { message: '...' }
 // z.string().min(1, 'msg') still works in v4 but object form is safer across versions.
 
-// Single source of truth for the prompt-length cap. Previously this file
-// allowed 8000 chars while app/api/lex/govern/route.ts independently
-// hardcoded a 5000-char rejection — two different limits for the same
-// field, drifting silently. 5000 is the one actually enforced in
-// production (and the one every receipt to date was written under), so
-// that's the canonical value; route.ts now imports this instead of
-// hardcoding its own copy.
-export const MAX_PROMPT_CHARS = 5000;
+// Single source of truth for the prompt-length cap (imported by both the API
+// route and the console/chat UI so they never drift).
+//
+// Raised 5000 → 50000 (2026-07): 5000 chars (~800 words) was far too small for
+// real chat/console use — pasting a document or a long question hit the wall.
+// 50000 chars (~8–10k words) is effectively unlimited for interactive use.
+// It is deliberately NOT unbounded: an arbitrarily large prompt means unbounded
+// generation cost, request timeouts, and context-limit errors on the fallback
+// models. Two honest notes at this size: (1) the primary generator (Gemini-lite,
+// ~1M-token context) handles it fine, but very long prompts may exceed the
+// smaller Groq fallback context; (2) the embedding model truncates its input to
+// its own token limit, so semantic memory / self-referential detection keys off
+// the leading portion of very long prompts.
+export const MAX_PROMPT_CHARS = 50000;
 
 export const RunRequestSchema = z.object({
   prompt:       z.string().min(1, { message: 'prompt required' }).max(MAX_PROMPT_CHARS, { message: 'prompt too long' }),
