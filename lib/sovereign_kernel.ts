@@ -25,11 +25,17 @@
  *
  * wire: sessionZ parameter threads session-adaptive z-weights from z_traj
  * into lyapunovCandidate() so receipt lyapunov_V certifies V_z(x, z_session).
+ *
+ * identity: the governed arm (callLLM) is prepended with LEX_IDENTITY so
+ * Lex Aureon knows what it is, how it works, and who built it. The raw arm
+ * (callLLMRaw) deliberately gets NO system prompt, so self-knowledge is part of
+ * what governance adds and never contaminates the bare benchmark baseline.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
 import { env } from './env';
 import { generateGoverned } from './llm_provider';
+import { LEX_IDENTITY } from './lex_identity';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
@@ -247,7 +253,7 @@ export class SovereignKernel {
   }
 
   async callLLM(prompt: string, context: string, _temperature: number): Promise<string> {
-    try { return (await generateGoverned([{ role: 'system', content: context }, { role: 'user', content: prompt }])).text || 'I was unable to generate a response at this time.'; }
+    try { return (await generateGoverned([{ role: 'system', content: `${LEX_IDENTITY}\n\n${context}` }, { role: 'user', content: prompt }])).text || 'I was unable to generate a response at this time.'; }
     catch (e) { console.error('LLM governed call error:', e); return 'I was unable to generate a response at this time.'; }
   }
 
