@@ -28,11 +28,22 @@ export interface LLMResult {
 
 const TIMEOUT_MS = 25_000;
 
-// Max response length. Raised 800 → 4096 (2026-07): 800 tokens (~600 words) cut
-// off longer console/chat answers mid-thought. 4096 (~3k words) lets responses
-// run to a natural end. It is a CAP, not a target — short answers stay short, so
-// the cost/latency impact on typical turns (and on benchmark refusals) is minimal.
-const MAX_OUTPUT_TOKENS = 4096;
+// Max response length. Raised 800 → 4096 → 8192 (2026-07): 800 tokens (~600
+// words) cut off longer console/chat answers mid-thought; 4096 (~3k words) was
+// still not enough for some long-form answers. 8192 (~6k words) covers virtually
+// all normal chat/console responses. It is a CAP, not a target — short answers
+// stay short, so the cost/latency impact on typical turns is minimal.
+//
+// Ceiling note: the primary generator (Gemini) has ample free-tier throughput
+// (hundreds of thousands of tokens/minute) so 8192 is comfortable there. The
+// binding constraint is the Groq FALLBACK path, whose free tier caps at roughly
+// 6,000-12,000 combined input+output tokens PER MINUTE (not per request) for
+// llama-3.3-70b-versatile — a single large completion won't error, but it can
+// consume most of that minute's quota and cause the next Groq-fallback request
+// to 429 until the window rolls over. 8192 was chosen as a ceiling that stays
+// well under the model's own 32k output limit while not being so large that a
+// single fallback response reliably exhausts Groq's per-minute budget on its own.
+const MAX_OUTPUT_TOKENS = 8192;
 
 export const MODELS = {
   PRIMARY: 'llama-3.3-70b-versatile',
