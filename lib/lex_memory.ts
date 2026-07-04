@@ -488,7 +488,8 @@ export async function ensureLexMemoryTable(): Promise<void> {
 const _centroidCache = new Map<EmbedProvider, { vec: number[]; ts: number }>();
 const CENTROID_TTL_MS = 5 * 60 * 1000;
 
-async function computeCentroidFor(embeddings: number[][]): number[] | null {
+// Pure, synchronous — just averages already-computed vectors. No I/O.
+function computeCentroidFor(embeddings: number[][]): number[] | null {
   if (!embeddings.length) return null;
   const dim = embeddings[0].length;
   const centroid = new Array<number>(dim).fill(0);
@@ -510,7 +511,7 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
       // No fallback here by design — mixing this centroid's provider with a
       // different provider's output embedding would be an invalid comparison.
       const embeddings = await Promise.all(lawTexts.map(t => embedTextWithProvider(t, forceProvider)));
-      const centroid = await computeCentroidFor(embeddings);
+      const centroid = computeCentroidFor(embeddings);
       if (!centroid) return null;
       _centroidCache.set(forceProvider, { vec: centroid, ts: now });
       return centroid;
@@ -529,7 +530,7 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
     const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
     const lawTexts = SOVEREIGN_LAWS.slice(0, 50).map(law => `${law.name}: ${law.text}`);
     const embeddings = await embedTexts(lawTexts); // provider-consistent fallback chain
-    const centroid = await computeCentroidFor(embeddings);
+    const centroid = computeCentroidFor(embeddings);
     if (!centroid) return null;
     const resolvedProvider = _lastResolvedProvider ?? providerOrder()[0];
     if (resolvedProvider) _centroidCache.set(resolvedProvider, { vec: centroid, ts: now });
