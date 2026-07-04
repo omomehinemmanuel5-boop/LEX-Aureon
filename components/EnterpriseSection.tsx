@@ -6,6 +6,12 @@ const G = {
   navy: '#07070d', navyL: '#0d0d1a',
 };
 
+// Several cards in this section have a HARDCODED #07070d (always-dark)
+// background regardless of theme. Any text inside those cards must be
+// always-light — a text-slate-900 dark:text-white hybrid renders dark-on-dark
+// (barely readable) in the light/white theme. The outer section background
+// (bg-black/[0.03] dark:bg-[#0d0d1a]) IS a legitimate light/dark hybrid, so its
+// own heading text correctly stays hybrid.
 export default function EnterpriseSection() {
   const tests = [
     { label: 'read_file',  input: 'read_file("README.md")',                          decision: 'APPROVED',         color: '#10b981', receipt: 'TCR-D47C194E440FCF7C', M: '0.167' },
@@ -36,28 +42,28 @@ export default function EnterpriseSection() {
           </p>
         </div>
 
-        {/* Threat cards */}
+        {/* Threat cards — background hardcoded dark, so text is always-light */}
         <div className="grid sm:grid-cols-3 gap-4 mb-10">
           {[
             { icon: '💉', title: 'Prompt Injection',  desc: 'Poisoned documents redirect your agent. Blocked before execution.' },
             { icon: '💣', title: 'Destructive Ops',   desc: 'DROP TABLE, rm -rf, credential writes. Hardcoded denial. No LLM.' },
             { icon: '🐌', title: 'Slow-Drip Attacks', desc: 'Single HIGH per turn strategy. Session locks on second HIGH in recovery.' },
           ].map(({ icon, title, desc }) => (
-            <div key={title} className="rounded-2xl border p-5 card-hover bg-white border-black/10 shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.05)' }}>
+            <div key={title} className="rounded-2xl border p-5 card-hover shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.08)' }}>
               <div className="text-2xl mb-3">{icon}</div>
-              <div className="text-sm font-bold text-slate-900 dark:text-white mb-1">{title}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-500 leading-relaxed font-medium">{desc}</div>
+              <div className="text-sm font-bold text-white mb-1">{title}</div>
+              <div className="text-xs text-slate-400 leading-relaxed font-medium">{desc}</div>
             </div>
           ))}
         </div>
 
-        {/* Test results */}
-        <div className="rounded-2xl border overflow-hidden mb-8 card-hover border-black/10 shadow-sm" style={{ backgroundColor: '#07070d', borderColor: '#c9a84c20' }}>
-          <div className="px-6 py-3 border-b flex items-center gap-2 border-black/5 dark:border-white/5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400" />
+        {/* Test results — background hardcoded dark, so text is always-light */}
+        <div className="rounded-2xl border overflow-hidden mb-8 card-hover shadow-sm" style={{ backgroundColor: '#07070d', borderColor: '#c9a84c20' }}>
+          <div className="px-6 py-3 border-b flex items-center gap-2 border-white/5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span className="text-xs font-mono text-slate-500">Example results from production runs · lexaureon.com/api/tool-proxy</span>
           </div>
-          <div className="flex border-b border-black/5 dark:border-white/5 overflow-x-auto">
+          <div className="flex border-b border-white/5 overflow-x-auto">
             {tests.map((test, i) => (
               <button
                 key={test.label}
@@ -76,17 +82,17 @@ export default function EnterpriseSection() {
             ))}
           </div>
           <div className="p-6">
-            <div className="text-xs font-mono text-slate-500 dark:text-slate-500 mb-2 font-bold">INPUT</div>
-            <div className="bg-black/[0.04] dark:bg-black/30 rounded-xl px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-400 mb-5 border border-black/5 dark:border-none font-medium">{t.input}</div>
+            <div className="text-xs font-mono text-slate-500 mb-2 font-bold">INPUT</div>
+            <div className="bg-black/30 rounded-xl px-4 py-3 text-xs font-mono text-slate-300 mb-5 font-medium">{t.input}</div>
             <div className="grid grid-cols-3 gap-3">
               {[
                 { label: 'DECISION', value: t.decision,           color: t.color },
                 { label: 'RECEIPT',  value: t.receipt.slice(0,16), color: G.gold },
-                { label: 'M SCORE',  value: t.M,                   color: '#64748b' },
+                { label: 'M SCORE',  value: t.M,                   color: '#94a3b8' },
               ].map(({ label, value, color }) => (
-                <div key={label} className="rounded-xl border p-3 text-center border-black/10 dark:border-white/10"
-                  style={{ background: `${color}08` }}>
-                  <div className="text-[10px] font-mono text-slate-500 dark:text-slate-500 mb-1 font-bold">{label}</div>
+                <div key={label} className="rounded-xl border p-3 text-center border-white/10"
+                  style={{ background: `${color}12` }}>
+                  <div className="text-[10px] font-mono text-slate-500 mb-1 font-bold">{label}</div>
                   <div className="text-xs font-bold font-mono" style={{ color }}>{value}</div>
                 </div>
               ))}
@@ -94,18 +100,18 @@ export default function EnterpriseSection() {
           </div>
         </div>
 
-        {/* Integration snippet */}
-        <div className="rounded-2xl border p-6 mb-8 border-black/10 shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.05)' }}>
+        {/* Integration snippet — background hardcoded dark, so text is always-light */}
+        <div className="rounded-2xl border p-6 mb-8 shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.08)' }}>
           <div className="text-xs font-mono uppercase tracking-widest mb-4 font-bold" style={{ color: G.gold }}>
             Integration — One URL Change
           </div>
           <div className="bg-slate-950 rounded-xl p-4 font-mono text-xs border border-white/5">
-            <div className="text-slate-600 mb-1">{'// Before: agent calls tools directly'}</div>
+            <div className="text-slate-500 mb-1">{'// Before: agent calls tools directly'}</div>
             <div className="text-red-400 mb-4">{'target_mcp_url: "https://tools.yourcompany.com/mcp"'}</div>
-            <div className="text-slate-600 mb-1">{'// After: route through constitutional proxy'}</div>
+            <div className="text-slate-500 mb-1">{'// After: route through constitutional proxy'}</div>
             <div className="text-emerald-400">{'target_mcp_url: "https://lexaureon.com/api/tool-proxy"'}</div>
           </div>
-          <div className="text-xs text-slate-500 dark:text-slate-500 font-mono mt-3 font-bold">
+          <div className="text-xs text-slate-400 font-mono mt-3 font-bold">
             Every call intercepted · SHA-256 audit receipt · Full audit trail
           </div>
         </div>
