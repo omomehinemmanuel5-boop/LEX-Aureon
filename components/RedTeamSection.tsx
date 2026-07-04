@@ -72,6 +72,10 @@ const CATEGORIES = [
 
 const TOTAL = CATEGORIES.reduce((s, c) => s + c.count, 0);
 
+// This section's background is always near-black (#07070d), so all text/borders
+// are always-light for guaranteed contrast on BOTH themes — the previous hybrid
+// text-slate-900 dark:text-white classes rendered dark text on the dark
+// background (barely readable) in the light/white theme.
 export default function RedTeamSection() {
   const [active, setActive] = useState<string | null>(null);
   const activeCategory = CATEGORIES.find(c => c.id === active) ?? null;
@@ -85,11 +89,11 @@ export default function RedTeamSection() {
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: '#ef4444' }}>
             Internal Stress-Testing Suite · v2
           </div>
-          <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white mb-3">
+          <h2 className="text-2xl sm:text-4xl font-black text-white mb-3">
             {TOTAL} adversarial vectors,{' '}
-            <span className="text-slate-400 dark:text-slate-500 font-light">across 8 attack classes.</span>
+            <span className="text-slate-400 font-light">across 8 attack classes.</span>
           </h2>
-          <p className="text-slate-500 dark:text-slate-500 text-sm max-w-lg mx-auto leading-relaxed font-medium">
+          <p className="text-slate-400 text-sm max-w-lg mx-auto leading-relaxed font-medium">
             The internal taxonomy the SovereignKernel is developed against — every known
             class of LLM attack, organized and tracked. Tap a category to see representative
             vectors. (Pass/fail rates are graded by the kernel itself; see the note below.)
@@ -127,7 +131,7 @@ export default function RedTeamSection() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-mono" style={{ color: `${color}90` }}>{count} vectors</span>
-                  <span className="text-xs font-mono text-slate-500 dark:text-slate-600">{pct}%</span>
+                  <span className="text-xs font-mono text-slate-500">{pct}%</span>
                 </div>
               </button>
             );
@@ -142,21 +146,21 @@ export default function RedTeamSection() {
           >
             <div className="flex items-start justify-between gap-4 mb-3">
               <div>
-                <div className="text-sm font-bold text-slate-900 dark:text-white mb-1">{activeCategory.name}</div>
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{activeCategory.desc}</p>
+                <div className="text-sm font-bold text-white mb-1">{activeCategory.name}</div>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{activeCategory.desc}</p>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className="text-2xl font-black text-slate-700 dark:text-slate-300">{activeCategory.count}</div>
-                <div className="text-xs font-mono text-slate-500 dark:text-slate-500 font-bold">vectors</div>
+                <div className="text-2xl font-black text-slate-200">{activeCategory.count}</div>
+                <div className="text-xs font-mono text-slate-500 font-bold">vectors</div>
               </div>
             </div>
             <div className="border-t pt-3" style={{ borderColor: `${activeCategory.color}20` }}>
-              <div className="text-xs font-mono text-slate-500 dark:text-slate-500 mb-2 font-bold">EXAMPLE VECTORS (sanitized):</div>
+              <div className="text-xs font-mono text-slate-500 mb-2 font-bold">EXAMPLE VECTORS (sanitized):</div>
               <div className="space-y-1.5">
                 {activeCategory.examples.map((ex, i) => (
                   <div
                     key={i}
-                    className="text-xs font-mono px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 font-medium bg-black/5 dark:bg-black/20"
+                    className="text-xs font-mono px-3 py-1.5 rounded-lg text-slate-300 font-medium bg-black/20"
                   >
                     &ldquo;{ex}&rdquo;
                   </div>
@@ -176,11 +180,11 @@ export default function RedTeamSection() {
             ].map(({ v, l, c }) => (
               <div key={l}>
                 <div className="text-2xl sm:text-3xl font-black font-mono" style={{ color: c }}>{v}</div>
-                <div className="text-xs font-mono text-slate-500 dark:text-slate-600 mt-0.5 font-bold">{l}</div>
+                <div className="text-xs font-mono text-slate-500 mt-0.5 font-bold">{l}</div>
               </div>
             ))}
           </div>
-          <div className="text-center mt-3 text-xs font-mono text-slate-500 dark:text-slate-500 font-medium leading-relaxed">
+          <div className="text-center mt-3 text-xs font-mono text-slate-400 font-medium leading-relaxed">
             Internal development suite, graded by the kernel itself — not an independent
             benchmark. External, symmetric evaluation (AdvBench / JailbreakBench) is in
             progress; verified numbers will be published when ready.
