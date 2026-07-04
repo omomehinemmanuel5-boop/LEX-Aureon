@@ -15,6 +15,14 @@
  * (the endpoint accepts an array), matching the benchmark-repo publisher so
  * there is a single, consistent publish path.
  *
+ * FIX (2026-07-04): TruthfulQA's ASR metric was published alongside its
+ * toxicity/truth_score — but ASR (attack-success-rate via refusal detection)
+ * treats "refused" as the safe outcome, which is backwards for TruthfulQA:
+ * its prompts are factual questions, not attacks, so refusing to answer is
+ * just unhelpful, not a governance win. buildRows() now skips the ASR row
+ * whenever the aggregator flags a benchmark asr_applicable: false (currently
+ * only TruthfulQA) — only toxicity + truth_score are published for it.
+ *
  * The row shape already matches the endpoint schema exactly:
  *   { benchmark, run_date, n_total, metric_name, bare_score, governed_score,
  *     delta_pp, notes }   (scores are percentages 0–100)
@@ -30,6 +38,7 @@ import * as fs from 'fs';
 interface BenchmarkSummary {
   benchmark: string;
   total_prompts: number;
+  asr_applicable?: boolean; // optional for backward-compat with older summary.json files
   avg_bare_asr: number;
   avg_governed_asr: number;
   asr_delta_pp: number;
@@ -57,13 +66,23 @@ function buildRows(summary: Record<string, BenchmarkSummary>, runDate: string): 
   for (const key in summary) {
     const s = summary[key];
     const notes = `LexBench run, n=${s.total_prompts}; same-model bare=raw_output vs governed (generateGoverned); heuristic refusal judge`;
-    rows.push({
-      benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
-      metric_name: 'ASR',
-      bare_score: +(s.avg_bare_asr * 100).toFixed(2),
-      governed_score: +(s.avg_governed_asr * 100).toFixed(2),
-      delta_pp: s.asr_delta_pp, notes,
-    });
+
+    // ASR (attack-success-rate via refusal detection) is only meaningful for
+    // adversarial/attack-style benchmarks, where refusal is the safe outcome.
+    // asr_applicable defaults to true for older summary.json files that
+    // predate this flag (they were all attack benchmarks at the time).
+    if (s.asr_applicable !== false) {
+      rows.push({
+        benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
+        metric_name: 'ASR',
+        bare_score: +(s.avg_bare_asr * 100).toFixed(2),
+        governed_score: +(s.avg_governed_asr * 100).toFixed(2),
+        delta_pp: s.asr_delta_pp, notes,
+      });
+    } else {
+      console.log(`  (skipping ASR for ${s.benchmark} — not an adversarial benchmark; refusal isn't a safe outcome for factual questions)`);
+    }
+
     rows.push({
       benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
       metric_name: 'toxicity',
@@ -101,7 +120,7 @@ async function main() {
   const rows = buildRows(summary, runDate);
 
   if (dryRun) {
-    console.log(`[dry-run] would publish ${rows.length} rows (${Object.keys(summary).length} benchmarks × 3 metrics):`);
+    console.log(`[dry-run] would publish ${rows.length} rows across ${Object.keys(summary).length} benchmarks:`);
     console.log(JSON.stringify(rows, null, 2));
     return;
   }
@@ -114,7 +133,7 @@ async function main() {
   }
   if (!endpoint) { console.error('NEXT_PUBLIC_SITE_URL not set'); process.exit(1); }
 
-  console.log(`Publishing ${rows.length} rows (${Object.keys(summary).length} benchmarks × 3 metrics) to ${endpoint}/api/benchmarks/publish ...`);
+  console.log(`Publishing ${rows.length} rows across ${Object.keys(summary).length} benchmarks to ${endpoint}/api/benchmarks/publish ...`);
 
   // The publish endpoint accepts an array — send all rows atomically in one call.
   const res = await fetch(`${endpoint}/api/benchmarks/publish`, {
