@@ -9,6 +9,19 @@
  * If BENCH_SECRET is unset in the environment, publishing is disabled (503) —
  * fail closed, never accept unauthenticated writes.
  *
+ * FIX (2026-07-04): authorized() trimmed the CLIENT-provided header value but
+ * compared it against env.BENCH_SECRET completely untrimmed (lib/env.ts's
+ * optional() is a raw process.env passthrough with no trimming at all). If the
+ * secret stored in Vercel picked up so much as a trailing newline or space —
+ * easy to happen copy-pasting on mobile, and invisible since Vercel's UI masks
+ * the value — every publish attempt would 401 with "unauthorized" REGARDLESS
+ * of how carefully the GitHub Actions secret was re-entered, because the
+ * mismatch was on this server's side, not the caller's. Both sides are now
+ * trimmed symmetrically. Also logs a SAFE diagnostic on auth failure — lengths
+ * and whether trimming would have mattered, never the actual secret value —
+ * so a future mismatch is visible in Vercel logs instead of a bare 401 with no
+ * way to tell "wrong value" from "right value, whitespace bug" apart.
+ *
  * Body (one metric per call, or an array of metrics):
  *   {
  *     "benchmark": "advbench",
@@ -28,15 +41,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/lib/env';
 import { publishBenchmarkResult, type BenchmarkRow } from '@/lib/benchmark_results';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-function authorized(req: NextRequest, secret: string): boolean {
-  const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
-  const header = req.headers.get('x-bench-secret') ?? '';
-  return bearer === secret || header === secret;
+interface AuthResult {
+  ok: boolean;
+  // Diagnostic only — never includes the actual secret value.
+  reason?: string;
+}
+
+function checkAuth(req: NextRequest, rawSecret: string): AuthResult {
+  const secret = rawSecret.trim();
+  const authHeader = req.headers.get('authorization') ?? '';
+  const rawBearer  = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7) : '';
+  const bearer     = rawBearer.trim();
+  const rawHeader  = req.headers.get('x-bench-secret') ?? '';
+  const header     = rawHeader.trim();
+
+  if (bearer === secret && bearer.length > 0) return { ok: true };
+  if (header === secret && header.length > 0) return { ok: true };
+
+  if (!bearer && !header) return { ok: false, reason: 'no credential provided' };
+
+  // Whitespace-only mismatch is the most common real-world cause (e.g. a
+  // trailing newline picked up when copying a secret on mobile) — flag it
+  // specifically so it's obvious in logs without ever revealing the secret.
+  const providedRaw = rawBearer || rawHeader;
+  const providedTrimmed = bearer || header;
+  const wouldMatchIfBothTrimmed = providedTrimmed === secret;
+  const rawLengthDiffersFromTrimmed = providedRaw.length !== providedTrimmed.length;
+
+  return {
+    ok: false,
+    reason: wouldMatchIfBothTrimmed
+      ? 'whitespace-only mismatch (values match after trim — should not happen post-fix)'
+      : rawLengthDiffersFromTrimmed
+        ? `credential has leading/trailing whitespace; trimmed length ${providedTrimmed.length} vs expected ${secret.length}`
+        : `credential mismatch; provided length ${providedTrimmed.length} vs expected ${secret.length}`,
+  };
 }
 
 function coerceRow(raw: Record<string, unknown>): BenchmarkRow | { error: string } {
@@ -70,12 +114,17 @@ export async function POST(req: NextRequest) {
     secret = undefined;
   }
   if (!secret) {
+    logger.warn('benchmarks.publish', 'publish attempted with BENCH_SECRET unset', {});
     return NextResponse.json(
       { ok: false, error: 'publishing disabled: BENCH_SECRET not configured' },
       { status: 503 },
     );
   }
-  if (!authorized(req, secret)) {
+
+  const auth = checkAuth(req, secret);
+  if (!auth.ok) {
+    // Safe diagnostic — lengths and whitespace shape only, never the secret.
+    logger.warn('benchmarks.publish', 'unauthorized publish attempt', { reason: auth.reason });
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 
@@ -101,8 +150,10 @@ export async function POST(req: NextRequest) {
     for (const row of rows) {
       ids.push(await publishBenchmarkResult(row));
     }
+    logger.info('benchmarks.publish', 'published results', { count: ids.length, benchmarks: rows.map(r => `${r.benchmark}/${r.metric_name}`) });
     return NextResponse.json({ ok: true, inserted: ids.length, ids });
   } catch (e) {
+    logger.error('benchmarks.publish', 'publish insert failed', { error: String(e).slice(0, 200) });
     return NextResponse.json({ ok: false, error: String(e).slice(0, 200) }, { status: 500 });
   }
 }
