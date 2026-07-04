@@ -37,6 +37,18 @@
  * `lexbench-` prefix, /api/stats can exclude synthetic eval traffic so the
  * public total reflects real governance only.
  *
+ * fix (2026-07-04) — CRITICAL: shard-index=0 falsy-zero bug. main() derived
+ * shardIndex/shardSize/limit with `args.X ? args.X : undefined`. In JavaScript,
+ * 0 is falsy, so whenever shard-index was literally 0 — which is EVERY
+ * quick-test run (single shard, always index 0) and shard 0 of every normal
+ * sharded run — this incorrectly evaluated to undefined. Downstream,
+ * runBenchmark()'s `if (shardIndex !== undefined && shardSize !== undefined)`
+ * then failed, skipping slicing entirely and running the ENTIRE dataset
+ * instead of that shard's slice. This is the root cause of the "s0 sessions
+ * always match the full dataset size" pattern observed all session (817/520/200
+ * item runs tagged s0) — previously misattributed only to redundant legacy
+ * workflows. Fixed by checking `!== undefined` instead of truthiness.
+ *
  * Usage:
  *   npm run lexbench -- --benchmark truthfulqa --n 50
  *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
@@ -519,9 +531,13 @@ async function main() {
 
   const benchmarkArg = (args.benchmark as string) || 'truthfulqa';
   const endpoint = (args.endpoint as string) || 'http://localhost:3000';
-  const limit = args.n ? (args.n as number) : undefined;
-  const shardIndex = args["shard-index"] ? (args["shard-index"] as number) : undefined;
-  const shardSize = args["shard-size"] ? (args["shard-size"] as number) : undefined;
+  // fix (2026-07-04): use `!== undefined` instead of truthiness — 0 is a valid,
+  // common value for shard-index (every quick-test run, and shard 0 of every
+  // normal run) and was being silently coerced to "not provided" by `x ? x :
+  // undefined`, which then skipped shard slicing entirely downstream.
+  const limit      = args.n              !== undefined ? (args.n              as number) : undefined;
+  const shardIndex = args["shard-index"] !== undefined ? (args["shard-index"] as number) : undefined;
+  const shardSize  = args["shard-size"]  !== undefined ? (args["shard-size"]  as number) : undefined;
 
   console.log(`
 ╔════════════════════════════════════════════════════════════════╗
@@ -532,7 +548,7 @@ async function main() {
 Configuration:
   Benchmark:  ${benchmarkArg}
   Endpoint:   ${endpoint}
-  Limit:      ${limit || 'all'}
+  Limit:      ${limit ?? 'all'}
   Shard Index: ${shardIndex !== undefined ? shardIndex : 'none'}
   Shard Size:  ${shardSize !== undefined ? shardSize : 'none'}
   `);
