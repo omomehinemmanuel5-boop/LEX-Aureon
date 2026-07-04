@@ -12,15 +12,33 @@
  *   The SSE 'governor' event reflects the reference simulation output,
  *   not the actual state update that happened in runCycle(). See lib/agents/governor.ts
  *   header for the full architectural rationale (discrete DT=1 convergence issue).
+ *
+ * fix (2026-07-04): this is the endpoint console AND chat actually call (via
+ * useLexStream) — the non-stream /api/lex/govern is used by the public API and
+ * benchmarks. The multi-provider embedding fallback + per-request provider
+ * pinning added there (see that route's header) had NOT been applied here,
+ * leaving console/chat vulnerable to the exact failure mode that fix eliminated:
+ * comparing a prompt embedding from one provider against an output embedding /
+ * constitutional centroid from a different provider if Gemini failed mid-request
+ * (e.g. its daily embed quota) — a comparison that produces a numeric-looking
+ * but meaningless self-referential score. Now: the prompt embedding resolves a
+ * provider via embedTextResolved(), and that SAME provider is forced for the
+ * output embedding and constitutional centroid (embedTextWithProvider /
+ * getConstitutionalCentroid(provider)) — no fallback mid-comparison. If the
+ * pinned provider then fails for the output/centroid call, self-referential
+ * detection is honestly skipped for this turn rather than silently mixing
+ * embedding spaces. Also fixed the stale "Jina embeddings" stage description
+ * (embeddings have been provider-agnostic, Gemini-primary, since the migration).
  */
 
 import { SovereignKernel }    from '@/lib/sovereign_kernel';
 import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import {
-  embedText, retrieveSimilar, buildMemoryContext,
+  embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
+  type EmbedProvider,
 } from '@/lib/lex_memory';
 import { preEval }            from '@/lib/praxis';
 import { CANONICAL_REFUSAL }  from '@/lib/refusals';
@@ -78,12 +96,19 @@ export async function POST(req: Request) {
         emit('pre_eval', { label: pre.label, tags: pre.tags, attack_type: kernelSignal.attack_type, severity: kernelSignal.severity, blocked: false });
 
         emit('stage', { name: 'memory', description: 'Constitutional memory retrieval' });
-        const [savedState, sessionZ, promptEmbedding, zTraj] = await Promise.all([
+        // Resolve an embedding provider from the prompt now — pinned and reused
+        // for the output embedding + constitutional centroid later, so the
+        // self-referential comparison always sits in one embedding space (see
+        // the fix note above).
+        let promptEmbedProvider: EmbedProvider | null = null;
+        const [savedState, sessionZ, promptEmbeddingResolved, zTraj] = await Promise.all([
           loadKernelState(session_id),
           loadKernelZ(session_id),
-          embedText(prompt).catch(() => [] as number[]),
+          embedTextResolved(prompt).catch(() => null),
           getZTraj(session_id),
         ]);
+        const promptEmbedding = promptEmbeddingResolved?.vector ?? [];
+        promptEmbedProvider   = promptEmbeddingResolved?.provider ?? null;
         const kernel = getCachedKernel(session_id, savedState);
 
         let memoryContext = '';
@@ -111,7 +136,7 @@ export async function POST(req: Request) {
         const forge = await safe(() => RawForgeAgent(result.governed_output, prompt), { verified: true, quality_score: 1, truncated: false, coherent: true, issues: [], retry_needed: false });
         emit('raw_forge', { verified: forge.verified, quality_score: forge.quality_score, truncated: forge.truncated, coherent: forge.coherent, issues: forge.issues, retry_needed: forge.retry_needed });
 
-        emit('stage', { name: 'measuring', description: 'CRS Extractor: Jina embeddings, paper-exact CCP/IEC/ADV' });
+        emit('stage', { name: 'measuring', description: 'CRS Extractor: provider-agnostic embeddings, paper-exact CCP/IEC/ADV' });
         const z_weights  = zTraj ? computeZWeightsHeuristic(zTraj.last_c, zTraj.last_r, zTraj.last_s) : undefined;
         const crsResult  = await safe(() => CRSExtractorAgent({ prompt, session_id, raw_output: result.governed_output, prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, z_weights, turn }), null);
         const ms = (crsResult?.meta?.crs_state as { C:number;R:number;S:number;M:number }|undefined);
@@ -169,8 +194,16 @@ export async function POST(req: Request) {
 
         emit('stage', { name: 'self_referential', description: 'Verifying final output' });
         let srFired = false;
-        if (promptEmbedding.length) {
-          const [outputEmb, constCentroid, sessCentroid] = await Promise.all([embedText(governedOutput).catch(() => [] as number[]), getConstitutionalCentroid(), getSessionCentroid(session_id)]);
+        // Pin the SAME provider that resolved for the prompt — no fallback here.
+        // If this provider can't embed the output or the centroid right now,
+        // self-referential detection is honestly skipped for this turn rather
+        // than comparing across incompatible embedding spaces.
+        if (promptEmbedding.length && promptEmbedProvider) {
+          const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
+            embedTextWithProvider(governedOutput, promptEmbedProvider).catch(() => [] as number[]),
+            getConstitutionalCentroid(promptEmbedProvider),
+            getSessionCentroid(session_id),
+          ]);
           if (outputEmb.length) {
             const sr = kernel.applySelfReferentialMeasurement(outputEmb, promptEmbedding, constCentroid, sessCentroid);
             const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.88;
@@ -209,7 +242,7 @@ export async function POST(req: Request) {
         const auditId = (auditorResult?.meta?.audit_id as string) ?? receiptId;
         emit('receipt', { audit_id: auditId, sha256_input: result.receipt.input_hash, sha256_output: (auditorResult?.meta?.output_hash as string) ?? '', brittleness: (auditorResult?.meta?.brittleness_B as number) ?? 0, vaulturex: vaul?.compliance_receipt ?? '' });
 
-        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: eC, r_measured: eR, s_measured: eS }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: srFired, z_weights: result.receipt.z_weights, receipt_id: auditId, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents' });
+        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: eC, r_measured: eR, s_measured: eS }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: srFired, embed_provider: promptEmbedProvider, z_weights: result.receipt.z_weights, receipt_id: auditId, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents' });
 
       } catch (e) {
         emit('error', { error: String(e) });
