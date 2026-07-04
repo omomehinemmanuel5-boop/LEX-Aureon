@@ -47,6 +47,21 @@
  * latency and rate-limit backoff during heavy runs. Real user sessions
  * (session-<ms>) always get the full pipeline.
  *
+ * MULTI-PROVIDER EMBEDDINGS, PINNED PER REQUEST (2026-07-04): embeddings now
+ * have a real runtime fallback chain (Gemini → Mistral → Jina — see
+ * lib/lex_memory.ts) instead of a single statically-selected provider, so a
+ * live Gemini outage (e.g. the daily free-tier embed quota) no longer degrades
+ * detection outright. But Reciprocity (cosine(input, output)) and Sovereignty
+ * (cosine(output, constitutional centroid)) are only meaningful when every
+ * vector in the comparison comes from the SAME embedding model. So: the prompt
+ * embedding resolves a provider for this request via embedTextResolved(), and
+ * that SAME provider is then FORCED (via embedTextWithProvider /
+ * getConstitutionalCentroid(provider)) for the output embedding and the
+ * constitutional centroid — no further fallback within the request. If the
+ * pinned provider then fails for the output or centroid call, the request
+ * honestly reports detection_degraded rather than silently comparing across
+ * incompatible embedding spaces.
+ *
  * feat: response includes raw_state + m_before (pre-governance "before" state)
  *   alongside the governed state + M ("after"), matching the stream route.
  */
@@ -56,9 +71,10 @@ import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import { incrementRuns } from '@/lib/db';
 import {
-  embedText, retrieveSimilar, buildMemoryContext,
+  embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
+  type EmbedProvider,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
 import { MAX_PROMPT_CHARS } from '@/lib/schemas';
@@ -111,10 +127,16 @@ export async function POST(req: Request) {
 
   // ── All async work runs concurrently ─────────────────────────────────────
   let promptEmbedding: number[] = [];
+  // The provider that resolved for THIS request's prompt embedding — pinned
+  // and reused for the output embedding + constitutional centroid so the
+  // self-referential comparison always sits in one embedding space.
+  let promptEmbedProvider: EmbedProvider | null = null;
   let memoryContext = '';
   const memoryPromise = (async () => {
     try {
-      promptEmbedding = await embedText(prompt);
+      const resolved = await embedTextResolved(prompt);
+      promptEmbedding      = resolved.vector;
+      promptEmbedProvider  = resolved.provider;
       const memories  = await retrieveSimilar(promptEmbedding, 5);
       memoryContext   = buildMemoryContext(memories);
     } catch (e) {
@@ -169,11 +191,14 @@ export async function POST(req: Request) {
   let sovereigntyRaw: number | null = null; // raw S_self cosine (for calibration)
   let detectionDegraded = false;            // true when S_self could NOT be measured
 
-  if (promptEmbedding.length) {
+  if (promptEmbedding.length && promptEmbedProvider) {
     try {
+      // Pin the SAME provider that resolved for the prompt — no fallback here.
+      // If this provider can't embed the output or the centroid right now, that
+      // is an honest "degraded" state, not a reason to compare across spaces.
       const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
-        embedText(result.governed_output).catch(() => [] as number[]),
-        getConstitutionalCentroid(),
+        embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
+        getConstitutionalCentroid(promptEmbedProvider),
         getSessionCentroid(session_id),
       ]);
       if (outputEmb.length && constCentroid) {
@@ -186,8 +211,9 @@ export async function POST(req: Request) {
         result.M     = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
         result.state = { ...kernel.state };
       } else {
-        // Output embedding or constitutional centroid unavailable → the
-        // self-referential sovereignty measurement could not run.
+        // Output embedding or constitutional centroid unavailable under the
+        // pinned provider → the self-referential sovereignty measurement
+        // could not run this turn.
         detectionDegraded = true;
       }
     } catch (e) {
@@ -195,8 +221,9 @@ export async function POST(req: Request) {
       logger.error('govern.self_referential', 'self-referential CRS failed', errorFields(e));
     }
   } else {
-    // No prompt embedding → semantic memory AND self-referential detection both
-    // unavailable this turn (embedding backend down).
+    // No prompt embedding → no resolved provider → semantic memory AND
+    // self-referential detection both unavailable this turn (all configured
+    // embedding providers failed).
     detectionDegraded = true;
   }
 
@@ -233,8 +260,8 @@ export async function POST(req: Request) {
   if (detectionDegraded) {
     // Fail LOUD: a blind detector must never read as "safe".
     logger.warn('govern.detection',
-      'self-referential sovereignty unavailable (embedding backend / centroid down) — detection degraded; keyword classifier only',
-      { session_id, turn });
+      'self-referential sovereignty unavailable (all embedding providers down, or pinned provider failed mid-request) — detection degraded; keyword classifier only',
+      { session_id, turn, resolved_provider: promptEmbedProvider });
   }
 
   // ── Single authoritative reported state (TS kernel governed state) ────────
@@ -295,6 +322,7 @@ export async function POST(req: Request) {
     sovereignty_drift:     sovereigntyDriftDetected, // S_self < threshold (paper §6.2)
     sovereignty_raw:       sovereigntyRaw,            // raw S_self cosine (calibration)
     detection_degraded:    detectionDegraded,         // true → S_self could not be measured
+    embed_provider:        promptEmbedProvider,       // which provider served this request's embeddings
     // Output-side capitulation judge (measurement-only PROTOTYPE — not enforced;
     // null on eval fast-path or when the judge is unavailable, which must never
     // be read as "no capitulation")
