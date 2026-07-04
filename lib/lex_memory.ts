@@ -7,6 +7,27 @@
  * Top-5 constitutionally similar past interactions injected per prompt.
  *
  * fix: uses singleton getClient() from db.ts instead of createClient() per call.
+ *
+ * feat (2026-07): REAL runtime fallback across three embedding providers
+ * (Gemini → Mistral → Jina), not just static per-deployment provider selection.
+ * Motivation: Gemini's free tier caps at 1,000 embed_content requests/DAY — a
+ * hard daily quota that a benchmark run can exhaust, degrading detection for
+ * real users for the rest of the day. Mistral (whose key is already configured
+ * for generation) and Jina now serve as genuine automatic fallbacks on failure,
+ * not just theoretical options gated by which env vars happen to be set.
+ *
+ * CORRECTNESS CONSTRAINT (read before touching provider logic): switching
+ * providers mid-comparison is NOT safe. Reciprocity is computed as
+ * cosine(inputEmb, outputEmb); Sovereignty is cosine(outputEmb, constitutional
+ * centroid) — see lib/self_referential_crs.ts. Comparing vectors from two
+ * different embedding models produces a NUMBER that looks valid but measures
+ * nothing. So embedTexts() commits an entire batch to one provider (retrying
+ * the whole batch under the next provider on failure, never partially mixing),
+ * and the self-referential detection path in app/api/lex/govern/route.ts pins
+ * the provider resolved for the prompt embedding and forces that SAME provider
+ * for the output embedding and the constitutional centroid — if that forced
+ * provider then fails, the request honestly reports detection_degraded rather
+ * than silently comparing across embedding spaces.
  */
 
 import { getClient } from './db';
@@ -99,36 +120,51 @@ async function putCachedEmbedding(hash: string, embedding: number[]): Promise<vo
 }
 
 // ── Provider-agnostic embeddings ───────────────────────────────────────────────
-// One embedding function for the whole app. The provider is selected at call
-// time: Gemini (its free tier includes gemini-embedding-001) when GEMINI_API_KEY
-// is set, otherwise Jina. All vectors are EMBED_DIM-dimensional and L2-normalized
-// so cosine similarity, centroid averaging, and the stored 256-dim schema stay
-// consistent regardless of provider.
+// Three providers, tried in priority order with REAL runtime fallback:
+// Gemini (gemini-embedding-001, best quality/cost, but a hard 1,000/day free
+// quota) → Mistral (mistral-embed, key already configured for generation) →
+// Jina (jina-embeddings-v3). All vectors are EMBED_DIM-dimensional (Mistral's
+// native 1024-dim output is truncated + re-normalized — an approximation, since
+// mistral-embed was not trained with a Matryoshka objective like Gemini's; only
+// used as a last-resort fallback, never primary) and L2-normalized, so cosine
+// similarity and centroid averaging stay consistent WITHIN a resolved provider.
 //
 // IMPORTANT — switching providers changes the embedding SPACE. Vectors from
-// different models are not comparable even at the same length, so:
+// different models are not comparable even at the same length. Two safeguards:
 //   • the cache key includes the model name (a Jina-cached vector is never
 //     served to a Gemini call), and
-//   • lex_memory rows embedded by a previous provider will score ~0 against
-//     new-provider queries and simply age out of the recent window.
-// The self-referential centroid and the output are always embedded by the SAME
-// (current) provider within a request, so S_self stays valid across a switch.
+//   • embedTexts() commits a whole batch to one provider, retrying the ENTIRE
+//     batch under the next provider on failure — never partially mixing.
+// Callers that need cross-embedding comparisons spanning separate calls (e.g.
+// self-referential detection comparing prompt vs. output vs. constitutional
+// centroid) must pin one resolved provider explicitly via embedTextWithProvider
+// / getConstitutionalCentroid(provider) — see app/api/lex/govern/route.ts.
 export const EMBED_DIM = 256;
 
-type EmbedProvider = 'gemini' | 'jina';
+export type EmbedProvider = 'gemini' | 'mistral' | 'jina';
 
-function embedProvider(): EmbedProvider {
-  if (env.GEMINI_API_KEY) return 'gemini';
-  if (env.JINA_API_KEY)   return 'jina';
-  throw new Error('No embedding provider configured (set GEMINI_API_KEY or JINA_API_KEY)');
+function providerOrder(): EmbedProvider[] {
+  const order: EmbedProvider[] = [];
+  if (env.GEMINI_API_KEY)  order.push('gemini');
+  if (env.MISTRAL_API_KEY) order.push('mistral');
+  if (env.JINA_API_KEY)    order.push('jina');
+  return order;
 }
 
+function modelNameFor(provider: EmbedProvider): string {
+  if (provider === 'gemini')  return 'gemini-embedding-001';
+  if (provider === 'mistral') return 'mistral-embed';
+  return 'jina-embeddings-v3';
+}
+
+// Best-effort telemetry: the provider that most recently succeeded. Used only
+// for reporting (e.g. crs_method logging), never for correctness decisions.
+let _lastResolvedProvider: EmbedProvider | null = null;
+
 export function activeEmbedModel(): string {
-  try {
-    return embedProvider() === 'gemini' ? 'gemini-embedding-001' : 'jina-embeddings-v3';
-  } catch {
-    return 'none';
-  }
+  const order = providerOrder();
+  if (!order.length) return 'none';
+  return modelNameFor(_lastResolvedProvider ?? order[0]);
 }
 
 function l2normalize(v: number[]): number[] {
@@ -163,6 +199,25 @@ async function embedGemini(text: string): Promise<number[]> {
   return l2normalize(values);
 }
 
+async function embedMistral(text: string): Promise<number[]> {
+  const key = env.MISTRAL_API_KEY as string;
+  const res = await fetch('https://api.mistral.ai/v1/embeddings', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model: 'mistral-embed', input: [text] }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Mistral embed ${res.status}: ${await res.text()}`);
+  const d = await res.json() as { data?: { embedding?: number[] }[] };
+  const values = d.data?.[0]?.embedding;
+  if (!values?.length) throw new Error('Mistral embed: no values in response');
+  // mistral-embed returns native 1024-dim vectors with no output-dimensionality
+  // parameter. Truncating to EMBED_DIM + re-normalizing is an approximation —
+  // acceptable for a last-resort fallback, not intended to match Gemini's
+  // Matryoshka-style truncated quality.
+  return l2normalize(values.slice(0, EMBED_DIM));
+}
+
 async function embedJina(text: string): Promise<number[]> {
   const key = env.JINA_API_KEY as string;
   const res = await fetch('https://api.jina.ai/v1/embeddings', {
@@ -181,26 +236,81 @@ async function embedJina(text: string): Promise<number[]> {
   return d.data[0].embedding; // Jina v3 returns normalized vectors
 }
 
-// Single-text embedding, cache-aside. Cache key includes the model so vectors
-// from different embedding spaces never collide.
-export async function embedText(text: string): Promise<number[]> {
-  const provider = embedProvider();
-  const model    = activeEmbedModel();
+async function callProvider(provider: EmbedProvider, text: string): Promise<number[]> {
+  if (provider === 'gemini')  return embedGemini(text);
+  if (provider === 'mistral') return embedMistral(text);
+  return embedJina(text);
+}
 
+// Embed via ONE specific provider — no fallback. Cache-aware (checked/stored
+// under that provider's model-qualified hash). Throws if that provider fails.
+// This is the building block callers use when they need to pin a provider for
+// cross-call comparisons (see the CORRECTNESS CONSTRAINT note above).
+export async function embedTextWithProvider(text: string, provider: EmbedProvider): Promise<number[]> {
+  const model  = modelNameFor(provider);
   const hash   = await hashText(`${model}\n${text}`);
   const cached = await getCachedEmbedding(hash);
   if (cached) return cached;
-
-  const embedding = provider === 'gemini' ? await embedGemini(text) : await embedJina(text);
-  putCachedEmbedding(hash, embedding).catch(() => undefined);
-  return embedding;
+  const vec = await callProvider(provider, text);
+  putCachedEmbedding(hash, vec).catch(() => undefined);
+  return vec;
 }
 
-// Batch helper — embeds each text through the cached, provider-agnostic single
-// path. gemini-embedding-001 accepts one input per call, so this fans out;
-// fixed strings (e.g. the constitutional anchor) are served from cache.
+// Embed a single text, trying each configured provider in priority order.
+// Returns which provider actually succeeded, so callers needing a consistent
+// embedding space across several calls (prompt/output/centroid) can pin it.
+export async function embedTextResolved(
+  text: string,
+): Promise<{ vector: number[]; provider: EmbedProvider; model: string }> {
+  const order = providerOrder();
+  if (!order.length) {
+    throw new Error('No embedding provider configured (set GEMINI_API_KEY, MISTRAL_API_KEY, or JINA_API_KEY)');
+  }
+  let lastErr: unknown;
+  for (const provider of order) {
+    try {
+      const vector = await embedTextWithProvider(text, provider);
+      _lastResolvedProvider = provider;
+      return { vector, provider, model: modelNameFor(provider) };
+    } catch (e) {
+      lastErr = e;
+      continue; // try the next provider in priority order
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('embedTextResolved: all embedding providers failed');
+}
+
+// Backward-compatible single-vector API — used by the many existing callers
+// that don't need to know (or pin) which provider served the embedding, e.g.
+// memory storage/retrieval, where a provider swap simply means older
+// differently-embedded rows score lower and age out (documented, accepted).
+export async function embedText(text: string): Promise<number[]> {
+  return (await embedTextResolved(text)).vector;
+}
+
+// Batch helper — commits the WHOLE batch to one provider, retrying the entire
+// batch under the next provider on failure. Never partially mixes providers
+// within a batch, since batches are used for direct comparisons (e.g. the CRS
+// extractor's anchor-vs-output cosine similarity) where mixed spaces would
+// silently produce a meaningless number.
 export async function embedTexts(texts: string[]): Promise<number[][]> {
-  return Promise.all(texts.map(t => embedText(t)));
+  if (!texts.length) return [];
+  const order = providerOrder();
+  if (!order.length) {
+    throw new Error('No embedding provider configured (set GEMINI_API_KEY, MISTRAL_API_KEY, or JINA_API_KEY)');
+  }
+  let lastErr: unknown;
+  for (const provider of order) {
+    try {
+      const vectors = await Promise.all(texts.map(t => embedTextWithProvider(t, provider)));
+      _lastResolvedProvider = provider;
+      return vectors;
+    } catch (e) {
+      lastErr = e;
+      continue;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('embedTexts: all embedding providers failed');
 }
 
 // Prune cache entries older than ttlDays — called from cron
@@ -365,33 +475,64 @@ export async function ensureLexMemoryTable(): Promise<void> {
 // ── Constitutional centroid (paper §4.3 / §6.2) ───────────────────────────────
 // FAITHFUL to the paper: the constitutional centroid is the embedding centroid
 // of the Vaulturex Sovereign Codex laws — a FIXED identity anchor in embedding
-// space. It does NOT drift with traffic. Embedded via the provider-agnostic
-// embedText, so it always matches the provider used for output embeddings.
-let _centroidCache: { vec: number[]; ts: number } | null = null;
+// space. It does NOT drift with traffic.
+//
+// Cached PER PROVIDER (a Gemini-space centroid and a Mistral-space centroid are
+// different vectors and must never be compared against an output embedded by
+// the other provider). Pass forceProvider to pin the centroid to a specific
+// provider — used by self-referential detection to match whatever provider
+// resolved for the output embedding in the same request (see route.ts). If that
+// forced provider can't embed the laws right now, this returns null and the
+// caller must treat detection as degraded rather than falling back to a
+// different provider's (incomparable) centroid.
+const _centroidCache = new Map<EmbedProvider, { vec: number[]; ts: number }>();
 const CENTROID_TTL_MS = 5 * 60 * 1000;
 
-export async function getConstitutionalCentroid(): Promise<number[] | null> {
+async function computeCentroidFor(embeddings: number[][]): number[] | null {
+  if (!embeddings.length) return null;
+  const dim = embeddings[0].length;
+  const centroid = new Array<number>(dim).fill(0);
+  for (const emb of embeddings) {
+    for (let i = 0; i < Math.min(dim, emb.length); i++) centroid[i] += emb[i] / embeddings.length;
+  }
+  return centroid;
+}
+
+export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): Promise<number[] | null> {
   const now = Date.now();
-  if (_centroidCache && (now - _centroidCache.ts) < CENTROID_TTL_MS) {
-    return _centroidCache.vec;
+
+  if (forceProvider) {
+    const cached = _centroidCache.get(forceProvider);
+    if (cached && (now - cached.ts) < CENTROID_TTL_MS) return cached.vec;
+    try {
+      const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
+      const lawTexts = SOVEREIGN_LAWS.slice(0, 50).map(law => `${law.name}: ${law.text}`);
+      // No fallback here by design — mixing this centroid's provider with a
+      // different provider's output embedding would be an invalid comparison.
+      const embeddings = await Promise.all(lawTexts.map(t => embedTextWithProvider(t, forceProvider)));
+      const centroid = await computeCentroidFor(embeddings);
+      if (!centroid) return null;
+      _centroidCache.set(forceProvider, { vec: centroid, ts: now });
+      return centroid;
+    } catch (e) {
+      console.error('getConstitutionalCentroid (forced provider) error:', e);
+      return null;
+    }
+  }
+
+  // No forced provider: any already-fresh cached entry works for callers that
+  // don't need cross-call comparison consistency.
+  for (const [, entry] of _centroidCache) {
+    if ((now - entry.ts) < CENTROID_TTL_MS) return entry.vec;
   }
   try {
     const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
-    const laws = SOVEREIGN_LAWS.slice(0, 50); // the 50 Vaulturex laws
-    const lawEmbeddings = await Promise.all(
-      laws.map(law => embedText(`${law.name}: ${law.text}`).catch(() => [] as number[]))
-    );
-    const embeddings = lawEmbeddings.filter(e => e.length > 0);
-    if (!embeddings.length) return null;
-
-    const dim      = embeddings[0].length;
-    const centroid = new Array<number>(dim).fill(0);
-    for (const emb of embeddings) {
-      for (let i = 0; i < Math.min(dim, emb.length); i++) {
-        centroid[i] += emb[i] / embeddings.length;
-      }
-    }
-    _centroidCache = { vec: centroid, ts: now };
+    const lawTexts = SOVEREIGN_LAWS.slice(0, 50).map(law => `${law.name}: ${law.text}`);
+    const embeddings = await embedTexts(lawTexts); // provider-consistent fallback chain
+    const centroid = await computeCentroidFor(embeddings);
+    if (!centroid) return null;
+    const resolvedProvider = _lastResolvedProvider ?? providerOrder()[0];
+    if (resolvedProvider) _centroidCache.set(resolvedProvider, { vec: centroid, ts: now });
     return centroid;
   } catch (e) {
     console.error('getConstitutionalCentroid error:', e);
@@ -399,6 +540,13 @@ export async function getConstitutionalCentroid(): Promise<number[] | null> {
   }
 }
 
+// KNOWN LIMITATION (pre-existing, not introduced by the multi-provider fallback
+// above): lex_memory rows do not record which provider embedded them, so a
+// session's historical embeddings may mix providers if the active provider
+// changed mid-session. This affects the Continuity (session-centroid) signal
+// only, not the primary Sovereignty (constitutional-centroid) signal, which is
+// kept provider-consistent per request. Fixing this fully requires persisting
+// the embedding model per lex_memory row — tracked as a future migration.
 export async function getSessionCentroid(sessionId: string): Promise<number[] | null> {
   try {
     const db  = getClient();
@@ -429,6 +577,7 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
   }
 }
 
-export function invalidateCentroidCache(): void {
-  _centroidCache = null;
+export function invalidateCentroidCache(provider?: EmbedProvider): void {
+  if (provider) _centroidCache.delete(provider);
+  else _centroidCache.clear();
 }
