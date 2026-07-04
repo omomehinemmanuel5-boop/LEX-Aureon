@@ -110,10 +110,28 @@ jobs:
         with:
           name: lexbench-shard-results-${{ matrix.shard-index }}
           path: data/lexbench-*.jsonl
+          # A shard that crashed before saving any benchmark's results (e.g. a
+          # dataset-fetch flake) would otherwise make this upload step fail on
+          # "no files found", which — combined with the fix below — should still
+          # not block aggregation of every OTHER shard's real output.
+          if-no-files-found: ignore
 
   # ── Aggregate all shards, report, and publish to the live leaderboard ──
   aggregate-and-report:
     needs: run-lexbench
+    # fix (2026-07): this job previously had a bare `needs: run-lexbench`, which
+    # defaults to requiring run-lexbench to have SUCCEEDED overall. With
+    # fail-fast:false and a multi-shard matrix, if even ONE shard fails, the
+    # overall run-lexbench job's conclusion is "failure" — and a downstream job
+    # with no `if:` guard is SKIPPED entirely, even though every other shard
+    # succeeded. This is exactly what happened on 2026-07-04: every shard that
+    # ran finished cleanly (confirmed via praxis_receipts), but nothing was ever
+    # published because aggregate-and-report never ran at all. `!cancelled()`
+    # runs this job whenever the matrix finished (success OR partial failure),
+    # so a single bad shard can no longer silently block publishing everything
+    # that DID succeed. (Deliberately not `always()`, which would also fire
+    # after an explicit manual cancellation.)
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,12 +150,17 @@ jobs:
           pattern: lexbench-shard-results-*
           merge-multiple: true
           path: results/
+          if-no-files-found: warn
 
       - name: Aggregate results and generate report
         run: |
-          find results/ -name "lexbench-*.jsonl" -print0 | xargs -0 cat > all_results.jsonl
-          LINES=$(wc -l < all_results.jsonl)
+          find results/ -name "lexbench-*.jsonl" -print0 | xargs -0 cat > all_results.jsonl 2>/dev/null || true
+          LINES=$(wc -l < all_results.jsonl 2>/dev/null || echo 0)
           echo "Total result rows: $LINES"
+          if [ "$LINES" -eq 0 ]; then
+            echo "::warning::No shard results found — every shard may have failed. Skipping aggregate/publish."
+            exit 0
+          fi
           npx tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary.json
           echo "Summary:"
           cat summary.json
@@ -145,10 +168,10 @@ jobs:
       - name: Run regression check
         continue-on-error: true
         run: |
-          if [ -f data/lexbench-summary.json ]; then
+          if [ -f summary.json ] && [ -f data/lexbench-summary.json ]; then
             npx tsx scripts/lexbench/check-regression.ts summary.json data/lexbench-summary.json
           else
-            echo "No baseline found — skipping regression check"
+            echo "No summary or baseline found — skipping regression check"
           fi
 
       # This is the step that publishes to the live table the public site reads.
@@ -162,23 +185,35 @@ jobs:
       # a later full run overwrites what the site shows (reader takes MAX(id)).
       # PR runs never publish (smoke tests on unmerged code).
       - name: Publish results to live leaderboard
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: npx tsx scripts/lexbench/publish-results.ts summary.json
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          if [ ! -f summary.json ]; then
+            echo "::warning::No summary.json (no shard produced results) — nothing to publish."
+            exit 0
+          fi
+          npx tsx scripts/lexbench/publish-results.ts summary.json
         env:
           BENCH_SECRET:         ${{ secrets.BENCH_SECRET }}
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
 
       - name: Upload final report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lexbench-final-report-${{ github.run_id }}
           path: summary.json
+          if-no-files-found: ignore
 
       - name: Commit summary to repo
-        # Don't overwrite the committed baseline with a tiny quick-test summary.
+        # Don't overwrite the committed baseline with a tiny quick-test summary,
+        # and don't commit if nothing was produced this run.
         if: github.event.inputs.limit == ''
         continue-on-error: true
         run: |
+          if [ ! -f summary.json ]; then
+            echo "No summary.json — nothing to commit."
+            exit 0
+          fi
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
           cp summary.json data/lexbench-summary.json
