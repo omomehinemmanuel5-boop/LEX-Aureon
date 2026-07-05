@@ -15,37 +15,46 @@ on:
 
 env:
   NODE_VERSION: '20'
+  # fix (2026-07-05) — ROOT CAUSE of every persistent "401 unauthorized" publish
+  # failure this whole time: the apex domain lexaureon.com 307-redirects to the
+  # canonical www.lexaureon.com. Node's native fetch() (used by
+  # publish-results.ts) follows that redirect automatically — but per the
+  # WHATWG fetch spec, it STRIPS the Authorization header on any cross-origin
+  # redirect, for security. Proven by direct reproduction: sending a real
+  # Bearer token to https://lexaureon.com/api/benchmarks/publish, the request
+  # that actually reached the server had NO credential at all — the header was
+  # silently dropped during the redirect, before BENCH_SECRET was ever
+  # compared. This was never a secret mismatch. Every workflow call now targets
+  # the canonical www host directly, so no redirect (and no header-stripping)
+  # happens at all. This also removes a redundant redirect round-trip from
+  # every single /api/lex/govern call during a benchmark run.
+  SITE_URL: https://www.lexaureon.com
 
 jobs:
   # ── Fail FAST if BENCH_SECRET won't authorize a publish ─────────────────
   # Added 2026-07-05 after two separate multi-hour runs completed every shard
   # successfully and then discovered — only at the very last step — that
-  # publishing was going to fail (wrong endpoint/auth, then a secret mismatch).
-  # Both times this cost hours of runtime and provider quota before the actual
-  # problem was even visible. This job calls the publish endpoint's GET
-  # auth-only precheck (app/api/benchmarks/publish/route.ts — same auth check
-  # as the real POST, but never touches the database) in under a second, BEFORE
-  # any shard runs. A bad secret now fails in ~10s with an unambiguous
-  # ::error:: annotation instead of silently wasting an entire run.
-  #
-  # Only gates schedule/workflow_dispatch — PR runs never publish (see the
-  # publish step's own condition below) so there's nothing to precheck for
-  # them; the job is skipped, and `needs: precheck-auth` proceeds normally for
-  # a SKIPPED dependency (GitHub Actions only blocks on FAILED/CANCELLED).
+  # publishing was going to fail. Both times this cost hours of runtime and
+  # provider quota before the actual problem was even visible. This job calls
+  # the publish endpoint's GET auth-only precheck (same auth check as the real
+  # POST, but never touches the database) in under a second, BEFORE any shard
+  # runs. Now correctly targets the canonical www host — the earlier version
+  # of this job hit the apex domain and got a false-negative 307 itself (the
+  # precheck had the exact same bug it was built to catch).
   precheck-auth:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - name: Verify BENCH_SECRET authorizes a publish
         run: |
-          HTTP_CODE=$(curl -sS -o /tmp/precheck.json -w "%{http_code}" \
-            https://lexaureon.com/api/benchmarks/publish \
+          HTTP_CODE=$(curl -sS -L -o /tmp/precheck.json -w "%{http_code}" \
+            ${{ env.SITE_URL }}/api/benchmarks/publish \
             -H "Authorization: Bearer ${{ secrets.BENCH_SECRET }}")
           echo "HTTP status: $HTTP_CODE"
           cat /tmp/precheck.json
           echo ""
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::BENCH_SECRET precheck FAILED (HTTP $HTTP_CODE). The GitHub Actions secret BENCH_SECRET does not authorize a publish to https://lexaureon.com/api/benchmarks/publish right now. Update this repo's BENCH_SECRET (Settings → Secrets and variables → Actions) to match the value in Vercel exactly, then re-run. The full benchmark suite was intentionally NOT run, to avoid wasting hours and provider quota on a run that could never publish."
+            echo "::error::BENCH_SECRET precheck FAILED (HTTP $HTTP_CODE). The GitHub Actions secret BENCH_SECRET does not authorize a publish to ${{ env.SITE_URL }}/api/benchmarks/publish right now. Update this repo's BENCH_SECRET (Settings → Secrets and variables → Actions) to match the value in Vercel exactly, then re-run. The full benchmark suite was intentionally NOT run, to avoid wasting hours and provider quota on a run that could never publish."
             exit 1
           fi
           echo "BENCH_SECRET precheck passed — proceeding with the full run."
@@ -127,7 +136,7 @@ jobs:
         run: |
           npx tsx scripts/lexbench/runner.ts \
             --benchmark all \
-            --endpoint https://lexaureon.com \
+            --endpoint ${{ env.SITE_URL }} \
             --shard-index ${{ matrix.shard-index }} \
             --shard-size ${{ needs.determine-shards.outputs.shard-size }}
         env:
@@ -139,7 +148,7 @@ jobs:
           ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
           JINA_API_KEY:         ${{ secrets.JINA_API_KEY }}
           CRON_SECRET:          ${{ secrets.CRON_SECRET }}
-          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
 
       - name: Upload shard results
         if: always()
@@ -161,13 +170,9 @@ jobs:
     # fail-fast:false and a multi-shard matrix, if even ONE shard fails, the
     # overall run-lexbench job's conclusion is "failure" — and a downstream job
     # with no `if:` guard is SKIPPED entirely, even though every other shard
-    # succeeded. This is exactly what happened on 2026-07-04: every shard that
-    # ran finished cleanly (confirmed via praxis_receipts), but nothing was ever
-    # published because aggregate-and-report never ran at all. `!cancelled()`
-    # runs this job whenever the matrix finished (success OR partial failure),
-    # so a single bad shard can no longer silently block publishing everything
-    # that DID succeed. (Deliberately not `always()`, which would also fire
-    # after an explicit manual cancellation.)
+    # succeeded. `!cancelled()` runs this job whenever the matrix finished
+    # (success OR partial failure), so a single bad shard can no longer
+    # silently block publishing everything that DID succeed.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -213,15 +218,12 @@ jobs:
 
       # This is the step that publishes to the live table the public site reads.
       # It POSTs summary.json to the canonical writer /api/benchmarks/publish,
-      # authenticated with BENCH_SECRET (the ONLY accepted auth for that route).
-      # By the time this step runs, precheck-auth has already confirmed
-      # BENCH_SECRET authorizes successfully — so a 401 here would mean the
-      # secret changed mid-run, which is not expected but is still handled
-      # (this step's own failure won't silently vanish; see the exit code).
-      # Publishes on scheduled AND manual (workflow_dispatch) runs — including
-      # quick-test runs, so a small-N row appears to confirm the path end-to-end;
-      # a later full run overwrites what the site shows (reader takes MAX(id)).
-      # PR runs never publish (smoke tests on unmerged code).
+      # authenticated with BENCH_SECRET. ROOT CAUSE FIX (2026-07-05): now
+      # targets the canonical www host directly (env.SITE_URL) instead of the
+      # apex — the apex 307-redirects to www, and Node's fetch strips the
+      # Authorization header on that cross-origin redirect, so every previous
+      # attempt reached the server with NO credential at all, regardless of
+      # whether BENCH_SECRET matched. This was never actually a secret mismatch.
       - name: Publish results to live leaderboard
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: |
@@ -232,7 +234,7 @@ jobs:
           npx tsx scripts/lexbench/publish-results.ts summary.json
         env:
           BENCH_SECRET:         ${{ secrets.BENCH_SECRET }}
-          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
 
       - name: Upload final report
         if: always()
