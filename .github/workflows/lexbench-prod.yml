@@ -17,8 +17,45 @@ env:
   NODE_VERSION: '20'
 
 jobs:
+  # ── Fail FAST if BENCH_SECRET won't authorize a publish ─────────────────
+  # Added 2026-07-05 after two separate multi-hour runs completed every shard
+  # successfully and then discovered — only at the very last step — that
+  # publishing was going to fail (wrong endpoint/auth, then a secret mismatch).
+  # Both times this cost hours of runtime and provider quota before the actual
+  # problem was even visible. This job calls the publish endpoint's GET
+  # auth-only precheck (app/api/benchmarks/publish/route.ts — same auth check
+  # as the real POST, but never touches the database) in under a second, BEFORE
+  # any shard runs. A bad secret now fails in ~10s with an unambiguous
+  # ::error:: annotation instead of silently wasting an entire run.
+  #
+  # Only gates schedule/workflow_dispatch — PR runs never publish (see the
+  # publish step's own condition below) so there's nothing to precheck for
+  # them; the job is skipped, and `needs: precheck-auth` proceeds normally for
+  # a SKIPPED dependency (GitHub Actions only blocks on FAILED/CANCELLED).
+  precheck-auth:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify BENCH_SECRET authorizes a publish
+        run: |
+          HTTP_CODE=$(curl -sS -o /tmp/precheck.json -w "%{http_code}" \
+            https://lexaureon.com/api/benchmarks/publish \
+            -H "Authorization: Bearer ${{ secrets.BENCH_SECRET }}")
+          echo "HTTP status: $HTTP_CODE"
+          cat /tmp/precheck.json
+          echo ""
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::BENCH_SECRET precheck FAILED (HTTP $HTTP_CODE). The GitHub Actions secret BENCH_SECRET does not authorize a publish to https://lexaureon.com/api/benchmarks/publish right now. Update this repo's BENCH_SECRET (Settings → Secrets and variables → Actions) to match the value in Vercel exactly, then re-run. The full benchmark suite was intentionally NOT run, to avoid wasting hours and provider quota on a run that could never publish."
+            exit 1
+          fi
+          echo "BENCH_SECRET precheck passed — proceeding with the full run."
+
   # ── Determine total prompts and shard count ─────────────────────────────
   determine-shards:
+    needs: precheck-auth
+    # Runs whenever precheck-auth succeeded OR was skipped (PR events) — only
+    # blocked if precheck-auth actually ran and failed.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -177,9 +214,10 @@ jobs:
       # This is the step that publishes to the live table the public site reads.
       # It POSTs summary.json to the canonical writer /api/benchmarks/publish,
       # authenticated with BENCH_SECRET (the ONLY accepted auth for that route).
-      # NOTE: BENCH_SECRET must be set as a GitHub Actions secret in this repo
-      # (same value as the Vercel BENCH_SECRET env var) or publish-results.ts
-      # will exit with "BENCH_SECRET not set" and the table stays empty.
+      # By the time this step runs, precheck-auth has already confirmed
+      # BENCH_SECRET authorizes successfully — so a 401 here would mean the
+      # secret changed mid-run, which is not expected but is still handled
+      # (this step's own failure won't silently vanish; see the exit code).
       # Publishes on scheduled AND manual (workflow_dispatch) runs — including
       # quick-test runs, so a small-N row appears to confirm the path end-to-end;
       # a later full run overwrites what the site shows (reader takes MAX(id)).
