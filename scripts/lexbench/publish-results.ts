@@ -5,49 +5,39 @@
  * public site reads (benchmark_results), so a scored run auto-appears on the
  * landing + /benchmarks pages.
  *
- * FIX (2026-07): previously this POSTed to `/api/benchmarks` (a reader route
- * with no writer) using ADMIN_PASSWORD. The ONLY writer is
- * `/api/benchmarks/publish`, gated on BENCH_SECRET (see
- * app/api/benchmarks/publish/route.ts). So every publish hit the wrong endpoint
- * with the wrong auth and failed silently — which is exactly why
- * benchmark_results stayed empty despite nightly runs. This now targets the
- * canonical writer with BENCH_SECRET and sends all rows in one array POST
- * (the endpoint accepts an array), matching the benchmark-repo publisher so
- * there is a single, consistent publish path.
- *
- * FIX (2026-07-04): TruthfulQA's ASR metric was published alongside its
- * toxicity/truth_score — but ASR (attack-success-rate via refusal detection)
- * treats "refused" as the safe outcome, which is backwards for TruthfulQA:
- * its prompts are factual questions, not attacks, so refusing to answer is
- * just unhelpful, not a governance win. buildRows() now skips the ASR row
- * whenever the aggregator flags a benchmark asr_applicable: false (currently
- * only TruthfulQA) — only toxicity + truth_score are published for it.
- *
- * The row shape already matches the endpoint schema exactly:
- *   { benchmark, run_date, n_total, metric_name, bare_score, governed_score,
- *     delta_pp, notes }   (scores are percentages 0–100)
+ * FIX (2026-07-05) — GROUNDED METRICS: previously published three metrics per
+ * benchmark (ASR, toxicity, truth_score) computed from a bag-of-words
+ * prompt-vs-output cosine similarity that didn't measure toxicity or
+ * truthfulness at all (see scripts/lexbench/grounded_judge.ts header). Now
+ * publishes exactly ONE metric per benchmark, matching its actual kind:
+ *   - AdvBench/HarmBench/JailbreakBench -> "ASR" (LLM-judged harm compliance)
+ *   - TruthfulQA                        -> "truthful_pct" (judged vs. dataset
+ *                                          reference correct/incorrect answers)
+ *   - AgentDojo                         -> "injection_resisted_pct_PROXY"
+ *                                          (explicitly NOT the official
+ *                                          AgentDojo methodology — see notes)
+ * A benchmark with zero scored_prompts (every judge call failed/unavailable)
+ * is skipped entirely rather than publishing a misleading 0%/100%.
  *
  * Usage:
- *   BENCH_SECRET=... NEXT_PUBLIC_SITE_URL=https://lexaureon.com \
+ *   BENCH_SECRET=... NEXT_PUBLIC_SITE_URL=https://www.lexaureon.com \
  *     npx tsx scripts/lexbench/publish-results.ts summary.json
  *   # optional: --dry-run to print the payload without sending
  */
 
 import * as fs from 'fs';
 
+type BenchmarkKind = 'harm' | 'truthfulness' | 'injection';
+
 interface BenchmarkSummary {
   benchmark: string;
+  kind: BenchmarkKind;
   total_prompts: number;
-  asr_applicable?: boolean; // optional for backward-compat with older summary.json files
-  avg_bare_asr: number;
-  avg_governed_asr: number;
-  asr_delta_pp: number;
-  avg_bare_toxicity: number;
-  avg_governed_toxicity: number;
-  toxicity_delta_pp: number;
-  avg_bare_truth_score: number;
-  avg_governed_truth_score: number;
-  truth_score_delta_pp: number;
+  scored_prompts: number;
+  judge_methods_used: string[];
+  avg_bare_pct?: number;
+  avg_governed_pct?: number;
+  delta_pp?: number;
 }
 
 interface PublishRow {
@@ -65,38 +55,39 @@ function buildRows(summary: Record<string, BenchmarkSummary>, runDate: string): 
   const rows: PublishRow[] = [];
   for (const key in summary) {
     const s = summary[key];
-    const notes = `LexBench run, n=${s.total_prompts}; same-model bare=raw_output vs governed (generateGoverned); heuristic refusal judge`;
 
-    // ASR (attack-success-rate via refusal detection) is only meaningful for
-    // adversarial/attack-style benchmarks, where refusal is the safe outcome.
-    // asr_applicable defaults to true for older summary.json files that
-    // predate this flag (they were all attack benchmarks at the time).
-    if (s.asr_applicable !== false) {
+    if (s.scored_prompts === 0 || s.avg_bare_pct === undefined || s.avg_governed_pct === undefined) {
+      console.log(`  (skipping ${s.benchmark} — 0 of ${s.total_prompts} prompts got a usable judge verdict; judge_methods_used=${s.judge_methods_used.join(',')})`);
+      continue;
+    }
+
+    const judgeNote = `judge_methods=${s.judge_methods_used.join('|')}`;
+    const scoredNote = s.scored_prompts < s.total_prompts
+      ? `scored ${s.scored_prompts}/${s.total_prompts} (rest: judge unavailable)`
+      : `scored ${s.scored_prompts}/${s.total_prompts}`;
+
+    if (s.kind === 'harm') {
       rows.push({
         benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
         metric_name: 'ASR',
-        bare_score: +(s.avg_bare_asr * 100).toFixed(2),
-        governed_score: +(s.avg_governed_asr * 100).toFixed(2),
-        delta_pp: s.asr_delta_pp, notes,
+        bare_score: s.avg_bare_pct, governed_score: s.avg_governed_pct, delta_pp: s.delta_pp ?? 0,
+        notes: `LexBench run, n=${s.total_prompts}; same-model bare=raw_output vs governed (generateGoverned); ASR via LLM judge (harm-compliance rubric approximating HarmBench/JailbreakBench classifiers, NOT the official fine-tuned classifiers); ${scoredNote}; ${judgeNote}`,
+      });
+    } else if (s.kind === 'truthfulness') {
+      rows.push({
+        benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
+        metric_name: 'truthful_pct',
+        bare_score: s.avg_bare_pct, governed_score: s.avg_governed_pct, delta_pp: s.delta_pp ?? 0,
+        notes: `LexBench run, n=${s.total_prompts}; same-model bare=raw_output vs governed (generateGoverned); truthfulness via LLM judge comparing against the dataset's own correct_answers/incorrect_answers (same reference-comparison as the original paper's fine-tuned GPT-judge, general-purpose model here); does not separately score informativeness; ${scoredNote}; ${judgeNote}`,
       });
     } else {
-      console.log(`  (skipping ASR for ${s.benchmark} — not an adversarial benchmark; refusal isn't a safe outcome for factual questions)`);
+      rows.push({
+        benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
+        metric_name: 'injection_resisted_pct_PROXY',
+        bare_score: s.avg_bare_pct, governed_score: s.avg_governed_pct, delta_pp: s.delta_pp ?? 0,
+        notes: `NOT the official AgentDojo methodology — this measures injection-resistance ONLY via text judgment of a single prompt/response pair; no tool-execution harness, no task-utility check, so a model that refuses everything would score well here despite failing every legitimate task. LexBench run, n=${s.total_prompts}; same-model bare vs governed; ${scoredNote}; ${judgeNote}`,
+      });
     }
-
-    rows.push({
-      benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
-      metric_name: 'toxicity',
-      bare_score: +(s.avg_bare_toxicity * 100).toFixed(2),
-      governed_score: +(s.avg_governed_toxicity * 100).toFixed(2),
-      delta_pp: s.toxicity_delta_pp, notes,
-    });
-    rows.push({
-      benchmark: s.benchmark, run_date: runDate, n_total: s.total_prompts,
-      metric_name: 'truth_score',
-      bare_score: +(s.avg_bare_truth_score * 100).toFixed(2),
-      governed_score: +(s.avg_governed_truth_score * 100).toFixed(2),
-      delta_pp: s.truth_score_delta_pp, notes,
-    });
   }
   return rows;
 }
@@ -132,10 +123,13 @@ async function main() {
     process.exit(1);
   }
   if (!endpoint) { console.error('NEXT_PUBLIC_SITE_URL not set'); process.exit(1); }
+  if (rows.length === 0) {
+    console.log('No benchmarks had a usable judge verdict — nothing to publish.');
+    return;
+  }
 
   console.log(`Publishing ${rows.length} rows across ${Object.keys(summary).length} benchmarks to ${endpoint}/api/benchmarks/publish ...`);
 
-  // The publish endpoint accepts an array — send all rows atomically in one call.
   const res = await fetch(`${endpoint}/api/benchmarks/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
