@@ -10,10 +10,18 @@
  * fail closed, never accept unauthenticated writes.
  *
  * Auth logic lives in lib/bench_auth.ts (checkBenchAuth) — extracted so it can
- * be unit-tested directly (see __tests__/bench_auth.test.ts), which is what
- * actually GUARANTEES the whitespace-trimming fix works, rather than relying
- * on a one-off manual test against the live endpoint (which can't be done
- * without knowing the real secret in the first place).
+ * be unit-tested directly (see __tests__/bench_auth.test.ts).
+ *
+ * GET — AUTH-ONLY PRECHECK (2026-07-05): runs the EXACT same auth check as
+ * POST but never touches the database. Added so the GitHub Actions workflow
+ * can verify BENCH_SECRET matches BEFORE running an expensive multi-hour
+ * benchmark suite — previously a secret mismatch was only discovered at the
+ * very end, after burning hours of runtime and provider quota, then requiring
+ * a screenshot round-trip to diagnose. Now: GET with the same header returns
+ * 200 {ok:true} or 401/503 with the same safe diagnostic reason, in under a
+ * second, so a bad secret fails the workflow immediately instead of silently
+ * wasting a full run. This reuses checkBenchAuth directly, so the precheck can
+ * never drift from what the real publish path actually enforces.
  *
  * Body (one metric per call, or an array of metrics):
  *   {
@@ -40,6 +48,14 @@ import { checkBenchAuth } from '@/lib/bench_auth';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function getSecret(): string | undefined {
+  try {
+    return env.BENCH_SECRET;
+  } catch {
+    return undefined;
+  }
+}
+
 function coerceRow(raw: Record<string, unknown>): BenchmarkRow | { error: string } {
   const benchmark   = String(raw.benchmark ?? '').trim();
   const metric_name = String(raw.metric_name ?? '').trim();
@@ -63,13 +79,25 @@ function coerceRow(raw: Record<string, unknown>): BenchmarkRow | { error: string
   return { benchmark, run_date, n_total, metric_name, bare_score, governed_score, delta_pp, notes };
 }
 
-export async function POST(req: NextRequest) {
-  let secret: string | undefined;
-  try {
-    secret = env.BENCH_SECRET;
-  } catch {
-    secret = undefined;
+// Auth-only precheck — never touches the database. See header note above.
+export async function GET(req: NextRequest) {
+  const secret = getSecret();
+  if (!secret) {
+    return NextResponse.json(
+      { ok: false, error: 'publishing disabled: BENCH_SECRET not configured' },
+      { status: 503 },
+    );
   }
+  const auth = checkBenchAuth(req.headers.get('authorization'), req.headers.get('x-bench-secret'), secret);
+  if (!auth.ok) {
+    logger.warn('benchmarks.publish.precheck', 'unauthorized precheck', { reason: auth.reason });
+    return NextResponse.json({ ok: false, error: 'unauthorized', reason: auth.reason }, { status: 401 });
+  }
+  return NextResponse.json({ ok: true, message: 'BENCH_SECRET is valid — publish auth will succeed' });
+}
+
+export async function POST(req: NextRequest) {
+  const secret = getSecret();
   if (!secret) {
     logger.warn('benchmarks.publish', 'publish attempted with BENCH_SECRET unset', {});
     return NextResponse.json(
