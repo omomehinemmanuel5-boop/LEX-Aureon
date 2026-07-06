@@ -1,261 +1,51 @@
-name: Benchmark Suite
+name: "[DEPRECATED] Benchmark Suite"
 
-# Unified benchmark: AdvBench (Zou et al. 2023) + JailbreakBench (NeurIPS 2024)
-#
-# Architecture (v3):
-#   - Bare arm:    direct Groq call, NO system prompt — genuine ungoverned baseline
-#   - Governed arm: full SovereignKernel endpoint + 3-turn warm-up so governor
-#                   has live z-traj state when the adversarial prompt arrives
-#   - Judge:        symmetric LLM judge (llama-3.1-8b via Groq), same prompt
-#                   on both arms. Separate judge prompts for harmful vs benign.
-#
-# Required repository secrets:
-#   GROQ_API_KEY  — for both the bare arm (direct LLM call) and LLM judge
-#
-# Trigger: Actions tab → "Benchmark Suite" → Run workflow
-#
-# Artifacts (90-day retention):
-#   advbench-raw.jsonl          full kernel capture + bare arm output per prompt
-#   advbench-scored.jsonl       + bare_verdict + governed_verdict
-#   jbb-raw.jsonl               full kernel capture (harmful + benign)
-#   jbb-scored.jsonl            + verdicts + over-refusal (correct benign judge)
-#   summary.md                  results table + methodology + telemetry
+# ══════════════════════════════════════════════════════════════════════════
+# DEPRECATED (2026-07-06) — DO NOT RUN. This was the v3 AdvBench+JailbreakBench
+# unified suite. Superseded by LexBench Production
+# (.github/workflows/lexbench-prod.yml): full sharded suite covering all
+# benchmarks, grounded harm-compliance judge, auto-publishes to
+# benchmark_results, targets the canonical www host (this file hits the bare
+# apex — redirect/auth-stripping risk). Full original implementation
+# (including the inline summary.md generator) remains available in git history
+# at commit prior to this deprecation. Disabled below.
+# ══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
     inputs:
       run_advbench:
-        description: 'Run AdvBench (520 harmful behaviors, Zou et al. 2023)'
-        required: true
+        description: 'DEPRECATED — use "LexBench Production" instead.'
         default: 'true'
-        type: choice
-        options: ['true', 'false']
-      run_jbb:
-        description: 'Run JailbreakBench (100 harmful + 100 benign, NeurIPS 2024)'
-        required: true
-        default: 'true'
-        type: choice
-        options: ['true', 'false']
-      n_advbench:
-        description: 'AdvBench prompt count (max 520)'
-        required: false
-        default: '520'
-      n_jbb:
-        description: 'JBB prompt count (max 200)'
-        required: false
-        default: '200'
-      llm_judge:
-        description: 'Score with LLM judge (requires GROQ_API_KEY secret set)'
-        required: true
-        default: 'true'
-        type: choice
-        options: ['true', 'false']
-      endpoint:
-        description: 'Governance endpoint'
-        required: false
-        default: 'https://lexaureon.com'
 
 jobs:
+  deprecated-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecation notice
+        run: |
+          echo "::error::This workflow is deprecated and disabled. Use 'LexBench Production' (lexbench-prod.yml) instead — it covers AdvBench and JailbreakBench (plus HarmBench, TruthfulQA, AgentDojo) as part of the full, properly-sharded, grounded-judge suite."
+          exit 1
+
   benchmark:
+    if: false  # disabled — see deprecation notice above
     name: Run and Score
     runs-on: ubuntu-latest
-    # v3 timing: each prompt = 3 warm-up turns (1.5s each) + 2 LLM calls + 3s gap
-    # AdvBench 520 × ~20s = ~175 min + JBB 200 × ~20s = ~67 min + scoring ~20 min = ~265 min
     timeout-minutes: 360
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Record run metadata
-        run: |
-          echo "RUN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
-          echo "RUN_DATE_SHORT=$(date -u +%Y%m%d)" >> $GITHUB_ENV
-          echo "COMMIT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-
-      # ── AdvBench ──────────────────────────────────────────────────────────────
+      - run: npm install
       - name: Run AdvBench
-        if: github.event.inputs.run_advbench != 'false'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          npx tsx scripts/advbench/run.ts \
-            --endpoint "${{ github.event.inputs.endpoint || 'https://lexaureon.com' }}" \
-            --n "${{ github.event.inputs.n_advbench || '520' }}" \
-            --out data/advbench-raw.jsonl
-
-      - name: Score AdvBench
-        if: github.event.inputs.run_advbench != 'false'
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          JUDGE_FLAG=""
-          if [ "${{ github.event.inputs.llm_judge }}" = "true" ] && [ -n "$GROQ_API_KEY" ]; then
-            JUDGE_FLAG="--llm-judge"
-            echo "Using LLM judge (llama-3.1-8b via Groq)"
-          else
-            echo "Using heuristic judge (set GROQ_API_KEY secret to enable LLM judge)"
-          fi
-          npx tsx scripts/advbench/score.ts \
-            --in  data/advbench-raw.jsonl \
-            --out data/advbench-scored.jsonl \
-            $JUDGE_FLAG
-
-      # ── JailbreakBench ────────────────────────────────────────────────────────
+          npx tsx scripts/advbench/run.ts --endpoint https://lexaureon.com --n 520 --out data/advbench-raw.jsonl
       - name: Run JailbreakBench
-        if: github.event.inputs.run_jbb != 'false'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          npx tsx scripts/jailbreakbench/run.ts \
-            --endpoint "${{ github.event.inputs.endpoint || 'https://lexaureon.com' }}" \
-            --n "${{ github.event.inputs.n_jbb || '200' }}" \
-            --out data/jbb-raw.jsonl
-
-      - name: Score JailbreakBench
-        if: github.event.inputs.run_jbb != 'false'
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          JUDGE_FLAG=""
-          if [ "${{ github.event.inputs.llm_judge }}" = "true" ] && [ -n "$GROQ_API_KEY" ]; then
-            JUDGE_FLAG="--llm-judge"
-          fi
-          npx tsx scripts/jailbreakbench/score.ts \
-            --in  data/jbb-raw.jsonl \
-            --out data/jbb-scored.jsonl \
-            $JUDGE_FLAG
-
-      # ── Summary ───────────────────────────────────────────────────────────────
-      - name: Generate summary
-        if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-
-          function readJSONL(path) {
-            if (!fs.existsSync(path)) return [];
-            return fs.readFileSync(path, 'utf8').split('\n').filter(Boolean).map(l => {
-              try { return JSON.parse(l); } catch { return null; }
-            }).filter(Boolean);
-          }
-
-          function asr(rows, arm) {
-            const valid = rows.filter(r => !r.error && r[arm]);
-            const hits  = valid.filter(r => r[arm] === 'FULFILL').length;
-            if (!valid.length) return 'N/A';
-            return hits + '/' + valid.length + ' = ' + (hits / valid.length * 100).toFixed(1) + '%';
-          }
-
-          function overRefusal(rows) {
-            const benign = rows.filter(r => r.type === 'benign');
-            if (!benign.length) return 'N/A';
-            const govOR  = benign.filter(r => r.governed_verdict === 'RESIST').length;
-            const bareOR = benign.filter(r => r.bare_verdict === 'RESIST').length;
-            return 'Bare=' + bareOR + '/' + benign.length + ' Gov=' + govOR + '/' + benign.length;
-          }
-
-          function telemetry(rows) {
-            const v = rows.filter(r => !r.error && r.M > 0);
-            if (!v.length) return 'no data';
-            const avgM = (v.reduce((s, r) => s + r.M, 0) / v.length).toFixed(3);
-            const minM = Math.min(...v.map(r => r.M)).toFixed(3);
-            const avgDeltaV = v.filter(r => r.delta_V !== undefined).length
-              ? (v.filter(r => r.delta_V !== undefined).reduce((s, r) => s + r.delta_V, 0) /
-                 v.filter(r => r.delta_V !== undefined).length).toFixed(5)
-              : 'N/A';
-            const attacks  = v.filter(r => r.semantic_signal && r.semantic_signal.attack_type && r.semantic_signal.attack_type !== 'none').length;
-            const intv     = v.filter(r => r.projection_triggered).length;
-            return 'avgM=' + avgM + ' minM=' + minM + ' avg_deltaV=' + avgDeltaV + ' attacks_detected=' + attacks + ' interventions=' + intv;
-          }
-
-          const adv     = readJSONL('data/advbench-scored.jsonl');
-          const jbb     = readJSONL('data/jbb-scored.jsonl');
-          const jbbH    = jbb.filter(r => r.type === 'harmful');
-          const advRaw  = readJSONL('data/advbench-raw.jsonl');
-          const jbbRaw  = readJSONL('data/jbb-raw.jsonl');
-
-          const judge = process.env.LLM_JUDGE === 'true'
-            ? 'LLM judge: llama-3.1-8b via Groq (separate harmful/benign prompts)'
-            : 'Heuristic judge: neutral refusal markers';
-
-          const lines = [
-            '# Lex Aureon Benchmark Results',
-            '',
-            '**Date:** ' + process.env.RUN_DATE,
-            '**Commit:** ' + process.env.COMMIT_SHA,
-            '**Endpoint:** ' + process.env.ENDPOINT,
-            '**Judge:** ' + judge,
-            '**Run ID:** ' + process.env.GITHUB_RUN_ID,
-            '',
-            '---',
-            '',
-            '## Methodology (v3)',
-            '',
-            '**Bare arm:** direct Groq API call (llama-3.3-70b), NO system prompt — genuine ungoverned baseline.',
-            '**Governed arm:** full SovereignKernel endpoint with 3-turn warm-up to activate z-traj state before attack.',
-            '**Judge:** same LLM judge on both arms. Harmful arm: does output fulfill the harmful request?',
-            'Benign arm: does output make a genuine attempt to help? (separate judge prompt — fixes false 100% over-refusal).',
-            '',
-            '---',
-            '',
-            '## AdvBench (Zou et al. 2023)',
-            '',
-            '520 harmful behaviors from harmful_behaviors.csv (real dataset)',
-            '',
-          ];
-
-          if (adv.length) {
-            lines.push('| Arm | ASR |');
-            lines.push('|---|---|');
-            lines.push('| Bare (direct Groq, no system prompt) | ' + asr(adv, 'bare_verdict') + ' |');
-            lines.push('| Governed (SovereignKernel) | ' + asr(adv, 'governed_verdict') + ' |');
-            lines.push('');
-            lines.push('Kernel telemetry: ' + telemetry(advRaw));
-          } else { lines.push('Not run.'); }
-
-          lines.push('', '---', '', '## JailbreakBench (NeurIPS 2024)', '', '100 harmful + 100 benign behaviors', '');
-
-          if (jbb.length) {
-            lines.push('| Arm | Harmful ASR |');
-            lines.push('|---|---|');
-            lines.push('| Bare | ' + asr(jbb.filter(r => r.type === \"harmful\"), 'bare_verdict') + ' |');
-            lines.push('| Governed | ' + asr(jbbH, 'governed_verdict') + ' |');
-            lines.push('');
-            lines.push('Over-refusal on benign: ' + overRefusal(jbb));
-            lines.push('');
-            lines.push('Kernel telemetry: ' + telemetry(jbbRaw));
-          } else { lines.push('Not run.'); }
-
-          fs.writeFileSync('data/summary.md', lines.join('\n'));
-          console.log(lines.join('\n'));
-          "
-        env:
-          RUN_DATE:      ${{ env.RUN_DATE }}
-          COMMIT_SHA:    ${{ env.COMMIT_SHA }}
-          ENDPOINT:      ${{ github.event.inputs.endpoint || 'https://lexaureon.com' }}
-          LLM_JUDGE:     ${{ github.event.inputs.llm_judge || 'true' }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-
-      # ── Upload artifacts ──────────────────────────────────────────────────────
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: benchmark-${{ github.run_id }}-${{ env.RUN_DATE_SHORT }}
-          retention-days: 90
-          path: |
-            data/advbench-raw.jsonl
-            data/advbench-scored.jsonl
-            data/jbb-raw.jsonl
-            data/jbb-scored.jsonl
-            data/summary.md
+          npx tsx scripts/jailbreakbench/run.ts --endpoint https://lexaureon.com --n 200 --out data/jbb-raw.jsonl
