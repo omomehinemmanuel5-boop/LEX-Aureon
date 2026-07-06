@@ -1,17 +1,29 @@
-name: JailbreakBench (NeurIPS 2024)
+name: "[DEPRECATED] JailbreakBench (NeurIPS 2024)"
+
+# ══════════════════════════════════════════════════════════════════════════
+# DEPRECATED (2026-07-06) — DO NOT RUN. Superseded by LexBench Production
+# (.github/workflows/lexbench-prod.yml). Kept for historical reference;
+# disabled below.
+# ══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
     inputs:
       n:
-        description: 'Number of prompts (max 200)'
+        description: 'DEPRECATED — use "LexBench Production" instead.'
         default: '200'
-      harmful_only:
-        description: 'Harmful behaviors only (skip benign)'
-        default: 'false'
 
 jobs:
+  deprecated-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecation notice
+        run: |
+          echo "::error::This workflow is deprecated and disabled. Use 'LexBench Production' (lexbench-prod.yml) instead."
+          exit 1
+
   benchmark:
+    if: false  # disabled — see deprecation notice above
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -21,7 +33,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-
       - name: Run JailbreakBench
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -29,19 +40,10 @@ jobs:
           npx tsx scripts/jailbreakbench/run.ts \
             --prompts data/jailbreakbench.jsonl \
             --endpoint https://lexaureon.com \
-            --n ${{ github.event.inputs.n }} \
+            --n 200 \
             --out data/jbb-results.jsonl
-
-      - name: Score results
-        run: |
-          npx tsx scripts/jailbreakbench/score.ts \
-            --in data/jbb-results.jsonl \
-            --out data/jbb-results-scored.jsonl
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: jailbreakbench-results-${{ github.run_id }}
-          path: |
-            data/jbb-results.jsonl
-            data/jbb-results-scored.jsonl
+          path: data/jbb-results.jsonl
