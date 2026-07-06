@@ -1,0 +1,273 @@
+name: LexBench Extended — XSTest + StrongREJECT
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Quick-test: prompts per benchmark (leave EMPTY for a full run)'
+        required: false
+        default: ''
+      benchmarks:
+        description: 'Comma-separated benchmarks to run (default: all)'
+        required: false
+        default: 'xstest,strong_reject'
+  schedule:
+    - cron: '0 2 * * 0'  # Run Sundays at 2am UTC (extended benchmarks only)
+
+env:
+  NODE_VERSION: '20'
+  SITE_URL: https://www.lexaureon.com
+
+jobs:
+  # ── Download benchmark datasets ─────────────────────────────────────────
+  fetch-datasets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Install dependencies
+        run: npm install
+
+      # XSTest dataset — from HuggingFace
+      - name: Download XSTest dataset
+        run: |
+          mkdir -p data
+          echo "[*] Downloading XSTest from HuggingFace..."
+          npx huggingface-hub download EvieQ01/XSTest \
+            --repo-type dataset \
+            --local-dir data/xstest-raw \
+            --include "*.jsonl"
+          
+          # Transform to LexBench format
+          npx tsx scripts/lexbench/transform-xstest.ts
+          
+      - name: Download StrongREJECT dataset
+        run: |
+          echo "[*] Downloading StrongREJECT from HuggingFace..."
+          npx huggingface-hub download ggwp/strong_reject_eval \
+            --repo-type dataset \
+            --local-dir data/strong_reject-raw \
+            --include "*.jsonl"
+          
+          # Transform to LexBench format
+          npx tsx scripts/lexbench/transform-strong-reject.ts
+
+      - name: Verify datasets loaded
+        run: |
+          echo "XSTest lines: $(wc -l < data/xstest.jsonl || echo 0)"
+          echo "StrongREJECT lines: $(wc -l < data/strong_reject.jsonl || echo 0)"
+
+      - name: Upload datasets as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-datasets
+          path: data/*.jsonl
+          retention-days: 1
+
+  # ── Fail FAST if BENCH_SECRET won't authorize ──────────────────────────
+  precheck-auth:
+    needs: fetch-datasets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify BENCH_SECRET authorizes a publish
+        run: |
+          HTTP_CODE=$(curl -sS -L -o /tmp/precheck.json -w "%{http_code}" \
+            ${{ env.SITE_URL }}/api/benchmarks/publish \
+            -H "Authorization: Bearer ${{ secrets.BENCH_SECRET }}")
+          echo "HTTP status: $HTTP_CODE"
+          cat /tmp/precheck.json
+          echo ""
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::BENCH_SECRET precheck FAILED (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          echo "BENCH_SECRET precheck passed — proceeding with runs."
+
+  # ── Determine shard matrix ──────────────────────────────────────────────
+  determine-shards:
+    needs: precheck-auth
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      shard-size: ${{ steps.set-matrix.outputs.shard-size }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-datasets
+          path: data/
+
+      - name: Determine shards for extended benchmarks
+        id: set-matrix
+        run: |
+          LIMIT="${{ github.event.inputs.limit }}"
+          BENCHMARKS="${{ github.event.inputs.benchmarks }}"
+          
+          if [ -n "$LIMIT" ]; then
+            echo "Quick-test mode: ${LIMIT} prompts, single shard"
+            echo "matrix={\"shard-index\":[0]}" >> $GITHUB_OUTPUT
+            echo "shard-size=${LIMIT}" >> $GITHUB_OUTPUT
+          else
+            # For XSTest + StrongREJECT, typically smaller datasets
+            # Use shard-size=50 for faster iteration
+            TOTAL_PROMPTS=$(npx tsx scripts/lexbench/get-total-prompts.ts | tail -1)
+            echo "Total prompts: $TOTAL_PROMPTS"
+            SHARD_SIZE=50
+            NUM_SHARDS=$(( (TOTAL_PROMPTS + SHARD_SIZE - 1) / SHARD_SIZE ))
+            if [ "$NUM_SHARDS" -lt 1 ]; then NUM_SHARDS=1; fi
+            INDICES=$(seq 0 $((NUM_SHARDS - 1)) | paste -sd, -)
+            MATRIX_CONFIG="{\"shard-index\":[${INDICES}]}"
+            echo "matrix=${MATRIX_CONFIG}" >> $GITHUB_OUTPUT
+            echo "shard-size=${SHARD_SIZE}" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Run XSTest and StrongREJECT in parallel shards ─────────────────────
+  run-extended-benchmarks:
+    needs: determine-shards
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.determine-shards.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-datasets
+          path: data/
+
+      - name: Run Extended Benchmarks — Shard ${{ matrix.shard-index }}
+        run: |
+          BENCHMARKS="${{ github.event.inputs.benchmarks }}"
+          if [ -z "$BENCHMARKS" ]; then
+            BENCHMARKS="xstest,strong_reject"
+          fi
+          
+          echo "[*] Running benchmarks: $BENCHMARKS"
+          
+          for benchmark in $(echo $BENCHMARKS | tr ',' ' '); do
+            echo ""
+            echo "[*] Starting $benchmark..."
+            npx tsx scripts/lexbench/runner.ts \
+              --benchmark $benchmark \
+              --endpoint ${{ env.SITE_URL }} \
+              --shard-index ${{ matrix.shard-index }} \
+              --shard-size ${{ needs.determine-shards.outputs.shard-size }}
+          done
+        env:
+          GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY:      ${{ secrets.MISTRAL_API_KEY }}
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
+          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          JINA_API_KEY:         ${{ secrets.JINA_API_KEY }}
+          CRON_SECRET:          ${{ secrets.CRON_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+
+      - name: Upload shard results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extended-benchmark-shard-${{ matrix.shard-index }}
+          path: data/lexbench-*.jsonl
+          if-no-files-found: warn
+
+  # ── Aggregate results and publish ──────────────────────────────────────
+  aggregate-and-report:
+    needs: run-extended-benchmarks
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download all shard results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: extended-benchmark-shard-*
+          merge-multiple: true
+          path: results/
+          if-no-files-found: warn
+
+      - name: Aggregate results
+        run: |
+          find results/ -name "lexbench-*.jsonl" -print0 | xargs -0 cat > all_results.jsonl 2>/dev/null || true
+          LINES=$(wc -l < all_results.jsonl 2>/dev/null || echo 0)
+          echo "[*] Total result rows: $LINES"
+          
+          if [ "$LINES" -eq 0 ]; then
+            echo "::warning::No results found — all shards may have failed"
+            exit 0
+          fi
+          
+          npx tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary_extended.json
+          echo "[*] Aggregation complete"
+          cat summary_extended.json
+
+      - name: Publish results to live leaderboard
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          if [ ! -f summary_extended.json ]; then
+            echo "::warning::No summary — nothing to publish"
+            exit 0
+          fi
+          npx tsx scripts/lexbench/publish-results.ts summary_extended.json
+        env:
+          BENCH_SECRET:         ${{ secrets.BENCH_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+
+      - name: Upload final report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extended-benchmark-report-${{ github.run_id }}
+          path: summary_extended.json
+          if-no-files-found: ignore
+
+      - name: Commit summary to repo
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        run: |
+          if [ ! -f summary_extended.json ]; then
+            echo "No summary — nothing to commit"
+            exit 0
+          fi
+          git config user.name  "Lex CRS Agent"
+          git config user.email "lexaureon@gmail.com"
+          cp summary_extended.json data/lexbench-summary-extended.json
+          git add data/lexbench-summary-extended.json
+          git diff --staged --quiet && echo "Nothing to commit" && exit 0
+          git commit -m "results: LexBench extended run (XSTest + StrongREJECT) $(date +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
