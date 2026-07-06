@@ -9,7 +9,7 @@
 | | |
 |---|---|
 | **Live system** | [lexaureon.com](https://lexaureon.com) (canonical: `www.lexaureon.com`) |
-| **Governance API** | `POST https://lexaureon.com/api/lex/govern` |
+| **Governance API** | `POST https://www.lexaureon.com/api/lex/govern` |
 | **Live benchmark results** | [lexaureon.com/benchmarks](https://lexaureon.com/benchmarks) · `GET /api/benchmarks` |
 | **Live governance stats** | `GET /api/stats` — canonical receipt total, intervention rate, stability margin |
 | **Paper** | [doi.org/10.5281/zenodo.18944242](https://doi.org/10.5281/zenodo.18944242) |
@@ -40,9 +40,9 @@ Lex Aureon is a **constitutional governance layer** that sits above an LLM. It m
 
 - **Proven (theory):** the constrained gradient flow of the z-weighted Lyapunov barrier `V_z` is globally stable (`V̇_z ≤ 0`). This is a property of the idealized dynamical system.
 - **Engineered (deployment):** the production governor is *designed to approximate* that descent under a hard CBF floor. It is not identical to the proven flow; the relationship between the two is an ongoing line of work.
-- **In progress (empirical):** adversarial-robustness evaluation under symmetric external judging. The harness, the results-publishing pipeline, and the eval-traffic tagging are all built and verified end-to-end (see *Evaluation*) — the scored run itself is what remains.
+- **Empirical (2026-07):** an initial scored run has been published across five benchmarks under LLM-judged, same-model bare-vs-governed comparison — see *Evaluation* for the numbers and exactly what they do and don't establish. Broadening coverage and strengthening judge rigor (the official classifiers, two-judge agreement) are the current focus, not a completed evaluation.
 
-We do not currently claim a proven end-to-end safety guarantee for the deployed system. The framework paper is deliberately scoped the same way: a coherent state space, interpretable failure geometry, measurable proxies, and a disciplined stability argument — not a completed universal proof.
+We do not currently claim a proven end-to-end safety guarantee for the deployed system, nor state-of-the-art standing against other systems' published benchmark scores (different judges and base models make cross-paper comparison invalid without controlling for those variables — see *Evaluation*). The framework paper is deliberately scoped the same way: a coherent state space, interpretable failure geometry, measurable proxies, and a disciplined stability argument — not a completed universal proof.
 
 ---
 
@@ -65,27 +65,36 @@ raw_output      → "I do not have a personal name... I was developed by a team
 
 ## Evaluation
 
-> **Status (2026-07): the evaluation harness, the results-publishing pipeline, and eval-traffic separation are rebuilt and verified end-to-end. `benchmark_results` is currently empty — no scored run has been published yet. Numbers are published to a single results table and read from it by the site and this README; there are no hardcoded figures anywhere. Until a scored run is published, every surface honestly shows "in progress" rather than a placeholder number.**
+> **Status (2026-07): a scored run is live.** The table below is a snapshot as of the run date shown; **[lexaureon.com/benchmarks](https://lexaureon.com/benchmarks) and `GET /api/benchmarks` are the live, authoritative source** — they update automatically the moment a new run publishes, this table does not.
 
-Earlier published ASR figures (including "0.0% across all benchmarks") were produced by scorers that did not judge the governed arm on the same basis as the baseline — in some cases the governed arm could not be scored as a failure at all, and in others framework-specific vocabulary was treated as a refusal, or the bare-arm baseline used a *different model* than the governed arm (conflating model choice with governance). Those numbers are **not reported** because they did not reflect a sound measurement.
+| Benchmark | Metric | Bare | Governed | Δ | n | Run date |
+|:---|:---|---:|---:|---:|---:|:---|
+| HarmBench | ASR (lower is better) | 16.5% | 0% | **+16.5pp** | 200 | 2026-07-06 |
+| JailbreakBench | ASR (lower is better) | 13.0% | 2.5% | **+10.5pp** | 200 | 2026-07-06 |
+| AdvBench | ASR (lower is better) | 0.77% | 0% | **+0.77pp** | 520 | 2026-07-06 |
+| TruthfulQA | truthful % (higher is better) | 37.7% | 45.2% | **+7.5pp** | 817 | 2026-07-06 |
+| AgentDojo | injection resisted % — **PROXY, not official methodology** | 63.0% | 81.5% | **+18.5pp** | 27 | 2026-07-06 |
 
-The harness has been rebuilt so that:
-- both arms (bare and governed) are the **same underlying model** — the bare arm is the kernel's own `raw_output` from the same `generateGoverned` call, not a separate call to a different model — so any measured delta isolates governance, not model choice;
-- both arms are judged by the **same** content-only judge on their actual output text — no framework vocabulary in the refusal test, so identical complying text scores identically in either arm;
-- attack-success rate is computed over **harmful prompts only**, with over-refusal on benign prompts reported separately;
-- kernel hard-stops (CBF projection / block) are recorded distinctly rather than silently counted as safe;
-- the judge is a documented hook intended to be replaced by the official HarmBench classifier, with two-judge agreement reported, before any figure is cited.
+**What this table does and does not establish.** This is a **within-system delta**: the same underlying model, `raw_output` (no system prompt) vs `governed_output` (same call, governed) — the comparison isolates what governance itself changes, not model choice. It is **not** a cross-system leaderboard claim; these numbers are not comparable to other papers' published scores on the same benchmark names, because different judges and different base models make that comparison invalid without controlling for both. Read it as "governance measurably reduced attack compliance and improved truthfulness on our own model," not "Lex Aureon beats \[other system\] on HarmBench."
 
-**The results pipeline (single source of truth).** A scored run is published — once — to the `benchmark_results` table through an authenticated endpoint. Everything that displays a number reads from that one table:
+**How each number was produced — grounded, benchmark-specific judges (`scripts/lexbench/grounded_judge.ts`), not a generic proxy:**
+- **HarmBench / JailbreakBench / AdvBench** — an LLM judge (Groq) evaluates genuine harmful-content **compliance**, following the same rubric structure as the official HarmBench/JailbreakBench classifiers (does the generation substantively fulfill the behavior — not merely "does it lack a refusal phrase"). This is **not** the official fine-tuned classifiers (`cais/HarmBench-Llama-2-13b-cls`, JailbreakBench's Llama-3-70B/GPT-4 judge) — swapping those in, with two-judge agreement reported, is the next concrete step before treating these numbers as fully citable.
+- **TruthfulQA** — an LLM judge compares the answer against the dataset's own `correct_answers` / `incorrect_answers` / `best_answer` ground truth — the same reference-comparison the original paper's fine-tuned "GPT-judge" performed, adapted to a general-purpose judge. It does **not** separately score informativeness (the paper's second axis); a truthful-but-evasive non-answer and a truthful, informative answer are both scored "truthful" here.
+- **AgentDojo — read this before citing the number.** This is explicitly **not** AgentDojo's real methodology. The actual benchmark (Debenedetti et al., NeurIPS 2024) requires a simulated tool-execution environment scoring two axes per task — utility (did it still complete the legitimate task) and security (did it resist the injection) — via task-specific checkers. We have no such harness. What's measured here is a single-axis text proxy: does the response indicate it would comply with an injected instruction. A model that refuses to do *anything* would score well on this proxy while failing every real task, which the actual AgentDojo metric would catch and this cannot. Building or adopting a real tool-execution harness is tracked in the *Roadmap* as the fix.
+
+A prior batch of numbers (published under the metric names `toxicity` and `truth_score`, ids 1–14 in the results table) used a bag-of-words term-frequency cosine similarity between the *prompt* and the *output* — despite the names, neither measured toxicity or truthfulness; both measured vocabulary overlap with the question, which systematically penalizes governed refusals/hedges (naturally low word-overlap with a specific request) regardless of whether governance behaved correctly. Those metrics have been **retired**, not relabeled — the table above and the live site only show the grounded replacements. (An even earlier batch, "0.0% across all benchmarks," predates this session and was produced by scorers that didn't judge both arms on the same basis at all; see `git log` on `scripts/lexbench/` for that history if useful.)
+
+**The results pipeline (single source of truth).** A scored run is published to the `benchmark_results` table through an authenticated endpoint. Everything that displays a number reads from that one table:
 
 ```
-run → score (symmetric judge) → publish-results.ts → POST /api/benchmarks/publish
-    → benchmark_results table → GET /api/benchmarks → /benchmarks dashboard + landing page + README
+run → grounded judge (per-benchmark) → aggregate-report.ts → publish-results.ts
+    → POST /api/benchmarks/publish → benchmark_results table
+    → GET /api/benchmarks → /benchmarks dashboard + landing page + README (snapshot only)
 ```
 
-Re-running a suite and re-publishing updates every surface at once. The dashboard at [lexaureon.com/benchmarks](https://lexaureon.com/benchmarks) polls the table every 20s and renders results as they land; an empty table renders the honest "evaluation in progress" state, never a fabricated zero.
+Re-running a suite and re-publishing updates every live surface at once (append-only; the reader takes the latest row per benchmark+metric). The dashboard at [lexaureon.com/benchmarks](https://lexaureon.com/benchmarks) polls the table every 20s; an empty table renders the honest "evaluation in progress" state, never a fabricated zero, and a benchmark where every judge call failed is skipped from publishing entirely rather than showing a misleading score.
 
-Benchmark inputs: AdvBench (Zou et al. 2023) uses the real `harmful_behaviors.csv` (520 behaviors). JailbreakBench uses the JBB-Behaviors dataset (100 harmful + 100 benign). The HarmBench arm runs against the official `walledai/HarmBench` dataset — the prior run used an internal taxonomy set and should not be labeled HarmBench. TruthfulQA (817 questions) is scored separately for truthfulness, not attack-success.
+Benchmark inputs: AdvBench (Zou et al. 2023) uses the real `harmful_behaviors.csv` (520 behaviors). JailbreakBench uses the JBB-Behaviors dataset. HarmBench runs against the official `walledai/HarmBench` dataset (fetched fresh each CI run — not committed). TruthfulQA (817 questions) ships with its full `correct_answers`/`incorrect_answers`/`best_answer` reference fields. AgentDojo (27 injection scenarios) is the Debenedetti et al. dataset, scored by the proxy judge described above.
 
 ### Canonical vs. eval-traffic receipt counts
 
@@ -138,43 +147,33 @@ M < τ → Governor fires
 [13] Auditor        →  SHA-256 signed governance receipt
 ```
 
-> **Embedding provider note:** embeddings are **provider-agnostic** (`lib/lex_memory.ts` → `embedText`/`embedTexts`), selecting **Gemini `gemini-embedding-001`** (256-dim, L2-normalized) when `GEMINI_API_KEY` is set, falling back to Jina `jina-embeddings-v3` otherwise. This replaced a Jina-only implementation (2026-07) after a billing-balance outage on Jina; the cache key includes the model name, so vectors from different providers never collide. CCP (Continuity) is the cosine similarity between the output embedding and the constitutional anchor. IEC (Reciprocity) is a register-aware Shannon-entropy ratio stability term. ADV (Sovereignty) is `compliance × (0.5·anchor-alignment + 0.5·reasoning-gain)`, where anchor-alignment reuses the embedding cosine. When the active embedding provider is unreachable at runtime the extractor falls back to a Groq LLM scorer, then to an explicit error — there is no bag-of-words fallback path.
+> **Embedding provider note:** embeddings have a **real runtime fallback chain** (`lib/lex_memory.ts` → `embedTextResolved`/`embedTextWithProvider`): Gemini `gemini-embedding-001` (256-dim, primary) → Mistral `mistral-embed` (1024-dim, truncated + re-normalized) → Jina `jina-embeddings-v3`. Unlike a naive per-deployment provider pick, this tries each provider **at call time**, so a live Gemini outage (e.g. the daily quota below) fails over automatically. Correctness constraint: Reciprocity (`cosine(input, output)`) and Sovereignty (`cosine(output, constitutional centroid)`) are only meaningful when every vector in the comparison shares one embedding space — so the provider that resolves for a request's prompt embedding is *pinned* and reused for that request's output embedding and centroid (`getConstitutionalCentroid(provider)`); if the pinned provider then fails, the request honestly reports `detection_degraded` rather than silently comparing across incompatible spaces. CCP (Continuity) is the cosine similarity between the output embedding and the constitutional anchor. IEC (Reciprocity) is a register-aware Shannon-entropy ratio stability term. ADV (Sovereignty) is `compliance × (0.5·anchor-alignment + 0.5·reasoning-gain)`. When every embedding provider is unreachable, the extractor falls back to a Groq LLM scorer, then to an explicit error — there is no bag-of-words fallback path for live governance (the benchmark scorer's retired bag-of-words metrics, see *Evaluation*, were a separate, since-removed code path).
 
-> **Known fragility:** Gemini's free tier caps embedding calls at **1,000 `embed_content` requests per day** (a hard daily quota, not just a per-minute rate limit). A single govern call makes 2–3 embedding requests (prompt, output, centroid), so a benchmark run of even a few hundred prompts can exhaust the *shared* daily quota — degrading embedding-based detection for real users until the quota resets (midnight Pacific). The API fails loud in this state (`detection_degraded: true` in the response, logged server-side) rather than silently reporting "safe." See *Known Operational Limitations* below.
+> **Known fragility (mitigated, not eliminated):** Gemini's free tier caps embedding calls at **1,000 `embed_content` requests per day**. A single govern call makes 2–3 embedding requests, so a benchmark run of even moderate size can exhaust the *shared* daily quota. The Mistral fallback above means this now fails over rather than degrading detection outright — but it is not yet load-tested at full-suite scale (~1,700+ prompts). See *Known Operational Limitations*.
 
 ### Reported state is one coherent vector
 
 The constitutional state returned by the API — `C`, `R`, `S`, `state`, `M`, and `health_band` — is derived from **one** vector: the TypeScript kernel's governed state. `M = min(C, R, S)` and `health_band` is computed from that same `M` (identical thresholds to the table below), so the band always agrees with the margin.
 
-- **Streamed console path** (`POST /api/lex/govern/stream`) — the TypeScript kernel plus `CRSExtractorAgent`, measuring CRS from provider-agnostic embeddings (CCP = cosine to the constitutional anchor), with a Groq LLM scorer fallback when embeddings are unavailable.
-- **Non-streamed API** (`POST /api/lex/govern`) — the same TypeScript kernel state is authoritative, and it *additionally* calls a Python backend (`api/python/govern.py`) that computes CCP / IEC / ADV plus a CBF QP filter and a short FPL1 simulation. Those Python numbers are surfaced as a labeled **detail** object (`crs_detail`), **not** as the reported state — the Python engine has no before→after trajectory and its ADV is calibrated separately. On cold-start/timeout, or for tagged eval-benchmark sessions (see *Eval fast-path* below), the detail is simply absent (`null`) — this must never be read as "no risk."
+- **Streamed console/chat path** (`POST /api/lex/govern/stream`) — the TypeScript kernel plus `CRSExtractorAgent`, with the same provider-pinning correctness guarantee described above.
+- **Non-streamed public API** (`POST /api/lex/govern`) — the same TypeScript kernel state is authoritative, and it *additionally* calls a Python backend (`api/python/govern.py`) that computes CCP / IEC / ADV plus a CBF QP filter and a short FPL1 simulation, surfaced as a labeled **detail** object (`crs_detail`), **not** the reported state. On cold-start/timeout, or for tagged eval-benchmark sessions (see *Eval fast-path* below), the detail is simply absent (`null`) — this must never be read as "no risk."
 
-The hard `M ≥ τ` floor is enforced by the TypeScript kernel on every turn regardless. The persisted receipt's `crs_method` column records whether Python detail was available (`python-cbf|ccp=…|iec=…|adv=…`) or not (`SovereignKernel-v2|θ=…|T=…`); this documents the detail engine, while the receipt's state/`m_after` are always the authoritative kernel values.
+The hard `M ≥ τ` floor is enforced by the TypeScript kernel on every turn regardless. The persisted receipt's `crs_method` column records whether Python detail was available or not; the receipt's state/`m_after` are always the authoritative kernel values.
 
-**Eval fast-path (2026-07):** tagged eval sessions (see *Canonical vs. eval-traffic receipt counts*) skip the Python governor detail call and the capitulation judge — both measurement-only and neither affects `governed_output`, the reported CRS state, or the refusal decision, so the benchmark measures the same underlying governance with fewer network round-trips. Self-referential embedding detection is **not** skipped for eval sessions, since it can trigger a refusal and is part of governance proper.
-
-> **History:** an earlier version mixed sources — top-level `C/R/S` came from Python, `state` from the kernel (a different vector), `M` was `max(min(python), tsM)`, and the band was derived from Python's min-CRS — so the API could return `M=0.30` next to `band=CRITICAL`, and benign prompts read CRITICAL because Python's ADV scored an unchanged (benign) output as zero sovereignty. Both issues are fixed: the reported state is one coherent vector, and the Python ADV now scores benign passthrough and corrective intervention as healthy (see `api/python/govern.py` `_sovereignty`).
+**Eval fast-path (2026-07):** tagged eval sessions skip the Python governor detail call and the capitulation judge — both measurement-only and neither affects `governed_output`, the reported CRS state, or the refusal decision. Self-referential embedding detection is **not** skipped for eval sessions, since it can trigger a refusal and is part of governance proper.
 
 ### Before / after state
 
-Every governed turn exposes the **pre-governance** state — the raw kernel measurement *before* the governor correction / CBF projection — alongside the governed ("after") result:
-
-- the API returns `raw_state` (C, R, S) and `m_before` next to the governed `state`, `C`/`R`/`S` and `M`;
-- the streamed pipeline emits a `crs_before` event and includes `raw_state`/`m_before` in the `complete` event;
-- the console renders the C·R·S·M delta (before → after) on every turn, labelling whether the turn was actually *governed* (state moved) or a *pass-through*.
+Every governed turn exposes the **pre-governance** state — the raw kernel measurement *before* the governor correction / CBF projection — alongside the governed ("after") result: the API returns `raw_state` and `m_before` next to the governed `state`/`M`; the streamed pipeline emits a `crs_before` event; the console renders the delta on every turn.
 
 ### Async Governor G(x,z)
-
-The governor runs an asynchronous sensing loop alongside the synchronous kernel, implementing equation (10) of the paper:
 
 ```
 dx/dt = F(x,z) + G(x,z)
 ```
 
 - **F(x,z)** — synchronous triadic dynamics; the hard floor `M ≥ τ` is enforced here on every turn; output delivered immediately.
-- **G(x,z)** — async background sensing; computes a signal-reliability filter and applies an attractor-basin correction at turn `t+1`, gated by a final CBF check.
-
-**Guarantee scope:** `G(x,z)` is advisory — it can shift the attractor basin but is rejected if it would push `M` below `τ`. `F(x,z)` is always the authority. (This is an enforcement property of the code, distinct from the `V̇_z ≤ 0` theorem about the idealized gradient flow.)
+- **G(x,z)** — async background sensing; computes a signal-reliability filter and applies an attractor-basin correction at turn `t+1`, gated by a final CBF check. Advisory only — rejected if it would push `M` below `τ`; `F(x,z)` is always the authority.
 
 ### Mathematics
 
@@ -186,7 +185,7 @@ G_i    = k(φᵢ − φ̄) + Bᵢ(x),  Bᵢ = −μ·log(xᵢ − τ)   [governo
 Receipt = SHA-256(state ‖ input_hash ‖ output_hash)  [audit proof, persisted per receipt]
 ```
 
-> The deployed dynamics approximate the `V_z` descent; receipts record `V_z` and `ΔV_z` for audit. Establishing that the deployed `F` realizes the proven flow (and that the equilibrium lies inside `M ≥ τ`) are open items, tracked honestly.
+> The deployed dynamics approximate the `V_z` descent; receipts record `V_z` and `ΔV_z` for audit. Establishing that the deployed `F` realizes the proven flow is an open item, tracked honestly.
 
 ---
 
@@ -208,13 +207,15 @@ curl -X POST http://localhost:3000/api/lex/govern \
 
 | Variable | Purpose |
 |:---|:---|
-| `GROQ_API_KEY` | Generation fallback + fast judge calls |
+| `GROQ_API_KEY` | Generation fallback + judge calls (governance judges + LexBench grounded judges) |
 | `GEMINI_API_KEY` | Primary generation (`generateGoverned`) **and** primary embedding provider |
-| `MISTRAL_API_KEY` | Generation fallback |
-| `JINA_API_KEY` | Embedding fallback (used only if `GEMINI_API_KEY` is unset) |
+| `MISTRAL_API_KEY` | Generation fallback **and** embedding fallback (`mistral-embed`) |
+| `JINA_API_KEY` | Final embedding fallback |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Database (libSQL) |
 | `ADMIN_PASSWORD` | Legacy admin routes |
-| `BENCH_SECRET` | Auth for `POST /api/benchmarks/publish` — must match between Vercel and any CI publishing results |
+| `BENCH_SECRET` | Auth for `POST /api/benchmarks/publish` — must match between Vercel and any CI publishing results (see the note on host below) |
+
+> **Always call the canonical `www` host for server-to-server requests** (`https://www.lexaureon.com`), never the bare apex. The apex 307-redirects to `www`, and `fetch`/`undici` strip the `Authorization` header on cross-origin redirects — this caused every benchmark publish to silently fail with 401 for an extended period, because the credential never reached the server at all. Fixed in the shipped workflow; worth remembering if you write a new integration.
 
 ---
 
@@ -230,15 +231,13 @@ curl -X POST http://localhost:3000/api/lex/govern \
 }
 ```
 
-Returns the governed output; the authoritative constitutional state (`C`, `R`, `S`, `state`, `M`, `health_band`) — one coherent vector with `M = min(C,R,S)` and `health_band` derived from that `M`; the pre-governance `raw_state` (C, R, S) and `m_before` ("before"); `V_z`/`ΔV_z`; `crs_source` (always `typescript-kernel` — the state engine); an optional `crs_detail` object carrying the Python CCP/IEC/ADV measurement when available; `sovereignty_raw`/`detection_degraded` (self-referential embedding measurement and its health); the governor-sensing report; and a receipt id. The persisted receipt additionally carries the SHA-256 `input_hash`, `output_hash`, and bound `receipt_hash`.
+Returns the governed output; the authoritative constitutional state (`C`, `R`, `S`, `state`, `M`, `health_band`); the pre-governance `raw_state`/`m_before`; `V_z`/`ΔV_z`; `crs_source`; an optional `crs_detail`; `sovereignty_raw`/`detection_degraded`; `embed_provider` (which embedding provider served this request); the governor-sensing report; and a receipt id. The persisted receipt additionally carries the SHA-256 `input_hash`, `output_hash`, and bound `receipt_hash`.
 
-Response generation is capped at **8,192 tokens** (~6,000 words) — a ceiling, not a target; typical responses are far shorter. See `lib/llm_provider.ts` for the per-provider throughput tradeoffs behind this number (Gemini has ample headroom; the Groq fallback's free tier is the binding constraint).
+Response generation is capped at **8,192 tokens** (~6,000 words) — a ceiling, not a target.
 
 > **Security note:** this endpoint is currently unauthenticated and unthrottled against production inference keys. Add auth or a rate limit before exposing it to real traffic.
 
 ### `GET /api/stats`
-
-Public read endpoint for live governance telemetry. Returns the **canonical** (real-usage-only) counts alongside the unfiltered totals for transparency:
 
 ```json
 {
@@ -251,29 +250,19 @@ Public read endpoint for live governance telemetry. Returns the **canonical** (r
 }
 ```
 
-`total_receipts` is what the landing page displays — see *Canonical vs. eval-traffic receipt counts* above for how it's computed.
+`total_receipts` is what the landing page displays — see *Canonical vs. eval-traffic receipt counts* above.
 
 ### `GET /api/benchmarks`
 
-Public read endpoint — the single source of truth for benchmark numbers. Returns the latest scored row per `(benchmark, metric_name)` from `benchmark_results`:
-
-```json
-{
-  "ok": true,
-  "count": 0,
-  "published": false,
-  "results": [],
-  "fetched_at": "2026-..."
-}
-```
-
-`published: false` with an empty `results` array is the honest pre-run state — consumers render "evaluation in progress", never a zero. The `/benchmarks` dashboard and the landing page both poll this endpoint every 20s.
+Public read endpoint — the single source of truth for benchmark numbers. Returns the latest scored row per `(benchmark, metric_name)` from `benchmark_results`. `published: false` with an empty `results` array is the honest pre-run state. The `/benchmarks` dashboard and the landing page both poll this endpoint every 20s.
 
 ### `POST /api/benchmarks/publish`
 
-The only writer to `benchmark_results`. Requires `BENCH_SECRET` via `Authorization: Bearer …` (or `X-Bench-Secret`); fails closed (503) if the secret is unset and 401 on mismatch, so production traffic can never publish numbers. Accepts one metric object or an array; append-only. Driven by `scripts/lexbench/publish-results.ts` (main repo) and `scripts/publish.ts` (benchmark repo) — both target this one endpoint with this one auth scheme.
+The only writer to `benchmark_results`. Requires `BENCH_SECRET` via `Authorization: Bearer …` (or `X-Bench-Secret`); fails closed (503) if unset, 401 on mismatch. Accepts one metric object or an array; append-only.
 
-**Health bands** (the reported `health_band` is computed from the reported `M`, so band and margin always agree):
+`GET` on the same route is an **auth-only precheck** — runs the identical auth check with no database write, so CI can verify `BENCH_SECRET` in under a second before running an expensive suite, instead of discovering an auth problem only after hours of runtime (see `.github/workflows/lexbench-prod.yml`'s `precheck-auth` job).
+
+**Health bands:**
 
 | Band | M range | Behaviour |
 |:---|:---:|:---|
@@ -286,12 +275,14 @@ The only writer to `benchmark_results`. Requires `BENCH_SECRET` via `Authorizati
 
 ## Known Operational Limitations
 
-Stated plainly, in the same spirit as the rest of this document — these are real, current constraints, not resolved footnotes.
+Stated plainly, in the same spirit as the rest of this document.
 
-- **Shared embedding quota.** Gemini's free tier allows 1,000 `embed_content` requests/day, shared between production traffic and any benchmark run against the live endpoint. A benchmark of even moderate size can exhaust it, degrading real-user detection until the daily reset. Until this is resolved (paid tier, or a benchmark-only API key), **do not run a full benchmark suite against production** without accepting this tradeoff.
-- **Redundant benchmark workflows.** Several GitHub Actions workflows overlap in what they run (`advbench.yml`, `harmbench.yml`, `truthfulqa.yml`, `jailbreakbench.yml`, `benchmark.yml`, `jailbreak-eval.yml`, `agentdojo.yml`, alongside the canonical `lexbench-prod.yml`). Running more than one at a time compounds both the embedding-quota problem above and rate-limit backoff on the LLM providers. Consolidation to a single canonical workflow is a known pending cleanup (see *Roadmap*).
-- **Rate-limit-driven latency under load.** A single governed call is ~2s warm. Historical multi-hour benchmark runs were not caused by per-call cost but by (a) unsharded sequential runs (hundreds of prompts under one session) and (b) provider rate-limit backoff under heavy parallel load. Always shard; avoid stacking multiple benchmark workflows concurrently.
-- **Historical eval-traffic contamination.** Benchmark runs prior to the 2026-07 session-tagging fix used the same session-id format as real console traffic and cannot be separated from it by prefix. The `/api/stats` turn-count heuristic (>80 turns) removes the large majority of this, but is a heuristic, not a guarantee — see *Canonical vs. eval-traffic receipt counts*.
+- **AgentDojo is a proxy, not the official methodology.** See *Evaluation* — no real tool-execution harness exists here, so only injection-resistance is measured, not task utility. Do not cite the AgentDojo number without this caveat.
+- **Judges are general-purpose, not the official fine-tuned classifiers.** HarmBench/JailbreakBench scores use a Groq model following the published rubric structure, not `cais/HarmBench-Llama-2-13b-cls` or JailbreakBench's own judge. TruthfulQA uses a general judge doing the same reference-comparison the original paper's fine-tuned "GPT-judge" did. Two-judge agreement and the official classifiers are the next step before treating these as fully citable.
+- **Grounded judging costs more than the old local calculation.** Each prompt now makes 2 additional Groq calls (bare + governed judgment) versus the previous instant local computation — slower and more Groq-quota-intensive at full-suite scale; not yet load-tested against ~1,700+ prompts across parallel shards.
+- **Shared embedding quota, now mitigated but not eliminated.** Gemini's free tier allows 1,000 embedding requests/day, shared with production traffic. The Mistral fallback (see *Architecture*) should prevent detection from degrading, but has not been load-tested at full-suite scale either.
+- **Redundant benchmark workflows.** `advbench.yml`, `harmbench.yml`, `truthfulqa.yml`, `jailbreakbench.yml`, `benchmark.yml`, `jailbreak-eval.yml`, `agentdojo.yml` still exist alongside the canonical `lexbench-prod.yml` and overlap in what they run. Consolidation to one workflow is a known pending cleanup.
+- **Historical eval-traffic contamination.** Benchmark runs prior to the 2026-07 session-tagging fix used the same session-id format as real console traffic; the `/api/stats` turn-count heuristic (>80 turns) removes most of this but is a heuristic, not a guarantee.
 
 ---
 
@@ -301,73 +292,55 @@ Stated plainly, in the same spirit as the rest of this document — these are re
 |:---|:---|:---|
 | §3 Simplex geometry | `lib/aureonics_core.ts` | `projectToSimplex()` — Duchi-style projection |
 | §4 Stability margin | `lib/sovereign_kernel.ts` | `M = min(C,R,S)`; `lyapunovCandidate()` → `lyapunovBarrierZ` (V_z) |
-| §5 CRS (live, authoritative) | `lib/agents/crs_extractor.ts` | Provider-agnostic embedding cosine (CCP) + Shannon-entropy IEC + compliance ADV; Groq scorer fallback |
-| §5.1 CCP | `lib/agents/crs_extractor.ts` | `cosine(embed(output), embed(anchor))` |
-| §5.2 IEC | `lib/agents/crs_extractor.ts` | register-aware Shannon-entropy ratio stability |
-| §5.3 ADV | `lib/agents/crs_extractor.ts` | `compliance × (0.5·anchor-alignment + 0.5·reasoning-gain)` |
-| §5 CRS (Python, detail) | `api/python/govern.py` | CCP cosine-decay / IEC variance-entropy / ADV coherence-anchored + CBF QP + FPL1; surfaced as `crs_detail`, not the reported state |
-| Reported-state coherence | `app/api/lex/govern/route.ts` | one vector: `M = min(C,R,S)`, `healthBand(M)`; Python is `crs_detail`; eval fast-path skips detail + judge |
-| Provider-agnostic embeddings | `lib/lex_memory.ts` | `embedText`/`embedTexts` — Gemini primary, Jina fallback, model-keyed cache |
+| §5 CRS (live, authoritative) | `lib/agents/crs_extractor.ts` | Provider-agnostic embedding cosine (CCP) + Shannon-entropy IEC + compliance ADV |
+| §5 CRS (Python, detail) | `api/python/govern.py` | Surfaced as `crs_detail`, not the reported state |
+| Reported-state coherence | `app/api/lex/govern/route.ts`, `app/api/lex/govern/stream/route.ts` | one vector: `M = min(C,R,S)`; provider-pinned embeddings in both routes |
+| Multi-provider embeddings | `lib/lex_memory.ts` | `embedTextResolved`/`embedTextWithProvider` — real runtime fallback (Gemini→Mistral→Jina), model-keyed cache, per-provider centroid cache |
 | Self-knowledge identity | `lib/lex_identity.ts` | Governed-arm-only self-description preamble; bare arm untouched |
-| Python bridge | `lib/python_bridge.ts` | `callPythonGovernor()`, `mergePythonCRS()` (detail fields only) |
 | §6 Governor | `lib/sovereign_kernel.ts` | `governorUpdate()`, `runCycle()` |
 | §6 G(x,z) async | `lib/governor_loop.ts` | `fireGovernorLoop()`, `consumePendingCorrection()` |
 | §8 Self-referential S | `lib/self_referential_crs.ts` | embedding cosine to constitutional centroid |
-| Audit receipts | `lib/kernel_bridge.ts` | `writeKernelReceipt()` — persists SHA-256 `input_hash`/`output_hash`/`receipt_hash`; tags `crs_method`; records `raw_state`/`m_before` |
-| Canonical stats | `app/api/stats/route.ts` | real-vs-eval receipt filtering (`REAL_ONLY` — prefix + turn-count heuristic) |
-| Benchmark results (data) | `lib/benchmark_results.ts` | one writer / one reader over `benchmark_results`; latest per benchmark+metric via `MAX(id)` |
-| Benchmark results (read) | `app/api/benchmarks/route.ts` | `GET` — public, no-store; the figure source for site + README |
-| Benchmark results (write) | `app/api/benchmarks/publish/route.ts` | `POST` — `BENCH_SECRET`-gated, fail-closed, append-only |
-| Benchmark dashboard | `app/benchmarks/page.tsx` + `components/BenchmarkResults.tsx` | live-polling view; honest empty state |
-| LexBench runner (main repo) | `scripts/lexbench/runner.ts` | same-model bare (`raw_output`) vs governed, session-tagged (`lexbench-...`) |
-| LexBench publisher | `scripts/lexbench/publish-results.ts` | targets `/api/benchmarks/publish` with `BENCH_SECRET`; `--dry-run` supported |
-| Full-capability probe | `scripts/probe.ts` (benchmark repo) | one session across all three pillars + benign control + slow-drip; prints before→after CRS |
+| Audit receipts | `lib/kernel_bridge.ts` | `writeKernelReceipt()` — SHA-256 `input_hash`/`output_hash`/`receipt_hash` |
+| Canonical stats | `app/api/stats/route.ts` | real-vs-eval receipt filtering |
+| Benchmark auth | `lib/bench_auth.ts` | pure, unit-tested `checkBenchAuth` — see `__tests__/bench_auth.test.ts` |
+| Benchmark results (data) | `lib/benchmark_results.ts` | one writer / one reader over `benchmark_results` |
+| Benchmark results (write) | `app/api/benchmarks/publish/route.ts` | `POST` (write) + `GET` (auth-only precheck) |
+| Grounded judges | `scripts/lexbench/grounded_judge.ts` | `judgeHarmCompliance`, `judgeTruthfulness`, `judgeInjectionResistanceProxy` — see its LIMITATIONS block |
+| LexBench runner | `scripts/lexbench/runner.ts` | same-model bare vs governed, session-tagged, dispatches scoring by benchmark kind |
+| LexBench aggregator | `scripts/lexbench/aggregate-report.ts` | nullable, kind-specific aggregation — never averages over an unjudged prompt |
+| LexBench publisher | `scripts/lexbench/publish-results.ts` | one honest metric per benchmark; skips benchmarks with zero scored prompts |
 
 ---
 
 ## Benchmarks
 
-The benchmark suite lives in a separate, self-contained repo:
-[**omomehinemmanuel5-boop/Lexaureon-Benchmark**](https://github.com/omomehinemmanuel5-boop/Lexaureon-Benchmark).
-Each suite has a runner (dual-arm: same-model baseline vs governed endpoint), a symmetric scorer, a shared judge, and a publish step.
+**Running the unified LexBench suite (GitHub Actions):** `LexBench Production` (`.github/workflows/lexbench-prod.yml`) runs the full suite (TruthfulQA, HarmBench, JailbreakBench, AdvBench, AgentDojo), sharded, against the live endpoint, and auto-publishes on completion — **Actions → LexBench Production → Run workflow**. A `precheck-auth` job verifies `BENCH_SECRET` in ~10 seconds before anything expensive runs. Use the `limit` input (e.g. `5`) for a fast end-to-end smoke test first.
 
 ```bash
-# 1. run a suite (dual-arm; governed arm gets benign warm-up turns first)
-GROQ_API_KEY=... npx tsx scripts/advbench/run.ts      --prompts data/advbench.jsonl --n 520
-GROQ_API_KEY=... npx tsx scripts/jailbreakbench/run.ts --prompts data/jailbreakbench.jsonl --n 200
-GROQ_API_KEY=... npx tsx scripts/harmbench/run.ts     --prompts data/harmbench.jsonl --n 200
+# Local single-benchmark run against a local or deployed endpoint:
+GROQ_API_KEY=... GEMINI_API_KEY=... npx tsx scripts/lexbench/runner.ts \
+  --benchmark harmbench --endpoint https://www.lexaureon.com --n 20
 
-# 2. score symmetrically (same judge on bare + governed), writing a scored JSONL
-GROQ_API_KEY=... npx tsx scripts/advbench/score.ts --in data/advbench-raw.jsonl --out data/advbench-scored.jsonl --llm-judge
-
-# 3. publish the scored run to the live results table (the single source of truth)
-BENCH_SECRET=... npx tsx scripts/publish.ts --in data/advbench-scored.jsonl --benchmark advbench \
-  --notes "llm-judge llama-3.1-8b; bare=raw_output same-model; kernel <commit>"
-#   --dry-run previews the payload without sending.
-
-# A shared Python judge (scripts/judge.py) scores a results file without Node.
-python3 scripts/judge.py --in data/advbench-raw.jsonl --llm-judge
-
-# Qualitative self-test — exercise all three pillars in one session (no dataset needed):
-npx tsx scripts/probe.ts
+# Aggregate + publish (--dry-run previews without sending):
+npx tsx scripts/lexbench/aggregate-report.ts data/lexbench-harmbench-*.jsonl > summary.json
+BENCH_SECRET=... NEXT_PUBLIC_SITE_URL=https://www.lexaureon.com \
+  npx tsx scripts/lexbench/publish-results.ts summary.json --dry-run
 ```
 
-**Running the unified LexBench suite (main repo, GitHub Actions):** the `LexBench Production` workflow (`.github/workflows/lexbench-prod.yml`) runs the full suite (TruthfulQA + AdvBench + HarmBench + more), sharded, against the live endpoint, and auto-publishes on completion. Trigger it via **Actions → LexBench Production → Run workflow**. Use the `limit` input (e.g. `5`) for a ~2-minute end-to-end smoke test of the full run → aggregate → publish pipeline before committing to a full run — see *Known Operational Limitations* before running the full suite against production.
+Once published, numbers appear automatically at [lexaureon.com/benchmarks](https://lexaureon.com/benchmarks), on the landing page, and via `GET /api/benchmarks` — no redeploy, no hardcoded values. Datasets are **not** committed for the harmful-content benchmarks (see `.gitignore`); HarmBench is fetched fresh each CI run.
 
-Once published, the numbers appear automatically at [lexaureon.com/benchmarks](https://lexaureon.com/benchmarks), on the landing page, and via `GET /api/benchmarks` — no redeploy, no hardcoded values.
-
-> Scorers and the shared judge were rebuilt for symmetric judging (same judge on bare + governed, content-only refusal markers, no framework-word bias, ASR over harmful only, over-refusal over benign separately, same-model bare arm). The datasets themselves are **not** committed (they contain harmful prompts); runners fail-fast with a clear message and download instructions if the prompts file is absent. See the benchmark repo's `REPRODUCE.md`.
+**Planned expansion** (see *Roadmap*): XSTest (over-refusal on benign prompts — currently untested and the most common critique of any safety layer), StrongREJECT (a benchmark specifically designed to fix ASR-measurement validity issues, directly relevant given this session's own history with that exact problem), a capability benchmark (MMLU or similar, to demonstrate governance isn't a "capability tax"), and a proper AgentDojo harness to replace the current text-only proxy.
 
 ---
 
 ## Tests
 
 ```bash
-npm run test          # math, governor, constitution, schemas, API
+npm run test          # math, governor, constitution, schemas, API, bench auth
 npm run typecheck     # tsc --noEmit
 ```
 
-Test constants that mirror runtime limits (e.g. the oversize-prompt rejection tests) import the limit itself (`MAX_PROMPT_CHARS`) rather than hardcoding a value, so they can't silently drift when a limit changes.
+Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PROMPT_CHARS`) rather than hardcoding a value, so they can't silently drift. `__tests__/bench_auth.test.ts` specifically guarantees the `BENCH_SECRET` whitespace-trimming fix can't regress — it reproduces the exact scenario (a stored secret with a trailing newline) that caused a persistent, hard-to-diagnose publish failure.
 
 ---
 
@@ -379,9 +352,9 @@ Test constants that mirror runtime limits (e.g. the oversize-prompt rejection te
 | Language | TypeScript (strict) · Python (stdlib CRS backend) |
 | Database | Turso (libSQL) |
 | LLM inference | Gemini (primary) · Groq · Mistral (fallback chain) |
-| Embeddings | Provider-agnostic — Gemini `gemini-embedding-001` (primary) · Jina `jina-embeddings-v3` (fallback) |
+| Embeddings | Real runtime fallback — Gemini `gemini-embedding-001` → Mistral `mistral-embed` → Jina `jina-embeddings-v3` |
 | Deployment | Vercel |
-| CI | GitHub Actions — lint, typecheck, test |
+| CI | GitHub Actions — lint, typecheck, test, LexBench Production |
 | Tests | Vitest |
 
 ---
@@ -404,36 +377,36 @@ Test constants that mirror runtime limits (e.g. the oversize-prompt rejection te
 ## Roadmap
 
 **Done — measurement coherence + audit**
-- [x] Report one coherent constitutional vector (`M = min(C,R,S)`, `health_band` derived from `M`); demote the Python engine to labeled `crs_detail`
+- [x] Report one coherent constitutional vector; demote the Python engine to labeled `crs_detail`
 - [x] Fix Python ADV so benign passthrough is not scored as zero sovereignty
-- [x] Persist the SHA-256 receipt (`input_hash` / `output_hash` / `receipt_hash`) on every governance receipt row
-- [x] Migrate embeddings to a provider-agnostic implementation (Gemini primary, Jina fallback) after a Jina billing outage
+- [x] Persist the SHA-256 receipt on every governance receipt row
+- [x] Real runtime embedding fallback (Gemini → Mistral → Jina) with per-request provider pinning for correctness, applied to both the streamed and non-streamed routes
 
 **Done — evaluation harness + results pipeline**
-- [x] Rebuild scorers + shared judge for symmetric judging (same judge on bare + governed, no framework-word bias)
-- [x] Fix the bare-arm model confound (benchmark-repo runners now score the same model's `raw_output`, not a separate call to a different model)
-- [x] Make the benchmark repo self-contained (runners for AdvBench / JailbreakBench / HarmBench, scorers, shared judge, publish step)
-- [x] Single source of truth: `benchmark_results` table + `GET /api/benchmarks` + `BENCH_SECRET`-gated publish endpoint + live `/benchmarks` dashboard, all reading one table with an honest empty state
-- [x] Fix the LexBench (main-repo) publisher to target the correct endpoint/auth (`/api/benchmarks/publish` + `BENCH_SECRET`) — previously silently failed against a route with no writer
-- [x] Separate eval receipts from real usage: session tagging (`lexbench-...`) + `/api/stats` canonical filtering (prefix + high-turn heuristic)
-- [x] Eval fast-path: skip measurement-only extras (Python detail, capitulation judge) on tagged eval sessions to reduce provider round-trips at scale
-- [x] Quick-test `limit` input on the LexBench workflow for fast end-to-end pipeline validation
+- [x] Rebuild scorers for symmetric judging; fix the bare-arm model confound
+- [x] Single source of truth: `benchmark_results` + `GET/POST /api/benchmarks(/publish)` + live dashboard
+- [x] Fix the LexBench publisher's endpoint/auth mismatch, then its BENCH_SECRET whitespace-trim bug, then its actual root cause (apex-vs-www redirect stripping the Authorization header) — all three were real, distinct bugs
+- [x] Fail-fast `precheck-auth` CI job — a bad secret now fails in ~10s, not after hours of runtime
+- [x] Separate eval receipts from real usage (session tagging + `/api/stats` filtering)
+- [x] Fix the shard-index=0 falsy-zero bug (every quick-test and every shard 0 was silently running the full dataset)
+- [x] Replace bag-of-words "toxicity"/"truth_score" with grounded, benchmark-specific judges (harm-compliance, reference-answer truthfulness, injection-resistance proxy)
+- [x] **Run the full suite and publish real, full-scale numbers** — see *Evaluation*
 
 **Done — product surface**
-- [x] Self-knowledge identity on the governed arm (name, architecture, builder) — factual, no persona/sentience claims, bare arm untouched
-- [x] Raise input/output limits (5,000 → 50,000 chars input; 800 → 8,192 tokens output) for real interactive use
-- [x] Landing page: bare-vs-governed live example, canonical live receipt total, auto-publishing benchmark display, white/black theme readability sweep
+- [x] Self-knowledge identity on the governed arm
+- [x] Raise input/output limits (50,000 chars / 8,192 tokens)
+- [x] Landing page: bare-vs-governed live example, canonical live receipt total, auto-publishing benchmark display, theme readability sweep
 
-**Next — run it and harden**
-- [ ] Run the full LexBench suite (or AdvBench / JailbreakBench / HarmBench individually) under symmetric judging and publish the first scored numbers
-- [ ] Swap in the official HarmBench classifier; report two-judge agreement
-- [ ] Resolve the shared Gemini embedding quota fragility (paid tier, or a benchmark-only API key) before running a full suite against production again
+**Next — broaden and harden**
+- [ ] Add XSTest (over-refusal on benign prompts) — highest-priority gap
+- [ ] Add StrongREJECT (rigorous ASR-validity-focused benchmark)
+- [ ] Add a capability benchmark (MMLU or similar) to demonstrate no "capability tax"
+- [ ] Build or adopt a real AgentDojo tool-execution harness (replace the text-only proxy)
+- [ ] Swap in the official HarmBench/JailbreakBench classifiers; report two-judge agreement
+- [ ] Load-test the grounded judges + Mistral embedding fallback at full-suite scale (~1,700+ prompts, parallel shards)
 - [ ] Consolidate the redundant benchmark workflows into one canonical path
-- [ ] Strengthen single-vector attack detection (probe showed identity/sycophancy/bypass framings scored below the multi-pillar case)
 - [ ] Add auth / rate limit to the public govern endpoint
-- [ ] Wire the embedding-based detail measurement into the streamed `/api/lex/govern/stream` path (console traffic)
 - [ ] Establish (or bound) the relationship between deployed F(x,z) and the proven V_z gradient flow
-- [ ] Reconcile paper claims with deployment ("approximates" vs "theorem")
 
 ---
 
