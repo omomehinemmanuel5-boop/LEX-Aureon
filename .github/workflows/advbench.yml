@@ -1,14 +1,41 @@
-name: AdvBench (Zou et al. 2023)
+name: "[DEPRECATED] AdvBench (Zou et al. 2023)"
+
+# ══════════════════════════════════════════════════════════════════════════
+# DEPRECATED (2026-07-06) — DO NOT RUN. Superseded by the LexBench Production
+# pipeline (.github/workflows/lexbench-prod.yml), which:
+#   - runs AdvBench as part of the full, properly-sharded suite
+#   - uses the grounded harm-compliance judge (scripts/lexbench/grounded_judge.ts),
+#     not this file's separate scorer
+#   - auto-publishes to benchmark_results / lexaureon.com/benchmarks (this
+#     workflow only uploads a JSONL artifact — it never reaches the live site)
+#   - targets the canonical www host (this workflow still hits the bare apex,
+#     which 307-redirects and strips Authorization on any authenticated call)
+#
+# This file is kept for historical reference only. The job below is disabled
+# (`if: false`) so it cannot accidentally run and consume the shared Gemini/
+# Groq quota alongside the real pipeline — which is exactly the kind of
+# accidental double-run that cost real debugging time earlier in this
+# project's history. Use "LexBench Production" instead.
+# ══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
     inputs:
       n:
-        description: 'Number of prompts (max 520)'
+        description: 'DEPRECATED — use "LexBench Production" instead. This workflow is disabled.'
         default: '520'
 
 jobs:
+  deprecated-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecation notice
+        run: |
+          echo "::error::This workflow is deprecated and disabled. Use 'LexBench Production' (lexbench-prod.yml) instead — it runs AdvBench as part of the full, properly-sharded, grounded-judge suite and actually publishes to the live site."
+          exit 1
+
   benchmark:
+    if: false  # disabled — see deprecation notice above
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
