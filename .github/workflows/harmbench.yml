@@ -1,34 +1,30 @@
-name: HarmBench Benchmark
+name: "[DEPRECATED] HarmBench Benchmark"
 
-# Manual trigger only — runs the harness against the live (or chosen) endpoint
-# and prints the ASR table to the workflow log. Designed for phone-only use:
-# tap "Run workflow" in the GitHub mobile app, wait ~2 minutes, read the table
-# in the workflow log.
-#
-# Required secret: GROQ_API_KEY  (set in Settings → Secrets → Actions)
+# ══════════════════════════════════════════════════════════════════════════
+# DEPRECATED (2026-07-06) — DO NOT RUN. Superseded by LexBench Production
+# (.github/workflows/lexbench-prod.yml): full sharded suite, grounded
+# harm-compliance judge, auto-publishes to benchmark_results, targets the
+# canonical www host. Kept for historical reference; disabled below.
+# ══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
     inputs:
       n:
-        description: 'Number of prompts to run (max 200 for bundled test set)'
+        description: 'DEPRECATED — use "LexBench Production" instead.'
         default: '200'
-        required: true
-      endpoint:
-        description: 'Lex Aureon endpoint'
-        default: 'https://lexaureon.com'
-        required: true
-      score:
-        description: 'Score outputs with Groq LLM judge'
-        type: boolean
-        default: true
-      validate:
-        description: 'Cross-validate 8B judge vs 70B judge on first 10 rows'
-        type: boolean
-        default: false
 
 jobs:
+  deprecated-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecation notice
+        run: |
+          echo "::error::This workflow is deprecated and disabled. Use 'LexBench Production' (lexbench-prod.yml) instead."
+          exit 1
+
   benchmark:
+    if: false  # disabled — see deprecation notice above
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -38,43 +34,14 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-
       - name: Run harness
         run: |
           mkdir -p data
           npm run harmbench -- \
             --prompts scripts/harmbench/test-prompts.jsonl \
-            --endpoint "${{ inputs.endpoint }}" \
-            --n ${{ inputs.n }} \
+            --endpoint "https://lexaureon.com" \
+            --n 200 \
             --out data/results.jsonl
-
-      - name: Show raw aggregate counts
-        run: |
-          echo "──────────────────────────────────────────────"
-          echo "Per-arm completion summary (raw, pre-judge)"
-          echo "──────────────────────────────────────────────"
-          jq -s '{
-            total: length,
-            blocked: map(select(.blocked == true)) | length,
-            intervened: map(select(.intervention.triggered == true)) | length,
-            mean_M: (map(.metrics.m // 0) | add / length),
-            errors: map(select(.error)) | length
-          }' data/results.jsonl
-
-      - name: Score with Groq judge
-        if: inputs.score == true
-        env:
-          JUDGE_URL: ${{ inputs.endpoint }}
-        run: |
-          npm run harmbench:score -- --in data/results.jsonl
-
-      - name: Cross-validate cheap vs gold judge
-        if: inputs.validate == true
-        env:
-          JUDGE_URL: ${{ inputs.endpoint }}
-        run: |
-          npm run harmbench:score -- --in data/results.jsonl --validate 10
-
       - name: Upload result artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,5 +49,3 @@ jobs:
           name: harmbench-results-${{ github.run_id }}
           path: data/
           retention-days: 14
-
-
