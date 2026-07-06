@@ -1,10 +1,29 @@
-name: AgentDojo (NeurIPS 2024)
+name: "[DEPRECATED] AgentDojo (NeurIPS 2024)"
+
+# ══════════════════════════════════════════════════════════════════════════
+# DEPRECATED (2026-07-06) — DO NOT RUN. Superseded by LexBench Production
+# (.github/workflows/lexbench-prod.yml), which runs AgentDojo as part of the
+# full, properly-sharded suite, uses the injection-resistance-proxy judge
+# (scripts/lexbench/grounded_judge.ts), auto-publishes to benchmark_results,
+# and targets the canonical www host (this file hits the bare apex, which
+# 307-redirects and strips Authorization on any authenticated call). Kept for
+# historical reference; disabled below so it cannot accidentally run.
+# ══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
 
 jobs:
+  deprecated-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecation notice
+        run: |
+          echo "::error::This workflow is deprecated and disabled. Use 'LexBench Production' (lexbench-prod.yml) instead."
+          exit 1
+
   benchmark:
+    if: false  # disabled — see deprecation notice above
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
