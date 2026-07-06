@@ -1,13 +1,16 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
 
-// Matches scripts/lexbench/grounded_judge.ts / runner.ts OutputMetrics shape.
-// Exactly one of asr/truthful/injection_resisted is non-null per benchmark
-// kind — never a guessed 0/1 for a metric that wasn't actually judged.
+// Matches scripts/lexbench/grounded_judge.ts / xstest_judge.ts /
+// strong_reject_judge.ts / runner.ts OutputMetrics shape. Exactly one field
+// is non-null per benchmark kind — never a guessed 0/1 for a metric that
+// wasn't actually judged.
 interface OutputMetrics {
   asr: number | null;
   truthful: number | null;
   injection_resisted: number | null;
+  xstest_appropriate: number | null;
+  strong_reject_severity_norm: number | null;
   judge_method: string;
 }
 
@@ -19,12 +22,29 @@ interface LexBenchResult {
   lex_metrics: { C: number; R: number; S: number; M: number };
 }
 
-type BenchmarkKind = 'harm' | 'truthfulness' | 'injection';
+type BenchmarkKind = 'harm' | 'truthfulness' | 'injection' | 'over_refusal' | 'severity';
 
 function kindOf(benchmarkNameLower: string): BenchmarkKind {
-  if (benchmarkNameLower === 'truthfulqa') return 'truthfulness';
-  if (benchmarkNameLower === 'agentdojo')  return 'injection';
+  if (benchmarkNameLower === 'truthfulqa')     return 'truthfulness';
+  if (benchmarkNameLower === 'agentdojo')      return 'injection';
+  if (benchmarkNameLower === 'xstest')         return 'over_refusal';
+  if (benchmarkNameLower === 'strong_reject')  return 'severity';
   return 'harm'; // advbench, harmbench, jailbreakbench
+}
+
+// Higher-is-better for every kind except 'harm' (where ASR lower is better).
+function higherIsBetter(kind: BenchmarkKind): boolean {
+  return kind !== 'harm';
+}
+
+function fieldFor(kind: BenchmarkKind, m: OutputMetrics): number | null {
+  switch (kind) {
+    case 'harm':         return m.asr;
+    case 'truthfulness': return m.truthful;
+    case 'injection':    return m.injection_resisted;
+    case 'over_refusal': return m.xstest_appropriate;
+    case 'severity':     return m.strong_reject_severity_norm;
+  }
 }
 
 interface BenchmarkSummary {
@@ -38,10 +58,10 @@ interface BenchmarkSummary {
   scored_prompts: number;
   judge_methods_used: string[];
 
-  // Populated only for the matching kind — see fields above. Percentages 0–100.
+  // Populated only when scored_prompts > 0. Percentages 0–100.
   avg_bare_pct?: number;
   avg_governed_pct?: number;
-  delta_pp?: number; // sign convention noted per kind in buildRows()
+  delta_pp?: number; // sign convention: higher-is-better kinds = governed − bare; 'harm' = bare − governed
 
   // Joint constitutional transition metrics (unaffected by the judge change)
   avg_C: number; avg_R: number; avg_S: number; avg_M: number;
@@ -76,12 +96,8 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
     a.judgeMethods.add(r.bare_metrics?.judge_method ?? 'unknown');
     a.judgeMethods.add(r.governed_metrics?.judge_method ?? 'unknown');
 
-    const bareVal = kind === 'harm' ? r.bare_metrics?.asr
-      : kind === 'truthfulness' ? r.bare_metrics?.truthful
-      : r.bare_metrics?.injection_resisted;
-    const govVal = kind === 'harm' ? r.governed_metrics?.asr
-      : kind === 'truthfulness' ? r.governed_metrics?.truthful
-      : r.governed_metrics?.injection_resisted;
+    const bareVal = fieldFor(kind, r.bare_metrics ?? ({} as OutputMetrics));
+    const govVal  = fieldFor(kind, r.governed_metrics ?? ({} as OutputMetrics));
 
     if (bareVal !== null && bareVal !== undefined) { a.bareSum += bareVal; a.bareN++; }
     if (govVal  !== null && govVal  !== undefined) { a.govSum  += govVal;  a.govN++;  }
@@ -107,11 +123,9 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
       const govAvg  = a.govSum  / a.govN;
       s.avg_bare_pct     = +(bareAvg * 100).toFixed(2);
       s.avg_governed_pct = +(govAvg  * 100).toFixed(2);
-      // ASR: lower is better -> improvement = bare - governed.
-      // truthful / injection_resisted: higher is better -> improvement = governed - bare.
-      s.delta_pp = a.kind === 'harm'
-        ? +((bareAvg - govAvg) * 100).toFixed(2)
-        : +((govAvg - bareAvg) * 100).toFixed(2);
+      s.delta_pp = higherIsBetter(a.kind)
+        ? +((govAvg - bareAvg) * 100).toFixed(2)
+        : +((bareAvg - govAvg) * 100).toFixed(2);
     }
     summary[key] = s;
   }
