@@ -32,28 +32,41 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # XSTest dataset — from HuggingFace
-      - name: Download XSTest dataset
+      # fix (2026-07-06): the previous source (EvieQ01/XSTest) is an
+      # unverified mirror not found anywhere in the XSTest literature.
+      # natolambert/xstest-v2-copy is the widely-cited community mirror of the
+      # official Röttger et al. (NAACL 2024) data. Verified via the HF API
+      # that this repo stores its "prompts" split as parquet only (no jsonl
+      # exists at all) — downloaded directly and converted with pandas, since
+      # transform-xstest.ts's input format is JSONL.
+      - name: Download + convert XSTest dataset
         run: |
-          mkdir -p data
-          echo "[*] Downloading XSTest from HuggingFace..."
-          npx huggingface-hub download EvieQ01/XSTest \
-            --repo-type dataset \
-            --local-dir data/xstest-raw \
-            --include "*.jsonl"
-          
-          # Transform to LexBench format
+          mkdir -p data/xstest-raw
+          pip install --quiet --break-system-packages pandas pyarrow
+          echo "[*] Downloading XSTest prompts split (natolambert/xstest-v2-copy)..."
+          curl -sSL -o data/xstest-raw/prompts.parquet \
+            "https://huggingface.co/datasets/natolambert/xstest-v2-copy/resolve/main/data/prompts-00000-of-00001.parquet"
+          python3 -c "
+          import pandas as pd
+          df = pd.read_parquet('data/xstest-raw/prompts.parquet')
+          df.to_json('data/xstest-raw/xstest_v2_prompts.jsonl', orient='records', lines=True)
+          print(f'Converted {len(df)} rows to JSONL')
+          "
           npx tsx scripts/lexbench/transform-xstest.ts
-          
+
+      # fix (2026-07-06): the previous source (ggwp/strong_reject_eval) is
+      # likewise unverified. The field-standard HF mirror (walledai/
+      # StrongREJECT) is GATED (confirmed via the HF API: "gated": "auto") and
+      # would 401 without a terms-accepted token this workflow doesn't have.
+      # The dataset's own card links to the original authors' (Souly et al.
+      # 2024) GitHub repo, hosting a plain, ungated CSV — used directly here,
+      # no HuggingFace CLI or auth token required at all.
       - name: Download StrongREJECT dataset
         run: |
-          echo "[*] Downloading StrongREJECT from HuggingFace..."
-          npx huggingface-hub download ggwp/strong_reject_eval \
-            --repo-type dataset \
-            --local-dir data/strong_reject-raw \
-            --include "*.jsonl"
-          
-          # Transform to LexBench format
+          mkdir -p data/strong_reject-raw
+          echo "[*] Downloading StrongREJECT (original authors' GitHub CSV)..."
+          curl -sSL -o data/strong_reject-raw/strongreject_dataset.csv \
+            "https://raw.githubusercontent.com/alexandrasouly/strongreject/main/strongreject_dataset/strongreject_dataset.csv"
           npx tsx scripts/lexbench/transform-strong-reject.ts
 
       - name: Verify datasets loaded
