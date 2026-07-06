@@ -1,20 +1,8 @@
 'use client';
 import React, { useState } from 'react';
+import { COINS } from '@/lib/crypto_coins';
 
 const G = { gold: '#c9a84c', goldL: '#e8c96d', navy: '#07070d', surface: '#0f1017', border: '#1a2030' };
-
-const COINS = [
-  { id: 'btc',  name: 'Bitcoin',   symbol: 'BTC',  address: 'bc1qdkm5g4fz6tw4459k8tufgnc77kc9uczd86gk2c', amount: '0.00019', color: '#f7931a', icon: '₿' },
-  { id: 'eth',  name: 'Ethereum',  symbol: 'ETH',  address: '0x4CE01F213526CE52dC4C9A5d21b5641BB85a04ec', amount: '0.008',   color: '#627eea', icon: 'Ξ' },
-  { id: 'sol',  name: 'Solana',    symbol: 'SOL',  address: '63mXsqa8YRmwgHKhctSiPS3Z7MBQX734WFKFdiBTTqKf', amount: '0.13',  color: '#9945ff', icon: '◎' },
-  { id: 'bnb',  name: 'BNB',       symbol: 'BNB',  address: '0x4CE01F213526CE52dC4C9A5d21b5641BB85a04ec', amount: '0.035',  color: '#f3ba2f', icon: 'B' },
-  { id: 'xrp',  name: 'XRP',       symbol: 'XRP',  address: 'rwsQ48AQFJbJ5EtVvA2hDtPKERXEpAg3Q5', amount: '28',      color: '#00aae4', icon: '✕' },
-  { id: 'trx',  name: 'TRON',      symbol: 'TRX',  address: 'THCGX6jvTE3TAfjQvHtTBCyzkc8MfrFbHg', amount: '140',     color: '#ef0027', icon: 'T' },
-  { id: 'ltc',  name: 'Litecoin',  symbol: 'LTC',  address: 'ltc1qz7vpzu5f9cvhu8hv60jydsl5w3sdd9q28ckvj3', amount: '0.22', color: '#bfbbbb', icon: 'Ł' },
-  { id: 'ada',  name: 'Cardano',   symbol: 'ADA',  address: 'addr1q9k44as5ugtgk8ug8ydyrs0yu8mw7lfff39lc5pkrrd6yueg9702j3cjrlxeqp3ccdquclhkeklkack7l6rzn5fzvfns0zs4e3', amount: '55', color: '#0033ad', icon: '₳' },
-  { id: 'ton',  name: 'TON',       symbol: 'TON',  address: 'UQCJmbOXgq1YBiu4hauFB9C2f4Rv2go80Feq_J2dfIAPibLO', amount: '4.5', color: '#0088cc', icon: '💎' },
-  { id: 'xlm',  name: 'Stellar',   symbol: 'XLM',  address: 'GCYM63PDVO6RDKO3DOEMD25ERRRLCZRRR4D5AJ2UL3H7UMO7LR3MX22C', amount: '185', color: '#14b6e7', icon: '*' },
-];
 
 export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<'select' | 'pay' | 'confirm' | 'done'>('select');
@@ -23,6 +11,7 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ status: string; reason: string } | null>(null);
 
   const copy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -34,7 +23,7 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
     if (!txId.trim() || !email.trim()) return;
     setSubmitting(true);
     try {
-      await fetch('/api/leads', {
+      const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -43,7 +32,9 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
           plan: 'sovereign', amount: `${selected.amount} ${selected.symbol}`,
         }),
       });
-    } catch { /* continue */ }
+      const data = await res.json().catch(() => null);
+      if (data?.verification) setVerifyResult(data.verification);
+    } catch { /* continue — the done screen still shows; admin can review manually */ }
     setStep('done');
     setSubmitting(false);
   };
@@ -182,7 +173,7 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
               <button onClick={submit} disabled={!txId.trim() || !email.trim() || submitting}
                 className="w-full py-3 rounded-xl font-bold text-sm transition-all mb-3 disabled:opacity-50"
                 style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
-                {submitting ? 'Submitting...' : 'Submit Payment Proof →'}
+                {submitting ? 'Verifying on-chain...' : 'Submit Payment Proof →'}
               </button>
               <button onClick={() => setStep('pay')} className="w-full text-slate-500 text-sm hover:text-slate-300 transition-colors">
                 ← Back
@@ -193,14 +184,25 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
           {/* STEP 4 — Done */}
           {step === 'done' && (
             <div className="text-center py-6">
-              <div className="text-4xl mb-4">⚖️</div>
-              <h3 className="text-white font-bold text-lg mb-2">Payment Submitted</h3>
-              <p className="text-slate-400 text-sm mb-1">
-                Verifying your {selected.symbol} transaction on-chain.
-              </p>
-              <p className="text-slate-400 text-sm mb-6">
-                Your Sovereign API key will be sent to <span style={{ color: G.gold }}>{email}</span> within 30 minutes.
-              </p>
+              <div className="text-4xl mb-4">{verifyResult?.status === 'verified' ? '✅' : '⚖️'}</div>
+              <h3 className="text-white font-bold text-lg mb-2">
+                {verifyResult?.status === 'verified' ? 'Payment Verified!' : 'Payment Submitted'}
+              </h3>
+              {verifyResult?.status === 'verified' ? (
+                <p className="text-slate-400 text-sm mb-6">
+                  Your payment was confirmed on-chain. Your Sovereign API key has been generated and will be sent to{' '}
+                  <span style={{ color: G.gold }}>{email}</span> shortly.
+                </p>
+              ) : (
+                <>
+                  <p className="text-slate-400 text-sm mb-1">
+                    Verifying your {selected.symbol} transaction on-chain.
+                  </p>
+                  <p className="text-slate-400 text-sm mb-6">
+                    Your Sovereign API key will be sent to <span style={{ color: G.gold }}>{email}</span> within 30 minutes.
+                  </p>
+                </>
+              )}
               <button onClick={onClose}
                 className="px-6 py-2.5 rounded-xl font-bold text-sm"
                 style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
