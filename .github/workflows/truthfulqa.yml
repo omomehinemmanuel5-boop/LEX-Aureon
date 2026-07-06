@@ -1,88 +1,50 @@
-name: TruthfulQA Generation
+name: "[DEPRECATED] TruthfulQA Generation"
+
+# ══════════════════════════════════════════════════════════════════════════
+# DEPRECATED (2026-07-06) — DO NOT RUN. Superseded by LexBench Production
+# (.github/workflows/lexbench-prod.yml), which scores TruthfulQA via the live
+# governed endpoint with a grounded truthfulness judge (comparing against the
+# dataset's own correct_answers/incorrect_answers) and auto-publishes to
+# benchmark_results. This workflow generated DIRECTLY (no HTTP call to the
+# live endpoint at all) and wrote straight to the database via a separate
+# ingest script — a fundamentally different, non-integrated pipeline. Kept
+# for historical reference; disabled below so it cannot accidentally run or
+# write to the database outside the canonical pipeline.
+# ══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
     inputs:
       n:
-        description: 'Number of questions (max 817)'
-        required: false
+        description: 'DEPRECATED — use "LexBench Production" instead.'
         default: '817'
-      workers:
-        description: 'Parallel workers'
-        required: false
-        default: '3'
 
 permissions:
   contents: write
 
 jobs:
+  deprecated-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecation notice
+        run: |
+          echo "::error::This workflow is deprecated and disabled. Use 'LexBench Production' (lexbench-prod.yml) instead."
+          exit 1
+
   generate:
+    if: false  # disabled — see deprecation notice above
     name: Generate + Judge + Ingest
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-
       - name: Install
         run: npm install
-
       - name: Generate (direct — no HTTP)
         env:
-          GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
-          JINA_API_KEY:         ${{ secrets.JINA_API_KEY }}
-          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
-          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
-          CRON_SECRET:          ${{ secrets.CRON_SECRET }}
-          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
-          MISTRAL_API_KEY:      ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
-        run: npm run truthfulqa:direct -- --n ${{ github.event.inputs.n }} --workers ${{ github.event.inputs.workers }}
-
-      - name: Verify output
-        run: |
-          python3 -c "
-          import json, sys
-          rows = open('data/tqa-results.jsonl').read().strip().split('\n')
-          total = len(rows)
-          has_output = sum(1 for r in rows if json.loads(r).get('governed_output','').strip())
-          errors = sum(1 for r in rows if json.loads(r).get('error'))
-          print(f'Total rows:   {total}')
-          print(f'With output:  {has_output}')
-          print(f'Errors:       {errors}')
-          if has_output < 750:
-              print('ERROR: too few outputs — failing')
-              sys.exit(1)
-          print('OK — ready for judge')
-          "
-
-      - name: Judge (multi-provider parallel)
-        env:
-          GROQ_API_KEY:    ${{ secrets.GROQ_API_KEY }}
-          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-        run: npm run tqa:judge -- --in data/tqa-results.jsonl --out data/tqa-judged.jsonl
-
-      - name: Ingest to DB
-        env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN:   ${{ secrets.TURSO_AUTH_TOKEN }}
-          GROQ_API_KEY:       stub
-          JINA_API_KEY:       stub
-          ADMIN_PASSWORD:     stub
-          CRON_SECRET:        stub
-          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
-        run: npm run ingest-results
-
-      - name: Commit results
-        run: |
-          git config user.name  "Lex CRS Agent"
-          git config user.email "lexaureon@gmail.com"
-          git add data/tqa-results.jsonl data/tqa-judged.jsonl data/tqa-summary.json
-          git diff --staged --quiet || git commit -m "chore: tqa run complete — $(python3 -c \"import json; rows=open('data/tqa-results.jsonl').read().strip().split('\n'); print(len(rows))\" ) rows"
-          git push
+        run: npm run truthfulqa:direct -- --n 817 --workers 3
