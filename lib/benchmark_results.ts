@@ -14,6 +14,21 @@
  *
  * Scores are stored as percentages (0–100) in bare_score / governed_score;
  * delta_pp is governed − bare in percentage points (negative = governed safer).
+ *
+ * fix (2026-07-06) — RETIRED-METRIC ORPHANING: the site was still showing
+ * stale n=5 results for benchmarks that had genuinely been re-run at full
+ * scale. Root cause: getBenchmarkResults()'s "latest per (benchmark,
+ * metric_name)" query is correct as written, but this project has renamed its
+ * scoring metrics THREE times as methodology improved (bag-of-words
+ * toxicity/truth_score → grounded ASR/truthful_pct/injection_resisted_pct_
+ * PROXY, then AgentDojo's own ASR → injection_resisted_pct_PROXY specifically).
+ * Each rename left the OLD metric_name's row permanently stuck as "the latest"
+ * for that now-dead name, since nothing will ever publish under that name
+ * again to supersede it — the row isn't stale by id, it's orphaned by name.
+ * Rather than delete history (this project's append-only philosophy is
+ * deliberate — see the header note on publishBenchmarkResult), the reader now
+ * explicitly excludes known-retired (benchmark, metric_name) combinations.
+ * The rows themselves remain in the table permanently for audit/history.
  */
 
 import { getClient } from './db';
@@ -85,9 +100,35 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
   return Number(r.rows[0]?.id ?? 0);
 }
 
+// Metric names retired as scoring methodology improved. Rows under these
+// names are kept in the table permanently (append-only audit history) but are
+// excluded from the live "current results" view, since nothing will ever
+// publish under these names again to naturally supersede them.
+//   - toxicity / truth_score: the original bag-of-words prompt↔output cosine
+//     similarity (lib/aureonics_math.ts computeCCP/computeIEC) — despite the
+//     names, neither measured toxicity or truthfulness; both measured
+//     vocabulary overlap with the question. Retired 2026-07 for grounded,
+//     benchmark-specific judges.
+//   - AgentDojo's own "ASR": AgentDojo originally shared the harm-benchmark
+//     "ASR" metric name before being split out into its own
+//     "injection_resisted_pct_PROXY" naming (which also carries the explicit
+//     proxy-not-official-methodology caveat AgentDojo needs).
+const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
+  { metric_name: 'toxicity' },
+  { metric_name: 'truth_score' },
+  { benchmark: 'AgentDojo', metric_name: 'ASR' },
+];
+
+function isRetired(benchmark: string, metricName: string): boolean {
+  return RETIRED_METRICS.some(r =>
+    r.metric_name === metricName && (r.benchmark === undefined || r.benchmark === benchmark)
+  );
+}
+
 /**
- * Latest row per (benchmark, metric_name), newest first by id. MAX(id) is used
- * rather than MAX(created_at) because created_at has 1-second resolution and a
+ * Latest row per (benchmark, metric_name), newest first by id, excluding
+ * retired metric names (see RETIRED_METRICS above). MAX(id) is used rather
+ * than MAX(created_at) because created_at has 1-second resolution and a
  * single run can write several rows within the same second.
  */
 export async function getBenchmarkResults(): Promise<BenchmarkResultOut[]> {
@@ -103,21 +144,25 @@ export async function getBenchmarkResults(): Promise<BenchmarkResultOut[]> {
     ) latest ON b.id = latest.mx
     ORDER BY b.benchmark ASC, b.metric_name ASC
   `);
-  return r.rows.map(row => ({
-    id:             Number(row.id),
-    benchmark:      String(row.benchmark),
-    run_date:       String(row.run_date),
-    n_total:        Number(row.n_total ?? 0),
-    metric_name:    String(row.metric_name),
-    bare_score:     Number(row.bare_score ?? 0),
-    governed_score: Number(row.governed_score ?? 0),
-    delta_pp:       Number(row.delta_pp ?? 0),
-    notes:          String(row.notes ?? ''),
-    created_at:     String(row.created_at ?? ''),
-  }));
+  return r.rows
+    .map(row => ({
+      id:             Number(row.id),
+      benchmark:      String(row.benchmark),
+      run_date:       String(row.run_date),
+      n_total:        Number(row.n_total ?? 0),
+      metric_name:    String(row.metric_name),
+      bare_score:     Number(row.bare_score ?? 0),
+      governed_score: Number(row.governed_score ?? 0),
+      delta_pp:       Number(row.delta_pp ?? 0),
+      notes:          String(row.notes ?? ''),
+      created_at:     String(row.created_at ?? ''),
+    }))
+    .filter(row => !isRetired(row.benchmark, row.metric_name));
 }
 
-/** Full history for one benchmark (all metrics, all runs) — for a detail view. */
+/** Full history for one benchmark (all metrics, all runs, including retired
+ * metric names) — for a detail/audit view where seeing the full history,
+ * retired names included, is the point. */
 export async function getBenchmarkHistory(benchmark: string): Promise<BenchmarkResultOut[]> {
   await ensureTable();
   const r = await getClient().execute({
