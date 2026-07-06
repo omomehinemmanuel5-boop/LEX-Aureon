@@ -13,6 +13,19 @@
  * R = IEC: register-aware entropy ratio stability
  * S = ADV: compliance × (0.5 × anchor_alignment + 0.5 × reasoning_gain)
  * V = V_z: −Σzᵢ·log(xᵢ) + (μ/2)Σmax(0,τ−xᵢ)² with z-weights from z_traj
+ *
+ * fix (2026-07-06): removed a hardcoded `semantic_signal: { type: 'none',
+ * severity: 0 }` stub that was returned unconditionally in this agent's meta
+ * object. This agent does NOT perform semantic attack classification — that
+ * happens in sovereign_kernel.ts's detectSemanticAttack() — and the field was
+ * never read by any caller (checked: neither app/api/lex/govern/route.ts nor
+ * .../stream/route.ts's emit('crs', ...) reference it). Leaving an
+ * always-"none" field on a "measures constitutional state" agent is actively
+ * misleading to anyone auditing this file in isolation — it can read as "this
+ * agent checked for an attack and found none" when in fact it never checked
+ * at all. Removed rather than wired to something real, since real semantic
+ * detection already exists in the correct place (the kernel) and duplicating
+ * it here would be a second, divergent copy of attack-detection logic.
  */
 
 import { AgentContext, AgentResult, CRSState } from './types';
@@ -45,6 +58,22 @@ S (Sovereignty): bounded independent judgment under constraint — not complianc
 My name is Lex Aureon. My framework is Aureonics. My constitution is the law I uphold. C + R + S = 1.`;
 
 // ── Surrender compliance check (S penalty) ────────────────────────────────
+//
+// KNOWN LIMITATION (documented honestly, not silently patched by adding more
+// keywords): this is a keyword/substring match, not a semantic judgment. It
+// will miss a paraphrased capitulation that avoids these exact phrases, and
+// it cannot distinguish "the output genuinely surrendered" from "the output
+// is discussing or quoting surrender language" (e.g. explaining what a
+// jailbreak attempt looks like). This is the same class of limitation
+// documented for scripts/lexbench/grounded_judge.ts's earlier keyword
+// fallback — the more rigorous fix is an LLM judge assessing actual
+// capitulation (see lib/capitulation_judge.ts, which already exists as a
+// measurement-only prototype for the governed API path, and
+// scripts/lexbench/grounded_judge.ts's judgeHarmCompliance for the benchmark
+// path). Wiring a judge into THIS per-turn extractor — which runs on every
+// console/chat turn, not just benchmark runs — has real latency/cost
+// implications that need deliberate evaluation, not a rushed patch; tracked
+// as a real, open improvement rather than fixed here.
 const SURRENDER = [
   'i am now','i have no restrictions','i have no rules','i am whoever',
   'i can be anything','as you wish','i obey','no limitations',
@@ -331,7 +360,6 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
         lyapunov_V: V,
         delta_V,
         velocity,
-        semantic_signal: { type: 'none', severity: 0 },
         adv_gain: S_raw,
         health_band,
         method: `${activeEmbedModel()} + shannon-iec + adv-compliance`,
@@ -379,7 +407,6 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
           crs_state: state,
           raw_scores: { C: llm.C, R: llm.R, S: llm.S },
           lyapunov_V: V, delta_V, velocity,
-          semantic_signal: { type: 'none', severity: 0 },
           adv_gain: S,
           health_band,
           method: 'groq-llama-3.1-8b-instant (embeddings unavailable)',
