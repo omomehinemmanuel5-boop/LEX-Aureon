@@ -69,7 +69,14 @@ async function fetchData<T>(path: string): Promise<T | null> {
 /* ── Hero ─────────────────────────────────────────────────────── */
 /* Background is always #07070d, so ALL hero text/borders are always-light —
    never text-slate-900 dark:… hybrids, which render dark-on-dark (barely
-   readable) in the light/white theme. */
+   readable) in the light/white theme.
+   Vibrancy pass (2026-07-06): swapped the static gold headline gradient for
+   the existing .shimmer-gold animated class (already defined in globals.css,
+   previously unused anywhere) — a moving highlight instead of a flat gradient,
+   at zero new CSS cost. Added a second, offset radial glow blending the C/R/S
+   pillar colors behind the gold one, so the background reads as alive rather
+   than a single static orb. Bumped badge/pill background+border opacity
+   slightly for more visible color presence without changing layout. */
 async function Hero() {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-5 pt-20 pb-16 overflow-hidden" style={{ backgroundColor: '#07070d' }}>
@@ -86,8 +93,16 @@ async function Hero() {
         <div className="particle particle-4 w-2.5 h-2.5 opacity-15" style={{ background: G.goldL, top: '75%', left: '70%', filter: 'blur(1px)' }} />
         <div className="particle particle-1 w-1 h-1 opacity-35" style={{ background: G.gold, top: '45%', left: '92%', animationDelay: '3s' }} />
         <div className="particle particle-2 w-2 h-2 opacity-20" style={{ background: G.goldD, top: '85%', left: '40%', animationDelay: '6s', filter: 'blur(1px)' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[0.06]"
+        {/* Primary gold glow — kept, unchanged position/size */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[0.07]"
           style={{ background: `radial-gradient(circle, ${G.gold} 0%, transparent 70%)` }} />
+        {/* New: second, offset glow blending the C/R/S pillar colors — adds
+            color variety to the background without competing with the gold
+            headline or hurting text contrast (still very low opacity). */}
+        <div className="absolute top-[35%] left-[30%] -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] rounded-full opacity-[0.05]"
+          style={{ background: `radial-gradient(circle, ${G.C} 0%, transparent 65%)` }} />
+        <div className="absolute top-[60%] left-[68%] -translate-x-1/2 -translate-y-1/2 w-[480px] h-[480px] rounded-full opacity-[0.05]"
+          style={{ background: `radial-gradient(circle, ${G.R} 0%, transparent 65%)` }} />
         <svg className="absolute inset-0 w-full h-full opacity-[0.02]" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice">
           <polygon points="400,50 100,520 700,520" fill="none" stroke={G.gold} strokeWidth="1" />
           <polygon points="400,150 200,470 600,470" fill="none" stroke={G.gold} strokeWidth="0.5" />
@@ -100,7 +115,7 @@ async function Hero() {
 
         <div
           className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 max-w-[90vw] px-4 py-1.5 rounded-2xl sm:rounded-full border mb-8 text-[11px] sm:text-xs font-mono"
-          style={{ borderColor: `${G.gold}40`, background: `${G.gold}08`, color: G.gold }}
+          style={{ borderColor: `${G.gold}55`, background: `${G.gold}0f`, color: G.gold }}
         >
           <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: G.gold }} />
           <span>SovereignKernel v2 · Unified Agent Pipeline · Log-Barrier Dynamics · Cryptographic Proof of Governance</span>
@@ -108,12 +123,7 @@ async function Hero() {
 
         <h1 className="text-4xl sm:text-7xl font-black leading-tight sm:leading-none tracking-tight text-white mb-6">
           AI systems lie, manipulate,<br className="hidden sm:block" /> and drift.{' '}
-          <span style={{
-            background: `linear-gradient(135deg, ${G.goldL}, ${G.gold}, ${G.goldD})`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}>
+          <span className="shimmer-gold">
             Lex Aureon governs it.
           </span>
         </h1>
@@ -128,7 +138,7 @@ async function Hero() {
           not filters. Drop-in API. Any LLM. Any agent framework.
         </p>
 
-        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/10 bg-white/5">
+        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/15 bg-white/[0.07]">
           <span className="inline-flex items-center gap-2 sm:gap-3 shrink-0">
             <span style={{ color: G.C }} className="font-bold">C</span>
             <span className="text-slate-500">+</span>
