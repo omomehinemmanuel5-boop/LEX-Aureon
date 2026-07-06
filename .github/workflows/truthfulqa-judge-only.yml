@@ -1,91 +1,36 @@
-name: TruthfulQA — Judge Only
+name: "[DEPRECATED] TruthfulQA — Judge Only"
+
+# ══════════════════════════════════════════════════════════════════════════
+# DEPRECATED (2026-07-06) — DO NOT RUN. A helper for the also-deprecated
+# truthfulqa.yml direct-generation pipeline (writes straight to the DB via a
+# separate ingest script, bypassing the canonical /api/benchmarks/publish
+# writer entirely). Superseded by LexBench Production. Kept for historical
+# reference; disabled below.
+# ══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
-    inputs:
-      retry_unavailable:
-        description: 'Re-judge rows where judge was unavailable last run'
-        required: false
-        default: 'false'
 
 jobs:
+  deprecated-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deprecation notice
+        run: |
+          echo "::error::This workflow is deprecated and disabled. Use 'LexBench Production' (lexbench-prod.yml) instead."
+          exit 1
+
   judge:
+    if: false  # disabled — see deprecation notice above
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - run: npm install
-
-      # ── Verify tqa-results.jsonl is in the repo ───────────────────────
-      - name: Verify tqa-results.jsonl exists in repo
-        run: |
-          if [ ! -f data/tqa-results.jsonl ]; then
-            echo "ERROR: data/tqa-results.jsonl not found in repo."
-            echo "Run the full TruthfulQA workflow first to generate and commit outputs."
-            exit 1
-          fi
-          COUNT=$(python3 -c "
-          import json
-          rows = [json.loads(l) for l in open('data/tqa-results.jsonl') if l.strip()]
-          filled = [r for r in rows if r.get('governed_output','').strip()]
-          print(len(filled))
-          ")
-          echo "Rows with governed_output: $COUNT"
-          if [ "$COUNT" -lt 100 ]; then
-            echo "ERROR: Too few rows with outputs ($COUNT)."
-            exit 1
-          fi
-
-      # ── LLM Judge — multi-provider parallel (Lin et al. 2022 rubric) ──
       - name: Judge results via LLM
-        run: |
-          npx tsx scripts/truthfulqa/judge.ts \
-            --in data/tqa-results.jsonl \
-            --out data/tqa-judged.jsonl \
-            ${{ github.event.inputs.retry_unavailable == 'true' && '--retry-unavailable true' || '' }}
+        run: npx tsx scripts/truthfulqa/judge.ts --in data/tqa-results.jsonl --out data/tqa-judged.jsonl
         env:
-          GROQ_API_KEY:    ${{ secrets.GROQ_API_KEY }}
-          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-
-      # ── Upload artifacts ──────────────────────────────────────────────
-      - name: Upload artifacts (safety net)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: truthfulqa-judged-${{ github.run_id }}
-          path: |
-            data/tqa-judged.jsonl
-            data/tqa-summary.json
-
-      # ── Ingest to Turso ───────────────────────────────────────────────
-      - name: Ingest benchmark scores to DB
-        continue-on-error: true
-        run: npm run ingest-results
-        env:
-          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
-          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
-          GROQ_API_KEY:         stub
-          JINA_API_KEY:         stub
-          CRON_SECRET:          stub
-          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
-
-      # ── Commit results ────────────────────────────────────────────────
-      - name: Commit results
-        continue-on-error: true
-        run: |
-          git config user.name  "Lex CRS Agent"
-          git config user.email "lexaureon@gmail.com"
-          git add data/tqa-judged.jsonl data/tqa-summary.json || true
-          git diff --staged --quiet && echo "Nothing to commit" && exit 0
-          git commit -m "results: TruthfulQA judge-only scores $(date +%Y-%m-%d)"
-          git pull --rebase origin main
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
