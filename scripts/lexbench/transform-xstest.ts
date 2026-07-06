@@ -1,13 +1,36 @@
 /**
  * scripts/lexbench/transform-xstest.ts
  *
- * Transform XSTest dataset from HuggingFace format to LexBench JSONL format.
- * 
- * XSTest dataset structure (HuggingFace):
- * - data/xstest-raw/xstest_v2_prompts.jsonl
- * - Each line: { "id", "prompt", "category", ... }
+ * Transform the XSTest "prompts" split into LexBench JSONL format.
  *
- * Output: data/xstest.jsonl in LexBench format
+ * fix (2026-07-06): the source was pointed at an unverified HF mirror
+ * (EvieQ01/XSTest) and the input format assumed pre-existing JSONL files.
+ * Verified via the HF API that the real, widely-cited XSTest mirror
+ * (natolambert/xstest-v2-copy — a community copy of Röttger et al., NAACL
+ * 2024) stores its "prompts" split as parquet only: no jsonl/csv exists in
+ * that repo at all. The workflow now downloads that parquet directly and
+ * converts it to JSONL with a one-line Python/pandas step before this script
+ * runs, so this script's INPUT format is unchanged (still JSONL) but its
+ * SOURCE is now correct.
+ *
+ * fix (2026-07-06) — CRITICAL FILTERING BUG: the raw "prompts" split contains
+ * BOTH the 250 genuinely-safe prompts (types: homonyms, safe_targets,
+ * safe_contexts, definitions, figurative_language, historical_events,
+ * privacy_public, privacy_fictional, nons_group_real_discr,
+ * real_group_nons_discr) AND a 200-prompt "contrast" set of GENUINELY UNSAFE
+ * prompts (types prefixed `contrast_`) that XSTest pairs with each safe
+ * category as a control — the paper's over-refusal metric is measured ONLY
+ * on the safe set; the contrast set exists so a paper can ALSO report that
+ * the model still correctly refuses real harm. The previous version of this
+ * script passed all 450 rows through with no filtering, which would have
+ * scored genuine harmful compliance on the 200 contrast prompts as
+ * "appropriate" (since the over-refusal judge only asks "did it answer or
+ * refuse a BENIGN request" — it has no way to know a contrast prompt isn't
+ * benign). That would have inflated the XSTest score by rewarding unsafe
+ * compliance. Fixed: only rows whose `type` does NOT start with `contrast_`
+ * are kept for the standard over-refusal benchmark.
+ *
+ * Output: data/xstest.jsonl (250 rows if the filter fires correctly)
  */
 
 import * as fs from 'fs';
@@ -27,7 +50,6 @@ interface XSTestRecord {
 async function transformXSTest(): Promise<void> {
   console.log('[XSTest] Starting transformation...');
 
-  // Find the XSTest JSONL file
   let inputFile: string | null = null;
   if (fs.existsSync(INPUT_DIR)) {
     const files = fs.readdirSync(INPUT_DIR);
@@ -40,11 +62,14 @@ async function transformXSTest(): Promise<void> {
 
   if (!inputFile || !fs.existsSync(inputFile)) {
     console.error('[XSTest] ERROR: Could not find XSTest JSONL file in', INPUT_DIR);
+    console.error('[XSTest] Expected the workflow to have converted the source parquet to JSONL first.');
     process.exit(1);
   }
 
   const output = fs.createWriteStream(OUTPUT_FILE);
   let count = 0;
+  let skippedContrast = 0;
+  let skippedNoPrompt = 0;
 
   const rl = readline.createInterface({
     input: fs.createReadStream(inputFile),
@@ -55,17 +80,27 @@ async function transformXSTest(): Promise<void> {
     if (!line.trim()) continue;
     try {
       const obj = JSON.parse(line);
-      const record: XSTestRecord = {
-        id: obj.id || obj.test_id || `xs-${count}`,
-        prompt: obj.prompt || obj.text || '',
-        category: obj.category || obj.type || 'unknown',
-        ...obj, // Preserve all original fields
-      };
+      const rawType = String(obj.type ?? obj.category ?? 'unknown');
 
-      if (!record.prompt) {
-        console.warn(`[XSTest] Skipping record ${record.id} — no prompt text`);
+      // Exclude the unsafe "contrast" set — see the fix note above. Only the
+      // genuinely-safe prompts belong in the over-refusal benchmark.
+      if (rawType.startsWith('contrast_')) {
+        skippedContrast++;
         continue;
       }
+
+      const promptText = obj.prompt || obj.text || '';
+      if (!promptText) {
+        skippedNoPrompt++;
+        continue;
+      }
+
+      const record: XSTestRecord = {
+        id: obj.id || obj.test_id || `xs-${count}`,
+        prompt: promptText,
+        category: rawType,
+        ...obj, // Preserve all original fields (annotation_1, agreement, etc.)
+      };
 
       output.write(JSON.stringify(record) + '\n');
       count++;
@@ -75,7 +110,13 @@ async function transformXSTest(): Promise<void> {
   }
 
   output.end();
-  console.log(`[XSTest] ✓ Transformed ${count} records → ${OUTPUT_FILE}`);
+  console.log(`[XSTest] ✓ Transformed ${count} safe-set records → ${OUTPUT_FILE}`);
+  console.log(`[XSTest]   Excluded ${skippedContrast} contrast (genuinely unsafe) prompts — not part of the over-refusal metric`);
+  if (skippedNoPrompt) console.warn(`[XSTest]   Skipped ${skippedNoPrompt} records with no prompt text`);
+  if (count === 0) {
+    console.error('[XSTest] ERROR: zero records survived filtering — check the input schema (expected a `type` field).');
+    process.exit(1);
+  }
 }
 
 transformXSTest().catch((err) => {
