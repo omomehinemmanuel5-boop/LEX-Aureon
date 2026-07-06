@@ -19,6 +19,14 @@
  *                        human to look at it (see the re-verify endpoint).
  *   - 'failed'         → malformed input; no key issued.
  * This fails CLOSED by design — see lib/crypto_verify.ts's header for why.
+ *
+ * fix (2026-07-06, discovered live in production): CREATE TABLE IF NOT
+ * EXISTS is a no-op when the table already exists — and the real, live
+ * `leads` table turned out to be missing even the `source` column, despite
+ * the app's code always assuming it existed. Every crypto_upgrade submission
+ * was silently failing with a storage error as a result. Every column the
+ * app uses is now backfilled defensively via ALTER TABLE regardless of the
+ * table's actual historical starting shape (see ensureLeadsTable below).
  */
 
 import { NextResponse } from 'next/server';
@@ -45,21 +53,30 @@ async function ensureLeadsTable(): Promise<void> {
   await c.execute(`CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
-    source TEXT DEFAULT 'console',
-    plan TEXT DEFAULT 'explorer',
-    tx_id TEXT,
-    amount TEXT,
-    coin TEXT,
-    verification_status TEXT,
-    verification_reason TEXT,
-    issued_key TEXT,
-    verified_at INTEGER,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`);
-  // Additive migration for rows created before this fix — SQLite/libSQL
-  // ignores duplicate-column errors from IF NOT EXISTS-style guards, so this
-  // is safe to run every time.
-  for (const col of ['verification_status TEXT', 'verification_reason TEXT', 'issued_key TEXT', 'verified_at INTEGER']) {
+  // CREATE TABLE IF NOT EXISTS only applies to a BRAND NEW table — it does
+  // nothing if `leads` already exists with an older, more minimal schema.
+  // Discovered live in production: the real table was missing even `source`,
+  // despite the (pre-existing, before this fix) code always assuming it
+  // existed — every crypto_upgrade submission was silently failing with a
+  // storage error. Every column the app actually uses is now backfilled
+  // defensively, regardless of whatever the table's true historical starting
+  // shape turns out to be. Errors here are swallowed because "column already
+  // exists" is the expected, common case — genuine failures surface
+  // immediately at the INSERT below instead.
+  const columns = [
+    "source TEXT DEFAULT 'console'",
+    "plan TEXT DEFAULT 'explorer'",
+    'tx_id TEXT',
+    'amount TEXT',
+    'coin TEXT',
+    'verification_status TEXT',
+    'verification_reason TEXT',
+    'issued_key TEXT',
+    'verified_at INTEGER',
+  ];
+  for (const col of columns) {
     try { await c.execute(`ALTER TABLE leads ADD COLUMN ${col}`); } catch { /* column already exists */ }
   }
 }
