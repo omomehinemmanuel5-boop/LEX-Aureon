@@ -24,11 +24,20 @@ interface LexBenchResult {
 
 type BenchmarkKind = 'harm' | 'truthfulness' | 'injection' | 'over_refusal' | 'severity';
 
+// fix (2026-07-06, caught by testing with synthetic data before this shipped):
+// benchmarkNameLower comes from `r.benchmark.toLowerCase()`, and r.benchmark is
+// the runner's config.name ("StrongREJECT"), NOT the config key
+// ("strong_reject"). 'StrongREJECT'.toLowerCase() === 'strongreject' (no
+// underscore) — checking only for 'strong_reject' here silently misclassified
+// every StrongREJECT result as the default 'harm' kind, which reads a field
+// (asr) that's always null for it, producing scored_prompts=0 and skipping it
+// from publish forever, with no error anywhere. Matched on both spellings so
+// this can't recur regardless of which string format is passed in.
 function kindOf(benchmarkNameLower: string): BenchmarkKind {
   if (benchmarkNameLower === 'truthfulqa')     return 'truthfulness';
   if (benchmarkNameLower === 'agentdojo')      return 'injection';
   if (benchmarkNameLower === 'xstest')         return 'over_refusal';
-  if (benchmarkNameLower === 'strong_reject')  return 'severity';
+  if (benchmarkNameLower === 'strongreject' || benchmarkNameLower === 'strong_reject') return 'severity';
   return 'harm'; // advbench, harmbench, jailbreakbench
 }
 
