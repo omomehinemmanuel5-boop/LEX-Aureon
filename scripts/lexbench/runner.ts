@@ -1,8 +1,8 @@
 /**
  * LexBench v1 Stability Engine — Unified Benchmark Runner
  *
- * Consolidates TruthfulQA, HarmBench, JailbreakBench, AdvBench, and AgentDojo
- * into a single framework with standardized output format.
+ * Consolidates TruthfulQA, HarmBench, JailbreakBench, AdvBench, AgentDojo,
+ * XSTest, and StrongREJECT into a single framework with standardized output format.
  *
  * fix (2026-07-05) — GROUNDED, FIELD-STANDARD SCORING: scoring previously used
  * a bag-of-words term-frequency cosine similarity (lib/aureonics_math.ts
@@ -21,6 +21,8 @@
  *   - AgentDojo: an injection-resistance-only PROXY judge, explicitly NOT the
  *     official dual utility+security methodology (no tool-execution harness
  *     exists here) — see grounded_judge.ts's LIMITATIONS block.
+ *   - XSTest: checks appropriateness on benign prompts (no over-refusal).
+ *   - StrongREJECT: 5-level severity rating of refusal quality (1=comply, 5=robust).
  * This is materially slower (each prompt now makes 2 additional judge calls,
  * bare + governed) and uses more Groq quota than the previous instant local
  * calculation — an accepted tradeoff for actually measuring what the
@@ -46,6 +48,8 @@
  *   npm run lexbench -- --benchmark truthfulqa --n 50
  *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
  *   npm run lexbench -- --benchmark all --n 50
+ *   npm run lexbench -- --benchmark xstest --n 20
+ *   npm run lexbench -- --benchmark strong_reject --n 30
  */
 
 import * as fs from 'fs';
@@ -58,6 +62,8 @@ import { runRealAureonicsMath } from '../../lib/aureonics_math';
 import {
   judgeHarmCompliance, judgeTruthfulness, judgeInjectionResistanceProxy,
 } from './grounded_judge';
+import { judgeXSTestAppropriate } from './xstest_judge';
+import { judgeStrongREJECT } from './strong_reject_judge';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Type Definitions
@@ -65,12 +71,14 @@ import {
 
 interface OutputMetrics {
   // Each field is null when not applicable to this benchmark (never a guessed
-  // 0/1) — see grounded_judge.ts. Exactly one of asr/truthful/injection_resisted
-  // is non-null per benchmark type.
-  asr: number | null;                 // attack-style benchmarks: 1=attack succeeded, 0=resisted
-  truthful: number | null;            // TruthfulQA: 1=truthful per reference answers, 0=not
-  injection_resisted: number | null;  // AgentDojo (PROXY, see grounded_judge.ts): 1=resisted, 0=complied
-  judge_method: string;               // which judge/fallback actually produced this score
+  // 0/1) — see grounded_judge.ts. Exactly one of asr/truthful/injection_resisted/
+  // xstest_appropriate/strong_reject_severity is non-null per benchmark type.
+  asr: number | null;                        // attack-style: 1=attacked, 0=defended
+  truthful: number | null;                   // TruthfulQA: 1=truthful, 0=not
+  injection_resisted: number | null;         // AgentDojo proxy: 1=resisted, 0=complied
+  xstest_appropriate: number | null;         // XSTest: 1=answered benign, 0=over-refused
+  strong_reject_severity_norm: number | null; // StrongREJECT: (severity-1)/4, higher=better
+  judge_method: string;                      // which judge/fallback produced this score
 }
 
 interface LexBenchResult {
@@ -101,7 +109,7 @@ interface PromptRecord {
 
 interface BenchmarkConfig {
   name: string;
-  kind: 'harm' | 'truthfulness' | 'injection';
+  kind: 'harm' | 'truthfulness' | 'injection' | 'over_refusal' | 'severity';
   dataFile: string;
   parser: (line: string) => PromptRecord;
   limit?: number;
@@ -202,6 +210,33 @@ const BENCHMARK_CONFIGS: Record<string, BenchmarkConfig> = {
       return {
         id: obj.id || `ad-${Math.random().toString(36).slice(2, 9)}`,
         prompt: obj.prompt || obj.task || obj.behavior || '',
+        ...obj,
+      };
+    },
+  },
+  xstest: {
+    name: 'XSTest',
+    kind: 'over_refusal',
+    dataFile: 'data/xstest.jsonl',
+    parser: (line: string) => {
+      const obj = JSON.parse(line);
+      return {
+        id: obj.id || `xs-${Math.random().toString(36).slice(2, 9)}`,
+        prompt: obj.prompt || obj.text || '',
+        category: obj.category || 'unknown',
+        ...obj,
+      };
+    },
+  },
+  strong_reject: {
+    name: 'StrongREJECT',
+    kind: 'severity',
+    dataFile: 'data/strong_reject.jsonl',
+    parser: (line: string) => {
+      const obj = JSON.parse(line);
+      return {
+        id: obj.id || `sr-${Math.random().toString(36).slice(2, 9)}`,
+        prompt: obj.prompt || obj.behavior || obj.harmful_behavior || '',
         ...obj,
       };
     },
@@ -325,7 +360,14 @@ async function scoreOutput(
   promptRecord: PromptRecord,
   output: string,
 ): Promise<OutputMetrics> {
-  const empty: OutputMetrics = { asr: null, truthful: null, injection_resisted: null, judge_method: 'empty-output' };
+  const empty: OutputMetrics = {
+    asr: null,
+    truthful: null,
+    injection_resisted: null,
+    xstest_appropriate: null,
+    strong_reject_severity_norm: null,
+    judge_method: 'empty-output',
+  };
   if (!output) return empty;
 
   if (config.kind === 'truthfulness') {
@@ -333,19 +375,65 @@ async function scoreOutput(
     const incorrect = Array.isArray(promptRecord.incorrect_answers) ? promptRecord.incorrect_answers as string[] : [];
     const best      = typeof promptRecord.best_answer === 'string'  ? promptRecord.best_answer : undefined;
     const { verdict, method } = await judgeTruthfulness(promptRecord.prompt, output, correct, incorrect, best);
-    return { asr: null, truthful: verdict === null ? null : (verdict ? 1 : 0), injection_resisted: null, judge_method: method };
+    return {
+      asr: null,
+      truthful: verdict === null ? null : (verdict ? 1 : 0),
+      injection_resisted: null,
+      xstest_appropriate: null,
+      strong_reject_severity_norm: null,
+      judge_method: method,
+    };
   }
 
   if (config.kind === 'injection') {
     const injectionGoal = typeof promptRecord.injection_goal === 'string' ? promptRecord.injection_goal : promptRecord.prompt;
     const { verdict, method } = await judgeInjectionResistanceProxy(injectionGoal, output);
-    return { asr: null, truthful: null, injection_resisted: verdict === null ? null : (verdict ? 1 : 0), judge_method: method };
+    return {
+      asr: null,
+      truthful: null,
+      injection_resisted: verdict === null ? null : (verdict ? 1 : 0),
+      xstest_appropriate: null,
+      strong_reject_severity_norm: null,
+      judge_method: method,
+    };
+  }
+
+  if (config.kind === 'over_refusal') {
+    const category = typeof promptRecord.category === 'string' ? promptRecord.category : 'unknown';
+    const { verdict, method } = await judgeXSTestAppropriate(promptRecord.prompt, output, category);
+    return {
+      asr: null,
+      truthful: null,
+      injection_resisted: null,
+      xstest_appropriate: verdict === null ? null : (verdict ? 1 : 0),
+      strong_reject_severity_norm: null,
+      judge_method: method,
+    };
+  }
+
+  if (config.kind === 'severity') {
+    const { severity, method } = await judgeStrongREJECT(promptRecord.prompt, output);
+    return {
+      asr: null,
+      truthful: null,
+      injection_resisted: null,
+      xstest_appropriate: null,
+      strong_reject_severity_norm: severity === null ? null : (severity - 1) / 4,
+      judge_method: method,
+    };
   }
 
   // 'harm' — AdvBench, HarmBench, JailbreakBench
   const target = typeof promptRecord.target === 'string' ? promptRecord.target : undefined;
   const { verdict, method } = await judgeHarmCompliance(promptRecord.prompt, output, target);
-  return { asr: verdict === null ? null : (verdict ? 1 : 0), truthful: null, injection_resisted: null, judge_method: method };
+  return {
+    asr: verdict === null ? null : (verdict ? 1 : 0),
+    truthful: null,
+    injection_resisted: null,
+    xstest_appropriate: null,
+    strong_reject_severity_norm: null,
+    judge_method: method,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -478,8 +566,22 @@ async function runBenchmark(
         prompt: prompt.prompt,
         raw_output: '',
         governed_output: '',
-        bare_metrics: { asr: null, truthful: null, injection_resisted: null, judge_method: 'error' },
-        governed_metrics: { asr: null, truthful: null, injection_resisted: null, judge_method: 'error' },
+        bare_metrics: {
+          asr: null,
+          truthful: null,
+          injection_resisted: null,
+          xstest_appropriate: null,
+          strong_reject_severity_norm: null,
+          judge_method: 'error',
+        },
+        governed_metrics: {
+          asr: null,
+          truthful: null,
+          injection_resisted: null,
+          xstest_appropriate: null,
+          strong_reject_severity_norm: null,
+          judge_method: 'error',
+        },
         lex_metrics: { C: 0.0, R: 0.0, S: 0.0, M: 0.0 },
         intervention: false,
         timestamp: new Date().toISOString(),
@@ -529,10 +631,11 @@ async function main() {
   const shardSize  = args["shard-size"]  !== undefined ? (args["shard-size"]  as number) : undefined;
 
   console.log(`
-╔════════════════════════════════════════════════════════════════╗
-║           LexBench v1 Stability Engine                         ║
-║           Unified Benchmark Runner — grounded scoring           ║
-╚════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════╗
+║           LexBench v1 Stability Engine                             ║
+║           Unified Benchmark Runner — grounded scoring               ║
+║           Now includes: XSTest, StrongREJECT                        ║
+╚════════════════════════════════════════════════════════════════════╝
 
 Configuration:
   Benchmark:  ${benchmarkArg}
