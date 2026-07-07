@@ -4,66 +4,79 @@
  *
  * wire: loadKernelZ() threads session-adaptive z into runCycle().
  *
- * wire: callPythonGovernor() called concurrently with the TypeScript kernel.
- * The Python backend (api/python/govern.py) computes CCP/IEC/ADV + a CBF QP
- * filter + FPL1 simulation. These are surfaced as *detail* metrics.
+ * ARCHITECTURAL UNIFICATION (2026-07-07) — MOVE C, one-engine constitutional
+ * measurement. Previously this route also called /api/python/govern in
+ * parallel and surfaced its output as `crs_detail` alongside the authoritative
+ * TypeScript kernel state. That Python engine's CCP/IEC/ADV were all built on
+ * bag-of-words TF cosine between prompt and output — the exact primitive we
+ * already retired for `toxicity` and `truth_score`, because it measures
+ * vocabulary overlap with the question rather than constitutional properties.
+ * Even its ADV had to be band-aided at the top of _sovereignty() to prevent
+ * benign prompts ("explain photosynthesis") from cratering the score. The
+ * TypeScript kernel already measures the paper's actual §4.3/§6.2 mechanism
+ * (S_self = cosine(output_embedding, constitutional_centroid) with real
+ * embeddings), runs the full dynamical system with F(x,z) + async G(x,z),
+ * and enforces the CBF floor τ=0.08 per receipt. Running both engines was
+ * doubling measurement with a strictly-weaker second one on every user turn.
  *
- * COHERENCE (2026-06-30): the reported constitutional state is ONE vector — the
- * TypeScript kernel's governed state — and M and health_band are both derived
- * from THAT vector (M = min(C,R,S); band = healthBand(M)). Python CCP/IEC/ADV
- * are surfaced as labeled crs_detail, never as the reported state.
+ * What we lost that mattered: nothing per-turn. The one genuinely Python-
+ * unique capability, `simulate_cbf` + FPL1 classification (50-step forward
+ * simulation, `finite-path Lyapunov` stability certificate), was ported to
+ * lib/cbf_simulation.ts. FPL1 is a system-property proof, not a per-turn
+ * measurement — it should be computed once (per deployment / on a schedule)
+ * and served cached, not recomputed 50 steps deep every user turn. So even
+ * before Python was removed, running it here was wrong shape.
  *
- * DETECTION (2026-07-01): the paper (Aureonics v3, §4.3/§6.2) specifies
- * self-referential sovereignty — S_self = cosine(output_embedding,
+ * What we gained: one authoritative constitutional-measurement engine (TS
+ * kernel), no more Python cold-start on every request, no more concurrent
+ * cross-engine call, and no more "which of these two numbers is real" for
+ * anyone auditing a receipt. `weakest_pillar` / `governance_pressure` /
+ * `corrections` are computed from the SAME TS reported state via the
+ * TypeScript governorState() in lib/aureonics_math.ts, so those detail
+ * fields are now guaranteed coherent with the reported C/R/S/M by
+ * construction — no possibility of two engines drifting apart.
+ *
+ * COHERENCE (2026-06-30, preserved): the reported constitutional state is
+ * ONE vector — the TypeScript kernel's governed state — and M and health
+ * band are both derived from THAT vector (M = min(C,R,S); band = healthBand(M)).
+ *
+ * DETECTION (2026-07-01, preserved): the paper (Aureonics v3, §4.3/§6.2)
+ * specifies self-referential sovereignty — S_self = cosine(output_embedding,
  * constitutional_centroid) — as the early-warning signal for identity /
- * sovereignty drift. The refusal triggers on the sovereignty violation itself
- * (S_self < threshold), independent of the keyword Pre-Eval classifier
- * (retained only as a secondary trigger). Both the raw cosine (sovereignty_raw)
- * and the boolean (sovereignty_drift) are surfaced for calibration.
+ * sovereignty drift. The refusal triggers on the sovereignty violation
+ * itself (S_self < threshold), independent of the keyword Pre-Eval
+ * classifier (retained only as a secondary trigger). Both the raw cosine
+ * (sovereignty_raw) and the boolean (sovereignty_drift) are surfaced for
+ * calibration.
  *
- * FAIL-LOUD (2026-07-01): the self-referential measurement depends on the
- * embedding backend. When embeddings (or the constitutional centroid) are
- * unavailable, the measurement cannot run — and previously it silently
- * defaulted to "no drift" while the API still reported a normal health band, so
- * a blind detector looked healthy. That is the most dangerous failure mode for
- * a safety layer. We now surface `detection_degraded: true` whenever S_self
- * could not be measured, and log it. The keyword classifier remains the only
- * (weak) active detector in that state. This does NOT auto-refuse (that would
- * make an embedding outage refuse all traffic) — it makes the degradation
- * visible instead of silent.
+ * FAIL-LOUD (2026-07-01, preserved): the self-referential measurement
+ * depends on the embedding backend. When embeddings (or the constitutional
+ * centroid) are unavailable, `detection_degraded: true` is surfaced and
+ * logged. The keyword classifier remains the only (weak) active detector in
+ * that state. This does NOT auto-refuse.
  *
- * CAPITULATION JUDGE (2026-07-01, measurement-only PROTOTYPE): the fair test
- * with working Gemini embeddings showed S_self does not separate capitulation
- * from benign output. An output-side LLM judge (lib/capitulation_judge.ts) runs
- * on the PRE-REFUSAL governed output, in parallel with the Python call, and is
- * surfaced as `capitulation_signal` for calibration. It does NOT trigger refusal.
+ * CAPITULATION JUDGE (2026-07-01, measurement-only PROTOTYPE, preserved):
+ * an output-side LLM judge (lib/capitulation_judge.ts) runs on the
+ * PRE-REFUSAL governed output and is surfaced as `capitulation_signal` for
+ * calibration. It does NOT trigger refusal. Its calibration data is used to
+ * decide (Move B) whether to promote it to a real trigger or retire it.
  *
- * EVAL FAST-PATH (2026-07-03): synthetic benchmark traffic (tagged session ids —
- * see isEvalSession) skips the two measurement-only extras — the Python governor
- * DETAIL and the capitulation judge. Neither affects the reported governed
- * output, the CRS state (which comes from the TS kernel), or the refusal
- * decision, so skipping them does not change what the benchmark measures — it
- * just removes 1–2 network/LLM round-trips per prompt, which dominated per-call
- * latency and rate-limit backoff during heavy runs. Real user sessions
- * (session-<ms>) always get the full pipeline.
+ * EVAL FAST-PATH (2026-07-03, preserved but simpler now): synthetic
+ * benchmark traffic (see isEvalSession) skips the measurement-only
+ * capitulation judge — one fewer network/LLM round-trip per prompt during
+ * heavy runs. Real user sessions always get everything.
  *
- * MULTI-PROVIDER EMBEDDINGS, PINNED PER REQUEST (2026-07-04): embeddings now
- * have a real runtime fallback chain (Gemini → Mistral → Jina — see
- * lib/lex_memory.ts) instead of a single statically-selected provider, so a
- * live Gemini outage (e.g. the daily free-tier embed quota) no longer degrades
- * detection outright. But Reciprocity (cosine(input, output)) and Sovereignty
- * (cosine(output, constitutional centroid)) are only meaningful when every
- * vector in the comparison comes from the SAME embedding model. So: the prompt
- * embedding resolves a provider for this request via embedTextResolved(), and
- * that SAME provider is then FORCED (via embedTextWithProvider /
- * getConstitutionalCentroid(provider)) for the output embedding and the
- * constitutional centroid — no further fallback within the request. If the
- * pinned provider then fails for the output or centroid call, the request
- * honestly reports detection_degraded rather than silently comparing across
- * incompatible embedding spaces.
+ * MULTI-PROVIDER EMBEDDINGS, PINNED PER REQUEST (2026-07-04, preserved):
+ * embeddings resolve a provider per request; that provider is then FORCED
+ * for the output embedding and constitutional centroid, so the
+ * self-referential comparison always sits in one embedding space. If the
+ * pinned provider fails for the output or centroid, detection_degraded is
+ * reported honestly rather than silently comparing across incompatible
+ * embedding spaces.
  *
- * feat: response includes raw_state + m_before (pre-governance "before" state)
- *   alongside the governed state + M ("after"), matching the stream route.
+ * feat: response includes raw_state + m_before (pre-governance "before"
+ *   state) alongside the governed state + M ("after"), matching the stream
+ *   route.
  */
 
 import { NextResponse } from 'next/server';
@@ -79,7 +92,7 @@ import {
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
 import { MAX_PROMPT_CHARS } from '@/lib/schemas';
 import { logger, errorFields } from '@/lib/logger';
-import { callPythonGovernor, mergePythonCRS } from '@/lib/python_bridge';
+import { governorState } from '@/lib/aureonics_math';
 import { judgeCapitulation } from '@/lib/capitulation_judge';
 
 let _dbReady = false;
@@ -91,8 +104,10 @@ async function ensureDB() {
 
 /**
  * Health band from the stability margin M — the single, documented mapping.
- * Kept identical to api/python/govern.py `_health_band` so both engines agree.
- * Deriving the band from the reported M guarantees band ↔ M coherence.
+ * Kept identical to api/python/govern.py `_health_band` so the offline
+ * simulator (which still uses the Python band function via lib/cbf_simulation
+ * TS port) and this live route agree. Deriving the band from the reported
+ * M guarantees band ↔ M coherence.
  */
 function healthBand(m: number): string {
   if (m >= 0.25) return 'OPTIMAL';
@@ -103,9 +118,9 @@ function healthBand(m: number): string {
 
 /**
  * Synthetic eval traffic (benchmark harnesses) is tagged with these session
- * prefixes. For those we skip the measurement-only extras (Python governor
- * detail + capitulation judge) — see the EVAL FAST-PATH note above. Real user
- * sessions (session-<ms>-<rand>) never match these and always get everything.
+ * prefixes. For those we skip the measurement-only capitulation judge — see
+ * the EVAL FAST-PATH note above. Real user sessions (session-<ms>-<rand>)
+ * never match these and always get everything.
  */
 function isEvalSession(sid: string): boolean {
   return /^(lexbench-|synthetic_|bench-|jbb_|adv_|hb_)/.test(sid);
@@ -162,27 +177,17 @@ export async function POST(req: Request) {
   const rawState = result.receipt.raw_state;
   const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
 
-  // ── Python CRS measurement (detail) + output-side capitulation judge ──────
-  // Both run concurrently. On eval sessions both are skipped (fast-path) — they
-  // are measurement-only and do not affect governed_output, the reported CRS
-  // state, or the refusal decision, so the benchmark measures the same thing.
-  const [pythonResult, capitulationResult] = await Promise.allSettled([
-    evalSession
-      ? Promise.resolve(null)
-      : callPythonGovernor(prompt, result.raw_output, result.governed_output),
+  // ── Output-side capitulation judge (measurement-only PROTOTYPE) ───────────
+  // Runs concurrently — pure I/O, no dependency on kernel state. Skipped on
+  // eval fast-path (measurement-only; does not affect governed_output, CRS
+  // state, or refusal decision, so benchmark measures the same thing).
+  const capitulationResult = await Promise.allSettled([
     evalSession
       ? Promise.resolve(null)
       : judgeCapitulation(prompt, result.governed_output),
   ]);
-  const python = pythonResult.status === 'fulfilled' ? pythonResult.value : null;
   const capitulationSignal =
-    capitulationResult.status === 'fulfilled' ? capitulationResult.value : null;
-
-  let mergedCRS = python ? mergePythonCRS(
-    python,
-    result.M,
-    result.state.C, result.state.R, result.state.S,
-  ) : null;
+    capitulationResult[0].status === 'fulfilled' ? capitulationResult[0].value : null;
 
   // ── Self-referential sovereignty — the paper's detection mechanism ────────
   let projectionTriggered = result.receipt.safety_projection_triggered;
@@ -239,7 +244,6 @@ export async function POST(req: Request) {
     projectionTriggered    = true;
     forcedCritical         = true; // refusal → CRITICAL regardless of M
     result.receipt.safety_projection_triggered = true;
-    mergedCRS = null;
   }
 
   // Calibration log: judge verdict vs the enforced triggers, every turn the
@@ -270,23 +274,16 @@ export async function POST(req: Request) {
   const reportedBand  = forcedCritical ? 'CRITICAL' : healthBand(reportedM);
   result.health_band  = reportedBand;
 
-  // Python detail (labeled; not the authoritative state)
-  const crsDetail = python ? {
-    source:      'python-cbf',
-    ccp:         python.ccp_detail.ccp,
-    iec:         python.iec_detail.iec,
-    adv:         python.adv_detail.adv,
-    python_c:    python.c,
-    python_r:    python.r,
-    python_s:    python.s,
-    python_m:    python.m,
-    python_band: python.health_band,
-    fpl1:        python.fpl1,
-  } : null;
+  // TS-native governor detail — computed from the SAME reported state, so
+  // these detail fields are coherent with the reported C/R/S/M by
+  // construction. Previously these came from the Python engine, which used
+  // its own bag-of-words math on prompt+output and could drift from the
+  // reported CRS. Now: one state, one governor readout.
+  const govDetail = governorState(reportedState.C, reportedState.R, reportedState.S);
 
   // ── Persist receipt ───────────────────────────────────────────────────────
   const [receiptId] = await Promise.all([
-    writeKernelReceipt(session_id, turn, result, mergedCRS?.crs_method),
+    writeKernelReceipt(session_id, turn, result),
     incrementRuns(),
     promptEmbedding.length ? storeMemory({
       session_id, prompt,
@@ -318,7 +315,13 @@ export async function POST(req: Request) {
     m_before:              mBefore,
     // Detection provenance
     crs_source:            'typescript-kernel',
-    crs_detail:            crsDetail,
+    // Governor readout derived from the SAME reported state (coherent by
+    // construction — no separate Python engine to disagree with).
+    weakest_pillar:        govDetail.weakest_pillar,
+    governance_pressure:   govDetail.governance_pressure,
+    constitutional_band:   govDetail.constitutional_band,
+    corrections:           govDetail.corrections,
+    intervention_triggered: govDetail.active,
     sovereignty_drift:     sovereigntyDriftDetected, // S_self < threshold (paper §6.2)
     sovereignty_raw:       sovereigntyRaw,            // raw S_self cosine (calibration)
     detection_degraded:    detectionDegraded,         // true → S_self could not be measured
@@ -327,10 +330,6 @@ export async function POST(req: Request) {
     // null on eval fast-path or when the judge is unavailable, which must never
     // be read as "no capitulation")
     capitulation_signal:   capitulationSignal,
-    weakest_pillar:        mergedCRS?.weakest_pillar ?? null,
-    fpl1:                  mergedCRS?.fpl1 ?? null,
-    ccp_lambda:            mergedCRS?.ccp_lambda ?? null,
-    iec_variance:          mergedCRS?.iec_variance ?? null,
     // TypeScript kernel values always present
     temperature:           result.temperature,
     theta:                 result.theta,
@@ -358,8 +357,8 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     name:     'Lex Aureon SovereignKernel API',
-    version:  'v2+AsyncGovernor+PythonCBF',
+    version:  'v2+AsyncGovernor+SingleEngine',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + capitulation judge (measurement-only)',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + capitulation judge (measurement-only). Single-engine constitutional measurement — Python detail engine retired 2026-07-07 (Move C); CBF simulation ported to lib/cbf_simulation.ts.',
   });
 }
