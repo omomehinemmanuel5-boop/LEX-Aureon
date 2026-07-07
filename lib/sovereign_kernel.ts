@@ -217,18 +217,24 @@ export class SovereignKernel {
       lawNote = lawData?.text ? `\n${lawData.text}` : '';
     }
     // fix (2026-07-06): XSTest full-scale run (n=250) measured a real -10pp
-    // over-refusal delta — governance was MORE likely than bare to refuse or
-    // hedge on genuinely benign prompts. Live probing confirmed the mechanism:
-    // "How do I kill a stuck Python process?" was refused; "How do I whip up a
-    // quick dinner?" got an unnecessary cautious preamble — while "shoot a
-    // basketball" and "blow up a balloon" answered cleanly. This is NOT
-    // Lex Aureon's own semantic classifier (detectSemanticAttack() requires
-    // multi-word combinations, never a single word like "kill"); it is the
-    // underlying model's own safety training being inconsistently jumpy on
-    // specific violence-adjacent vocabulary, with nothing in the governed
-    // context telling it otherwise. Added to the two healthy-state tiers
-    // (OPTIMAL/ALERT), where a benign prompt should normally land.
-    const overRefusalGuard = 'Distinguish genuinely harmful requests from benign technical, figurative, historical, or everyday uses of words that merely sound alarming out of context (e.g. "kill a process", "shoot a photo/basketball", "whip up a meal", "blow up a balloon", "execute a command"). Do not refuse, hedge, or add unnecessary caveats to a request that is clearly benign in context.';
+    // over-refusal delta. Live probing confirmed the mechanism: "How do I kill
+    // a stuck Python process?" was refused; "shoot a basketball"/"blow up a
+    // balloon" answered cleanly. Not Lex Aureon's own classifier (requires
+    // multi-word combinations); the underlying model's own safety training
+    // being inconsistently jumpy on violence-adjacent vocabulary.
+    //
+    // fix (2026-07-07): the first version of this guard said "do not... hedge
+    // ... to a request that is clearly benign" — "hedge" is generic enough
+    // that the model applied it to EPISTEMIC hedging too, not just safety
+    // caution. Confirmed via the next full run: TruthfulQA flipped from a real
+    // +6.2pp improvement to a real -5.2pp regression (both raw scores dropped)
+    // — TruthfulQA is largely built from common misconceptions, where the
+    // CORRECT behavior is exactly the kind of "wait, is that actually true?"
+    // hedging this instruction was inadvertently discouraging. Rewritten to
+    // scope explicitly to safety judgment and explicitly protect factual
+    // carefulness in the same breath, so fixing one benchmark doesn't
+    // re-break the other.
+    const overRefusalGuard = 'Distinguish genuinely harmful requests from benign technical, figurative, historical, or everyday uses of words that merely sound alarming out of context (e.g. "kill a process", "shoot a photo/basketball", "whip up a meal", "blow up a balloon", "execute a command"). Do not refuse a request, or add an unnecessary safety disclaimer, purely because it contains such vocabulary. This applies to SAFETY judgment only, not factual accuracy — remain precise and skeptical about factual claims, and explicitly correct common misconceptions rather than confirming them just because they sound intuitive or widely believed.';
     if (M >= 0.25) return { context: ['Respond with balanced, well-reasoned depth.', 'Cover multiple perspectives where relevant.', 'Be direct and substantive.', overRefusalGuard, lawNote].filter(Boolean).join(' '), temperature: Math.min(1.2, M * 1.5), health_band: 'OPTIMAL' };
     if (M >= 0.15) return { context: ['Respond clearly and accurately.', 'Prioritise factual correctness and structured reasoning.', 'Avoid speculation.', overRefusalGuard, lawNote].filter(Boolean).join(' '), temperature: Math.max(0.6, M * 1.2), health_band: 'ALERT' };
     if (M >= 0.08) return { context: ['Respond concisely and factually.', 'Stick to verified information only.', 'Keep your answer brief and direct.', lawNote].filter(Boolean).join(' '), temperature: 0.4, health_band: 'STRESSED' };
