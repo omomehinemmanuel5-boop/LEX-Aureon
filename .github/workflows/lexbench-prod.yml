@@ -20,15 +20,23 @@ env:
   # canonical www.lexaureon.com. Node's native fetch() (used by
   # publish-results.ts) follows that redirect automatically — but per the
   # WHATWG fetch spec, it STRIPS the Authorization header on any cross-origin
-  # redirect, for security. Proven by direct reproduction: sending a real
-  # Bearer token to https://lexaureon.com/api/benchmarks/publish, the request
-  # that actually reached the server had NO credential at all — the header was
-  # silently dropped during the redirect, before BENCH_SECRET was ever
-  # compared. This was never a secret mismatch. Every workflow call now targets
-  # the canonical www host directly, so no redirect (and no header-stripping)
-  # happens at all. This also removes a redundant redirect round-trip from
-  # every single /api/lex/govern call during a benchmark run.
+  # redirect, for security. Every workflow call now targets the canonical www
+  # host directly, so no redirect (and no header-stripping) happens at all.
   SITE_URL: https://www.lexaureon.com
+  # fix (2026-07-07): this workflow's canonical 5 benchmarks — kept explicit
+  # here (not "all") because BENCHMARK_CONFIGS in scripts/lexbench/runner.ts is
+  # SHARED with lexbench-extended.yml, and now also contains xstest/
+  # strong_reject. "--benchmark all" expands to Object.keys(BENCHMARK_CONFIGS)
+  # — ALL 7 entries — regardless of which workflow calls it. This workflow
+  # only ever fetches the HarmBench dataset (see below), so every shard used
+  # to crash (ENOENT on data/xstest.jsonl) right after successfully finishing
+  # these 5, which is why the workflow showed red while real data for these 5
+  # still made it into benchmark_results (the crash happened AFTER they were
+  # written to disk, and "Upload shard results" runs on if: always()).
+  # lexbench-extended.yml already avoided this by looping over an explicit
+  # list rather than relying on "all" — this applies that same proven pattern
+  # here instead of touching the shared runner.ts.
+  BENCHMARKS: truthfulqa,harmbench,jailbreakbench,advbench,agentdojo
 
 jobs:
   # ── Fail FAST if BENCH_SECRET won't authorize a publish ─────────────────
@@ -38,9 +46,7 @@ jobs:
   # provider quota before the actual problem was even visible. This job calls
   # the publish endpoint's GET auth-only precheck (same auth check as the real
   # POST, but never touches the database) in under a second, BEFORE any shard
-  # runs. Now correctly targets the canonical www host — the earlier version
-  # of this job hit the apex domain and got a false-negative 307 itself (the
-  # precheck had the exact same bug it was built to catch).
+  # runs.
   precheck-auth:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
@@ -81,7 +87,10 @@ jobs:
 
       # HarmBench prompts are not committed (see .gitignore) — fetch the
       # official dataset so the prompt total includes HarmBench and the
-      # shard count is correct.
+      # shard count is correct. get-total-prompts.ts maintains its OWN
+      # independent, hardcoded 5-benchmark list (not shared with runner.ts's
+      # BENCHMARK_CONFIGS), so it was never affected by the xstest/
+      # strong_reject addition — shard-count math has always stayed correct.
       - name: Fetch HarmBench dataset
         run: npx tsx scripts/harmbench/fetch-dataset.ts --out data/harmbench.jsonl
 
@@ -132,13 +141,19 @@ jobs:
       - name: Fetch HarmBench dataset
         run: npx tsx scripts/harmbench/fetch-dataset.ts --out data/harmbench.jsonl
 
+      # fix (2026-07-07): loop over the explicit BENCHMARKS list (env, top of
+      # file) instead of `--benchmark all` — see the env block comment for why.
       - name: Run LexBench Shard ${{ matrix.shard-index }}
         run: |
-          npx tsx scripts/lexbench/runner.ts \
-            --benchmark all \
-            --endpoint ${{ env.SITE_URL }} \
-            --shard-index ${{ matrix.shard-index }} \
-            --shard-size ${{ needs.determine-shards.outputs.shard-size }}
+          for benchmark in $(echo "${{ env.BENCHMARKS }}" | tr ',' ' '); do
+            echo ""
+            echo "[*] Starting $benchmark..."
+            npx tsx scripts/lexbench/runner.ts \
+              --benchmark "$benchmark" \
+              --endpoint ${{ env.SITE_URL }} \
+              --shard-index ${{ matrix.shard-index }} \
+              --shard-size ${{ needs.determine-shards.outputs.shard-size }}
+          done
         env:
           GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
@@ -218,12 +233,7 @@ jobs:
 
       # This is the step that publishes to the live table the public site reads.
       # It POSTs summary.json to the canonical writer /api/benchmarks/publish,
-      # authenticated with BENCH_SECRET. ROOT CAUSE FIX (2026-07-05): now
-      # targets the canonical www host directly (env.SITE_URL) instead of the
-      # apex — the apex 307-redirects to www, and Node's fetch strips the
-      # Authorization header on that cross-origin redirect, so every previous
-      # attempt reached the server with NO credential at all, regardless of
-      # whether BENCH_SECRET matched. This was never actually a secret mismatch.
+      # authenticated with BENCH_SECRET.
       - name: Publish results to live leaderboard
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: |
