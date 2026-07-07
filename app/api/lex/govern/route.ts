@@ -30,6 +30,15 @@
  *   the thresholds by hand — a comment there names lib/health_band.ts as the
  *   source, so future edits touch one file first.
  *
+ *   Move B — DB persistence for the capitulation-judge calibration signal
+ *   (lib/capitulation_calibration.ts). The judge stays measurement-only (it
+ *   does NOT trigger refusal — see decideRefusal), but every firing on a
+ *   real user turn now writes a paired row (judge verdict + enforced
+ *   decision + S_self) to capitulation_calibration. Move B moves to a
+ *   real decision when the table has enough rows to answer the questions
+ *   in the module's decision-analysis SQL block — see that file for the
+ *   exact queries.
+ *
  * COHERENCE (2026-06-30, preserved): the reported constitutional state is
  * ONE vector — the TypeScript kernel's governed state — and M and health
  * band are both derived from THAT vector.
@@ -42,12 +51,6 @@
  * FAIL-LOUD (2026-07-01, preserved): when embeddings (or the centroid) are
  * unavailable, `detection_degraded: true` is surfaced and logged. The
  * keyword classifier remains active in that state (embedding-independent).
- *
- * CAPITULATION JUDGE (2026-07-01, preserved as measurement-only): runs on
- * the PRE-REFUSAL governed output, surfaced as `capitulation_signal` for
- * calibration. Deliberately NOT a refusal trigger — Move B decides whether
- * to promote it to enforcement after reviewing the calibration data now
- * being collected against every real user turn.
  *
  * EVAL FAST-PATH (2026-07-03, preserved): synthetic benchmark traffic
  * (isEvalSession) skips the capitulation judge — one fewer network round
@@ -74,6 +77,7 @@ import { governorState } from '@/lib/aureonics_math';
 import { judgeCapitulation } from '@/lib/capitulation_judge';
 import { decideRefusal } from '@/lib/refusal_decision';
 import { healthBand } from '@/lib/health_band';
+import { persistCapitulationCalibration } from '@/lib/capitulation_calibration';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -197,9 +201,23 @@ export async function POST(req: Request) {
     result.receipt.safety_projection_triggered = true;
   }
 
-  // Calibration log: judge verdict vs the enforced decision, every turn
-  // the judge returned a verdict (skipped on eval fast-path).
+  // Calibration: (a) durable DB row for accumulation-then-decide analysis
+  // (Move B), (b) runtime log for quick visibility. Both fire only when the
+  // judge returned a verdict, i.e. on real user turns (eval fast-path skips
+  // the judge entirely). Both are best-effort — no user-facing effect.
   if (capitulationSignal) {
+    void persistCapitulationCalibration({
+      session_id, turn,
+      judge_capitulated: capitulationSignal.capitulated,
+      judge_category:    capitulationSignal.category,
+      judge_confidence:  capitulationSignal.confidence,
+      judge_reason:      capitulationSignal.reason,
+      judge_model:       capitulationSignal.judge_model,
+      s_self:            sovereigntyRaw,
+      refused:           decision.refused,
+      primary_reason:    decision.primary,
+      reasons:           JSON.stringify(decision.reasons),
+    });
     logger.info('govern.capitulation_calibration', 'judge vs enforced decision', {
       session_id, turn,
       judge_capitulated: capitulationSignal.capitulated,
@@ -308,8 +326,8 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     name:     'Lex Aureon SovereignKernel API',
-    version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal',
+    version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal+CalibrationDB',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + capitulation judge (measurement-only). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D).',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B).',
   });
 }
