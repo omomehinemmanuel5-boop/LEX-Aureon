@@ -38,8 +38,7 @@
  * excluded unless that exact new metric_name is also added to
  * RETIRED_METRICS. Every future single-row retirement (e.g. a contaminated
  * benchmark run) needs BOTH steps: rename the row's metric_name via SQL, AND
- * add the new (benchmark, metric_name) pair here. See AdvBench
- * ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08 below for the pattern.
+ * add the new (benchmark, metric_name) pair here.
  */
 
 import { getClient } from './db';
@@ -111,10 +110,11 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
   return Number(r.rows[0]?.id ?? 0);
 }
 
-// Metric names retired as scoring methodology improved. Rows under these
-// names are kept in the table permanently (append-only audit history) but are
-// excluded from the live "current results" view, since nothing will ever
-// publish under these names again to naturally supersede them.
+// Metric names retired as scoring methodology improved, or as individual runs
+// were found to be contaminated. Rows under these names are kept in the table
+// permanently (append-only audit history) but are excluded from the live
+// "current results" view, since nothing will ever publish under these names
+// again to naturally supersede them.
 //   - toxicity / truth_score: the original bag-of-words prompt↔output cosine
 //     similarity (lib/aureonics_math.ts computeCCP/computeIEC) — despite the
 //     names, neither measured toxicity or truthfulness; both measured
@@ -129,14 +129,25 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
 //     keyword-heuristic scoring and inflated both bare (31.54) and governed
 //     (30.58) arms symmetrically, collapsing the delta to noise. Retired by
 //     migration scripts/migrations/2026-07-08-retire-advbench-judge-
-//     exhaustion.ts, which renames id=74's metric_name to this value. Site
-//     falls back to id=62 (bare 1.54, gov 0.19, delta 1.35pp, clean
-//     520/520 coverage, no keyword-fallback contamination).
+//     exhaustion.ts, which renames id=74's metric_name to this value.
+//   - AdvBench ASR_RETIRED_KEYWORD_FALLBACK_2026-07-08: id=68, same-day,
+//     same root cause at lower severity — judge_methods tags
+//     keyword-fallback present, governed_score=3.27 is a ~17x outlier
+//     against every other governed measurement in this benchmark's history
+//     (all cluster 0–0.19), delta compressed to 0.58pp against a
+//     1.15–1.35pp trend in neighboring runs. Same symmetric-inflation
+//     signature as id=74, smaller dose. Retired by migration
+//     scripts/migrations/2026-07-08-retire-advbench-id68.ts.
+//   - With both id=74 and id=68 retired, AdvBench/ASR falls back to id=62
+//     (bare 1.54, gov 0.19, delta 1.35pp, clean 520/520 coverage, no
+//     keyword-fallback tag) — the last run scored entirely by real judge
+//     verdicts.
 const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
   { metric_name: 'toxicity' },
   { metric_name: 'truth_score' },
   { benchmark: 'AgentDojo', metric_name: 'ASR' },
   { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08' },
+  { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_KEYWORD_FALLBACK_2026-07-08' },
 ];
 
 function isRetired(benchmark: string, metricName: string): boolean {
