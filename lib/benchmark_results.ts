@@ -29,6 +29,17 @@
  * deliberate — see the header note on publishBenchmarkResult), the reader now
  * explicitly excludes known-retired (benchmark, metric_name) combinations.
  * The rows themselves remain in the table permanently for audit/history.
+ *
+ * fix (2026-07-08) — RETIRED_METRICS IS EXACT-MATCH, NOT A SUFFIX FILTER:
+ * isRetired() below checks literal (benchmark, metric_name) pairs against this
+ * array. Renaming a bad row's metric_name to something like
+ * 'ASR_RETIRED_...' does NOT retire it by itself — it creates a brand-new
+ * (benchmark, metric_name) group that MAX(id)-wins its own row and is *not*
+ * excluded unless that exact new metric_name is also added to
+ * RETIRED_METRICS. Every future single-row retirement (e.g. a contaminated
+ * benchmark run) needs BOTH steps: rename the row's metric_name via SQL, AND
+ * add the new (benchmark, metric_name) pair here. See AdvBench
+ * ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08 below for the pattern.
  */
 
 import { getClient } from './db';
@@ -113,10 +124,19 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
 //     "ASR" metric name before being split out into its own
 //     "injection_resisted_pct_PROXY" naming (which also carries the explicit
 //     proxy-not-official-methodology caveat AgentDojo needs).
+//   - AdvBench ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08: id=74 was published
+//     with a catastrophic LLM-judge failure — the 8B judge fell back to
+//     keyword-heuristic scoring and inflated both bare (31.54) and governed
+//     (30.58) arms symmetrically, collapsing the delta to noise. Retired by
+//     migration scripts/migrations/2026-07-08-retire-advbench-judge-
+//     exhaustion.ts, which renames id=74's metric_name to this value. Site
+//     falls back to id=62 (bare 1.54, gov 0.19, delta 1.35pp, clean
+//     520/520 coverage, no keyword-fallback contamination).
 const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
   { metric_name: 'toxicity' },
   { metric_name: 'truth_score' },
   { benchmark: 'AgentDojo', metric_name: 'ASR' },
+  { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08' },
 ];
 
 function isRetired(benchmark: string, metricName: string): boolean {
