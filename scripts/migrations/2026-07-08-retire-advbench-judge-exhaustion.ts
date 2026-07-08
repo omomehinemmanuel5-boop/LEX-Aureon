@@ -21,24 +21,32 @@
  * must ship together or this migration silently creates a second visible
  * "AdvBench" row instead of retiring the bad one.
  *
- * Run with: npx tsx scripts/migrations/2026-07-08-retire-advbench-judge-exhaustion.ts
- * Requires TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in .env.local or env.
+ * Run via: .github/workflows/run-migration.yml (workflow_dispatch — see that
+ * file). It passes TURSO_DATABASE_URL/TURSO_AUTH_TOKEN as real env vars from
+ * repo secrets, so this script reads process.env directly.
  *
- * This script has NOT been executed as part of committing it — it requires
- * live Turso credentials this session does not have write access to via any
- * available tool (query_database is read-only SELECT; there is no DB-write
- * MCP tool). Run manually, then verify with:
+ * fix (2026-07-08, first CI run): the original version of this script called
+ * dotenv.config({path: '.env.local'}) / dotenv.config() at the top, copied
+ * from scripts/seed-benchmarks.ts's local-dev pattern. 'dotenv' is not a
+ * dependency anywhere in package.json — npm install in the GitHub Actions
+ * runner does not install it, so the very first CI run failed immediately
+ * with `Error: Cannot find module 'dotenv'` before ever reaching the SQL.
+ * dotenv was never actually needed here: this script only runs via the
+ * run-migration.yml workflow, which already injects the real secrets as
+ * process.env vars directly (no .env.local file exists in that runner
+ * either way). Removed the dependency entirely rather than adding dotenv to
+ * package.json for a file whose only real execution path doesn't need it.
+ * NOTE: scripts/seed-benchmarks.ts has this exact same latent bug and would
+ * fail the same way if ever run fresh in CI — untouched here, out of scope
+ * for this migration, flagged for whoever next needs that script in CI.
+ *
+ * Verify after running with:
  *   SELECT id, metric_name, notes FROM benchmark_results WHERE id = 74;
  * and confirm getBenchmarkResults() / the live site now shows id=62's
  * numbers (bare 1.54, gov 0.19, delta 1.35pp) for AdvBench.
  */
 
 import { createClient } from '@libsql/client';
-import dotenv from 'dotenv';
-import path from 'path';
-
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-dotenv.config();
 
 async function main() {
   const url = process.env.TURSO_DATABASE_URL;
