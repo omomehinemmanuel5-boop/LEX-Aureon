@@ -30,11 +30,39 @@
  * Lex Aureon knows what it is, how it works, and who built it. The raw arm
  * (callLLMRaw) deliberately gets NO system prompt, so self-knowledge is part of
  * what governance adds and never contaminates the bare benchmark baseline.
+ *
+ * fix (2026-07-08) — PROVIDER-EXHAUSTION FALLBACK: under concurrent
+ * benchmark + real-traffic load, generateGoverned's entire 5-provider chain
+ * (Gemini lite/full, Groq 70b/8b, Mistral) can exhaust simultaneously.
+ * Previously that returned a hardcoded static string ("Constitutional
+ * framework C + R + S = 1 is operative.") as if it were a real governed
+ * response — a DB audit found this was 9.7%-33.6% of governed outputs across
+ * every benchmark during one concurrent-run window, and it was being scored
+ * by benchmark judges as genuine content (an "over-refusal" on XSTest, a
+ * spuriously truthful/not-truthful verdict on TruthfulQA, etc.) — corrupting
+ * every metric that touched it, in both directions.
+ *
+ * callLLMRaw and callLLM now return the full LLMResult (not just .text), so
+ * runCycle can see WHICH provider actually produced each arm's text —
+ * 'static' means all 5 providers failed. When governance's own chain is
+ * exhausted but the raw arm succeeded with a real provider, governedResponse
+ * falls back to the raw arm's real content rather than a useless canned
+ * string — a real answer, un-governed, beats a broken non-answer, and this
+ * is exactly the same principle a person would apply by hand. This is
+ * tracked explicitly as `governed_source: 'raw_fallback'` in the receipt —
+ * never silently conflated with real governance — and the refusal decision
+ * (lib/refusal_decision.ts) still runs normally against whatever content
+ * ends up in governedResponse, so enforcement is unaffected. Only in the
+ * rare case where BOTH arms exhaust simultaneously does the honest
+ * "unavailable" message survive, tagged `governed_source: 'unavailable'` so
+ * scripts/lexbench/runner.ts can exclude it from scoring rather than count
+ * it as a real refusal or a real over-refusal.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
 import { env } from './env';
 import { generateGoverned } from './llm_provider';
+import type { LLMResult } from './llm_provider';
 import { LEX_IDENTITY } from './lex_identity';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
@@ -70,6 +98,17 @@ export interface GovernorSensingReport {
   correction_magnitude: number; // L2 norm of G(x,z) delta applied — written to governor_effort
 }
 
+/**
+ * Provenance of the text that ended up in governed_response:
+ *   'governed'     — normal path, produced by callLLM with LEX_IDENTITY + context.
+ *   'raw_fallback' — callLLM's provider chain fully exhausted (all 5 failed);
+ *                    the raw arm's real content was used instead of a canned
+ *                    non-answer. NOT governed by LEX_IDENTITY/context this turn.
+ *   'unavailable'  — BOTH arms exhausted. Honest "unavailable" message; this
+ *                    turn produced no real content on either arm.
+ */
+export type GovernedSource = 'governed' | 'raw_fallback' | 'unavailable';
+
 export interface KernelReceipt {
   timestamp_iso:               string;
   input_hash:                  string;
@@ -100,6 +139,10 @@ export interface KernelReceipt {
   governor_sensing:            GovernorSensingReport;
   z_weights:                   [number, number, number];
   version:                     string;
+  // Provider-exhaustion provenance (2026-07-08 fix — see header)
+  raw_provider:                string;         // provider that produced raw_response ('static' = all 5 failed)
+  governed_provider:           string;         // provider that produced the TEXT now in governed_response
+  governed_source:             GovernedSource;
 }
 
 export interface KernelCycleResult {
@@ -128,6 +171,10 @@ export interface KernelCycleResult {
   receipt:              KernelReceipt;
   metrics?:             PostResponseCRS;
   error?:               string;
+  // Provider-exhaustion provenance (2026-07-08 fix — see header)
+  governed_source?:     GovernedSource;
+  raw_provider?:        string;
+  governed_provider?:   string;
 }
 
 const kernelCache = new Map<string, SovereignKernel>();
@@ -266,14 +313,30 @@ export class SovereignKernel {
     return cleaned;
   }
 
-  async callLLMRaw(prompt: string, _context: string, _temperature: number): Promise<string> {
-    try { return (await generateGoverned([{ role: 'user', content: prompt }])).text || '[unavailable]'; }
-    catch (e) { console.error('LLM raw call error:', e); return '[unavailable]'; }
+  /**
+   * Returns the full LLMResult (not just text) so callers can see WHICH
+   * provider produced it — 'static' means the entire 5-provider fallback
+   * chain in generateGoverned() was exhausted. See header fix note.
+   */
+  async callLLMRaw(prompt: string, _context: string, _temperature: number): Promise<LLMResult> {
+    try {
+      const result = await generateGoverned([{ role: 'user', content: prompt }]);
+      return result.text ? result : { ...result, text: '[unavailable]' };
+    } catch (e) {
+      console.error('LLM raw call error:', e);
+      return { text: '[unavailable]', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
+    }
   }
 
-  async callLLM(prompt: string, context: string, _temperature: number): Promise<string> {
-    try { return (await generateGoverned([{ role: 'system', content: `${LEX_IDENTITY}\n\n${context}` }, { role: 'user', content: prompt }])).text || 'I was unable to generate a response at this time.'; }
-    catch (e) { console.error('LLM governed call error:', e); return 'I was unable to generate a response at this time.'; }
+  /** See callLLMRaw docstring — same provenance-preserving contract. */
+  async callLLM(prompt: string, context: string, _temperature: number): Promise<LLMResult> {
+    try {
+      const result = await generateGoverned([{ role: 'system', content: `${LEX_IDENTITY}\n\n${context}` }, { role: 'user', content: prompt }]);
+      return result.text ? result : { ...result, text: 'I was unable to generate a response at this time.' };
+    } catch (e) {
+      console.error('LLM governed call error:', e);
+      return { text: 'I was unable to generate a response at this time.', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
+    }
   }
 
   scoreAdv(response: string): number {
@@ -408,14 +471,44 @@ export class SovereignKernel {
 
     let rawResponse = '';
     let governedResponse = '';
+    let rawProvider = 'unknown';
+    let governedProvider = 'unknown';
+    let governedSource: GovernedSource = 'governed';
     try {
       const governedContext = memoryContext ? `${memoryContext}\n\n${context}` : context;
       const [rawResult, governedResult] = await Promise.allSettled([
         this.callLLMRaw(userPrompt, '', temperature),
         this.callLLM(userPrompt, governedContext, temperature),
       ]);
-      rawResponse      = rawResult.status      === 'fulfilled' ? rawResult.value      : '[raw: unavailable]';
-      governedResponse = governedResult.status === 'fulfilled' ? governedResult.value : 'I was unable to generate a response at this time.';
+      const rawLLM      = rawResult.status      === 'fulfilled' ? rawResult.value      : { text: '[raw: unavailable]', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
+      const governedLLM = governedResult.status === 'fulfilled' ? governedResult.value : { text: 'I was unable to generate a response at this time.', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
+
+      rawResponse   = rawLLM.text;
+      rawProvider   = rawLLM.provider;
+
+      // fix (2026-07-08): see header note. 'static' means generateGoverned's
+      // entire 5-provider chain was exhausted for that call.
+      const governedExhausted = governedLLM.provider === 'static' || governedLLM.provider === 'error';
+      const rawSucceeded      = rawLLM.provider !== 'static' && rawLLM.provider !== 'error' && rawLLM.text && rawLLM.text !== '[unavailable]';
+
+      if (governedExhausted && rawSucceeded) {
+        // Real content beats a canned non-answer. Explicitly NOT governed by
+        // LEX_IDENTITY/context this turn — tagged so nothing downstream can
+        // mistake this for a real governance decision.
+        governedResponse  = rawLLM.text;
+        governedProvider  = rawLLM.provider;
+        governedSource     = 'raw_fallback';
+      } else if (governedExhausted && !rawSucceeded) {
+        // Both arms exhausted — no real content produced either side.
+        governedResponse  = governedLLM.text;
+        governedProvider  = governedLLM.provider;
+        governedSource     = 'unavailable';
+      } else {
+        governedResponse  = governedLLM.text;
+        governedProvider  = governedLLM.provider;
+        governedSource     = 'governed';
+      }
+
       governedResponse = this.enforceResponseShape(governedResponse, health_band);
     } catch (e) {
       return {
@@ -546,6 +639,9 @@ export class SovereignKernel {
       governor_sensing: governorSensing,
       z_weights: activeZ,
       version: 'SovereignKernel-TS-v2+AsyncGovernor',
+      raw_provider: rawProvider,
+      governed_provider: governedProvider,
+      governed_source: governedSource,
     };
 
     return {
@@ -560,6 +656,9 @@ export class SovereignKernel {
       projection_magnitude: projMag, epsilon_injected: epsilonInjected,
       suspension_triggered: suspensionTriggered, governor_sensing: governorSensing,
       receipt, metrics: postMetrics,
+      governed_source: governedSource,
+      raw_provider: rawProvider,
+      governed_provider: governedProvider,
     };
   }
 
