@@ -118,12 +118,33 @@ jobs:
             echo "shard-size=${SHARD_SIZE}" >> $GITHUB_OUTPUT
           fi
 
-  # ── Run each shard in parallel ──────────────────────────────────────────
+  # ── Run each shard, bounded concurrency ─────────────────────────────────
+  # fix (2026-07-08) — PROVIDER-QUOTA SATURATION: this job's matrix strategy
+  # had no max-parallel, so GitHub Actions defaulted to running every shard
+  # simultaneously (up to the account's job-concurrency ceiling) — e.g. a
+  # ~1000-prompt run at shard-size=100 spins up ~10 shards at once, all
+  # hitting the SAME shared GROQ_API_KEY/GEMINI_API_KEY/MISTRAL_API_KEY
+  # secrets concurrently. That is the concurrent-load scenario
+  # lib/sovereign_kernel.ts's 2026-07-08 header note describes: generateGoverned's
+  # entire 5-provider fallback chain exhausting simultaneously under load,
+  # producing governed_source='raw_fallback'/'unavailable' turns that
+  # previously silently corrupted scored results (see AdvBench id=74
+  # retirement, lib/benchmark_results.ts). max-parallel:2 bounds this
+  # workflow's own shard concurrency; the `concurrency:` group below on this
+  # job also queues (never cancels — these are long, expensive, real-money-
+  # quota runs) against lexbench-extended.yml's equivalent job, since both
+  # workflows draw on the identical three provider secrets and can otherwise
+  # overlap (this workflow also fires on pull_request, independent of the
+  # daily cron).
   run-lexbench:
     needs: determine-shards
     runs-on: ubuntu-latest
+    concurrency:
+      group: lexbench-live-api-provider-quota
+      cancel-in-progress: false
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix: ${{ fromJson(needs.determine-shards.outputs.matrix) }}
 
     steps:
