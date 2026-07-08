@@ -1,0 +1,54 @@
+name: Run Migration Script
+
+# Phone-friendly, tap-to-run migration executor. Emmanuel works entirely from
+# mobile — no local shell to `npx tsx scripts/migrations/*.ts` from. This
+# reuses the TURSO_DATABASE_URL / TURSO_AUTH_TOKEN secrets already configured
+# for LexBench (see lexbench-prod.yml) to run any committed migration script
+# on demand, from the GitHub mobile app or mobile browser: repo -> Actions ->
+# "Run Migration Script" -> Run workflow -> (script path defaults to today's
+# AdvBench retirement) -> Run workflow (green button).
+#
+# Deliberately NOT on any automatic trigger (no schedule, no push, no PR) —
+# workflow_dispatch only, so a migration only ever runs when someone
+# explicitly taps Run. Every migration script under scripts/migrations/ is
+# expected to be self-checking (see 2026-07-08-retire-advbench-judge-
+# exhaustion.ts for the pattern: verify the expected before-state, abort with
+# a clear message and NO changes if it doesn't match).
+
+on:
+  workflow_dispatch:
+    inputs:
+      script_path:
+        description: 'Path to the migration script to run'
+        required: true
+        default: 'scripts/migrations/2026-07-08-retire-advbench-judge-exhaustion.ts'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  run-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify script exists
+        run: |
+          if [ ! -f "${{ github.event.inputs.script_path }}" ]; then
+            echo "::error::Script not found: ${{ github.event.inputs.script_path }}"
+            exit 1
+          fi
+          echo "Running: ${{ github.event.inputs.script_path }}"
+
+      - name: Run migration script
+        run: npx tsx "${{ github.event.inputs.script_path }}"
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:   ${{ secrets.TURSO_AUTH_TOKEN }}
