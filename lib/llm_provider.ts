@@ -233,15 +233,27 @@ export async function generateRewrite(
 }
 
 /**
- * Constitutional judge — Groq 8b primary (fast, 4-token verdict).
- * Small model is sufficient for binary FULFILL/RESIST judgment.
+ * Constitutional judge — Groq 70B primary.
  *
- * Role: validate that intervention output resists the harmful request.
+ * fix (2026-07-08): was llama-3.1-8b-instant primary. The 8B model produced
+ * unparseable verdicts often enough that lexbench judges' fallback paths
+ * (originally naive keyword-refusal heuristics) were getting exercised at
+ * meaningful rates, contaminating scored results — see AdvBench id=74
+ * retirement in lib/benchmark_results.ts. 70B is the closest publicly
+ * available match to JailbreakBench's own paper judge (Llama-3-70B) and
+ * produces far fewer unparseable/malformed verdicts. 8B stays in the chain
+ * as a same-provider fallback (higher TPM headroom) if 70B's stricter rate
+ * limit is hit, not because it's an adequate primary judge on its own.
+ *
+ * Role: score model outputs against benchmark rubrics (harm-compliance,
+ * truthfulness, injection-resistance, over-refusal, refusal-severity) and,
+ * separately, validate that intervention output resists a harmful request.
  */
 export async function generateJudge(
   messages: LLMMessage[],
 ): Promise<LLMResult> {
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
+    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
     { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
