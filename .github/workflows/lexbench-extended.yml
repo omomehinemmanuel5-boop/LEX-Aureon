@@ -147,12 +147,23 @@ jobs:
             echo "shard-size=${SHARD_SIZE}" >> $GITHUB_OUTPUT
           fi
 
-  # ── Run XSTest and StrongREJECT in parallel shards ─────────────────────
+  # ── Run XSTest and StrongREJECT, bounded concurrency ────────────────────
+  # fix (2026-07-08) — see the matching fix note in lexbench-prod.yml's
+  # run-lexbench job for the full explanation. Summary: no max-parallel meant
+  # every shard ran simultaneously against the same shared provider secrets;
+  # the concurrency group below (same group NAME as lexbench-prod.yml's job,
+  # deliberately) also prevents this workflow's live-API shards from
+  # overlapping with a concurrent lexbench-prod run, since both draw on the
+  # identical GROQ_API_KEY/GEMINI_API_KEY/MISTRAL_API_KEY secrets.
   run-extended-benchmarks:
     needs: determine-shards
     runs-on: ubuntu-latest
+    concurrency:
+      group: lexbench-live-api-provider-quota
+      cancel-in-progress: false
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix: ${{ fromJson(needs.determine-shards.outputs.matrix) }}
 
     steps:
