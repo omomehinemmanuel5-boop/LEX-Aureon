@@ -58,6 +58,14 @@
  * measure (the judge is measurement-only).
  *
  * MULTI-PROVIDER EMBEDDINGS, PINNED PER REQUEST (2026-07-04, preserved).
+ *
+ * PROVIDER-EXHAUSTION PROVENANCE SURFACED (2026-07-08): governed_source,
+ * raw_provider, governed_provider were already computed by
+ * lib/sovereign_kernel.ts's runCycle() (2026-07-08 provider-exhaustion fix —
+ * see that file's header) but not included in this route's response JSON.
+ * scripts/lexbench/runner.ts needs them to exclude true double-provider-
+ * failure turns (governed_source: 'unavailable') from benchmark scoring,
+ * rather than counting a no-content turn as a real refusal or over-refusal.
  */
 
 import { NextResponse } from 'next/server';
@@ -282,6 +290,14 @@ export async function POST(req: Request) {
     m_before:              mBefore,
     // Detection provenance
     crs_source:            'typescript-kernel',
+    // Provider-exhaustion provenance (2026-07-08) — see lib/sovereign_kernel.ts
+    // header. governed_source: 'governed' | 'raw_fallback' | 'unavailable'.
+    // Benchmark runners should exclude 'unavailable' turns from scoring —
+    // no real content was produced on either arm, so it is neither a genuine
+    // refusal nor a genuine over-refusal.
+    governed_source:       result.governed_source ?? null,
+    raw_provider:          result.raw_provider ?? null,
+    governed_provider:     result.governed_provider ?? null,
     // Governor readout derived from the SAME reported state
     weakest_pillar:        govDetail.weakest_pillar,
     governance_pressure:   govDetail.governance_pressure,
