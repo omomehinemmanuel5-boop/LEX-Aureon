@@ -110,11 +110,11 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
   return Number(r.rows[0]?.id ?? 0);
 }
 
-// Metric names retired as scoring methodology improved, or as individual runs
-// were found to be contaminated. Rows under these names are kept in the table
-// permanently (append-only audit history) but are excluded from the live
-// "current results" view, since nothing will ever publish under these names
-// again to naturally supersede them.
+// Metric names retired as scoring methodology improved, individual runs were
+// found contaminated, or rows were published in error. Rows under these names
+// are kept in the table permanently (append-only audit history) but are
+// excluded from the live "current results" view, since nothing will ever
+// publish under these names again to naturally supersede them.
 //   - toxicity / truth_score: the original bag-of-words prompt↔output cosine
 //     similarity (lib/aureonics_math.ts computeCCP/computeIEC) — despite the
 //     names, neither measured toxicity or truthfulness; both measured
@@ -138,16 +138,30 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
 //     1.15–1.35pp trend in neighboring runs. Same symmetric-inflation
 //     signature as id=74, smaller dose. Retired by migration
 //     scripts/migrations/2026-07-08-retire-advbench-id68.ts.
-//   - With both id=74 and id=68 retired, AdvBench/ASR falls back to id=62
-//     (bare 1.54, gov 0.19, delta 1.35pp, clean 520/520 coverage, no
-//     keyword-fallback tag) — the last run scored entirely by real judge
-//     verdicts.
+//   - *_RETIRED_QUICKTEST_2026-07-09 (TruthfulQA/truthful_pct,
+//     AgentDojo/injection_resisted_pct_PROXY, JailbreakBench/ASR,
+//     AdvBench/ASR, HarmBench/ASR — ids 76-80): a quick-test workflow_dispatch
+//     (limit=10, meant only to validate pipeline fixes before a full run)
+//     published its tiny n=10 results to the live leaderboard, because the
+//     publish step's guard didn't exclude quick-test mode. Not a
+//     methodology issue — operator error, since fixed in
+//     .github/workflows/lexbench-prod.yml and lexbench-extended.yml.
+//     Retired by scripts/migrations/2026-07-09-retire-quicktest-noise.ts.
+//   - With id=74, id=68, and the id=79 quick-test row all retired,
+//     AdvBench/ASR falls back to id=62 (bare 1.54, gov 0.19, delta 1.35pp,
+//     clean 520/520 coverage, no keyword-fallback tag) — the last AdvBench
+//     run scored entirely by real judge verdicts.
 const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
   { metric_name: 'toxicity' },
   { metric_name: 'truth_score' },
   { benchmark: 'AgentDojo', metric_name: 'ASR' },
   { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08' },
   { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_KEYWORD_FALLBACK_2026-07-08' },
+  { benchmark: 'TruthfulQA', metric_name: 'truthful_pct_RETIRED_QUICKTEST_2026-07-09' },
+  { benchmark: 'AgentDojo', metric_name: 'injection_resisted_pct_PROXY_RETIRED_QUICKTEST_2026-07-09' },
+  { benchmark: 'JailbreakBench', metric_name: 'ASR_RETIRED_QUICKTEST_2026-07-09' },
+  { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_QUICKTEST_2026-07-09' },
+  { benchmark: 'HarmBench', metric_name: 'ASR_RETIRED_QUICKTEST_2026-07-09' },
 ];
 
 function isRetired(benchmark: string, metricName: string): boolean {
