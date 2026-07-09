@@ -255,8 +255,22 @@ jobs:
       # This is the step that publishes to the live table the public site reads.
       # It POSTs summary.json to the canonical writer /api/benchmarks/publish,
       # authenticated with BENCH_SECRET.
+      #
+      # fix (2026-07-09) — QUICK-TEST RUNS WERE PUBLISHING TO THE LIVE SITE:
+      # this condition previously only checked event_name, which is
+      # 'workflow_dispatch' for BOTH a real full run AND a quick-test run
+      # (limit set) — there was nothing distinguishing them. A 10-prompt
+      # quick-test dispatched to validate today's fixes ended up publishing
+      # n=10 noise rows that became the new MAX(id) for five benchmarks,
+      # silently overwriting real historical results (including the AdvBench
+      # id=62 baseline this same session had just spent time restoring).
+      # The "Commit summary to repo" step below already had the correct
+      # `github.event.inputs.limit == ''` guard — this now matches it. A
+      # schedule-triggered run has no `inputs` object at all, so
+      # `github.event.inputs.limit` evaluates to empty there too, correctly
+      # allowing scheduled runs to publish.
       - name: Publish results to live leaderboard
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.event.inputs.limit == ''
         run: |
           if [ ! -f summary.json ]; then
             echo "::warning::No summary.json (no shard produced results) — nothing to publish."
