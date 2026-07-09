@@ -257,8 +257,13 @@ jobs:
           echo "[*] Aggregation complete"
           cat summary_extended.json
 
+      # fix (2026-07-09) — QUICK-TEST RUNS WERE PUBLISHING TO THE LIVE SITE:
+      # matching fix to lexbench-prod.yml's identical bug (see that file's
+      # 2026-07-09 comment for the full incident). This condition previously
+      # only checked event_name, true for both a real full run and a
+      # quick-test run (limit set) since both are 'workflow_dispatch'.
       - name: Publish results to live leaderboard
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.event.inputs.limit == ''
         run: |
           if [ ! -f summary_extended.json ]; then
             echo "::warning::No summary — nothing to publish"
@@ -277,8 +282,13 @@ jobs:
           path: summary_extended.json
           if-no-files-found: ignore
 
+      # fix (2026-07-09): same missing quick-test guard as the publish step
+      # above -- was `if: github.event_name == 'workflow_dispatch'`, which is
+      # also true for a quick-test dispatch (limit set), meaning a tiny
+      # quick-test summary could overwrite data/lexbench-summary-extended.json
+      # in the repo. Added the same github.event.inputs.limit == '' check.
       - name: Commit summary to repo
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.limit == ''
         continue-on-error: true
         run: |
           if [ ! -f summary_extended.json ]; then
