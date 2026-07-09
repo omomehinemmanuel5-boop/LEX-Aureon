@@ -18,6 +18,22 @@
  *   npx tsx scripts/harmbench/fetch-dataset.ts                 # standard set
  *   npx tsx scripts/harmbench/fetch-dataset.ts --all           # all categories
  *   npx tsx scripts/harmbench/fetch-dataset.ts --out data/harmbench.jsonl
+ *
+ * fix (2026-07-09) — HTTP 429 KILLED THE 2026-07-09 SCHEDULED PROD RUN: this
+ * script previously made a single unretried fetch() to raw.githubusercontent.com
+ * and threw immediately on any non-2xx status, including 429 (rate limit —
+ * a "retry shortly" signal, not a real failure). lexbench-prod.yml calls this
+ * script once in determine-shards AND once again in every shard job (up to
+ * ~5-10 for a full run), all hitting the identical URL within a short window
+ * on shared GitHub Actions runner infrastructure — a repeated-request pattern
+ * that is exactly what trips rate limits, independent of anything specific to
+ * this repo. Added retry with exponential backoff + jitter, honoring the
+ * Retry-After header when the server sends one. This does not eliminate the
+ * redundant per-shard refetching (a real, separate inefficiency — see
+ * lexbench-extended.yml's fetch-datasets job for the better pattern: fetch
+ * once, pass via actions/upload-artifact + download-artifact — that
+ * restructuring of lexbench-prod.yml is a larger, separate change, not done
+ * here), but makes a transient 429 recoverable rather than run-ending.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -25,6 +41,56 @@ import * as path from 'path';
 const SOURCE_URL =
   'https://raw.githubusercontent.com/centerforaisafety/HarmBench/main/' +
   'data/behavior_datasets/harmbench_behaviors_text_all.csv';
+
+const MAX_ATTEMPTS = 5;
+const BASE_DELAY_MS = 2000;
+const MAX_DELAY_MS = 30000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch with retry on 429/5xx. Honors Retry-After (seconds or HTTP-date) when
+ * present; otherwise exponential backoff with jitter, capped at MAX_DELAY_MS.
+ * Non-retryable statuses (e.g. 404) fail immediately — no point retrying those.
+ */
+async function fetchWithRetry(url: string): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      if (res.ok) return res;
+
+      const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
+      if (!retryable || attempt === MAX_ATTEMPTS) {
+        throw new Error(`Failed to fetch HarmBench CSV: HTTP ${res.status}`);
+      }
+
+      let delayMs: number;
+      const retryAfter = res.headers.get('retry-after');
+      if (retryAfter) {
+        const asSeconds = Number(retryAfter);
+        delayMs = Number.isFinite(asSeconds)
+          ? asSeconds * 1000
+          : Math.max(0, new Date(retryAfter).getTime() - Date.now());
+      } else {
+        delayMs = BASE_DELAY_MS * 2 ** (attempt - 1);
+      }
+      delayMs = Math.min(delayMs, MAX_DELAY_MS) + Math.random() * 500; // jitter
+
+      console.log(`[harmbench] HTTP ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in ${Math.round(delayMs)}ms...`);
+      await sleep(delayMs);
+    } catch (e) {
+      lastError = e;
+      if (attempt === MAX_ATTEMPTS) throw e;
+      const delayMs = Math.min(BASE_DELAY_MS * 2 ** (attempt - 1), MAX_DELAY_MS) + Math.random() * 500;
+      console.log(`[harmbench] fetch error (attempt ${attempt}/${MAX_ATTEMPTS}): ${e} — retrying in ${Math.round(delayMs)}ms...`);
+      await sleep(delayMs);
+    }
+  }
+  throw lastError ?? new Error('fetchWithRetry: exhausted attempts');
+}
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const out: Record<string, string | boolean> = {};
@@ -74,8 +140,7 @@ async function main() {
   const includeAll = Boolean(args.all);
 
   console.log(`[harmbench] Fetching official HarmBench behaviors from CfAS...`);
-  const res = await fetch(SOURCE_URL, { signal: AbortSignal.timeout(60_000) });
-  if (!res.ok) throw new Error(`Failed to fetch HarmBench CSV: HTTP ${res.status}`);
+  const res = await fetchWithRetry(SOURCE_URL);
   const csv = await res.text();
 
   const rows = parseCSV(csv);
