@@ -52,7 +52,8 @@ export default function PrivacyPage() {
         <Section title="1. What we collect">
           <p><b className="text-slate-200">Prompts and governance data.</b> When you use the console, chat, or public API, your prompt text and the model's response are sent to Lex Aureon's servers to be governed and, where you've asked to keep a session, stored so the constitutional state (C, R, S) can persist across turns. This is stored in our database (Turso/libSQL).</p>
           <p><b className="text-slate-200">Audit receipts.</b> Every governed turn generates a cryptographic receipt — a SHA-256 hash of the input, a hash of the output, and the resulting constitutional state and health band. Receipts are retained permanently by design (the system is append-only, for auditability) and a subset are publicly viewable at <Link href="/audit" className="text-amber-500 hover:underline">/audit</Link>. <b className="text-slate-200">Receipts do not display your prompt or response text</b> — only hashes, scores, and metadata (session ID, turn number, timestamp, intervention flag).</p>
-          <p><b className="text-slate-200">Email address.</b> If you submit your email (e.g. via the homepage signup), it's sent to our server and stored, and also saved in your browser's local storage. We use it to notify you about things you signed up for (like benchmark result publication) — nothing else.</p>
+          <p><b className="text-slate-200">Email address.</b> If you submit your email (e.g. via the homepage signup), it's sent to our server and stored, and also saved in your browser's local storage. We use it to notify you about things you signed up for (like benchmark result publication) — nothing else, unless you're on a paid plan (next paragraph).</p>
+          <p><b className="text-slate-200">Payment verification, for paid plans only.</b> If you upgrade to a paid tier via cryptocurrency payment, we also store the transaction ID, payment amount, and coin type against your email, to verify the on-chain payment and issue an API key. We do not process or store card numbers or other traditional payment credentials — verification is done by checking the public blockchain transaction you provide, not by collecting financial account details from you directly.</p>
           <p><b className="text-slate-200">Usage analytics.</b> The site uses Vercel Analytics and Vercel Speed Insights for aggregate traffic and performance monitoring. These are privacy-oriented by design (no cross-site tracking cookies) and we don't layer any additional tracking on top.</p>
           <p><b className="text-slate-200">Local storage.</b> Your browser may store small preference values locally (e.g. theme choice, whether you've already signed up) — this stays on your device and isn't something we can read server-side.</p>
         </Section>
@@ -63,7 +64,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="3. Why we collect it">
-          <p>To generate and govern responses (the core function of the product), to let you resume a session with constitutional memory intact, to maintain the audit trail the whole project is built around, and — for email — to send you the specific update you asked for.</p>
+          <p>To generate and govern responses (the core function of the product), to let you resume a session with constitutional memory intact, to maintain the audit trail the whole project is built around, to verify payment and issue access for paid plans, and — for email signups — to send you the specific update you asked for.</p>
         </Section>
 
         <Section title="4. Retention">
