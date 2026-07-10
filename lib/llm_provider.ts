@@ -15,35 +15,34 @@
  * infrastructure (their own Wafer-Scale Engine hardware, separate account,
  * separate quota), OpenAI-compatible (same request/response shape as
  * tryGroq below), and offers a free tier sized for sustained volume
- * (~1M tokens/day) rather than just burst RPM — the dimension that actually
- * mattered on 2026-07-10, where the failure was sustained exhaustion across
- * a heavy-traffic day, not a burst limit. Placed at different positions in
- * each chain below (not just appended at the end everywhere) so it provides
- * real redundancy against whichever of the three existing providers is
- * currently the bottleneck, rather than only being reached after all three
- * have already failed.
+ * (~1M tokens/day) rather than just burst RPM.
  *
  * MODEL NAME CORRECTION (2026-07-10, same day): the model initially wired in
  * here ("llama-3.3-70b") does not exist on this Cerebras account — verified
  * directly against GET /v1/models, which returned exactly three models:
- * gemma-4-31b, zai-glm-4.7, gpt-oss-120b. No Llama variant at all. This
- * matches a documented pattern with Cerebras specifically: their free-tier
- * model catalog is volatile and account-specific, and published/searched
- * model names go stale within weeks. gpt-oss-120b was chosen as the largest
- * available (closest in spirit to the other providers' ~70B-class primaries).
- * NOTE for future maintainers: gpt-oss-120b is a REASONING model — its
- * response puts chain-of-thought in a separate `reasoning` field, and only
- * populates `message.content` (what tryCerebras reads) once the model has
- * finished reasoning AND has token budget left over. Verified directly: at
- * max_tokens=20 the model spent its entire budget on `reasoning` and
- * `content` was empty; at max_tokens=300 both fields populated correctly.
- * MAX_OUTPUT_TOKENS=8192 (used uniformly across every provider in this file)
- * gives ample headroom for this in virtually all realistic prompts, so no
- * separate budget was carved out for Cerebras specifically — but a future
- * maintainer changing MAX_OUTPUT_TOKENS down significantly should re-verify
- * this model still reliably produces non-empty content, not just reasoning.
- * If Cerebras's catalog changes again, re-check with GET /v1/models before
- * assuming any specific model name is still valid.
+ * gemma-4-31b, zai-glm-4.7, gpt-oss-120b. Switched to gpt-oss-120b (largest
+ * available). It is a REASONING model — chain-of-thought lands in a
+ * `reasoning` field, `content` only populates once reasoning finishes and
+ * token budget remains. MAX_OUTPUT_TOKENS=8192 gives ample headroom for this
+ * (verified directly).
+ *
+ * fix (2026-07-10, same day, second pass) — NO PER-PROVIDER FAILURE
+ * VISIBILITY: a quick-test run after adding Cerebras still showed 80-90%
+ * provider exhaustion on most benchmarks — Cerebras alone did not resolve
+ * it. But every tryX() function below caught its own errors internally and
+ * returned null with ZERO logging, so there was no way to tell whether
+ * Cerebras itself was failing (and why), or wasn't being reached at all, or
+ * whether Groq/Gemini/Mistral had simply not recovered. duration_ms on the
+ * resulting benchmark rows was ~1.3-1.8s per prompt — far too fast to be
+ * TIMEOUT_MS (25s) exhausting, meaning providers were failing FAST (like an
+ * immediate 401/429), not hanging. Added console.warn on every non-2xx
+ * response and every caught exception, tagged '[llm_provider]' with the
+ * provider name and either the HTTP status or the error, so the NEXT test
+ * run's Vercel logs actually show which provider failed and why, instead of
+ * requiring another guess. This is deliberately kept as permanent
+ * diagnostic logging, not removed after this investigation — a fallback
+ * chain silently swallowing every failure reason is a maintainability gap
+ * on its own, independent of today's specific incident.
  *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
@@ -75,19 +74,6 @@ const TIMEOUT_MS = 25_000;
 // still not enough for some long-form answers. 8192 (~6k words) covers virtually
 // all normal chat/console responses. It is a CAP, not a target — short answers
 // stay short, so the cost/latency impact on typical turns is minimal.
-//
-// Ceiling note: the primary generator (Gemini) has ample free-tier throughput
-// (hundreds of thousands of tokens/minute) so 8192 is comfortable there. The
-// binding constraint is the Groq FALLBACK path, whose free tier caps at roughly
-// 6,000-12,000 combined input+output tokens PER MINUTE (not per request) for
-// llama-3.3-70b-versatile — a single large completion won't error, but it can
-// consume most of that minute's quota and cause the next Groq-fallback request
-// to 429 until the window rolls over. 8192 was chosen as a ceiling that stays
-// well under the model's own 32k output limit while not being so large that a
-// single fallback response reliably exhausts Groq's per-minute budget on its own.
-// Also comfortably covers Cerebras's gpt-oss-120b reasoning-token overhead
-// (see file header) — reasoning + content together stayed well under 8192 in
-// direct testing even for trivial prompts.
 const MAX_OUTPUT_TOKENS = 8192;
 
 export const MODELS = {
@@ -100,11 +86,19 @@ export const MODELS = {
   QWEN: 'qwen-2.5-72b-instruct', // Placeholder for future Qwen integration
 };
 
+// fix (2026-07-10): tag every provider failure with a reason so Vercel logs
+// (filterable on '[llm_provider]') show exactly which provider failed, with
+// what HTTP status or error, instead of every failure being silently
+// swallowed as an opaque null.
+function logProviderFailure(provider: string, reason: string): void {
+  console.warn(`[llm_provider] ${provider} failed: ${reason}`);
+}
+
 // ── Provider implementations ─────────────────────────────────────────────────
 
 async function tryGroq(messages: LLMMessage[], model: string): Promise<string | null> {
   const key = process.env.GROQ_API_KEY;
-  if (!key) return null;
+  if (!key) { logProviderFailure('groq', 'GROQ_API_KEY not set'); return null; }
   try {
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -115,11 +109,16 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (r.status === 429) return null; // rate limit — try next provider
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      logProviderFailure('groq', `HTTP ${r.status} model=${model} ${body.slice(0, 200)}`);
+      return null;
+    }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
-    return d.choices?.[0]?.message?.content?.trim() ?? null;
-  } catch { return null; }
+    const text = d.choices?.[0]?.message?.content?.trim() ?? null;
+    if (!text) logProviderFailure('groq', `HTTP ${r.status} but no content in response, model=${model}`);
+    return text;
+  } catch (e) { logProviderFailure('groq', `exception: ${String(e).slice(0, 200)}`); return null; }
 }
 
 // fix (2026-07-10): Cerebras's API is OpenAI-compatible with the identical
@@ -133,7 +132,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
 // later without entangling the two.
 async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
   const key = process.env.CEREBRAS_API_KEY;
-  if (!key) return null;
+  if (!key) { logProviderFailure('cerebras', 'CEREBRAS_API_KEY not set'); return null; }
   try {
     const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
       method: 'POST',
@@ -144,16 +143,21 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (r.status === 429) return null; // rate limit — try next provider
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      logProviderFailure('cerebras', `HTTP ${r.status} model=${model} ${body.slice(0, 200)}`);
+      return null;
+    }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
-    return d.choices?.[0]?.message?.content?.trim() ?? null;
-  } catch { return null; }
+    const text = d.choices?.[0]?.message?.content?.trim() ?? null;
+    if (!text) logProviderFailure('cerebras', `HTTP ${r.status} but no content in response (reasoning-only?), model=${model}`);
+    return text;
+  } catch (e) { logProviderFailure('cerebras', `exception: ${String(e).slice(0, 200)}`); return null; }
 }
 
 async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
   const key = process.env.MISTRAL_API_KEY;
-  if (!key) return null;
+  if (!key) { logProviderFailure('mistral', 'MISTRAL_API_KEY not set'); return null; }
   try {
     const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
@@ -164,15 +168,21 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      logProviderFailure('mistral', `HTTP ${r.status} ${body.slice(0, 200)}`);
+      return null;
+    }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
-    return d.choices?.[0]?.message?.content?.trim() ?? null;
-  } catch { return null; }
+    const text = d.choices?.[0]?.message?.content?.trim() ?? null;
+    if (!text) logProviderFailure('mistral', `HTTP ${r.status} but no content in response`);
+    return text;
+  } catch (e) { logProviderFailure('mistral', `exception: ${String(e).slice(0, 200)}`); return null; }
 }
 
 async function tryGemini(messages: LLMMessage[], model: string): Promise<string | null> {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
+  if (!key) { logProviderFailure('gemini', 'GEMINI_API_KEY not set'); return null; }
   try {
     // Convert to Gemini format
     const system = messages.find(m => m.role === 'system')?.content;
@@ -195,10 +205,16 @@ async function tryGemini(messages: LLMMessage[], model: string): Promise<string 
         signal: AbortSignal.timeout(TIMEOUT_MS),
       }
     );
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const respBody = await r.text().catch(() => '');
+      logProviderFailure('gemini', `HTTP ${r.status} model=${model} ${respBody.slice(0, 200)}`);
+      return null;
+    }
     const d = await r.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-    return d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
-  } catch { return null; }
+    const text = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
+    if (!text) logProviderFailure('gemini', `HTTP ${r.status} but no content in response, model=${model}`);
+    return text;
+  } catch (e) { logProviderFailure('gemini', `exception: ${String(e).slice(0, 200)}`); return null; }
 }
 
 // ── Main fallback chain ───────────────────────────────────────────────────────
@@ -324,14 +340,7 @@ export async function generateRewrite(
  * limit is hit, not because it's an adequate primary judge on its own.
  *
  * fix (2026-07-10): added Cerebras's gpt-oss-120b as a same-class-size,
- * independent-quota fallback before dropping to smaller/different models —
- * a judge call failing over to a materially weaker model is exactly the
- * mechanism that caused the 2026-07-08 keyword-fallback contamination in
- * the first place, so keeping fallback quality high for as long as possible
- * matters more here than in the general-purpose chains. Note this model is
- * a reasoning model (see MODELS.CEREBRAS / file header) — for a terse
- * yes/no-style judge verdict, reasoning tokens are pure overhead versus
- * Groq's non-reasoning Llama, but MAX_OUTPUT_TOKENS=8192 easily absorbs it.
+ * independent-quota fallback before dropping to smaller/different models.
  *
  * Role: score model outputs against benchmark rubrics (harm-compliance,
  * truthfulness, injection-resistance, over-refusal, refusal-severity) and,
