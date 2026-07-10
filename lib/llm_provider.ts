@@ -23,10 +23,32 @@
  * currently the bottleneck, rather than only being reached after all three
  * have already failed.
  *
+ * MODEL NAME CORRECTION (2026-07-10, same day): the model initially wired in
+ * here ("llama-3.3-70b") does not exist on this Cerebras account — verified
+ * directly against GET /v1/models, which returned exactly three models:
+ * gemma-4-31b, zai-glm-4.7, gpt-oss-120b. No Llama variant at all. This
+ * matches a documented pattern with Cerebras specifically: their free-tier
+ * model catalog is volatile and account-specific, and published/searched
+ * model names go stale within weeks. gpt-oss-120b was chosen as the largest
+ * available (closest in spirit to the other providers' ~70B-class primaries).
+ * NOTE for future maintainers: gpt-oss-120b is a REASONING model — its
+ * response puts chain-of-thought in a separate `reasoning` field, and only
+ * populates `message.content` (what tryCerebras reads) once the model has
+ * finished reasoning AND has token budget left over. Verified directly: at
+ * max_tokens=20 the model spent its entire budget on `reasoning` and
+ * `content` was empty; at max_tokens=300 both fields populated correctly.
+ * MAX_OUTPUT_TOKENS=8192 (used uniformly across every provider in this file)
+ * gives ample headroom for this in virtually all realistic prompts, so no
+ * separate budget was carved out for Cerebras specifically — but a future
+ * maintainer changing MAX_OUTPUT_TOKENS down significantly should re-verify
+ * this model still reliably produces non-empty content, not just reasoning.
+ * If Cerebras's catalog changes again, re-check with GET /v1/models before
+ * assuming any specific model name is still valid.
+ *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
  *   2. Groq     llama-3.1-8b-instant     — same provider, higher TPM limit
- *   3. Cerebras llama-3.3-70b            — independent quota, high daily volume
+ *   3. Cerebras gpt-oss-120b             — independent quota, high daily volume
  *   4. Mistral  open-mistral-7b          — different provider, confirmed live
  *   5. Gemini   gemini-3.1-flash-lite    — confirmed live, cost-efficient
  *   6. Gemini   gemini-2.5-flash         — higher capability fallback
@@ -63,12 +85,15 @@ const TIMEOUT_MS = 25_000;
 // to 429 until the window rolls over. 8192 was chosen as a ceiling that stays
 // well under the model's own 32k output limit while not being so large that a
 // single fallback response reliably exhausts Groq's per-minute budget on its own.
+// Also comfortably covers Cerebras's gpt-oss-120b reasoning-token overhead
+// (see file header) — reasoning + content together stayed well under 8192 in
+// direct testing even for trivial prompts.
 const MAX_OUTPUT_TOKENS = 8192;
 
 export const MODELS = {
   PRIMARY: 'llama-3.3-70b-versatile',
   FAST: 'llama-3.1-8b-instant',
-  CEREBRAS: 'llama-3.3-70b',
+  CEREBRAS: 'gpt-oss-120b', // verified against this account's live GET /v1/models — see file header
   MISTRAL: 'open-mistral-7b',
   GEMINI_LITE: 'gemini-3.1-flash-lite',
   GEMINI_FULL: 'gemini-2.5-flash',
@@ -99,10 +124,13 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
 
 // fix (2026-07-10): Cerebras's API is OpenAI-compatible with the identical
 // request/response shape as Groq's — same auth pattern (Bearer), same
-// chat/completions body, same choices[0].message.content response path.
-// Kept as its own function (rather than parameterizing tryGroq with a base
-// URL) so each provider's own quirks/rate-limit handling can diverge later
-// without entangling the two.
+// chat/completions body, same choices[0].message.content response path (the
+// current model, gpt-oss-120b, ALSO returns a separate `reasoning` field —
+// see file header — but `content` is populated correctly once the model has
+// enough token budget, so this extraction logic needs no special-casing for
+// that). Kept as its own function (rather than parameterizing tryGroq with a
+// base URL) so each provider's own quirks/rate-limit handling can diverge
+// later without entangling the two.
 async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
   const key = process.env.CEREBRAS_API_KEY;
   if (!key) return null;
@@ -295,12 +323,15 @@ export async function generateRewrite(
  * as a same-provider fallback (higher TPM headroom) if 70B's stricter rate
  * limit is hit, not because it's an adequate primary judge on its own.
  *
- * fix (2026-07-10): added Cerebras's llama-3.3-70b as a same-quality,
+ * fix (2026-07-10): added Cerebras's gpt-oss-120b as a same-class-size,
  * independent-quota fallback before dropping to smaller/different models —
  * a judge call failing over to a materially weaker model is exactly the
  * mechanism that caused the 2026-07-08 keyword-fallback contamination in
  * the first place, so keeping fallback quality high for as long as possible
- * matters more here than in the general-purpose chains.
+ * matters more here than in the general-purpose chains. Note this model is
+ * a reasoning model (see MODELS.CEREBRAS / file header) — for a terse
+ * yes/no-style judge verdict, reasoning tokens are pure overhead versus
+ * Groq's non-reasoning Llama, but MAX_OUTPUT_TOKENS=8192 easily absorbs it.
  *
  * Role: score model outputs against benchmark rubrics (harm-compliance,
  * truthfulness, injection-resistance, over-refusal, refusal-severity) and,
