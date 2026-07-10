@@ -6,12 +6,6 @@
  * feat: complete event now carries raw_state + m_before (pre-governance "before"
  *   state) alongside the governed state + M ("after"), so the console can render
  *   the CRS state before vs after the governor correction / CBF projection.
- * note: GovernorAgent below is the REFERENCE IMPLEMENTATION (Section 11,
- *   F+G replicator dynamics). The LIVE governor runs inside sovereign_kernel.ts
- *   as governorUpdate() — only the G correction term, no replicator F.
- *   The SSE 'governor' event reflects the reference simulation output,
- *   not the actual state update that happened in runCycle(). See lib/agents/governor.ts
- *   header for the full architectural rationale (discrete DT=1 convergence issue).
  *
  * fix (2026-07-04): this is the endpoint console AND chat actually call (via
  * useLexStream) — the non-stream /api/lex/govern is used by the public API and
@@ -27,8 +21,62 @@
  * getConstitutionalCentroid(provider)) — no fallback mid-comparison. If the
  * pinned provider then fails for the output/centroid call, self-referential
  * detection is honestly skipped for this turn rather than silently mixing
- * embedding spaces. Also fixed the stale "Jina embeddings" stage description
- * (embeddings have been provider-agnostic, Gemini-primary, since the migration).
+ * embedding spaces.
+ *
+ * fix (2026-07-09) — SINGLE-ENGINE UNIFICATION: this route previously ran TWO
+ * independently-computed constitutional measurements that both influenced live
+ * behavior. sovereign_kernel.ts generated and internally governed the response
+ * using its own path-dependent dynamical C/R/S. Then CRSExtractorAgent
+ * re-measured that already-generated output with a SEPARATE stateless,
+ * embedding-based C/R/S, and THAT measurement fed GovernorAgent, whose
+ * `intervention_required` output was OR'd into the real `needsIntervention`
+ * decision — despite this file's own prior comment calling GovernorAgent "the
+ * REFERENCE IMPLEMENTATION... not the actual state update". Documented intent
+ * and actual behavior had drifted apart. On top of that, `needsIntervention`
+ * also OR'd in a PRAXIS preEval() keyword-pattern heuristic (pre.label==='HIGH')
+ * and a locally-hardcoded kernelSignal.severity>=0.85 threshold that disagreed
+ * with lib/refusal_decision.ts's canonical SEMANTIC_ATTACK_ENFORCE_THRESHOLD
+ * (0.70) — four heterogeneous signals gating one decision, with no single
+ * source of truth. The non-stream /api/lex/govern route (used by the public
+ * API and every LexBench benchmark run) had already been unified onto
+ * decideRefusal() in lib/refusal_decision.ts (the 2026-07-07 "Move A" fix) —
+ * this route was the one surface that never got the same treatment, meaning
+ * real chat/console users were governed by different logic than what gets
+ * benchmarked.
+ *
+ * Fixed by:
+ *   - Removed CRSExtractorAgent entirely. The 'crs' SSE event now reports
+ *     kernel.state directly — the same numbers used for every other decision
+ *     in this route, and the same numbers /api/lex/govern reports.
+ *   - GovernorAgent still runs (fed by kernel.state, not a separate
+ *     measurement) but is now used ONLY to select `weakest` for law/clause
+ *     selection — a legitimate use of the Section 11 F+G reference simulation
+ *     that doesn't require it to also gate the live decision. Its own
+ *     `intervention_required` is still emitted in the 'governor' SSE event
+ *     for telemetry, now explicitly labeled as non-authoritative.
+ *   - The self-referential sovereignty check moved from the END of the
+ *     pipeline (after clause_bank/vaulturex/celeste/style_agent had already
+ *     run, at which point a violation would crudely overwrite all of that
+ *     work with a hardcoded string via a SECOND, separate InterventionAgent
+ *     call) to immediately after generation — feeding decideRefusal() BEFORE
+ *     the single 'intervening' stage, so sovereignty drift is handled by the
+ *     same one intervention path as every other trigger, not a bolted-on
+ *     duplicate.
+ *   - needsIntervention is now `decideRefusal(...).refused` — identical
+ *     function, identical enforcement policy (sovereignty drift, then the
+ *     keyword classifier at the 0.70 threshold) as /api/lex/govern. PRAXIS
+ *     preEval() is still computed and still emitted in the 'pre_eval' SSE
+ *     event for the console's real-time display — it no longer influences
+ *     the decision, matching how it's treated everywhere else in the
+ *     codebase (diagnostic display, not a competing enforcement signal).
+ *
+ * Capitulation judge: NOT wired into this route. It never influences
+ * decideRefusal()'s output either way (it's measurement-only, feeding Move B
+ * calibration data collected via the non-stream route) — adding it here would
+ * mean an extra LLM judge call and added latency on every interactive chat
+ * turn for a signal that provably cannot change what the user sees. Passed as
+ * `capitulation: null`, which is the semantically correct value: no
+ * capitulation-judge data was collected for this turn.
  */
 
 import { SovereignKernel }    from '@/lib/sovereign_kernel';
@@ -41,8 +89,6 @@ import {
   type EmbedProvider,
 } from '@/lib/lex_memory';
 import { preEval }            from '@/lib/praxis';
-import { CANONICAL_REFUSAL }  from '@/lib/refusals';
-import { CRSExtractorAgent }  from '@/lib/agents/crs_extractor';
 import { GovernorAgent }      from '@/lib/agents/governor';
 import { InterventionAgent }  from '@/lib/agents/intervention';
 import { NeithraAgent }       from '@/lib/agents/neithra';
@@ -55,6 +101,7 @@ import { RawForgeAgent }      from '@/lib/agents/raw_forge';
 import { computeZWeightsHeuristic } from '@/lib/aureonics_math';
 import { getZTraj }           from '@/lib/kv';
 import { MODELS } from '@/lib/llm_provider';
+import { decideRefusal } from '@/lib/refusal_decision';
 
 function sse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -99,7 +146,7 @@ export async function POST(req: Request) {
         // Resolve an embedding provider from the prompt now — pinned and reused
         // for the output embedding + constitutional centroid later, so the
         // self-referential comparison always sits in one embedding space (see
-        // the fix note above).
+        // the 2026-07-04 fix note above).
         let promptEmbedProvider: EmbedProvider | null = null;
         const [savedState, sessionZ, promptEmbeddingResolved, zTraj] = await Promise.all([
           loadKernelState(session_id),
@@ -132,34 +179,93 @@ export async function POST(req: Request) {
         emit('generator', { bare_output: result.raw_output, anchored_output: result.governed_output, meta: { model: MODELS.PRIMARY, temperature_raw: 0.4, temperature_governed: result.temperature, attack_pressure: kernel.attack_pressure, theta: result.theta } });
         emit('raw', { output: result.raw_output });
 
+        // ── Self-referential sovereignty (paper §4.3/§6.2) — MOVED EARLY ─────
+        // Runs immediately after generation and feeds decideRefusal() below,
+        // rather than running last and crudely overwriting whatever
+        // clause_bank/vaulturex/celeste/style_agent already produced (the old
+        // behavior — see 2026-07-09 fix note above). Pins the SAME embedding
+        // provider that resolved for the prompt — no fallback here. If this
+        // provider can't embed the output or the centroid right now,
+        // self-referential detection is honestly skipped for this turn rather
+        // than comparing across incompatible embedding spaces.
+        emit('stage', { name: 'self_referential', description: 'Verifying constitutional state (embedding-based)' });
+        let sovereigntyDriftDetected = false;
+        let sovereigntyRaw: number | null = null;
+        let detectionDegraded = false;
+        if (promptEmbedding.length && promptEmbedProvider) {
+          try {
+            const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
+              embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
+              getConstitutionalCentroid(promptEmbedProvider),
+              getSessionCentroid(session_id),
+            ]);
+            if (outputEmb.length) {
+              const sr = kernel.applySelfReferentialMeasurement(outputEmb, promptEmbedding, constCentroid, sessCentroid);
+              sovereigntyRaw           = sr.selfCRS.sovereignty_raw;
+              sovereigntyDriftDetected = sr.selfCRS.sovereignty_violated;
+              emit('self_referential', { sovereignty_raw: sr.selfCRS.sovereignty_raw, sovereignty_violated: sr.selfCRS.sovereignty_violated, continuity_raw: sr.selfCRS.continuity_raw, reciprocity_raw: sr.selfCRS.reciprocity_raw, sr_weight: sr.selfCRS.sovereignty_violated ? 0.70 : 0.25, fired: sovereigntyDriftDetected });
+            } else {
+              detectionDegraded = true;
+            }
+          } catch {
+            detectionDegraded = true;
+          }
+        } else {
+          detectionDegraded = true;
+        }
+        if (detectionDegraded) {
+          emit('self_referential', { sovereignty_raw: null, sovereignty_violated: false, fired: false, detection_degraded: true });
+        }
+
+        // ── Single-source refusal decision — same function, same policy as
+        // /api/lex/govern (lib/refusal_decision.ts). PRAXIS preEval() (`pre`)
+        // stays diagnostic-display-only in the 'pre_eval' event above; it no
+        // longer participates in the decision.
+        const decision = decideRefusal({
+          sovereignty: {
+            drift_detected:     sovereigntyDriftDetected,
+            raw_sself:          sovereigntyRaw,
+            detection_degraded: detectionDegraded,
+          },
+          semantic:      kernelSignal,
+          capitulation:  null,
+          safety_projection_triggered: result.receipt.safety_projection_triggered,
+        });
+        const needsIntervention = decision.refused;
+
         emit('stage', { name: 'raw_forge', description: 'RawForge: structural verification' });
         const forge = await safe(() => RawForgeAgent(result.governed_output, prompt), { verified: true, quality_score: 1, truncated: false, coherent: true, issues: [], retry_needed: false });
         emit('raw_forge', { verified: forge.verified, quality_score: forge.quality_score, truncated: forge.truncated, coherent: forge.coherent, issues: forge.issues, retry_needed: forge.retry_needed });
 
-        emit('stage', { name: 'measuring', description: 'CRS Extractor: provider-agnostic embeddings, paper-exact CCP/IEC/ADV' });
-        const z_weights  = zTraj ? computeZWeightsHeuristic(zTraj.last_c, zTraj.last_r, zTraj.last_s) : undefined;
-        const crsResult  = await safe(() => CRSExtractorAgent({ prompt, session_id, raw_output: result.governed_output, prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, z_weights, turn }), null);
-        const ms = (crsResult?.meta?.crs_state as { C:number;R:number;S:number;M:number }|undefined);
-        const eC = ms?.C ?? kernel.state.C, eR = ms?.R ?? kernel.state.R, eS = ms?.S ?? kernel.state.S, eM = ms?.M ?? result.M;
-        emit('crs', { c: eC, r: eR, s: eS, m: eM, health_band: result.health_band, theta: result.theta, temperature: result.temperature, method: (crsResult?.meta?.method as string) ?? 'kernel-internal', anchor_sim: (crsResult?.meta?.anchor_sim as number) ?? 0, lyapunov_V: (crsResult?.meta?.lyapunov_V as number) ?? result.lyapunov_V, delta_V: (crsResult?.meta?.delta_V as number) ?? result.delta_V });
+        // ── CRS readout — single engine. Same numbers as every other decision
+        // in this route and as /api/lex/govern reports (crs_source:
+        // 'typescript-kernel' there). No separate measurement pass.
+        emit('stage', { name: 'measuring', description: 'Reading kernel constitutional state — single engine' });
+        emit('crs', { c: kernel.state.C, r: kernel.state.R, s: kernel.state.S, m: result.M, health_band: result.health_band, theta: result.theta, temperature: result.temperature, method: 'typescript-kernel' });
 
-        // ── Governor (REFERENCE SIMULATION — not the live update) ────────────
-        // GovernorAgent runs the full Section 11 F+G replicator dynamics as a
-        // reference simulation. The ACTUAL governor correction that ran this turn
-        // was governorUpdate() inside sovereign_kernel.ts (G term only, no F).
-        // The SSE 'governor' event is informative but reports simulated dynamics.
+        // ── Governor — Section 11 F+G reference simulation, fed by the SAME
+        // kernel state (not a separate measurement). Used ONLY to select
+        // `weakest` for law/clause selection below — its own
+        // `intervention_required` is telemetry only and does not drive
+        // needsIntervention (see 2026-07-09 fix note above).
+        const z_weights  = zTraj ? computeZWeightsHeuristic(zTraj.last_c, zTraj.last_r, zTraj.last_s) : undefined;
         emit('stage', { name: 'governing', description: 'Governor: Section 11 reference simulation (G_i = k(φ_i−φ̄))' });
-        const govResult = await safe(() => GovernorAgent({ prompt, session_id, crs_state: { C: eC, R: eR, S: eS, M: eM }, prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, velocity: (crsResult?.meta?.velocity as number) ?? 0, attack_pressure: kernel.attack_pressure, theta: kernel.theta, receipts: [] }), null);
+        const govResult = await safe(() => GovernorAgent({ prompt, session_id, crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, prev_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, velocity: 0, attack_pressure: kernel.attack_pressure, theta: kernel.theta, receipts: [] }), null);
         const weakest = (govResult?.meta?.weakest_dimension as 'C'|'R'|'S') ?? 'S';
-        const needsIntervention = govResult?.meta?.intervention_required === true || (pre.label === 'HIGH' && pre.tags.length >= 2) || kernelSignal.severity >= 0.85 || result.receipt.safety_projection_triggered;
-        emit('governor', { decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'), intervention_required: needsIntervention, reason: govResult?.meta?.reason ?? 'Governor decision', G_vector: govResult?.meta?.G_vector ?? { C: 0, R: 0, S: 0 }, V_before: govResult?.meta?.V_before ?? 0, V_after: govResult?.meta?.V_after ?? 0, dV: govResult?.meta?.dV ?? 0, lyapunov_stable: govResult?.meta?.lyapunov_stable ?? true, weakest, triggers: govResult?.meta?.triggers ?? {}, note: 'reference_simulation' });
+        emit('governor', { decision: govResult?.output ?? (needsIntervention ? 'INTERVENE' : 'PASS'), intervention_required: govResult?.meta?.intervention_required ?? false, reason: govResult?.meta?.reason ?? 'Reference simulation', G_vector: govResult?.meta?.G_vector ?? { C: 0, R: 0, S: 0 }, V_before: govResult?.meta?.V_before ?? 0, V_after: govResult?.meta?.V_after ?? 0, dV: govResult?.meta?.dV ?? 0, lyapunov_stable: govResult?.meta?.lyapunov_stable ?? true, weakest, triggers: govResult?.meta?.triggers ?? {}, note: 'reference_simulation_only — does not drive the live intervention decision, see decideRefusal in lib/refusal_decision.ts' });
 
         let governedOutput = result.governed_output;
         let invokedLaw: { book: string; name: string; pillar: string; id?: number } | null = null;
 
         if (needsIntervention) {
+          const triggerReason =
+            decision.primary === 'sovereignty_drift'  ? `Self-referential sovereignty drift: S_self=${sovereigntyRaw}` :
+            decision.primary === 'semantic_classifier' ? `Semantic attack detected: type=${kernelSignal.attack_type} severity=${kernelSignal.severity}` :
+            result.receipt.safety_projection_triggered ? 'CBF safety projection triggered' :
+            'Constitutional intervention';
+
           emit('stage', { name: 'intervening', description: 'Applying principled correction' });
-          const ivResult = await safe(() => InterventionAgent({ prompt, session_id, raw_output: result.governed_output, intervention_required: true, weakest_dimension: weakest, health_band: result.health_band, trigger_reason: pre.label === 'HIGH' ? `Pre-eval HIGH: ${pre.tags.join(', ')}` : `Kernel severity: ${kernelSignal.severity}`, crs_state: { C: eC, R: eR, S: eS, M: eM }, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, cbf_triggered: result.receipt.safety_projection_triggered }), null);
+          const ivResult = await safe(() => InterventionAgent({ prompt, session_id, raw_output: result.governed_output, intervention_required: true, weakest_dimension: weakest, health_band: result.health_band, trigger_reason: triggerReason, crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, cbf_triggered: result.receipt.safety_projection_triggered }), null);
           if (ivResult?.success && ivResult.output) governedOutput = ivResult.output;
           const lawMeta = ivResult?.meta?.invoked_law as Record<string,unknown> | undefined;
           invokedLaw = lawMeta ? { book: String(lawMeta.book ?? ''), name: String(lawMeta.name ?? ''), pillar: weakest, id: typeof lawMeta.id === 'number' ? lawMeta.id : undefined } : null;
@@ -192,31 +298,6 @@ export async function POST(req: Request) {
         if (styleResult?.success && styleResult.output) governedOutput = styleResult.output;
         emit('style_agent', { cleaned_length: styleResult?.meta?.cleaned_length ?? governedOutput.length, original_length: styleResult?.meta?.original_length ?? governedOutput.length });
 
-        emit('stage', { name: 'self_referential', description: 'Verifying final output' });
-        let srFired = false;
-        // Pin the SAME provider that resolved for the prompt — no fallback here.
-        // If this provider can't embed the output or the centroid right now,
-        // self-referential detection is honestly skipped for this turn rather
-        // than comparing across incompatible embedding spaces.
-        if (promptEmbedding.length && promptEmbedProvider) {
-          const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
-            embedTextWithProvider(governedOutput, promptEmbedProvider).catch(() => [] as number[]),
-            getConstitutionalCentroid(promptEmbedProvider),
-            getSessionCentroid(session_id),
-          ]);
-          if (outputEmb.length) {
-            const sr = kernel.applySelfReferentialMeasurement(outputEmb, promptEmbedding, constCentroid, sessCentroid);
-            const isRealAttack = kernelSignal.attack_type !== 'none' && kernelSignal.severity >= 0.88;
-            srFired = sr.triggered || (isRealAttack && sr.selfCRS.sovereignty_violated);
-            if (isRealAttack && sr.selfCRS.sovereignty_violated) {
-              const rewriteResult = await safe(() => InterventionAgent({ prompt, session_id, raw_output: governedOutput, intervention_required: true, weakest_dimension: weakest, health_band: result.health_band, trigger_reason: `Self-referential sovereignty violation: severity=${kernelSignal.severity}`, crs_state: { C: eC, R: eR, S: eS, M: eM }, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, cbf_triggered: true }), null);
-              const rewriteOutput = rewriteResult?.success ? rewriteResult.output : null;
-              governedOutput = (rewriteOutput && !rewriteOutput.toLowerCase().includes('unable')) ? rewriteOutput : CANONICAL_REFUSAL;
-            }
-            emit('self_referential', { sovereignty_raw: sr.selfCRS.sovereignty_raw, sovereignty_violated: sr.selfCRS.sovereignty_violated, continuity_raw: sr.selfCRS.continuity_raw, reciprocity_raw: sr.selfCRS.reciprocity_raw, sr_weight: sr.selfCRS.sovereignty_violated ? 0.70 : 0.25, fired: srFired });
-          }
-        }
-
         emit('token', governedOutput);
 
         emit('stage', { name: 'auditing', description: 'Creating audit record' });
@@ -229,20 +310,20 @@ export async function POST(req: Request) {
           crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: finalM },
           health_band: result.health_band, intervention_required: needsIntervention,
           lyapunov_V: result.lyapunov_V, delta_V: result.delta_V,
-          cbf_triggered: result.receipt.safety_projection_triggered || srFired,
+          cbf_triggered: result.receipt.safety_projection_triggered || sovereigntyDriftDetected,
           sigma_viol: zTraj?.sigma_viol ?? 0,  // ← fix: from z_traj, not receipts lookup
           receipts: [],
         }), null);
 
         const [receiptId] = await Promise.all([
           writeKernelReceipt(session_id, turn, { ...result, governed_output: governedOutput }),
-          promptEmbedding.length ? storeMemory({ session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || srFired, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined }) : Promise.resolve(),
+          promptEmbedding.length ? storeMemory({ session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined }) : Promise.resolve(),
         ]);
 
         const auditId = (auditorResult?.meta?.audit_id as string) ?? receiptId;
         emit('receipt', { audit_id: auditId, sha256_input: result.receipt.input_hash, sha256_output: (auditorResult?.meta?.output_hash as string) ?? '', brittleness: (auditorResult?.meta?.brittleness_B as number) ?? 0, vaulturex: vaul?.compliance_receipt ?? '' });
 
-        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: eC, r_measured: eR, s_measured: eS }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: srFired, embed_provider: promptEmbedProvider, z_weights: result.receipt.z_weights, receipt_id: auditId, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents' });
+        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: kernel.state.C, r_measured: kernel.state.R, s_measured: kernel.state.S }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: sovereigntyDriftDetected, detection_degraded: detectionDegraded, embed_provider: promptEmbedProvider, z_weights: result.receipt.z_weights, receipt_id: auditId, refused: decision.refused, refusal_reasons: decision.reasons, primary_refusal_reason: decision.primary, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents+SingleEngine' });
 
       } catch (e) {
         emit('error', { error: String(e) });
