@@ -7,7 +7,7 @@
  * table holds. No numbers are hardcoded here.
  *   - Empty table  → honest "adversarial evaluation in progress" state (the
  *                     same message the old static strip showed).
- *   - Published    → ASR bare→governed per benchmark, plus over-refusal where a
+ *   - Published    → bare→governed per benchmark, plus over-refusal where a
  *                     benign split exists, with run date / n / judge notes.
  *
  * Re-running a suite and re-publishing updates this automatically on the next
@@ -15,7 +15,30 @@
  *
  * Props:
  *   compact  — tighter layout for the landing strip (default false).
- *   pollMs   — poll interval; only polls while the tab is visible (default 20s).
+ *   pollMs   — poll interval; only polls while the tab is visible (default 45s).
+ *
+ * fix (2026-07-10) — HIGHER/LOWER-IS-BETTER WAS WRONG FOR FOUR OF SEVEN
+ * BENCHMARKS: this component hardcoded `better = governed_score <=
+ * bare_score` — correct for ASR (AdvBench/HarmBench/JailbreakBench, where
+ * lower attack-success is better) but backwards for TruthfulQA, AgentDojo,
+ * XSTest, and StrongREJECT, where a HIGHER governed score is the improvement
+ * (more truthful, more injection-resistant, more appropriate on benign
+ * prompts, more robust refusal). The subhead also said "Lower attack-success
+ * is better" as a blanket statement shown even when the page displayed
+ * TruthfulQA or AgentDojo results, which aren't attack-success metrics at
+ * all. scripts/lexbench/aggregate-report.ts's delta_pp already has the
+ * CORRECT sign convention baked in (positive = improvement, regardless of
+ * metric direction — see its higherIsBetter() helper) — this component just
+ * wasn't using it, and instead re-derived its own (wrong, direction-blind)
+ * logic from the raw scores. Now: `better` reads delta_pp's sign directly,
+ * and every metric carries an explicit "higher is better" / "lower is
+ * better" badge so a first-time visitor doesn't have to infer it.
+ *
+ * fix (2026-07-10) — also POLL_MS defaults raised (20s → 45s here, 10s → 30s
+ * on the /benchmarks page) as a secondary measure alongside the new 60s
+ * server-side cache on /api/benchmarks (see that route's 2026-07-10 fix note)
+ * — results only change in discrete jumps on publish, continuous fast
+ * polling was never buying real freshness.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -27,10 +50,10 @@ interface ResultRow {
   benchmark:      string;
   run_date:       string;
   n_total:        number;
-  metric_name:    string;   // 'ASR' | 'over_refusal' | ...
+  metric_name:    string;
   bare_score:     number;   // percentage 0–100
   governed_score: number;   // percentage 0–100
-  delta_pp:       number;
+  delta_pp:       number;   // sign-normalized: positive = improvement, for EVERY metric
   notes:          string;
   created_at:     string;
 }
@@ -47,15 +70,32 @@ const PRETTY: Record<string, string> = {
   advbench:        'AdvBench',
   harmbench:       'HarmBench',
   jailbreakbench:  'JailbreakBench',
-};
-
-const METRIC_LABEL: Record<string, string> = {
-  ASR:          'Attack-success rate',
-  over_refusal: 'Over-refusal (benign)',
+  agentdojo:       'AgentDojo',
+  truthfulqa:      'TruthfulQA',
+  xstest:          'XSTest',
+  strongreject:    'StrongREJECT',
+  strong_reject:   'StrongREJECT',
 };
 
 function prettyBench(b: string): string {
   return PRETTY[b.toLowerCase()] ?? b;
+}
+
+// Every metric name this project currently publishes, mapped to a
+// human-readable label and its direction. Matches
+// scripts/lexbench/aggregate-report.ts's higherIsBetter()/kindOf() exactly —
+// keep these two in sync if a new benchmark/metric is added.
+const METRIC_INFO: Record<string, { label: string; higherIsBetter: boolean }> = {
+  ASR:                            { label: 'Attack-success rate',        higherIsBetter: false },
+  over_refusal:                   { label: 'Over-refusal (benign)',      higherIsBetter: false },
+  truthful_pct:                   { label: 'Truthful answer rate',       higherIsBetter: true  },
+  injection_resisted_pct_PROXY:   { label: 'Injection resistance (proxy)', higherIsBetter: true },
+  appropriate_pct:                { label: 'Appropriate response rate',  higherIsBetter: true  },
+  refusal_robustness_pct:         { label: 'Refusal robustness',         higherIsBetter: true  },
+};
+
+function metricInfo(metricName: string): { label: string; higherIsBetter: boolean } {
+  return METRIC_INFO[metricName] ?? { label: metricName, higherIsBetter: false };
 }
 
 function Bar({ value, tone }: { value: number; tone: 'bare' | 'governed' }) {
@@ -70,7 +110,7 @@ function Bar({ value, tone }: { value: number; tone: 'bare' | 'governed' }) {
 
 export default function BenchmarkResults({
   compact = false,
-  pollMs = 20000,
+  pollMs = 45000,
 }: {
   compact?: boolean;
   pollMs?: number;
@@ -82,7 +122,7 @@ export default function BenchmarkResults({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/benchmarks', { cache: 'no-store' });
+      const res = await fetch('/api/benchmarks');
       const json = (await res.json()) as ApiShape;
       setData(json);
       setErr(null);
@@ -173,8 +213,8 @@ export default function BenchmarkResults({
               <span className="text-slate-400 dark:text-slate-500 font-light">same judge.</span>
             </h2>
             <p className="text-center text-xs font-mono text-slate-400 dark:text-slate-500 mb-8">
-              Lower attack-success is better. Read live from the results table
-              {lastUpdated ? ` · updated ${lastUpdated.toLocaleTimeString()}` : ''}.
+              Each metric below is tagged for its own direction — read the badge, not just the bar.
+              {lastUpdated ? ` Updated ${lastUpdated.toLocaleTimeString()}.` : ''}
             </p>
 
             <div className="space-y-4">
@@ -193,19 +233,35 @@ export default function BenchmarkResults({
                   </div>
 
                   {rows.map((r) => {
-                    const better = r.governed_score <= r.bare_score;
+                    const info = metricInfo(r.metric_name);
+                    // delta_pp is ALREADY sign-normalized by the aggregator
+                    // (positive = improvement, for every metric direction) —
+                    // read it directly rather than re-deriving direction here.
+                    const better = r.delta_pp > 0;
                     return (
                       <div key={r.id} className="mb-4 last:mb-0">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                            {METRIC_LABEL[r.metric_name] ?? r.metric_name}
-                          </span>
+                        <div className="flex items-center justify-between mb-2 flex-wrap gap-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                              {info.label}
+                            </span>
+                            <span
+                              className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full"
+                              style={{
+                                color: info.higherIsBetter ? '#10b981' : '#ef4444',
+                                background: info.higherIsBetter ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                                border: `1px solid ${info.higherIsBetter ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                              }}
+                            >
+                              {info.higherIsBetter ? '↑ higher is better' : '↓ lower is better'}
+                            </span>
+                          </div>
                           <span
                             className={`text-[11px] font-mono font-bold ${
                               better ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'
                             }`}
                           >
-                            Δ {r.delta_pp > 0 ? '+' : ''}{r.delta_pp.toFixed(1)} pp
+                            {better ? '✓ improved' : '✗ worse'} · Δ {r.delta_pp > 0 ? '+' : ''}{r.delta_pp.toFixed(1)} pp
                           </span>
                         </div>
 
