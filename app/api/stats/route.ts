@@ -1,6 +1,23 @@
 import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 
+// fix (2026-07-10) — LIKELY THE DOMINANT TURSO ROW-READ CONSUMER ON THE
+// SITE: this route runs SIX queries per call, including COUNT(*) over the
+// entire praxis_receipts table (~47,000+ rows and growing — see the
+// homepage's own "~47,000 logged turns" copy) and a GROUP BY session_id
+// HAVING COUNT(*) > 80 subquery that scans that same table a second time.
+// It had zero caching, and is polled every 10s by components/LiveStatsBar.tsx
+// on the homepage (every visitor, for as long as the tab is open) and every
+// 5s by components/LiveAuditFeed.tsx. Turso reported ~80% of its row-read
+// quota consumed. A handful of concurrent visitors polling this for even a
+// few minutes can plausibly account for millions of row reads on its own —
+// this is a much larger contributor than any single benchmark run. These
+// stats (total runs, intervention rate, avg margin) don't need
+// second-by-second accuracy for a marketing stats bar; a 5-minute cache
+// window is imperceptible to a visitor and cuts the read volume by roughly
+// (poll frequency x concurrent visitors x 30).
+export const revalidate = 300;
+
 async function ensureTable() {
   const c = getClient();
   await c.execute(`
