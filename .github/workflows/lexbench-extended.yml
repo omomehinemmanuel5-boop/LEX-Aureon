@@ -14,6 +14,19 @@ on:
   schedule:
     - cron: '0 2 * * 0'  # Run Sundays at 2am UTC (extended benchmarks only)
 
+# fix (2026-07-10): moved off the per-shard matrix job (run-extended-benchmarks)
+# onto the workflow level here. Same bug as lexbench-prod.yml — see that
+# file's 2026-07-10 fix note for the full explanation. A static concurrency
+# group applied identically to every matrix shard instance causes GitHub
+# Actions to cancel previously-pending shards rather than queue them, since
+# each group only ever holds one running + one pending member. Top-level
+# concurrency applies once per whole run instead, leaving max-parallel:2 as
+# the only per-shard constraint while still mutexing the entire run against
+# lexbench-prod.yml's entire run via the same group name.
+concurrency:
+  group: lexbench-live-api-provider-quota
+  cancel-in-progress: false
+
 env:
   NODE_VERSION: '20'
   SITE_URL: https://www.lexaureon.com
@@ -148,19 +161,14 @@ jobs:
           fi
 
   # ── Run XSTest and StrongREJECT, bounded concurrency ────────────────────
-  # fix (2026-07-08) — see the matching fix note in lexbench-prod.yml's
-  # run-lexbench job for the full explanation. Summary: no max-parallel meant
-  # every shard ran simultaneously against the same shared provider secrets;
-  # the concurrency group below (same group NAME as lexbench-prod.yml's job,
-  # deliberately) also prevents this workflow's live-API shards from
-  # overlapping with a concurrent lexbench-prod run, since both draw on the
-  # identical GROQ_API_KEY/GEMINI_API_KEY/MISTRAL_API_KEY secrets.
+  # fix (2026-07-08) — no max-parallel meant every shard ran simultaneously
+  # against the same shared provider secrets. max-parallel:2 bounds this
+  # job's own shard concurrency. (The cross-workflow mutex against
+  # lexbench-prod.yml now lives at the top-level `concurrency:` block above
+  # — see the 2026-07-10 fix note there for why it moved off this job.)
   run-extended-benchmarks:
     needs: determine-shards
     runs-on: ubuntu-latest
-    concurrency:
-      group: lexbench-live-api-provider-quota
-      cancel-in-progress: false
     strategy:
       fail-fast: false
       max-parallel: 2
