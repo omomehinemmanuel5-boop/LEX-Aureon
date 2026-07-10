@@ -2,14 +2,10 @@ import { NextResponse } from 'next/server';
 import { getClient, initSchema } from '@/lib/db';
 import { logger, errorFields } from '@/lib/logger';
 
-// fix (2026-07-10): added caching alongside /api/stats and /api/live-state
-// (see those routes' fix notes) -- polled by components/LiveStatsBar.tsx
-// (10s, homepage) and components/LiveAuditFeed.tsx (5s, currently unused —
-// see app/audit/page.tsx's 2026-07-10 note on why a new /audit page was
-// built as a cached server component instead of wiring this live-polling
-// component in). Turso reported ~80% of its row-read quota consumed.
-export const revalidate = 30;
-
+// fix (2026-07-10, take two): `export const revalidate` did not produce
+// verified cache HITs on Vercel's edge (same finding as /api/stats — see
+// that route's take-two fix note). Switched to an explicit Cache-Control
+// response header, the standard verifiable mechanism.
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const limitParam = Number(searchParams.get('limit') ?? '8');
@@ -42,9 +38,13 @@ export async function GET(req: Request) {
       timestamp: new Date(row.created_at as string).getTime(),
     }));
 
-    return NextResponse.json({ receipts });
+    return NextResponse.json({ receipts }, {
+      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=15' },
+    });
   } catch (e) {
     logger.warn('audits.recent', 'query failed', errorFields(e));
-    return NextResponse.json({ receipts: [] });
+    return NextResponse.json({ receipts: [] }, {
+      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=15' },
+    });
   }
 }
