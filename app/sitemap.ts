@@ -26,6 +26,10 @@ const SITE_URL = env.NEXT_PUBLIC_SITE_URL;
 //     topical relevance and wastes crawl budget on pages with no unique,
 //     search-worthy content. If either becomes a real public-facing feature
 //     later, give it its own metadata first, then add it here.
+//   - Added /audit and /privacy (same pass, added right after this file's
+//     first edit): both went from returning nothing indexable (a raw
+//     directory listing and a 404, respectively) to real pages with their
+//     own metadata — see app/audit/page.tsx and app/privacy/page.tsx.
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   return [
@@ -35,5 +39,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/constitution`,lastModified: now, changeFrequency: 'monthly', priority: 0.8 },
     { url: `${SITE_URL}/research`,    lastModified: now, changeFrequency: 'monthly', priority: 0.7 },
     { url: `${SITE_URL}/api-docs`,    lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
+    { url: `${SITE_URL}/audit`,       lastModified: now, changeFrequency: 'daily',   priority: 0.55 },
+    { url: `${SITE_URL}/privacy`,     lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
   ];
 }
