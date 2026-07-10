@@ -21,9 +21,19 @@ export const dynamic = 'force-dynamic';
 // Canonical host is https://www.lexaureon.com (the apex 307-redirects to www).
 // metadataBase + alternates.canonical make every generated URL and the canonical
 // tag point at the www host, so crawlers see one consistent canonical origin.
+//
+// fix (2026-07-10) — SEO PASS: <title> previously read "Lex Aureon — Govern
+// AI. Ensure Trust. Defend Truth." while openGraph.title (only ever seen on
+// social-media link previews, NOT what Google indexes) had the actually
+// keyword-bearing phrase "Constitutional AI Governance for LLMs and Agents".
+// Google indexes <title> directly for the SERP result — the weaker, more
+// abstract phrase was what search saw; the stronger, more searchable phrase
+// was hidden behind a Twitter/Slack preview card almost nobody sees via
+// organic search. Aligned <title> to the stronger phrase; kept the original
+// tagline as a trailing descriptor rather than dropping it entirely.
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lexaureon.com'),
-  title: 'Lex Aureon — Govern AI. Ensure Trust. Defend Truth.',
+  title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
   description: 'A constitutional control layer for language models. CBF math, a provably stable Lyapunov barrier, and cryptographic SHA-256 audit receipts.',
   alternates: {
     canonical: 'https://www.lexaureon.com',
@@ -41,6 +51,82 @@ export const metadata: Metadata = {
     description: 'Drop-in constitutional governance layer for any LLM or agent. Provably stable barrier dynamics + cryptographic audit. Benchmarks being re-run under symmetric judging.',
     images: ['/logo.png'],
   },
+};
+
+// fix (2026-07-10) — SEO PASS: no structured data (JSON-LD) existed anywhere
+// on the site before this. For a solo, unfunded, no-lab research project,
+// this is one of the highest-leverage available levers: it's the primary
+// signal Google's Knowledge Graph and entity-understanding systems use to
+// resolve "who/what is this" rather than inferring it from prose alone, and
+// it's what enables rich results (sitelinks, knowledge panels) at all.
+// Uses an @graph so Organization / Person / SoftwareApplication / WebSite
+// resolve as one connected set of entities rather than four disconnected
+// blobs. Every fact here is already public elsewhere on the site or in the
+// linked paper — no invented ratings, review counts, or unverifiable claims,
+// which would risk a manual structured-data action from Google if it looked
+// spammy or unsupported.
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': 'https://www.lexaureon.com/#organization',
+      name: 'Aureonics Systems',
+      url: 'https://www.lexaureon.com',
+      logo: 'https://www.lexaureon.com/logo.png',
+      founder: {
+        '@type': 'Person',
+        name: 'Emmanuel King',
+        sameAs: [
+          'https://orcid.org/0009-0000-2986-4935',
+          'https://x.com/lexAureon',
+        ],
+      },
+      sameAs: [
+        'https://x.com/lexAureon',
+        'https://github.com/omomehinemmanuel5-boop/LEX-Aureon',
+        'https://doi.org/10.5281/zenodo.18944242',
+      ],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': 'https://www.lexaureon.com/#website',
+      url: 'https://www.lexaureon.com',
+      name: 'Lex Aureon',
+      description: 'A constitutional control layer for language models. CBF math, a provably stable Lyapunov barrier, and cryptographic SHA-256 audit receipts.',
+      publisher: { '@id': 'https://www.lexaureon.com/#organization' },
+      inLanguage: 'en',
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': 'https://www.lexaureon.com/#software',
+      name: 'Lex Aureon',
+      applicationCategory: 'SecurityApplication',
+      operatingSystem: 'Any (API/HTTP)',
+      url: 'https://www.lexaureon.com',
+      description: 'Constitutional AI governance layer for LLMs and agentic systems. Simplex constitutional state (C+R+S=1), control-barrier-function safety projection, Lyapunov stability argument, and cryptographic SHA-256 audit receipts. Drop-in — no retraining or fine-tuning of the underlying model required.',
+      publisher: { '@id': 'https://www.lexaureon.com/#organization' },
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+        description: 'Free live demo console and public API access.',
+      },
+      sameAs: ['https://doi.org/10.5281/zenodo.18944242'],
+    },
+    {
+      '@type': 'ScholarlyArticle',
+      '@id': 'https://doi.org/10.5281/zenodo.18944242',
+      name: 'Aureonics: Constitutional Triadic Framework for Stable Adaptive Intelligence',
+      author: {
+        '@type': 'Person',
+        name: 'Emmanuel King',
+        sameAs: 'https://orcid.org/0009-0000-2986-4935',
+      },
+      url: 'https://doi.org/10.5281/zenodo.18944242',
+      isPartOf: { '@id': 'https://www.lexaureon.com/#software' },
+    },
+  ],
 };
 
 const G = {
@@ -416,6 +502,10 @@ function ProofPanel() {
 export default function LandingPage() {
   return (
     <main className="min-h-screen selection:bg-amber-500/30" style={{ backgroundColor: '#07070d' }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
       <LandingNav />
       <Hero />
       <BenchmarkResults compact />
