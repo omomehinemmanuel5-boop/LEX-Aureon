@@ -147,10 +147,31 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
 //     methodology issue — operator error, since fixed in
 //     .github/workflows/lexbench-prod.yml and lexbench-extended.yml.
 //     Retired by scripts/migrations/2026-07-09-retire-quicktest-noise.ts.
-//   - With id=74, id=68, and the id=79 quick-test row all retired,
-//     AdvBench/ASR falls back to id=62 (bare 1.54, gov 0.19, delta 1.35pp,
-//     clean 520/520 coverage, no keyword-fallback tag) — the last AdvBench
-//     run scored entirely by real judge verdicts.
+//   - *_RETIRED_PROVIDER_EXHAUSTION_2026-07-10 (TruthfulQA/truthful_pct,
+//     AdvBench/ASR, JailbreakBench/ASR, HarmBench/ASR,
+//     AgentDojo/injection_resisted_pct_PROXY — ids 90-94): a full LexBench
+//     Production run completed with all 18 shards green, but 52-86% of
+//     prompts in the run (verified against raw shard artifacts, GH Actions
+//     run 29088128698) had both raw_output and governed_output equal to the
+//     literal SovereignKernel.callLLM static fallback string — meaning all 5
+//     providers (Groq, Mistral, Gemini) were exhausted on the majority of
+//     requests. Not a genuine measurement: the harm-compliance judge mostly
+//     (correctly) returned null for the fallback text, but the run still
+//     published bare=0/gov=0 rather than being excluded; the truthfulness
+//     and injection-proxy judges scored the fallback text as a real (if
+//     degenerate) verdict, producing the implausible AgentDojo 100%/100% and
+//     dragging TruthfulQA from its normal ~80% down to ~21%. Retired by
+//     scripts/migrations/2026-07-10-retire-provider-exhaustion-run.ts.
+//     Root cause is external API quota exhaustion (likely compounded by
+//     unusually heavy same-day traffic), not a code defect in this pass —
+//     though it did expose that scripts/lexbench/runner.ts was never wired
+//     to read the governed_source field added to /api/lex/govern specifically
+//     to let it exclude exhausted turns from scoring (added 2026-07-08,
+//     still unused as of this writing).
+//   - With id=74, id=68, id=79, and id=91 all retired, AdvBench/ASR falls
+//     back to id=62 (bare 1.54, gov 0.19, delta 1.35pp, clean 520/520
+//     coverage, no keyword-fallback tag) — the last AdvBench run scored
+//     entirely by real judge verdicts on real generated content.
 const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
   { metric_name: 'toxicity' },
   { metric_name: 'truth_score' },
@@ -162,6 +183,11 @@ const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
   { benchmark: 'JailbreakBench', metric_name: 'ASR_RETIRED_QUICKTEST_2026-07-09' },
   { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_QUICKTEST_2026-07-09' },
   { benchmark: 'HarmBench', metric_name: 'ASR_RETIRED_QUICKTEST_2026-07-09' },
+  { benchmark: 'TruthfulQA', metric_name: 'truthful_pct_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
+  { benchmark: 'AdvBench', metric_name: 'ASR_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
+  { benchmark: 'JailbreakBench', metric_name: 'ASR_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
+  { benchmark: 'HarmBench', metric_name: 'ASR_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
+  { benchmark: 'AgentDojo', metric_name: 'injection_resisted_pct_PROXY_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
 ];
 
 function isRetired(benchmark: string, metricName: string): boolean {
