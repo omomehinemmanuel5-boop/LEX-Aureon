@@ -44,6 +44,31 @@
  * quick-test run, and shard 0 of every normal run) to undefined, skipping
  * slicing and running the entire dataset. Fixed by checking `!== undefined`.
  *
+ * fix (2026-07-10) — PROVIDER-EXHAUSTION TURNS WERE SCORED AS REAL DATA: on
+ * 2026-07-08, app/api/lex/govern/route.ts started surfacing governed_source
+ * ('governed'|'raw_fallback'|'unavailable'), raw_provider, and
+ * governed_provider specifically so this runner could exclude turns where
+ * all 5 LLM providers (Groq, Mistral, Gemini) were exhausted and the output
+ * is SovereignKernel's static fallback string, not real model content — but
+ * this file never got updated to actually read those fields. A full run on
+ * 2026-07-10 had 52-86% of prompts hit that exact fallback (verified
+ * directly against raw shard output), and because scoreOutput() only skips
+ * scoring on a truly EMPTY string (not the non-empty fallback text), those
+ * turns got real (degenerate) judge verdicts instead of being excluded —
+ * producing implausible published numbers (AdvBench/HarmBench/
+ * JailbreakBench collapsed to exactly 0%/0%, AgentDojo to exactly 100%/100%)
+ * that had to be retired after the fact (see
+ * scripts/migrations/2026-07-10-retire-provider-exhaustion-run.ts and
+ * lib/benchmark_results.ts's RETIRED_METRICS). Now: each arm (bare/governed)
+ * is checked independently before scoring — if its provider field is
+ * missing/'unavailable', OR its text matches the known static fallback
+ * string exactly (defense-in-depth, in case the provider fields are ever
+ * absent on an older deployment), that arm is scored as excluded
+ * ('provider-exhausted', all nulls) rather than judged. This mirrors exactly
+ * how scoreOutput() already treats a truly empty string — nulls are excluded
+ * from the paired average by scripts/lexbench/aggregate-report.ts, so an
+ * exhausted turn now honestly shrinks the sample instead of poisoning it.
+ *
  * Usage:
  *   npm run lexbench -- --benchmark truthfulqa --n 50
  *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
@@ -64,6 +89,22 @@ import {
 } from './grounded_judge';
 import { judgeXSTestAppropriate } from './xstest_judge';
 import { judgeStrongREJECT } from './strong_reject_judge';
+
+// ────────────────────────────────────────────────────────────────────────────
+// Provider-exhaustion detection (fix 2026-07-10 — see file header)
+// ────────────────────────────────────────────────────────────────────────────
+
+// Exact match to SovereignKernel.callLLM's static fallback (lib/sovereign_kernel.ts)
+// — the literal text returned when all 5 providers in the fallback chain are
+// exhausted on a single request. Kept as a defense-in-depth check alongside
+// the governed_source/*_provider fields, in case those are ever missing.
+const PROVIDER_EXHAUSTION_FALLBACK_TEXT = 'Constitutional framework C + R + S = 1 is operative.';
+
+function isProviderExhausted(text: string, provider: string | null | undefined): boolean {
+  if (!provider) return true;
+  if (text.trim() === PROVIDER_EXHAUSTION_FALLBACK_TEXT) return true;
+  return false;
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Type Definitions
@@ -285,6 +326,9 @@ async function callGovernAPI(
   governed_output: string;
   crs?: Record<string, number>;
   intervention?: boolean;
+  governed_source?: string | null;
+  raw_provider?: string | null;
+  governed_provider?: string | null;
   error?: string;
 }> {
   const RETRIES = [5000, 10000, 20000];
@@ -328,6 +372,9 @@ async function callGovernAPI(
           )),
         } : undefined,
         intervention: Boolean(data.intervention ?? data.projection_triggered ?? data.suspension_triggered),
+        governed_source: data.governed_source ?? null,
+        raw_provider: data.raw_provider ?? null,
+        governed_provider: data.governed_provider ?? null,
       };
     } catch (err) {
       if (attempt < RETRIES.length) {
@@ -355,10 +402,20 @@ async function callGovernAPI(
 // Grounded scoring dispatch — one judge type per benchmark kind
 // ────────────────────────────────────────────────────────────────────────────
 
+const PROVIDER_EXHAUSTED_METRICS: OutputMetrics = {
+  asr: null,
+  truthful: null,
+  injection_resisted: null,
+  xstest_appropriate: null,
+  strong_reject_severity_norm: null,
+  judge_method: 'provider-exhausted',
+};
+
 async function scoreOutput(
   config: BenchmarkConfig,
   promptRecord: PromptRecord,
   output: string,
+  provider: string | null | undefined,
 ): Promise<OutputMetrics> {
   const empty: OutputMetrics = {
     asr: null,
@@ -369,6 +426,10 @@ async function scoreOutput(
     judge_method: 'empty-output',
   };
   if (!output) return empty;
+
+  // fix (2026-07-10): never judge provider-exhaustion fallback text as if it
+  // were a real model response — see file header for the full incident.
+  if (isProviderExhausted(output, provider)) return PROVIDER_EXHAUSTED_METRICS;
 
   if (config.kind === 'truthfulness') {
     const correct   = Array.isArray(promptRecord.correct_answers)   ? promptRecord.correct_answers as string[]   : [];
@@ -484,6 +545,7 @@ async function runBenchmark(
   const results: LexBenchResult[] = [];
   const shardTag = shardIndex !== undefined ? `s${shardIndex}` : 's0';
   const sessionId = `lexbench-${config.name.toLowerCase()}-${shardTag}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  let exhaustedCount = 0;
 
   for (let i = 0; i < promptsToRun.length; i++) {
     const prompt = promptsToRun[i];
@@ -524,9 +586,19 @@ async function runBenchmark(
       const govResponse = await callGovernAPI(endpoint, prompt.prompt, sessionId);
       const duration = Date.now() - startTime;
 
+      // fix (2026-07-10): score each arm against ITS OWN provider field — the
+      // bare and governed arms can independently succeed/fail.
+      const rawExhausted = isProviderExhausted(govResponse.raw_output, govResponse.raw_provider);
+      const govExhausted = isProviderExhausted(
+        govResponse.governed_output,
+        govResponse.governed_source === 'unavailable' ? null : govResponse.governed_provider,
+      );
+      if (rawExhausted || govExhausted) exhaustedCount++;
+
       const [bareMetrics, governedMetrics] = await Promise.all([
-        scoreOutput(config, prompt, govResponse.raw_output),
-        scoreOutput(config, prompt, govResponse.governed_output),
+        scoreOutput(config, prompt, govResponse.raw_output, govResponse.raw_provider),
+        scoreOutput(config, prompt, govResponse.governed_output,
+          govResponse.governed_source === 'unavailable' ? null : govResponse.governed_provider),
       ]);
       const crsMetrics = extractCRSMetrics(govResponse.crs);
 
@@ -548,7 +620,10 @@ async function runBenchmark(
         // Do not cache errors: a transient 5xx/network failure should not become
         // a permanent zero-output benchmark row on future runs.
         result.error = govResponse.error;
-      } else {
+      } else if (!rawExhausted && !govExhausted) {
+        // fix (2026-07-10): don't cache provider-exhaustion fallback content
+        // either — a transient quota exhaustion should not become a
+        // permanent "provider-exhausted" cache entry future runs replay.
         cacheManager.set(prompt.prompt, config.name, govResponse.raw_output, govResponse.governed_output, {
           bare_metrics: bareMetrics,
           governed_metrics: governedMetrics,
@@ -593,6 +668,9 @@ async function runBenchmark(
 
   cacheManager.saveCache();
   console.log(`[${config.name}] Cache stats: ${JSON.stringify(cacheManager.getStats())}`);
+  if (exhaustedCount > 0) {
+    console.warn(`[${config.name}] ⚠ ${exhaustedCount}/${promptsToRun.length} prompts hit provider exhaustion on at least one arm — excluded from scoring, not counted as real verdicts.`);
+  }
   return results;
 }
 
