@@ -13,6 +13,33 @@ on:
     branches: [ main ]
     types: [ opened, synchronize, reopened ]
 
+# fix (2026-07-10) — CONCURRENCY GROUP WAS ON THE WRONG SCOPE, CANCELLING SHARDS:
+# the 2026-07-08 fix below moved `concurrency:` onto the per-shard matrix job
+# (run-lexbench), intending only to stop this workflow's runs from overlapping
+# with lexbench-extended.yml's. Instead it broke THIS workflow's own run: every
+# one of the ~18 matrix shard instances shared the identical static group name,
+# and GitHub Actions concurrency groups only ever hold ONE running + ONE
+# pending member — any THIRD (or later) member requesting the same group
+# CANCELS whichever member was previously pending, not queues behind it. With
+# max-parallel:2 launching shards continuously, this cancelled roughly every
+# other shard as newer ones bumped older pending ones out. Confirmed against
+# two consecutive real runs (a manual full dispatch and the following
+# automatic midnight cron), both ending overall-cancelled with ~7 of 18 shards
+# killed, publishing genuine-but-incomplete partial-sample results (e.g.
+# AdvBench n=320 instead of 520) rather than the intended full run.
+#
+# Fix: concurrency now lives at the WORKFLOW level (here), not the job level.
+# A top-level `concurrency:` block applies ONCE per whole workflow RUN, not
+# once per matrix instance — so all ~18 shards within one run are governed
+# ONLY by max-parallel:2 on the matrix (unaffected by this bug), while the
+# ENTIRE run, as a single unit, still shares one mutex with lexbench-
+# extended.yml's entire run (and with any overlapping trigger of this same
+# workflow — e.g. a manual dispatch overlapping the daily cron) via the same
+# group name below.
+concurrency:
+  group: lexbench-live-api-provider-quota
+  cancel-in-progress: false
+
 env:
   NODE_VERSION: '20'
   # fix (2026-07-05) — ROOT CAUSE of every persistent "401 unauthorized" publish
@@ -130,18 +157,12 @@ jobs:
   # producing governed_source='raw_fallback'/'unavailable' turns that
   # previously silently corrupted scored results (see AdvBench id=74
   # retirement, lib/benchmark_results.ts). max-parallel:2 bounds this
-  # workflow's own shard concurrency; the `concurrency:` group below on this
-  # job also queues (never cancels — these are long, expensive, real-money-
-  # quota runs) against lexbench-extended.yml's equivalent job, since both
-  # workflows draw on the identical three provider secrets and can otherwise
-  # overlap (this workflow also fires on pull_request, independent of the
-  # daily cron).
+  # workflow's own shard concurrency. (The cross-workflow mutex against
+  # lexbench-extended.yml now lives at the top-level `concurrency:` block —
+  # see the 2026-07-10 fix note there for why it was moved off this job.)
   run-lexbench:
     needs: determine-shards
     runs-on: ubuntu-latest
-    concurrency:
-      group: lexbench-live-api-provider-quota
-      cancel-in-progress: false
     strategy:
       fail-fast: false
       max-parallel: 2
