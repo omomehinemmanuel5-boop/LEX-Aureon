@@ -25,9 +25,9 @@ export default function LiveStatsBar() {
     const load = async () => {
       try {
         const [stateRes, auditsRes, statsRes] = await Promise.all([
-          fetch('/api/live-state',             { cache: 'no-store' }),
-          fetch('/api/audits/recent?limit=20', { cache: 'no-store' }),
-          fetch('/api/stats',                  { cache: 'no-store' }),
+          fetch('/api/live-state'),
+          fetch('/api/audits/recent?limit=20'),
+          fetch('/api/stats'),
         ]);
         if (stateRes.ok) {
           const d = await stateRes.json() as LiveState;
@@ -51,7 +51,15 @@ export default function LiveStatsBar() {
       } catch { /* keep existing */ } finally { setLoaded(true); }
     };
     load();
-    const id = setInterval(load, 10_000);
+    // fix (2026-07-10): 10s -> 60s. /api/live-state, /api/audits/recent, and
+    // /api/stats all now carry server-side caching (60s/30s/300s respectively
+    // — see each route's 2026-07-10 fix note) to address Turso reporting
+    // ~80% of its row-read quota consumed. Polling faster than the fastest
+    // of those cache windows only re-fetched the same cached response
+    // repeatedly without ever seeing fresher data — wasted requests, no
+    // benefit. 60s matches /api/live-state's window (the fastest-changing of
+    // the three) without polling faster than any of them can actually update.
+    const id = setInterval(load, 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -63,7 +71,7 @@ export default function LiveStatsBar() {
   // (praxis_receipts) from /api/stats, falling back to the run_stats counter.
   const governedTurns = stats?.governed_turns ?? liveState?.total_runs ?? null;
 
-  // Every cell below reads live deployment state and refreshes on a 10s poll.
+  // Every cell below reads live deployment state and refreshes on a 60s poll.
   const cells = [
     {
       label: 'Governed Turns',
