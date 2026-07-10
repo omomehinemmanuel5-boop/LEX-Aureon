@@ -12,22 +12,19 @@
  *
  * fix (2026-07-10) — TURSO ROW-READ QUOTA: this route was force-dynamic with
  * revalidate=0 and Cache-Control: no-store — every single poll, from every
- * visitor, on both the homepage (components/BenchmarkResults compact, 20s
- * default) and the /benchmarks page (10s), hit the database fresh via
- * getBenchmarkResults()'s full-table JOIN. Turso reported ~80% of its row-read
- * quota consumed. Benchmark results only change in discrete jumps when a full
- * run is scored and published (at most a few times a day) — there was no
- * reason to re-query on every 10-20s poll from every open tab. Now cached for
- * 60s via Next.js's route-segment revalidation: every poll within a 60s
- * window across ALL visitors is served from ONE shared cached response, not
- * one DB query per visitor per poll. Consumers still refresh automatically;
- * they just don't each force a fresh row read to do it.
+ * visitor, on both the homepage and the /benchmarks page, hit the database
+ * fresh. Turso reported ~80% of its row-read quota consumed.
+ *
+ * fix (2026-07-10, take two): the route-segment `export const revalidate`
+ * approach did NOT produce verified cache HITs on Vercel's edge — five rapid
+ * requests all showed x-vercel-cache: MISS, and the response carried
+ * Cache-Control: max-age=0, must-revalidate regardless of the revalidate
+ * export. Switched to an explicit Cache-Control response header (s-maxage),
+ * the standard, verifiable mechanism for edge caching a Vercel Route Handler.
  */
 
 import { NextResponse } from 'next/server';
 import { getBenchmarkResults } from '@/lib/benchmark_results';
-
-export const revalidate = 60;
 
 export async function GET() {
   try {
@@ -38,11 +35,13 @@ export async function GET() {
       published: results.length > 0,
       results,
       fetched_at: new Date().toISOString(),
+    }, {
+      headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30' },
     });
   } catch (e) {
     return NextResponse.json(
       { ok: false, count: 0, published: false, results: [], error: String(e).slice(0, 200) },
-      { status: 500 },
+      { status: 500, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30' } },
     );
   }
 }
