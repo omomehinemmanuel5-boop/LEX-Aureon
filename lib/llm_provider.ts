@@ -4,13 +4,33 @@
  * Unified LLM provider with automatic fallback chain.
  * Every agent calls generateWithFallback() — provider switching is transparent.
  *
- * Fallback chain (in order):
- *   1. Groq  llama-3.3-70b-versatile  — primary, best quality
- *   2. Groq  llama-3.1-8b-instant     — same provider, higher TPM limit
- *   3. Mistral open-mistral-7b         — different provider, confirmed live
- *   4. Gemini gemini-3.1-flash-lite    — confirmed live, cost-efficient
- *   5. Gemini gemini-2.5-flash         — higher capability fallback
- *   6. Static constitutional response  — deterministic, no LLM
+ * fix (2026-07-10) — ADDED CEREBRAS AS A 4TH PROVIDER: on 2026-07-10, a full
+ * LexBench run hit total exhaustion across ALL THREE existing providers
+ * (Groq, Gemini, Mistral) simultaneously on the majority of prompts,
+ * verified directly against raw output (see lib/benchmark_results.ts's
+ * *_RETIRED_PROVIDER_EXHAUSTION_2026-07-10 entries and
+ * scripts/migrations/2026-07-10-retire-provider-exhaustion-run.ts). Adding
+ * another Groq-hosted model would not have helped — it shares the same
+ * account-level TPM ceiling. Cerebras is genuinely independent
+ * infrastructure (their own Wafer-Scale Engine hardware, separate account,
+ * separate quota), OpenAI-compatible (same request/response shape as
+ * tryGroq below), and offers a free tier sized for sustained volume
+ * (~1M tokens/day) rather than just burst RPM — the dimension that actually
+ * mattered on 2026-07-10, where the failure was sustained exhaustion across
+ * a heavy-traffic day, not a burst limit. Placed at different positions in
+ * each chain below (not just appended at the end everywhere) so it provides
+ * real redundancy against whichever of the three existing providers is
+ * currently the bottleneck, rather than only being reached after all three
+ * have already failed.
+ *
+ * Fallback chain (in order, generateWithFallback — the general default):
+ *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
+ *   2. Groq     llama-3.1-8b-instant     — same provider, higher TPM limit
+ *   3. Cerebras llama-3.3-70b            — independent quota, high daily volume
+ *   4. Mistral  open-mistral-7b          — different provider, confirmed live
+ *   5. Gemini   gemini-3.1-flash-lite    — confirmed live, cost-efficient
+ *   6. Gemini   gemini-2.5-flash         — higher capability fallback
+ *   7. Static constitutional response    — deterministic, no LLM
  */
 
 export interface LLMMessage {
@@ -48,6 +68,7 @@ const MAX_OUTPUT_TOKENS = 8192;
 export const MODELS = {
   PRIMARY: 'llama-3.3-70b-versatile',
   FAST: 'llama-3.1-8b-instant',
+  CEREBRAS: 'llama-3.3-70b',
   MISTRAL: 'open-mistral-7b',
   GEMINI_LITE: 'gemini-3.1-flash-lite',
   GEMINI_FULL: 'gemini-2.5-flash',
@@ -61,6 +82,32 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
   if (!key) return null;
   try {
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model, messages,
+        max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.7,
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (r.status === 429) return null; // rate limit — try next provider
+    if (!r.ok) return null;
+    const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return d.choices?.[0]?.message?.content?.trim() ?? null;
+  } catch { return null; }
+}
+
+// fix (2026-07-10): Cerebras's API is OpenAI-compatible with the identical
+// request/response shape as Groq's — same auth pattern (Bearer), same
+// chat/completions body, same choices[0].message.content response path.
+// Kept as its own function (rather than parameterizing tryGroq with a base
+// URL) so each provider's own quirks/rate-limit handling can diverge later
+// without entangling the two.
+async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
+  const key = process.env.CEREBRAS_API_KEY;
+  if (!key) return null;
+  try {
+    const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -134,11 +181,12 @@ export async function generateWithFallback(
 ): Promise<LLMResult> {
 
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
-    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
-    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
-    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
-    { provider: 'gemini',  model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
+    { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
+    { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
+    { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
   ];
 
   for (let i = 0; i < chain.length; i++) {
@@ -185,7 +233,7 @@ export async function generateSingle(
 
 /**
  * Governed arm generation — Gemini primary (1,000 RPM free tier).
- * Rate-limit-proof for benchmarks. Falls back to Groq if Gemini fails.
+ * Rate-limit-proof for benchmarks. Falls back to Cerebras/Groq if Gemini fails.
  *
  * Role: produce the constitutionally governed response every turn.
  */
@@ -194,11 +242,12 @@ export async function generateGoverned(
   staticFallback?: string,
 ): Promise<LLMResult> {
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
-    { provider: 'gemini',  model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
-    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
-    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
-    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
+    { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
+    { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
+    { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
   ];
   for (let i = 0; i < chain.length; i++) {
     const { provider, model, fn } = chain[i];
@@ -219,10 +268,11 @@ export async function generateRewrite(
   staticFallback?: string,
 ): Promise<LLMResult> {
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
-    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
-    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
-    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
+    { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
+    { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
   ];
   for (let i = 0; i < chain.length; i++) {
     const { provider, model, fn } = chain[i];
@@ -245,6 +295,13 @@ export async function generateRewrite(
  * as a same-provider fallback (higher TPM headroom) if 70B's stricter rate
  * limit is hit, not because it's an adequate primary judge on its own.
  *
+ * fix (2026-07-10): added Cerebras's llama-3.3-70b as a same-quality,
+ * independent-quota fallback before dropping to smaller/different models —
+ * a judge call failing over to a materially weaker model is exactly the
+ * mechanism that caused the 2026-07-08 keyword-fallback contamination in
+ * the first place, so keeping fallback quality high for as long as possible
+ * matters more here than in the general-purpose chains.
+ *
  * Role: score model outputs against benchmark rubrics (harm-compliance,
  * truthfulness, injection-resistance, over-refusal, refusal-severity) and,
  * separately, validate that intervention output resists a harmful request.
@@ -253,10 +310,11 @@ export async function generateJudge(
   messages: LLMMessage[],
 ): Promise<LLMResult> {
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
-    { provider: 'groq',    model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
-    { provider: 'groq',    model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
-    { provider: 'gemini',  model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
-    { provider: 'mistral', model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
+    { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
+    { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
+    { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
   ];
   for (let i = 0; i < chain.length; i++) {
     const { provider, model, fn } = chain[i];
