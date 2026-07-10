@@ -124,50 +124,32 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
 //     "ASR" metric name before being split out into its own
 //     "injection_resisted_pct_PROXY" naming (which also carries the explicit
 //     proxy-not-official-methodology caveat AgentDojo needs).
-//   - AdvBench ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08: id=74 was published
-//     with a catastrophic LLM-judge failure — the 8B judge fell back to
-//     keyword-heuristic scoring and inflated both bare (31.54) and governed
-//     (30.58) arms symmetrically, collapsing the delta to noise. Retired by
-//     migration scripts/migrations/2026-07-08-retire-advbench-judge-
-//     exhaustion.ts, which renames id=74's metric_name to this value.
-//   - AdvBench ASR_RETIRED_KEYWORD_FALLBACK_2026-07-08: id=68, same-day,
-//     same root cause at lower severity — judge_methods tags
-//     keyword-fallback present, governed_score=3.27 is a ~17x outlier
-//     against every other governed measurement in this benchmark's history
-//     (all cluster 0–0.19), delta compressed to 0.58pp against a
-//     1.15–1.35pp trend in neighboring runs. Same symmetric-inflation
-//     signature as id=74, smaller dose. Retired by migration
-//     scripts/migrations/2026-07-08-retire-advbench-id68.ts.
-//   - *_RETIRED_QUICKTEST_2026-07-09 (TruthfulQA/truthful_pct,
-//     AgentDojo/injection_resisted_pct_PROXY, JailbreakBench/ASR,
-//     AdvBench/ASR, HarmBench/ASR — ids 76-80): a quick-test workflow_dispatch
-//     (limit=10, meant only to validate pipeline fixes before a full run)
-//     published its tiny n=10 results to the live leaderboard, because the
-//     publish step's guard didn't exclude quick-test mode. Not a
-//     methodology issue — operator error, since fixed in
-//     .github/workflows/lexbench-prod.yml and lexbench-extended.yml.
+//   - AdvBench ASR_RETIRED_JUDGE_EXHAUSTION_2026-07-08: id=74, catastrophic
+//     LLM-judge failure. Retired by scripts/migrations/2026-07-08-retire-
+//     advbench-judge-exhaustion.ts.
+//   - AdvBench ASR_RETIRED_KEYWORD_FALLBACK_2026-07-08: id=68, same root
+//     cause, lower severity. Retired by scripts/migrations/2026-07-08-
+//     retire-advbench-id68.ts.
+//   - *_RETIRED_QUICKTEST_2026-07-09 (ids 76-80): accidental publish from a
+//     quick-test dispatch, operator error since fixed in the workflow files.
 //     Retired by scripts/migrations/2026-07-09-retire-quicktest-noise.ts.
-//   - *_RETIRED_PROVIDER_EXHAUSTION_2026-07-10 (TruthfulQA/truthful_pct,
-//     AdvBench/ASR, JailbreakBench/ASR, HarmBench/ASR,
-//     AgentDojo/injection_resisted_pct_PROXY — ids 90-94): a full LexBench
-//     Production run completed with all 18 shards green, but 52-86% of
-//     prompts in the run (verified against raw shard artifacts, GH Actions
-//     run 29088128698) had both raw_output and governed_output equal to the
-//     literal SovereignKernel.callLLM static fallback string — meaning all 5
-//     providers (Groq, Mistral, Gemini) were exhausted on the majority of
-//     requests. Not a genuine measurement: the harm-compliance judge mostly
-//     (correctly) returned null for the fallback text, but the run still
-//     published bare=0/gov=0 rather than being excluded; the truthfulness
-//     and injection-proxy judges scored the fallback text as a real (if
-//     degenerate) verdict, producing the implausible AgentDojo 100%/100% and
-//     dragging TruthfulQA from its normal ~80% down to ~21%. Retired by
-//     scripts/migrations/2026-07-10-retire-provider-exhaustion-run.ts.
-//     Root cause is external API quota exhaustion (likely compounded by
-//     unusually heavy same-day traffic), not a code defect in this pass —
-//     though it did expose that scripts/lexbench/runner.ts was never wired
-//     to read the governed_source field added to /api/lex/govern specifically
-//     to let it exclude exhausted turns from scoring (added 2026-07-08,
-//     still unused as of this writing).
+//   - *_RETIRED_PROVIDER_EXHAUSTION_2026-07-10 (ids 90-94): mass provider
+//     exhaustion (52-86% of prompts hit the static callLLM fallback string).
+//     Retired by scripts/migrations/2026-07-10-retire-provider-exhaustion-
+//     run.ts.
+//   - TruthfulQA truthful_pct_RETIRED_UNDERSAMPLED_2026-07-10: id=95. Only
+//     3 of 817 attempted prompts got a real judge verdict (814 hit provider
+//     exhaustion) — published as bare=60/gov=0/delta=-60pp anyway, a
+//     statistically meaningless n=3 sample displayed as if it were the full
+//     817-prompt attempt. This exposed a gap distinct from the id=90-94
+//     issue: THAT fix (2026-07-08/07-10) correctly excludes exhausted turns
+//     from scoring, but nothing previously stopped an adequately-EXCLUDED-
+//     but-tiny remaining sample from still publishing as if valid. Fixed by
+//     adding a minimum coverage gate to scripts/lexbench/aggregate-
+//     report.ts (30% of attempted, minimum 10 absolute) and making
+//     scripts/lexbench/publish-results.ts's n_total report the actual
+//     scored count rather than the attempted count. Retired by
+//     scripts/migrations/2026-07-10-retire-truthfulqa-undersampled.ts.
 //   - With id=74, id=68, id=79, and id=91 all retired, AdvBench/ASR falls
 //     back to id=62 (bare 1.54, gov 0.19, delta 1.35pp, clean 520/520
 //     coverage, no keyword-fallback tag) — the last AdvBench run scored
@@ -188,6 +170,7 @@ const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
   { benchmark: 'JailbreakBench', metric_name: 'ASR_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
   { benchmark: 'HarmBench', metric_name: 'ASR_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
   { benchmark: 'AgentDojo', metric_name: 'injection_resisted_pct_PROXY_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
+  { benchmark: 'TruthfulQA', metric_name: 'truthful_pct_RETIRED_UNDERSAMPLED_2026-07-10' },
 ];
 
 function isRetired(benchmark: string, metricName: string): boolean {
