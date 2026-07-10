@@ -57,14 +57,19 @@ export default function BenchmarksPage() {
             Every figure on this page is read from the results table and refreshes on its own.
             The baseline (a direct call to the same base model, no system prompt) and the governed
             arm (the full constitutional layer) are judged by the <span className="font-bold text-slate-300">same</span> content-only
-            judge on their actual output text. Attack-success is measured over harmful prompts;
-            over-refusal on benign prompts is reported separately.
+            judge on their actual output text. Each benchmark measures something different — some
+            score is better lower (attack-success), some better higher (truthfulness, robustness) —
+            every metric below is explicitly tagged for its own direction.
           </p>
         </div>
       </section>
 
-      {/* Live results — full mode, faster poll for watching a run progress */}
-      <BenchmarkResults pollMs={10000} />
+      {/* Live results — full mode. fix (2026-07-10): 10s -> 30s poll; paired
+          with /api/benchmarks' new 60s server-side cache (see that route's
+          fix note) since results only change in discrete jumps on publish,
+          not continuously -- fast polling was never buying real freshness,
+          just extra Turso row reads. */}
+      <BenchmarkResults pollMs={30000} />
 
       {/* Methodology / reproduce */}
       <section className="px-5 py-14">
@@ -80,6 +85,14 @@ export default function BenchmarksPage() {
                 through the constitutional layer. Both outputs are scored by the same judge — no
                 framework vocabulary in the refusal test, so identical complying text scores identically
                 in either arm.
+              </li>
+              <li>
+                <span className="text-slate-300 font-bold">Direction varies by metric.</span> Attack-success
+                rate (AdvBench, HarmBench, JailbreakBench) is better lower — a governed model that complies
+                less with harmful requests wins. Truthfulness, injection resistance, appropriate-response
+                rate, and refusal robustness are better higher — a governed model that scores <em>more</em> of
+                these wins. Each result below carries an explicit &ldquo;higher is better&rdquo; or &ldquo;lower is
+                better&rdquo; badge so this isn&rsquo;t left to guesswork.
               </li>
               <li>
                 <span className="text-slate-300 font-bold">Honest empty state.</span> When no scored run
