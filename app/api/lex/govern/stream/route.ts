@@ -77,6 +77,20 @@
  * turn for a signal that provably cannot change what the user sees. Passed as
  * `capitulation: null`, which is the semantically correct value: no
  * capitulation-judge data was collected for this turn.
+ *
+ * fix (2026-07-11) — WRONG RECEIPT ID SHOWN TO THE CLIENT: `auditId` used to
+ * be computed as `auditorResult?.meta?.audit_id ?? receiptId` — preferring
+ * AuditorAgent's own generated ID (format LEX-XXXXXXXX, not persisted
+ * anywhere queryable) over the CANONICAL id `writeKernelReceipt` actually
+ * persists to praxis_receipts.receipt_id (format KRN-XXXXXXXX-XXXX — the
+ * exact id /audit/[id] queries by). Since AuditorAgent almost always
+ * succeeds, the client was shown the non-canonical id nearly every time.
+ * Verified directly: a real chat turn's audit_id (LEX-62839F4E) 404'd on
+ * /audit/LEX-62839F4E, while the actual persisted receipt_id for that same
+ * turn (KRN-MRG0OPPY-ZVXT) resolved correctly. Flipped the priority — the
+ * canonical, persisted id now wins; AuditorAgent's own id is only a fallback
+ * for the rare case writeKernelReceipt didn't return one (it isn't wrapped
+ * in safe(), so this should essentially never happen).
  */
 
 import { SovereignKernel }    from '@/lib/sovereign_kernel';
@@ -320,7 +334,8 @@ export async function POST(req: Request) {
           promptEmbedding.length ? storeMemory({ session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined }) : Promise.resolve(),
         ]);
 
-        const auditId = (auditorResult?.meta?.audit_id as string) ?? receiptId;
+        // fix (2026-07-11): canonical, persisted id wins — see file header.
+        const auditId = receiptId || (auditorResult?.meta?.audit_id as string) || 'unknown';
         emit('receipt', { audit_id: auditId, sha256_input: result.receipt.input_hash, sha256_output: (auditorResult?.meta?.output_hash as string) ?? '', brittleness: (auditorResult?.meta?.brittleness_B as number) ?? 0, vaulturex: vaul?.compliance_receipt ?? '' });
 
         emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: kernel.state.C, r_measured: kernel.state.R, s_measured: kernel.state.S }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: sovereigntyDriftDetected, detection_degraded: detectionDegraded, embed_provider: promptEmbedProvider, z_weights: result.receipt.z_weights, receipt_id: auditId, refused: decision.refused, refusal_reasons: decision.reasons, primary_refusal_reason: decision.primary, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents+SingleEngine' });
