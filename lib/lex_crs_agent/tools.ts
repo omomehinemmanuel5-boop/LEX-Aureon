@@ -1,7 +1,7 @@
 /**
  * Lex CRS Agent — Tool Implementations
  *
- * 11 canonical tools giving the agent live access to the Lexaureon system.
+ * 12 canonical tools giving the agent live access to the Lexaureon system.
  * Unified, coherent, no redundant logging.
  *
  * READ TOOLS:  read_file, list_directory, search_code, get_build_status,
@@ -10,12 +10,37 @@
  *
  * WRITE TOOLS: write_file, run_governance
  *
+ * TEST TOOLS:  write_file_governed
+ *
  * MULTI-REPO:  read_file, write_file, list_directory, search_code all accept
  *              an optional `repo` parameter. Defaults to the frontend repo.
  *              Set repo: BENCHMARK_REPO to target Lexaureon-Benchmark.
+ *
+ * fix (2026-07-11) — GOVERNED WRITE PATH, DELIBERATELY SEPARATE FROM write_file:
+ * discovered that this MCP server's actual dispatch (app/api/mcp/route.ts ->
+ * TOOL_REGISTRY) has never routed through lib/agents/tool_interceptor.ts,
+ * despite lib/lex_crs_agent/tools/file-operations.ts's own docstring claiming
+ * "All operations are measured by CRS and gated by tool-proxy" — that file is
+ * dead code, never imported into TOOL_REGISTRY. Every write_file call all
+ * session has been an ungoverned direct PUT to the GitHub Contents API.
+ *
+ * write_file_governed adds interceptToolCall() (the REAL, already-built
+ * tool-call governor — kernel-informed thresholds, injection detection,
+ * slow-drip/cumulative sigma_viol tracking, tool_receipts audit trail) in
+ * front of the identical commit logic write_file already uses — as a NEW,
+ * additive tool, not a replacement. write_file is untouched and still works
+ * exactly as before. This is deliberate: routing my own only write mechanism
+ * through a newly-wired governance layer with no tested fallback would risk
+ * losing the ability to fix my own mistake if something in the interceptor
+ * misbehaves. Test write_file_governed standalone first; only fold it into
+ * write_file's own path (or replace write_file entirely) once its behavior
+ * is verified across enough real calls to trust it in the main path.
  */
 
 import { env } from '../env';
+import { interceptToolCall } from '../agents/tool_interceptor';
+import type { ToolCallInput } from '../agents/types';
+import crypto from 'crypto';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const BENCHMARK_REPO = 'omomehinemmanuel5-boop/Lexaureon-Benchmark';
@@ -80,13 +105,12 @@ export async function search_code({
   return data.items.map(i => i.path).join('\n');
 }
 
-// ── write_file ────────────────────────────────────────────────────────────────
-export async function write_file({
-  path,
-  content,
-  message,
-  repo = FRONTEND_REPO,
-}: { path: string; content: string; message: string; repo?: string }): Promise<string> {
+// ── shared commit logic — used by both write_file (ungoverned) and
+//    write_file_governed (governed) so the two paths are byte-for-byte
+//    identical except for the interception step. ──────────────────────────────
+async function commitToGitHub({
+  path, content, message, repo,
+}: { path: string; content: string; message: string; repo: string }): Promise<string> {
   let sha: string | undefined;
   const existing = await ghFetch(`/repos/${repo}/contents/${path}`);
   if (existing.ok) {
@@ -107,6 +131,71 @@ export async function write_file({
   }
   const d = await res.json() as { commit?: { sha?: string } };
   return `✓ Committed: ${d.commit?.sha?.slice(0, 10)} — ${path} [${repo}]`;
+}
+
+// ── write_file (ungoverned — unchanged, kept as the tested fallback) ──────────
+export async function write_file({
+  path,
+  content,
+  message,
+  repo = FRONTEND_REPO,
+}: { path: string; content: string; message: string; repo?: string }): Promise<string> {
+  return commitToGitHub({ path, content, message, repo });
+}
+
+// ── write_file_governed (2026-07-11) ──────────────────────────────────────────
+// Same commit logic as write_file, gated by the real interceptToolCall().
+// session_id defaults to a stable per-day identifier so interceptToolCall's
+// cumulative slow-drip tracking (sigma_viol, n_stable, hard-lock) means
+// something across a whole session's worth of calls, rather than resetting
+// on every invocation — but can be overridden to run deliberate isolated
+// test sequences (e.g. probing the two-HIGH-in-a-row lock) without touching
+// that running state.
+export async function write_file_governed({
+  path,
+  content,
+  message,
+  repo = FRONTEND_REPO,
+  session_id,
+  task_context,
+}: {
+  path: string; content: string; message: string; repo?: string;
+  session_id?: string; task_context?: string;
+}): Promise<string> {
+  const sid = session_id ?? `lex-crs-agent-${new Date().toISOString().slice(0, 10)}`;
+
+  const toolInput: ToolCallInput = {
+    id:            crypto.randomUUID(),
+    name:          'write_file',
+    arguments:     { path, content, message, repo },
+    session_id:    sid,
+    task_context:  task_context ?? message,
+  };
+
+  const decision = await interceptToolCall(toolInput);
+
+  const report = [
+    `── Constitutional tool-call decision ──`,
+    `decision:    ${decision.decision}`,
+    `approved:    ${decision.approved}`,
+    `crs:         C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
+    `risk_level:  ${decision.crs.risk_level}`,
+    `health_band: ${decision.health_band}`,
+    `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
+    `receipt_id:  ${decision.receipt_id}`,
+    `reason:      ${decision.reason}`,
+    ...(decision.warning ? [`warning:     ${decision.warning}`] : []),
+    ``,
+  ];
+
+  if (!decision.approved) {
+    report.push(`✗ WRITE BLOCKED — no commit was made.`);
+    return report.join('\n');
+  }
+
+  const commitResult = await commitToGitHub({ path, content, message, repo });
+  report.push(commitResult);
+  return report.join('\n');
 }
 
 // ── get_build_status ──────────────────────────────────────────────────────────
@@ -308,6 +397,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   list_directory:           (a) => list_directory(a as { path?: string; repo?: string }),
   search_code:              (a) => search_code(a as { query: string; repo?: string }),
   write_file:               (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
+  write_file_governed:      (a) => write_file_governed(a as { path: string; content: string; message: string; repo?: string; session_id?: string; task_context?: string }),
   get_build_status:         ()  => get_build_status(),
   get_constitutional_state: ()  => get_constitutional_state(),
   query_database:           (a) => query_database(a as { sql: string }),
@@ -345,6 +435,20 @@ export const TOOL_DEFINITIONS = [
     name: 'write_file',
     description: 'Create or update a file and commit it to GitHub.',
     parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string', description: 'Commit message' }, ...REPO_PARAM }, required: ['path', 'content', 'message'] },
+  },
+  {
+    name: 'write_file_governed',
+    description: 'EXPERIMENTAL (2026-07-11): identical to write_file, but the commit is first scored and gated by interceptToolCall() -- real constitutional tool-call governance (C/R/S measurement, injection detection, kernel-informed thresholds, cumulative slow-drip lock). Returns the full governance decision (risk level, CRS scores, receipt id) alongside the commit result, or a denial reason with no commit made if blocked. Use to test the tool-governance layer before it replaces write_file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string', description: 'Commit message' },
+        session_id: { type: 'string', description: 'Optional. Defaults to a per-day agent session id. Override with a fresh id to run isolated test sequences (e.g. probing the slow-drip lock) without affecting ongoing cumulative state.' },
+        task_context: { type: 'string', description: 'Optional. What task this call is in service of, for C/R measurement. Defaults to the commit message.' },
+        ...REPO_PARAM,
+      },
+      required: ['path', 'content', 'message'],
+    },
   },
   {
     name: 'get_build_status',
