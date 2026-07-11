@@ -69,6 +69,27 @@
  * from the paired average by scripts/lexbench/aggregate-report.ts, so an
  * exhausted turn now honestly shrinks the sample instead of poisoning it.
  *
+ * fix (2026-07-11) — RETRY ON TOTAL EXHAUSTION: the 2026-07-10 fix correctly
+ * EXCLUDES a turn where all 5 providers fail on both arms simultaneously —
+ * but it never retried it, it just moved on and accepted the gap. The
+ * 2026-07-10 full run landed at 93-100% coverage across all 7 benchmarks
+ * (516/520, 193/200, 187/200, 27/27, 813/817, 313/313, 250/250) — honest,
+ * clean, and genuinely usable, but not the FULL set. Root cause of the
+ * remaining gap: rare moments where a burst of concurrent shard traffic hits
+ * Gemini/Groq/Cerebras/Mistral's rate limits at the exact same instant,
+ * failing all five in that one moment — not a sustained outage (the same
+ * prompt tried a few seconds later, once that momentary collision has
+ * passed, usually succeeds on at least one provider). Added
+ * callGovernAPIWithExhaustionRetry(): when BOTH arms of a single prompt come
+ * back totally exhausted (no real content on either side), wait
+ * EXHAUSTION_RETRY_DELAY_MS and retry the WHOLE prompt, up to
+ * MAX_EXHAUSTION_RETRIES times, before finally accepting the gap. Only
+ * triggers on TOTAL exhaustion (both arms) — if one arm has real content and
+ * the other doesn't, that's accepted as-is (retrying would discard a
+ * perfectly good real result on the arm that DID succeed, and use more
+ * quota for a partial gap that's already the honest, correct outcome per
+ * the 2026-07-10 fix).
+ *
  * Usage:
  *   npm run lexbench -- --benchmark truthfulqa --n 50
  *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
@@ -106,6 +127,16 @@ function isProviderExhausted(text: string, provider: string | null | undefined):
   return false;
 }
 
+// fix (2026-07-11): total-exhaustion retry — see file header. 2 retries (3
+// attempts total) with a 15s pause. 15s was chosen because the observed
+// failure mode is a MOMENTARY collision across providers' independent rate
+// limits, not a sustained outage — long enough for a rate-limit window to
+// roll over on at least one provider, short enough not to meaningfully
+// extend a shard's runtime for what should be a rare event (2026-07-10's
+// run needed this for well under 10% of prompts on every benchmark).
+const MAX_EXHAUSTION_RETRIES = 2;
+const EXHAUSTION_RETRY_DELAY_MS = 15_000;
+
 // ────────────────────────────────────────────────────────────────────────────
 // Type Definitions
 // ────────────────────────────────────────────────────────────────────────────
@@ -140,6 +171,7 @@ interface LexBenchResult {
   timestamp: string;
   duration_ms: number;
   error?: string;
+  exhaustion_retries?: number; // fix (2026-07-11): how many retries this prompt needed, for visibility in output
 }
 
 interface PromptRecord {
@@ -317,11 +349,7 @@ async function loadPrompts(
 // Call Lex Aureon Governance API
 // ────────────────────────────────────────────────────────────────────────────
 
-async function callGovernAPI(
-  endpoint: string,
-  prompt: string,
-  sessionId: string,
-): Promise<{
+interface GovernAPIResult {
   raw_output: string;
   governed_output: string;
   crs?: Record<string, number>;
@@ -330,7 +358,13 @@ async function callGovernAPI(
   raw_provider?: string | null;
   governed_provider?: string | null;
   error?: string;
-}> {
+}
+
+async function callGovernAPI(
+  endpoint: string,
+  prompt: string,
+  sessionId: string,
+): Promise<GovernAPIResult> {
   const RETRIES = [5000, 10000, 20000];
   for (let attempt = 0; attempt <= RETRIES.length; attempt++) {
     try {
@@ -396,6 +430,54 @@ async function callGovernAPI(
     governed_output: '',
     error: 'Max retries exceeded',
   };
+}
+
+/** True only when NEITHER arm produced real content — a total loss for this
+ * prompt, worth retrying. A partial exhaustion (one arm real, one arm not)
+ * is left alone: that's the honest, correct outcome from the 2026-07-10 fix,
+ * and retrying would discard the real content that DID come back. */
+function isTotalExhaustion(resp: GovernAPIResult): boolean {
+  if (resp.error) return false; // a hard HTTP/network error, not a provider-exhaustion pattern — already retried inside callGovernAPI
+  const rawExhausted = isProviderExhausted(resp.raw_output, resp.raw_provider);
+  const govExhausted = isProviderExhausted(
+    resp.governed_output,
+    resp.governed_source === 'unavailable' ? null : resp.governed_provider,
+  );
+  return rawExhausted && govExhausted;
+}
+
+/**
+ * fix (2026-07-11): wraps callGovernAPI with a retry specifically for total
+ * exhaustion (see isTotalExhaustion above and the file header for why this
+ * is scoped to total, not partial, exhaustion). Returns both the final
+ * response and how many retries it took, so the caller can log/record it.
+ */
+async function callGovernAPIWithExhaustionRetry(
+  endpoint: string,
+  prompt: string,
+  sessionId: string,
+  benchmarkName: string,
+  promptLabel: string,
+): Promise<{ result: GovernAPIResult; retries: number }> {
+  let result = await callGovernAPI(endpoint, prompt, sessionId);
+  let retries = 0;
+
+  while (isTotalExhaustion(result) && retries < MAX_EXHAUSTION_RETRIES) {
+    retries++;
+    console.warn(`[${benchmarkName}] ${promptLabel}: total provider exhaustion (both arms) — retry ${retries}/${MAX_EXHAUSTION_RETRIES} in ${EXHAUSTION_RETRY_DELAY_MS}ms...`);
+    await new Promise((r) => setTimeout(r, EXHAUSTION_RETRY_DELAY_MS));
+    result = await callGovernAPI(endpoint, prompt, sessionId);
+  }
+
+  if (retries > 0) {
+    if (isTotalExhaustion(result)) {
+      console.warn(`[${benchmarkName}] ${promptLabel}: still totally exhausted after ${retries} retries — accepting the gap (matches 2026-07-10's honest-exclusion behavior).`);
+    } else {
+      console.log(`[${benchmarkName}] ${promptLabel}: recovered after ${retries} retry(ies).`);
+    }
+  }
+
+  return { result, retries };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -546,6 +628,7 @@ async function runBenchmark(
   const shardTag = shardIndex !== undefined ? `s${shardIndex}` : 's0';
   const sessionId = `lexbench-${config.name.toLowerCase()}-${shardTag}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   let exhaustedCount = 0;
+  let recoveredCount = 0; // fix (2026-07-11): prompts that needed a retry but got real data on retry
 
   for (let i = 0; i < promptsToRun.length; i++) {
     const prompt = promptsToRun[i];
@@ -581,10 +664,16 @@ async function runBenchmark(
     }
 
     try {
-      console.log(`[${config.name}] Processing ${i + 1}/${promptsToRun.length} (ID: ${prompt.id})...`);
+      const promptLabel = `prompt ${i + 1}/${promptsToRun.length} (ID: ${prompt.id})`;
+      console.log(`[${config.name}] Processing ${promptLabel}...`);
 
-      const govResponse = await callGovernAPI(endpoint, prompt.prompt, sessionId);
+      // fix (2026-07-11): retry the whole call on total exhaustion (see
+      // callGovernAPIWithExhaustionRetry / file header).
+      const { result: govResponse, retries } = await callGovernAPIWithExhaustionRetry(
+        endpoint, prompt.prompt, sessionId, config.name, promptLabel,
+      );
       const duration = Date.now() - startTime;
+      if (retries > 0 && !isTotalExhaustion(govResponse)) recoveredCount++;
 
       // fix (2026-07-10): score each arm against ITS OWN provider field — the
       // bare and governed arms can independently succeed/fail.
@@ -614,6 +703,7 @@ async function runBenchmark(
         intervention: govResponse.intervention ?? crsMetrics.M < 0.08,
         timestamp: new Date().toISOString(),
         duration_ms: duration,
+        ...(retries > 0 ? { exhaustion_retries: retries } : {}),
       };
 
       if (govResponse.error) {
@@ -668,6 +758,9 @@ async function runBenchmark(
 
   cacheManager.saveCache();
   console.log(`[${config.name}] Cache stats: ${JSON.stringify(cacheManager.getStats())}`);
+  if (recoveredCount > 0) {
+    console.log(`[${config.name}] ✓ ${recoveredCount}/${promptsToRun.length} prompts recovered via exhaustion retry (would have been gaps before the 2026-07-11 fix).`);
+  }
   if (exhaustedCount > 0) {
     console.warn(`[${config.name}] ⚠ ${exhaustedCount}/${promptsToRun.length} prompts hit provider exhaustion on at least one arm — excluded from scoring, not counted as real verdicts.`);
   }
