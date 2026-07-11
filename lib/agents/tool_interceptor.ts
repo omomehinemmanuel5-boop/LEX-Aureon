@@ -17,6 +17,13 @@
  * fix: uses singleton getClient() from db.ts — was calling createClient()
  * on every DB operation (getSessionState, updateSessionState, writeReceipt,
  * getKernelM) — same connection leak fixed in lex_memory.ts and kernel_bridge.ts.
+ *
+ * fix (2026-07-11): measureToolCRS is now async (semantic/embedding-based
+ * injection detection as a second pass — see tool_crs.ts's file header) —
+ * this call site now awaits it. Latency note: for calls that the fast regex
+ * pass doesn't already resolve, this adds a real embedding-API round trip to
+ * interceptToolCall's total time, not just a compute-bound classification —
+ * stated here since it's a real behavior change from before, not silent.
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -224,7 +231,8 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
   }
 
   // Step 1: CRS measurement (includes injection + hardcoded pattern checks)
-  const crs = measureToolCRS(tool);
+  // fix (2026-07-11): now async (semantic injection second-pass) — awaited.
+  const crs = await measureToolCRS(tool);
 
   // Step 2: Immediate BLOCKED — no session state update needed
   if (crs.risk_level === 'BLOCKED') {
