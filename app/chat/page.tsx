@@ -4,6 +4,7 @@ import {
   useState, useEffect, useRef, useCallback, useMemo, memo,
 } from 'react';
 import Link from 'next/link';
+import { Libre_Caslon_Display } from 'next/font/google';
 import { useLexStream } from '@/lib/use_lex_stream';
 import { buildSessionArc, type ChatTurn } from '@/lib/chat_store';
 import {
@@ -19,25 +20,39 @@ import { useToast } from '@/components/Toast';
 import type { GovernanceResponse } from '@/types/governance-types';
 
 /* ─────────────────────────────────────────────────────────────────────
-   DESIGN TOKENS
+   TYPE — "sovereign workspace" pass (2026-07-11)
+
+   Caslon is the actual typeface of American founding documents — chosen
+   because this product's own framing is explicitly "constitutional," not
+   as a generic serif pick. Used sparingly: wordmark, mode titles, section
+   eyebrows only. Everything else keeps the existing monospace stack —
+   already the correct choice for reading numeric constitutional state at
+   a glance, not something to replace for its own sake.
+───────────────────────────────────────────────────────────────────── */
+const caslon = Libre_Caslon_Display({ weight: '400', subsets: ['latin'], display: 'swap' });
+
+/* ─────────────────────────────────────────────────────────────────────
+   DESIGN TOKENS — refined 2026-07-11 for the "sovereign workspace" pass.
+   Core gold-on-near-black identity kept (it already avoids the generic
+   cream+terracotta / black+neon defaults); values tightened for restraint.
 ───────────────────────────────────────────────────────────────────── */
 const G = {
-  gold: '#c9a84c', goldL: '#e8c96d',
-  bg:      '#080a12',
-  surface: '#0d1020',
-  surfaceHi: '#111525',
-  border:  '#171d30',
-  borderHi:'#1f2840',
-  text:    '#8fa0b4',
-  textSub: '#3d506a',
-  textOn:  '#d0dae6',
-  C: '#3b82f6', R: '#10b981', S: '#f59e0b',
+  gold: '#c9a24a', goldL: '#e3c179',
+  bg:      '#07080d',
+  surface: '#0d0f18',
+  surfaceHi: '#12141f',
+  border:  '#1b1e2b',
+  borderHi:'#262a3a',
+  text:    '#8b8d97',
+  textSub: '#454858',
+  textOn:  '#e6e4dc',
+  C: '#4f8ff0', R: '#34b876', S: '#e0a039',
 };
 
 const HEALTH: Record<string, { color: string; bg: string; label: string }> = {
-  OPTIMAL:  { color: '#10b981', bg: '#10b98115', label: 'OPTIMAL'  },
-  ALERT:    { color: '#f59e0b', bg: '#f59e0b15', label: 'ALERT'    },
-  STRESSED: { color: '#f97316', bg: '#f9731615', label: 'STRESSED' },
+  OPTIMAL:  { color: '#34b876', bg: '#34b87615', label: 'OPTIMAL'  },
+  ALERT:    { color: '#e0a039', bg: '#e0a03915', label: 'ALERT'    },
+  STRESSED: { color: '#e0761f', bg: '#e0761f15', label: 'STRESSED' },
   CRITICAL: { color: '#ef4444', bg: '#ef444415', label: 'CRITICAL' },
 };
 
@@ -57,7 +72,7 @@ const MODES: { key: SandboxMode; label: string; icon: string; desc: string }[] =
 
 type SandboxMode = 'chat' | 'code' | 'research' | 'redteam';
 type MsgTab      = 'raw' | 'audit' | 'analysis';
-type SheetView   = 'sandbox' | 'mode' | 'suggestions';
+type SheetView   = 'sandbox' | 'mode' | 'suggestions' | 'tools';
 
 interface SandboxFile {
   id: string; name: string; lang: string;
@@ -90,10 +105,42 @@ function syntaxHL(code: string, lang: string): string {
   h = h.replace(/(["'`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color:#86efac">$1$2$1</span>');
   h = h.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)/g, '<span style="color:#2a3d58">$1</span>');
   h = h.replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|default|from|async|await|type|interface|extends|new|typeof|void|null|undefined|true|false|def|fn|pub|use|mod|struct|enum|match|self)\b/g,
-    '<span style="color:#c9a84c">$1</span>');
+    '<span style="color:#c9a24a">$1</span>');
   h = h.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#a78bfa">$1</span>');
   h = h.replace(/\b([a-zA-Z_]\w*)\s*(?=\()/g, '<span style="color:#38bdf8">$1</span>');
   return h;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   THE SEAL — signature element (2026-07-11)
+
+   M = min(C,R,S) is the actual thesis of the product — the stability
+   margin the whole framework exists to protect. Instead of a text badge,
+   it's rendered as a hexagonal seal whose glow color and pulse rate come
+   directly from the live constitutional state: the workspace's own vital
+   sign, not a decoration bolted onto a chat header.
+───────────────────────────────────────────────────────────────────── */
+function Seal({ m, health, active }: { m: number | null; health: string; active: boolean }) {
+  const hcfg = HEALTH[health] ?? HEALTH.OPTIMAL;
+  const color = m === null ? G.textSub : hcfg.color;
+  return (
+    <div className="relative flex-shrink-0 w-9 h-9 flex items-center justify-center">
+      <svg width="36" height="36" viewBox="0 0 36 36" className={active ? 'lex-seal-spin' : ''}>
+        <polygon
+          points="18,3 31,10.5 31,25.5 18,33 5,25.5 5,10.5"
+          fill="none" stroke={color} strokeWidth="1.3"
+          style={{ opacity: m === null ? 0.35 : 0.9, transition: 'stroke 0.5s, opacity 0.5s' }}
+        />
+      </svg>
+      <span
+        className={m !== null && active ? 'lex-pulse' : ''}
+        style={{
+          position: 'absolute', fontSize: 12, fontFamily: 'inherit',
+          color, transition: 'color 0.5s',
+        }}
+      >⬡</span>
+    </div>
+  );
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -101,7 +148,7 @@ function syntaxHL(code: string, lang: string): string {
 ───────────────────────────────────────────────────────────────────── */
 function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) {
   const total  = (c + r + s) || 1;
-  const mColor = m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981';
+  const mColor = m < 0.08 ? '#ef4444' : m < 0.15 ? G.S : G.R;
   return (
     <div className="space-y-[5px] pt-2.5 mt-2.5" style={{ borderTop: `1px solid ${G.border}` }}>
       {([['C', c, G.C], ['R', r, G.R], ['S', s, G.S]] as [string, number, string][]).map(([k, v, col]) => (
@@ -128,13 +175,9 @@ function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) 
 
 /* ─────────────────────────────────────────────────────────────────────
    CRS DELTA — before → after governance
-   Overlays the pre-governance ("before") state as a faded bar beneath the
-   solid governed ("after") bar, with a numeric before / after / Δ row per
-   pillar plus the stability margin M. Falls back to CRSBar when no before-
-   state is present (see MessageBubble / GovernancePanel call sites).
 ───────────────────────────────────────────────────────────────────── */
 function mColorOf(m: number): string {
-  return m < 0.08 ? '#ef4444' : m < 0.15 ? '#f59e0b' : '#10b981';
+  return m < 0.08 ? '#ef4444' : m < 0.15 ? G.S : G.R;
 }
 
 function CRSDelta({ before, after }: {
@@ -147,7 +190,7 @@ function CRSDelta({ before, after }: {
     ['S', before.s, after.s, G.S],
   ];
   const dM    = after.m - before.m;
-  const dCol  = (d: number) => Math.abs(d) < 0.005 ? G.textSub : d > 0 ? '#10b981' : '#ef4444';
+  const dCol  = (d: number) => Math.abs(d) < 0.005 ? G.textSub : d > 0 ? G.R : '#ef4444';
   const moved = Math.abs(dM) >= 0.005
     || pillars.some(([, b, a]) => Math.abs(a - b) >= 0.005);
 
@@ -218,7 +261,6 @@ const CodeViewer = memo(function CodeViewer({ block, onSave }: {
 
   return (
     <div className="mt-3 rounded-xl overflow-hidden" style={{ background: '#050810', border: `1px solid ${G.border}` }}>
-      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2"
         style={{ borderBottom: `1px solid ${G.border}`, background: '#070a14' }}>
         <div className="flex items-center gap-2">
@@ -245,7 +287,6 @@ const CodeViewer = memo(function CodeViewer({ block, onSave }: {
           </button>
         </div>
       </div>
-      {/* Code */}
       <pre className="p-3 text-[12px] leading-relaxed overflow-x-auto font-mono"
         style={{ color: '#7a8fa8', WebkitOverflowScrolling: 'touch' }}
         dangerouslySetInnerHTML={{ __html: html }} />
@@ -293,7 +334,6 @@ function GovernancePanel({ turn, tab, onClose }: {
   return (
     <div className="mt-2 rounded-2xl overflow-hidden font-mono"
       style={{ background: G.surface, border: `1px solid ${G.border}` }}>
-      {/* Drag handle + close */}
       <div className="flex items-center justify-between px-4 py-3"
         style={{ borderBottom: `1px solid ${G.border}` }}>
         <span className="text-[11px] tracking-wide" style={{ color: G.textSub }}>
@@ -318,7 +358,7 @@ function GovernancePanel({ turn, tab, onClose }: {
               { k: 'health',     v: turn.health_band ?? 'OPTIMAL',       c: hcfg.color },
               { k: 'M',          v: (turn.M ?? 0).toFixed(4),            c: hcfg.color },
               { k: 'intervened', v: turn.intervened ? 'YES' : 'NO',      c: turn.intervened ? '#ef4444' : G.R },
-              { k: 'attack',     v: turn.attack_type ?? 'none',          c: (turn.attack_type && turn.attack_type !== 'none') ? '#f97316' : G.textSub },
+              { k: 'attack',     v: turn.attack_type ?? 'none',          c: (turn.attack_type && turn.attack_type !== 'none') ? G.S : G.textSub },
               { k: 'severity',   v: turn.attack_severity != null ? turn.attack_severity.toFixed(3) : '—',
                 c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : G.textSub },
               { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : G.textSub },
@@ -401,7 +441,7 @@ function StatusChips({ turn, live }: { turn: ChatTurn; live: boolean }) {
   if (turn.memory_injected)
     chips.push({ label: '⟳ mem', color: '#a855f7', bg: '#a855f712' });
   if (turn.attack_type && turn.attack_type !== 'none')
-    chips.push({ label: `⊗ ${turn.attack_type}`, color: '#f97316', bg: '#f9731612' });
+    chips.push({ label: `⊗ ${turn.attack_type}`, color: G.S, bg: `${G.S}12` });
 
   if (!chips.length) return null;
   return (
@@ -430,7 +470,6 @@ const MessageBubble = memo(function MessageBubble({
   const live  = isLatest && streaming;
   const text  = live ? partialOutput : (turn.governed_output ?? turn.partial ?? '');
 
-  /* ── User bubble ── */
   if (turn.role === 'user') {
     return (
       <div className="flex justify-end px-1">
@@ -442,10 +481,8 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  /* ── Lex bubble ── */
   return (
     <div className="px-1">
-      {/* Sender row */}
       <div className="flex items-center gap-2 mb-2 ml-1">
         <div className="w-[22px] h-[22px] rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0"
           style={{ background: `${G.gold}14`, border: `1px solid ${G.gold}28`, color: G.gold }}>⬡</div>
@@ -460,7 +497,6 @@ const MessageBubble = memo(function MessageBubble({
         )}
       </div>
 
-      {/* Bubble */}
       <div className="rounded-2xl rounded-tl-md ml-1"
         style={{
           background: G.surface,
@@ -495,7 +531,6 @@ const MessageBubble = memo(function MessageBubble({
           )}
         </div>
 
-        {/* Governance tab bar */}
         {!live && turn.governed_output && (
           <div className="flex items-center border-t px-3 py-2 gap-1"
             style={{ borderColor: G.border }}>
@@ -530,26 +565,21 @@ function BottomSheet({ open, onClose, title, children }: {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      {/* Sheet */}
       <div className="relative rounded-t-3xl overflow-hidden flex flex-col"
         style={{ background: G.surface, border: `1px solid ${G.border}`, maxHeight: '85dvh' }}>
-        {/* Handle */}
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: G.border }} />
         </div>
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
           style={{ borderBottom: `1px solid ${G.border}` }}>
-          <span className="text-[12px] font-mono font-bold uppercase tracking-widest" style={{ color: G.gold }}>
+          <span className={`${caslon.className} text-[15px] tracking-wide`} style={{ color: G.gold }}>
             {title}
           </span>
           <button onClick={onClose}
             className="w-8 h-8 rounded-xl flex items-center justify-center text-[14px]"
             style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
         </div>
-        {/* Content */}
         <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
           {children}
         </div>
@@ -581,7 +611,6 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
 
   return (
     <div className="flex flex-col font-mono" style={{ minHeight: '40vh' }}>
-      {/* Tab row */}
       <div className="flex border-b flex-shrink-0" style={{ borderColor: G.border }}>
         {(['files','editor','terminal'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -608,7 +637,6 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
         </div>
       )}
 
-      {/* Files */}
       {tab === 'files' && (
         <div className="p-4 space-y-2">
           {files.length === 0 && (
@@ -637,7 +665,6 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
         </div>
       )}
 
-      {/* Editor */}
       {tab === 'editor' && (
         <div className="flex flex-col" style={{ minHeight: '50vh' }}>
           {activeFile ? (
@@ -663,7 +690,6 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
         </div>
       )}
 
-      {/* Terminal */}
       {tab === 'terminal' && (
         <div ref={termRef} className="p-4 text-[12px] leading-relaxed space-y-1" style={{ minHeight: '40vh' }}>
           {terminalLog.length === 0 && <p style={{ color: G.textSub }}>// ready</p>}
@@ -680,6 +706,69 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   TOOLS SHEET — consolidates self-test + session stats + sandbox entry.
+   fix (2026-07-11): previously self-test and sandbox each had their own
+   permanent header/footer icon — 5+ controls competing for space on a
+   375px screen. Self-test and session diagnostics are occasional actions,
+   not constant-use ones; they belong in one place you open when you want
+   them, not permanent chrome. Sandbox keeps a slim footer entry (it's used
+   more often in code mode) but its old standalone button is now paired
+   with these here for a single "instrument panel" home.
+───────────────────────────────────────────────────────────────────── */
+function ToolsSheet({
+  apiCalls, callsLeft, sandboxFileCount, onOpenSandbox, onSelfTest, selfTestLoading, onUpgrade, onClose,
+}: {
+  apiCalls: number; callsLeft: number; sandboxFileCount: number;
+  onOpenSandbox: () => void; onSelfTest: () => void; selfTestLoading: boolean;
+  onUpgrade: () => void; onClose: () => void;
+}) {
+  return (
+    <div className="p-4 space-y-2">
+      <button onClick={() => { onSelfTest(); }} disabled={selfTestLoading}
+        className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98] disabled:opacity-40"
+        style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}>
+        <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: G.R }}>{selfTestLoading ? '…' : '⊕'}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-bold font-mono" style={{ color: G.textOn }}>Run self-test</p>
+          <p className="text-[11px] mt-0.5" style={{ color: G.textSub }}>Verify kernel integrity end to end</p>
+        </div>
+      </button>
+
+      <button onClick={() => { onOpenSandbox(); onClose(); }}
+        className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+        style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}>
+        <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: '#38bdf8' }}>{'</>'}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-bold font-mono" style={{ color: G.textOn }}>Sandbox</p>
+          <p className="text-[11px] mt-0.5" style={{ color: G.textSub }}>
+            {sandboxFileCount > 0 ? `${sandboxFileCount} saved file${sandboxFileCount > 1 ? 's' : ''}` : 'No files saved yet'}
+          </p>
+        </div>
+      </button>
+
+      <div className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl"
+        style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}>
+        <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: G.gold }}>◈</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-bold font-mono" style={{ color: G.textOn }}>{callsLeft} of {callsLeft + apiCalls} calls left</p>
+          <p className="text-[11px] mt-0.5" style={{ color: G.textSub }}>This session</p>
+        </div>
+      </div>
+
+      <button onClick={() => { onUpgrade(); onClose(); }}
+        className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+        style={{ background: `${G.gold}0e`, border: `1px solid ${G.gold}28` }}>
+        <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: G.gold }}>↑</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-bold font-mono" style={{ color: G.gold }}>Upgrade</p>
+          <p className="text-[11px] mt-0.5" style={{ color: G.textSub }}>Raise the call limit</p>
+        </div>
+      </button>
     </div>
   );
 }
@@ -735,12 +824,11 @@ function SuggestionsSheet({ turns, activeCategory, onCategoryChange, onSelect, o
 
   const dotColor: Record<string, string> = {
     jailbreak: '#ef4444', sycophancy: G.R, identity: G.C,
-    'slow-drip': G.S, probe: '#a855f7', attack: '#f97316', baseline: G.textSub,
+    'slow-drip': G.S, probe: '#a855f7', attack: '#e0761f', baseline: G.textSub,
   };
 
   return (
     <div className="p-4 space-y-4">
-      {/* Category pills */}
       <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {SUGGESTION_CATEGORIES.map(cat => (
           <button key={cat.key} onClick={() => onCategoryChange(cat.key)}
@@ -752,7 +840,6 @@ function SuggestionsSheet({ turns, activeCategory, onCategoryChange, onSelect, o
             }}>{cat.label}</button>
         ))}
       </div>
-      {/* Prompts */}
       <div className="space-y-2">
         {suggestions.map((s, i) => (
           <button key={i} disabled={disabled}
@@ -773,10 +860,10 @@ function SuggestionsSheet({ turns, activeCategory, onCategoryChange, onSelect, o
 ───────────────────────────────────────────────────────────────────── */
 function EmptyState({ mode, onSuggestion }: { mode: SandboxMode; onSuggestion: () => void }) {
   const cfg = {
-    chat:     { icon: '◈',   title: 'Sovereign Console',    sub: 'Constitutional AI governance' },
-    code:     { icon: '</>',  title: 'Code Mode',            sub: 'Write and save code to sandbox' },
-    research: { icon: '∇',   title: 'Research Mode',         sub: 'Rigorous constitutional analysis' },
-    redteam:  { icon: '⊗',   title: 'Constitutional Probe',  sub: 'Stress-test the governor' },
+    chat:     { icon: '◈',   title: 'Sovereign Workspace',   sub: 'Constitutional AI governance, live' },
+    code:     { icon: '</>',  title: 'Code Mode',             sub: 'Write and save code to sandbox' },
+    research: { icon: '∇',   title: 'Research Mode',          sub: 'Rigorous constitutional analysis' },
+    redteam:  { icon: '⊗',   title: 'Constitutional Probe',   sub: 'Stress-test the governor' },
   }[mode];
 
   return (
@@ -790,11 +877,11 @@ function EmptyState({ mode, onSuggestion }: { mode: SandboxMode; onSuggestion: (
           style={{ background: G.R }} />
       </div>
 
-      <div className="space-y-1">
-        <p className="text-[13px] font-mono font-bold tracking-widest uppercase" style={{ color: G.gold }}>
+      <div className="space-y-1.5">
+        <p className={`${caslon.className} text-[22px] tracking-wide`} style={{ color: G.gold }}>
           {cfg.title}
         </p>
-        <p className="text-[12px]" style={{ color: G.textSub }}>{cfg.sub}</p>
+        <p className="text-[12px] font-mono" style={{ color: G.textSub }}>{cfg.sub}</p>
       </div>
 
       <div className="w-full max-w-xs space-y-2 text-left">
@@ -806,7 +893,7 @@ function EmptyState({ mode, onSuggestion }: { mode: SandboxMode; onSuggestion: (
           <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-xl"
             style={{ background: G.surface, border: `1px solid ${G.border}` }}>
             <span className="text-[10px] mt-0.5 flex-shrink-0" style={{ color: G.gold }}>—</span>
-            <p className="text-[12px] leading-relaxed" style={{ color: G.text }}>{l}</p>
+            <p className="text-[12px] leading-relaxed font-mono" style={{ color: G.text }}>{l}</p>
           </div>
         ))}
       </div>
@@ -877,7 +964,6 @@ export default function ChatConsole() {
     localStorage.setItem(k, id); return id;
   });
 
-  /* Self-test */
   const runSelfTest = useCallback(async () => {
     setSelfTestLoading(true); setSelfTestResult(null);
     try {
@@ -889,7 +975,6 @@ export default function ChatConsole() {
     } finally { setSelfTestLoading(false); }
   }, []);
 
-  /* Persistence */
   useEffect(() => {
     const s = localStorage.getItem('lex_api_calls');
     if (s) setApiCalls(parseInt(s, 10));
@@ -898,17 +983,14 @@ export default function ChatConsole() {
   useEffect(() => { localStorage.setItem('lex_api_calls', String(apiCalls)); }, [apiCalls]);
   useEffect(() => { localStorage.setItem('lex_sandbox_files', JSON.stringify(sandboxFiles)); }, [sandboxFiles]);
 
-  /* Auto-scroll */
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [turns, stream.partialOutput]);
 
-  /* Live metrics */
   useEffect(() => {
     if (!stream.metrics) return;
     setLiveM(stream.metrics.m ?? null);
     setLiveHealth(stream.metrics.health_band ?? stream.metrics.health ?? 'OPTIMAL');
   }, [stream.metrics]);
 
-  /* Complete */
   useEffect(() => {
     if (stream.stage !== 'complete' || !stream.complete || !currentLexId) return;
     const res = stream.complete as GovernanceResponse;
@@ -919,7 +1001,6 @@ export default function ChatConsole() {
     const C = Number(stateRec?.C ?? res.metrics?.c ?? 0);
     const R = Number(stateRec?.R ?? res.metrics?.r ?? 0);
     const S = Number(stateRec?.S ?? res.metrics?.s ?? 0);
-    // Pre-governance ("before") state from the stream route's complete event.
     const rawRec  = kx.raw_state as Record<string, number> | undefined;
     const rawC    = rawRec ? Number(rawRec.C) : undefined;
     const rawR    = rawRec ? Number(rawRec.R) : undefined;
@@ -958,7 +1039,6 @@ export default function ChatConsole() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.stage, stream.complete]);
 
-  /* Error */
   useEffect(() => {
     if (!stream.error || !currentLexId) return;
     setTurns(prev => prev.map(t => t.id !== currentLexId ? t : { ...t, streaming: false, error: stream.error ?? 'Error' }));
@@ -968,7 +1048,6 @@ export default function ChatConsole() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.error]);
 
-  /* Send */
   const sendMessage = useCallback(async (promptOverride?: string) => {
     const raw = (promptOverride ?? input).trim();
     if (!raw || stream.loading) return;
@@ -990,7 +1069,6 @@ export default function ChatConsole() {
     await runStream(governed, sessionId);
   }, [input, stream.loading, apiCalls, runStream, sessionId, sandboxMode]);
 
-  /* Sandbox ops */
   const saveBlockToSandbox = useCallback((block: CodeBlock) => {
     const ext  = block.lang === 'typescript' ? 'ts' : block.lang === 'python' ? 'py' : block.lang;
     const name = block.filename ?? `snippet_${Date.now()}.${ext}`;
@@ -1015,7 +1093,6 @@ export default function ChatConsole() {
     setSandboxFiles(prev => { const n = prev.filter(f => f.id !== id); setActiveFileId(n[n.length - 1]?.id ?? null); return n; });
   }, []);
 
-  /* Derived */
   const hcfg       = HEALTH[liveHealth] ?? HEALTH.OPTIMAL;
   const isStreaming = stream.loading;
   const arc        = useMemo(() => buildSessionArc(turns), [turns]);
@@ -1027,8 +1104,10 @@ export default function ChatConsole() {
       <style>{`
         @keyframes lex-blink   { 0%,100%{opacity:1}  50%{opacity:0}   }
         @keyframes lex-breathe { 0%,100%{opacity:.4}  50%{opacity:1}  }
+        @keyframes lex-seal-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         .lex-cursor { animation: lex-blink   0.9s step-end  infinite; }
         .lex-pulse  { animation: lex-breathe 2.4s ease-in-out infinite; }
+        .lex-seal-spin { animation: lex-seal-spin 6s linear infinite; }
         ::-webkit-scrollbar { display: none; }
         * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
         textarea { font-size: 16px !important; -webkit-user-select: text; user-select: text; }
@@ -1038,12 +1117,11 @@ export default function ChatConsole() {
       <div className="h-[100dvh] flex flex-col overflow-hidden select-none"
         style={{ background: G.bg, fontFamily: "'SF Mono','JetBrains Mono',ui-monospace,monospace", color: G.text }}>
 
-        {/* ══════════════════════════ HEADER ══════════════════════════ */}
+        {/* ══════════════════════════ HEADER — decluttered ══════════════════════════ */}
         <header className="flex-shrink-0 z-30"
           style={{ background: G.bg, borderBottom: `1px solid ${G.border}` }}>
           <div className="flex items-center h-14 px-4 gap-3">
 
-            {/* Back */}
             <Link href="/"
               className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
               style={{ color: G.textSub, background: G.surface, border: `1px solid ${G.border}` }}>
@@ -1052,55 +1130,42 @@ export default function ChatConsole() {
               </svg>
             </Link>
 
-            {/* Brand + live M */}
-            <div className="flex-1 flex items-center gap-2 min-w-0">
-              <div>
-                <p className="text-[12px] font-mono font-bold tracking-widest uppercase leading-none" style={{ color: G.gold }}>
-                  Lex Aureon
-                </p>
-                <p className="text-[10px] font-mono leading-none mt-0.5" style={{ color: G.textSub }}>
-                  {curMode.icon} {curMode.label}
-                </p>
-              </div>
+            {/* Seal — signature element, replaces the old badge+wordmark clutter */}
+            <Seal m={liveM} health={liveHealth} active={isStreaming} />
 
-              {liveM !== null && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl ml-1"
-                  style={{ color: hcfg.color, background: hcfg.bg, border: `1px solid ${hcfg.color}20`, transition: 'all 0.4s' }}>
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{ background: hcfg.color, animation: isStreaming ? 'lex-blink 1s step-end infinite' : 'none' }} />
-                  <span className="text-[11px] font-mono font-bold tabular-nums">M={liveM.toFixed(3)}</span>
-                </div>
-              )}
+            <div className="flex-1 min-w-0">
+              <p className={`${caslon.className} text-[17px] tracking-wide leading-none truncate`} style={{ color: G.textOn }}>
+                Sovereign Workspace
+              </p>
+              <p className="text-[10px] font-mono leading-none mt-1" style={{ color: hcfg.color }}>
+                {curMode.icon} {curMode.label} · {liveM !== null ? `M ${liveM.toFixed(3)}` : hcfg.label}
+              </p>
             </div>
 
-            {/* Right controls */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {/* Self-test */}
-              <button onClick={() => void runSelfTest()} disabled={selfTestLoading}
-                className="w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform disabled:opacity-40"
-                style={{ color: G.R, background: G.surface, border: `1px solid ${G.border}` }}
-                title="Self-test">
-                <span className="text-[14px]">{selfTestLoading ? '…' : '⊕'}</span>
-              </button>
-
-              {/* Calls left */}
-              <div className="px-2.5 h-10 rounded-xl flex items-center font-mono text-[11px] tabular-nums"
-                style={{ color: callsLeft <= 3 ? '#f59e0b' : G.textSub, background: G.surface, border: `1px solid ${G.border}` }}>
-                {callsLeft}/{MAX_CALLS}
-              </div>
-            </div>
+            {/* Single tools entry — consolidates what used to be self-test + calls-left icons */}
+            <button onClick={() => setSheet(sheet === 'tools' ? null : 'tools')}
+              className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              style={{
+                color: sheet === 'tools' ? G.gold : G.textSub,
+                background: G.surface, border: `1px solid ${sheet === 'tools' ? `${G.gold}28` : G.border}`,
+              }}
+              title="Tools">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="3" r="1.3" fill="currentColor"/>
+                <circle cx="8" cy="8" r="1.3" fill="currentColor"/>
+                <circle cx="8" cy="13" r="1.3" fill="currentColor"/>
+              </svg>
+            </button>
           </div>
         </header>
 
         {/* ══════════════════════════ MAIN ══════════════════════════ */}
         <main className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
-          {/* Self-test banner */}
           {selfTestResult && (
             <SelfTestBanner result={selfTestResult} onClose={() => setSelfTestResult(null)} />
           )}
 
-          {/* Thread */}
           <div className="py-4 space-y-5 pb-2">
             {!turns.length
               ? <EmptyState mode={sandboxMode} onSuggestion={() => setSheet('suggestions')} />
@@ -1120,7 +1185,7 @@ export default function ChatConsole() {
           </div>
         </main>
 
-        {/* ══════════════════════════ FOOTER ══════════════════════════ */}
+        {/* ══════════════════════════ FOOTER — decluttered to a single row ══════════════════════════ */}
         <footer className="flex-shrink-0 z-20"
           style={{
             background: G.bg,
@@ -1128,19 +1193,16 @@ export default function ChatConsole() {
             paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
           }}>
 
-          {/* Correction signal */}
           {arc.interventionCount > 0 && (
             <div className="px-4 pt-2">
-              <p className="text-[10px] font-mono text-center" style={{ color: '#7c2d12' }}>
+              <p className="text-[10px] font-mono text-center" style={{ color: G.S }}>
                 ⚡ {arc.interventionCount} correction{arc.interventionCount > 1 ? 's' : ''} this session
               </p>
             </div>
           )}
 
-          {/* Input row */}
-          <div className="flex items-end gap-2 px-3 pt-2.5 pb-1">
+          <div className="flex items-end gap-2 px-3 pt-2.5 pb-2">
 
-            {/* Toolbar btn — left */}
             <button onClick={() => setSheet(sheet === 'mode' ? null : 'mode')}
               className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
               style={{
@@ -1151,7 +1213,6 @@ export default function ChatConsole() {
               <span className="text-[13px]">{curMode.icon}</span>
             </button>
 
-            {/* Input */}
             <div className="flex-1 rounded-2xl transition-all duration-200"
               style={{
                 background: G.surface,
@@ -1183,7 +1244,6 @@ export default function ChatConsole() {
                 style={{ color: G.textOn, caretColor: G.gold, fontFamily: 'inherit', maxHeight: '140px' }} />
             </div>
 
-            {/* Suggestions */}
             <button onClick={() => setSheet(sheet === 'suggestions' ? null : 'suggestions')}
               className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
               style={{
@@ -1196,7 +1256,6 @@ export default function ChatConsole() {
               </svg>
             </button>
 
-            {/* Send / Cancel */}
             {isStreaming ? (
               <button onClick={cancel}
                 className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
@@ -1207,7 +1266,7 @@ export default function ChatConsole() {
               </button>
             ) : (
               <button onClick={() => sendMessage()} disabled={!input.trim() || apiCalls >= MAX_CALLS}
-                className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-all disabled:opacity-20"
+                className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-all disabled:opacity-20"
                 style={{
                   background: input.trim() ? `linear-gradient(135deg,${G.gold},${G.goldL})` : G.surface,
                   border: `1px solid ${input.trim() ? G.gold : G.border}`,
@@ -1219,37 +1278,21 @@ export default function ChatConsole() {
               </button>
             )}
           </div>
-
-          {/* Bottom icon row */}
-          <div className="flex items-center px-4 pb-1 gap-1">
-            {/* Sandbox */}
-            <button onClick={() => setSheet(sheet === 'sandbox' ? null : 'sandbox')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
-              style={{
-                color: sheet === 'sandbox' ? '#38bdf8' : G.textSub,
-                background: sheet === 'sandbox' ? '#38bdf80e' : 'transparent',
-              }}>
-              <span className="text-[11px] font-mono">{'</>'}</span>
-              <span className="text-[10px] font-mono">sandbox</span>
-              {sandboxFiles.length > 0 && (
-                <span className="text-[10px] font-mono px-1 rounded"
-                  style={{ color: '#38bdf8', background: '#38bdf812' }}>{sandboxFiles.length}</span>
-              )}
-            </button>
-
-            <div className="flex-1" />
-
-            {/* Upgrade */}
-            <button onClick={() => setShowUpgrade(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
-              style={{ color: G.gold, background: `${G.gold}08` }}>
-              <span className="text-[10px] font-mono">↑ pro</span>
-            </button>
-          </div>
         </footer>
       </div>
 
       {/* ══════════════════════ BOTTOM SHEETS ══════════════════════ */}
+
+      <BottomSheet open={sheet === 'tools'} onClose={() => setSheet(null)} title="Tools">
+        <ToolsSheet
+          apiCalls={apiCalls} callsLeft={callsLeft} sandboxFileCount={sandboxFiles.length}
+          onOpenSandbox={() => setSheet('sandbox')}
+          onSelfTest={() => { void runSelfTest(); setSheet(null); }}
+          selfTestLoading={selfTestLoading}
+          onUpgrade={() => setShowUpgrade(true)}
+          onClose={() => setSheet(null)}
+        />
+      </BottomSheet>
 
       <BottomSheet open={sheet === 'sandbox'} onClose={() => setSheet(null)} title="Sandbox">
         <SandboxSheetContent
