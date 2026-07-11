@@ -162,7 +162,15 @@ async function fetchData<T>(path: string): Promise<T | null> {
    at zero new CSS cost. Added a second, offset radial glow blending the C/R/S
    pillar colors behind the gold one, so the background reads as alive rather
    than a single static orb. Bumped badge/pill background+border opacity
-   slightly for more visible color presence without changing layout. */
+   slightly for more visible color presence without changing layout.
+   fix (2026-07-11): the word "mathematical" appeared zero times anywhere in
+   the visible page copy — checked directly against the live HTML — despite
+   <title>/meta already claiming "Constitutional AI Governance" and the page
+   citing real mathematical mechanisms (CBF, Lyapunov, simplex state)
+   throughout. The word that actually distinguishes this from prompt-
+   engineering-with-safety-language competitors was implied but never named.
+   Added to the hero subhead, the first substantive sentence a visitor reads —
+   closes the gap between what the title tag promises and what the page says. */
 async function Hero() {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-5 pt-20 pb-16 overflow-hidden" style={{ backgroundColor: '#07070d' }}>
@@ -219,7 +227,7 @@ async function Hero() {
         </p>
 
         <p className="text-slate-300 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-          A constitutional control layer for language models and agentic pipelines.
+          A mathematical constitutional control layer for language models and agentic pipelines.
           Built on a simplex state space and a provably stable barrier — not guardrails,
           not filters. Drop-in API. Any LLM. Any agent framework.
         </p>
