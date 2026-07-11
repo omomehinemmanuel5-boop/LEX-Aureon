@@ -1,7 +1,7 @@
 /**
  * Lex CRS Agent — Tool Implementations
  *
- * 12 canonical tools giving the agent live access to the Lexaureon system.
+ * 13 canonical tools giving the agent live access to the Lexaureon system.
  * Unified, coherent, no redundant logging.
  *
  * READ TOOLS:  read_file, list_directory, search_code, get_build_status,
@@ -11,6 +11,8 @@
  * WRITE TOOLS: write_file, run_governance
  *
  * TEST TOOLS:  write_file_governed
+ *
+ * SELF-REFLECTION TOOLS: self_reflect
  *
  * MULTI-REPO:  read_file, write_file, list_directory, search_code all accept
  *              an optional `repo` parameter. Defaults to the frontend repo.
@@ -29,17 +31,18 @@
  * slow-drip/cumulative sigma_viol tracking, tool_receipts audit trail) in
  * front of the identical commit logic write_file already uses — as a NEW,
  * additive tool, not a replacement. write_file is untouched and still works
- * exactly as before. This is deliberate: routing my own only write mechanism
- * through a newly-wired governance layer with no tested fallback would risk
- * losing the ability to fix my own mistake if something in the interceptor
- * misbehaves. Test write_file_governed standalone first; only fold it into
- * write_file's own path (or replace write_file entirely) once its behavior
- * is verified across enough real calls to trust it in the main path.
+ * exactly as before.
+ *
+ * feat (2026-07-11) — SELF-REFLECTION: self_reflect lets the agent read back
+ * its own tool_receipts history and compute real aggregate statistics — see
+ * lib/self_reflection.ts. Also runs on a daily cron (app/api/cron/self-reflect)
+ * so reflections accumulate on their own, not just when explicitly asked for.
  */
 
 import { env } from '../env';
 import { interceptToolCall } from '../agents/tool_interceptor';
 import type { ToolCallInput } from '../agents/types';
+import { runSelfReflection } from '../self_reflection';
 import crypto from 'crypto';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
@@ -144,13 +147,6 @@ export async function write_file({
 }
 
 // ── write_file_governed (2026-07-11) ──────────────────────────────────────────
-// Same commit logic as write_file, gated by the real interceptToolCall().
-// session_id defaults to a stable per-day identifier so interceptToolCall's
-// cumulative slow-drip tracking (sigma_viol, n_stable, hard-lock) means
-// something across a whole session's worth of calls, rather than resetting
-// on every invocation — but can be overridden to run deliberate isolated
-// test sequences (e.g. probing the two-HIGH-in-a-row lock) without touching
-// that running state.
 export async function write_file_governed({
   path,
   content,
@@ -391,6 +387,29 @@ export async function run_self_test(): Promise<string> {
   return results.join('\n');
 }
 
+// ── self_reflect (2026-07-11) ─────────────────────────────────────────────────
+// Reads back the agent's own tool_receipts history and computes real
+// aggregate stats — see lib/self_reflection.ts. Also runs daily via cron
+// (app/api/cron/self-reflect), so this is callable both on-demand and
+// recurring, not just when explicitly invoked.
+export async function self_reflect(): Promise<string> {
+  try {
+    const result = await runSelfReflection();
+    if (!result) return 'No new tool_receipts since the last reflection — nothing to report.';
+    return [
+      `── Self-reflection ──`,
+      `period: ${result.period_start} → ${result.period_end}`,
+      `total calls: ${result.total_calls} | approved: ${result.approved} | denied: ${result.total_calls - result.approved} (${result.denial_rate_pct}%)`,
+      `  approved_high: ${result.approved_high} | approved_medium: ${result.approved_medium}`,
+      `  denied_injection: ${result.denied_injection} | denied_blocked: ${result.denied_blocked} | denied_locked: ${result.denied_locked}`,
+      `mean state (approved calls): C=${result.avg_c.toFixed(3)} R=${result.avg_r.toFixed(3)} S=${result.avg_s.toFixed(3)} M=${result.avg_m.toFixed(3)}`,
+      `min M observed: ${result.min_m.toFixed(3)} | max sigma_viol: ${result.max_sigma_viol.toFixed(3)}`,
+      ``,
+      result.summary,
+    ].join('\n');
+  } catch (e) { return `Error: ${String(e)}`; }
+}
+
 // ── Tool registry ─────────────────────────────────────────────────────────────
 export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
   read_file:                (a) => read_file(a as { path: string; repo?: string }),
@@ -405,6 +424,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
   get_vercel_logs:          (a) => get_vercel_logs(a as { limit?: number }),
   run_self_test:            ()  => run_self_test(),
+  self_reflect:             ()  => self_reflect(),
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
@@ -483,6 +503,11 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'run_self_test',
     description: 'Run a full end-to-end self-test of the governance system: safe prompt, attack prompt, DB write verification, and z_traj state check. Use this after making any code changes to verify the system is working correctly.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'self_reflect',
+    description: 'Read back the agent\'s own tool_receipts history (from write_file_governed and any other governed tool calls) and compute real aggregate statistics -- approval/denial counts, mean constitutional state, denial rate. Factual, not a narrative -- the agent reading its own audit trail. Also runs automatically once a day via cron; calling this on-demand computes the same thing for the period since the last recorded reflection.',
     parameters: { type: 'object', properties: {} },
   },
 ];
