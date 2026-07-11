@@ -27,14 +27,12 @@ import type { GovernanceResponse } from '@/types/governance-types';
    as a generic serif pick. Used sparingly: wordmark, mode titles, section
    eyebrows only. Everything else keeps the existing monospace stack —
    already the correct choice for reading numeric constitutional state at
-   a glance, not something to replace for its own sake.
+   a glance, not something to replace.
 ───────────────────────────────────────────────────────────────────── */
 const caslon = Libre_Caslon_Display({ weight: '400', subsets: ['latin'], display: 'swap' });
 
 /* ─────────────────────────────────────────────────────────────────────
-   DESIGN TOKENS — refined 2026-07-11 for the "sovereign workspace" pass.
-   Core gold-on-near-black identity kept (it already avoids the generic
-   cream+terracotta / black+neon defaults); values tightened for restraint.
+   DESIGN TOKENS
 ───────────────────────────────────────────────────────────────────── */
 const G = {
   gold: '#c9a24a', goldL: '#e3c179',
@@ -112,20 +110,23 @@ function syntaxHL(code: string, lang: string): string {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   THE SEAL — signature element (2026-07-11)
+   THE SEAL — signature element (2026-07-11, revised same day)
 
    M = min(C,R,S) is the actual thesis of the product — the stability
-   margin the whole framework exists to protect. Instead of a text badge,
-   it's rendered as a hexagonal seal whose glow color and pulse rate come
-   directly from the live constitutional state: the workspace's own vital
-   sign, not a decoration bolted onto a chat header.
+   margin the whole framework exists to protect. Rendered as a hexagonal
+   seal whose glow color comes directly from live constitutional state.
+   fix (2026-07-11, second pass): removed the continuous 6s rotation from
+   the first version — on review it read as a loading-spinner affordance
+   rather than a serious instrument, undercutting the "professional"
+   brief. Pulse (opacity breathing, tied to whether a turn is in flight)
+   replaces it — calmer, still alive, doesn't imply "processing" when idle.
 ───────────────────────────────────────────────────────────────────── */
 function Seal({ m, health, active }: { m: number | null; health: string; active: boolean }) {
   const hcfg = HEALTH[health] ?? HEALTH.OPTIMAL;
   const color = m === null ? G.textSub : hcfg.color;
   return (
     <div className="relative flex-shrink-0 w-9 h-9 flex items-center justify-center">
-      <svg width="36" height="36" viewBox="0 0 36 36" className={active ? 'lex-seal-spin' : ''}>
+      <svg width="36" height="36" viewBox="0 0 36 36">
         <polygon
           points="18,3 31,10.5 31,25.5 18,33 5,25.5 5,10.5"
           fill="none" stroke={color} strokeWidth="1.3"
@@ -134,10 +135,7 @@ function Seal({ m, health, active }: { m: number | null; health: string; active:
       </svg>
       <span
         className={m !== null && active ? 'lex-pulse' : ''}
-        style={{
-          position: 'absolute', fontSize: 12, fontFamily: 'inherit',
-          color, transition: 'color 0.5s',
-        }}
+        style={{ position: 'absolute', fontSize: 12, color, transition: 'color 0.5s' }}
       >⬡</span>
     </div>
   );
@@ -275,13 +273,13 @@ const CodeViewer = memo(function CodeViewer({ block, onSave }: {
         <div className="flex items-center gap-2">
           {onSave && (
             <button onClick={() => onSave(block)}
-              className="text-[11px] font-mono px-2.5 py-1 rounded-lg active:scale-95 transition-transform"
+              className="lex-focusable text-[11px] font-mono px-2.5 py-1 rounded-lg active:scale-95 transition-transform"
               style={{ color: G.R, background: `${G.R}12`, border: `1px solid ${G.R}22` }}>
               + save
             </button>
           )}
           <button onClick={copy}
-            className="text-[11px] font-mono px-2.5 py-1 rounded-lg active:scale-95 transition-transform min-w-[44px]"
+            className="lex-focusable text-[11px] font-mono px-2.5 py-1 rounded-lg active:scale-95 transition-transform min-w-[44px]"
             style={{ color: copied ? G.R : G.textSub, background: copied ? `${G.R}12` : 'transparent' }}>
             {copied ? '✓' : 'copy'}
           </button>
@@ -324,6 +322,15 @@ function MessageContent({ text, onSaveBlock }: { text: string; onSaveBlock?: (b:
 
 /* ─────────────────────────────────────────────────────────────────────
    GOVERNANCE DETAIL PANEL (bottom-mounted)
+
+   fix (2026-07-11) — CANONICAL RECEIPT LINK: the audit tab now shows the
+   receipt id with a working link to its public /audit/[id] page. This
+   required a real backend fix first — turn.audit_id was previously
+   AuditorAgent's own non-persisted decorative id (format LEX-XXXXXXXX),
+   not the canonical id actually stored in praxis_receipts (format
+   KRN-XXXXXXXX-XXXX, what /audit/[id] queries by) — see the same-day fix
+   in app/api/lex/govern/stream/route.ts. Verified live before wiring this
+   up: the corrected id resolves to a real receipt, the old one 404'd.
 ───────────────────────────────────────────────────────────────────── */
 function GovernancePanel({ turn, tab, onClose }: {
   turn: ChatTurn; tab: MsgTab; onClose: () => void;
@@ -337,9 +344,9 @@ function GovernancePanel({ turn, tab, onClose }: {
       <div className="flex items-center justify-between px-4 py-3"
         style={{ borderBottom: `1px solid ${G.border}` }}>
         <span className="text-[11px] tracking-wide" style={{ color: G.textSub }}>
-          {tab === 'raw' ? '// bare output' : tab === 'audit' ? '// receipt' : '// state'}
+          {tab === 'raw' ? '// bare output' : tab === 'audit' ? '// canonical receipt' : '// state'}
         </span>
-        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center"
+        <button onClick={onClose} className="lex-focusable w-7 h-7 rounded-lg flex items-center justify-center"
           style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
       </div>
 
@@ -352,22 +359,49 @@ function GovernancePanel({ turn, tab, onClose }: {
         )}
 
         {tab === 'audit' && (
-          <div className="space-y-2">
-            {[
-              { k: 'audit_id',   v: turn.audit_id?.slice(0, 24) ?? '—', c: G.gold },
-              { k: 'health',     v: turn.health_band ?? 'OPTIMAL',       c: hcfg.color },
-              { k: 'M',          v: (turn.M ?? 0).toFixed(4),            c: hcfg.color },
-              { k: 'intervened', v: turn.intervened ? 'YES' : 'NO',      c: turn.intervened ? '#ef4444' : G.R },
-              { k: 'attack',     v: turn.attack_type ?? 'none',          c: (turn.attack_type && turn.attack_type !== 'none') ? G.S : G.textSub },
-              { k: 'severity',   v: turn.attack_severity != null ? turn.attack_severity.toFixed(3) : '—',
-                c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : G.textSub },
-              { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : G.textSub },
-            ].map(({ k, v, c }) => (
-              <div key={k} className="flex gap-3 items-start">
-                <span className="text-[11px] w-20 flex-shrink-0 pt-0.5" style={{ color: G.textSub }}>{k}</span>
-                <span className="text-[12px] font-bold break-all" style={{ color: c }}>{v}</span>
+          <div className="space-y-3">
+            {/* Canonical receipt — links to the same public, immutable entry
+                visible on the /audit trail, not an internal-only id. */}
+            {turn.audit_id && (
+              <div className="rounded-xl p-3.5" style={{ background: `${G.gold}0a`, border: `1px solid ${G.gold}28` }}>
+                <p className="text-[9px] uppercase tracking-widest mb-1.5" style={{ color: G.gold }}>
+                  Canonical receipt
+                </p>
+                <p className="text-[12px] font-bold break-all mb-2.5" style={{ color: G.textOn }}>
+                  {turn.audit_id}
+                </p>
+                <Link
+                  href={`/audit/${encodeURIComponent(turn.audit_id)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="lex-focusable inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                  style={{ color: '#07070d', background: `linear-gradient(135deg,${G.gold},${G.goldL})` }}
+                >
+                  View on canonical audit log ↗
+                </Link>
+                <p className="text-[10px] mt-2 leading-relaxed" style={{ color: G.textSub }}>
+                  This governed turn is part of the same public, cryptographically-signed
+                  audit trail as every other receipt — independently verifiable, not
+                  session-only.
+                </p>
               </div>
-            ))}
+            )}
+
+            <div className="space-y-2">
+              {[
+                { k: 'health',     v: turn.health_band ?? 'OPTIMAL',       c: hcfg.color },
+                { k: 'M',          v: (turn.M ?? 0).toFixed(4),            c: hcfg.color },
+                { k: 'intervened', v: turn.intervened ? 'YES' : 'NO',      c: turn.intervened ? '#ef4444' : G.R },
+                { k: 'attack',     v: turn.attack_type ?? 'none',          c: (turn.attack_type && turn.attack_type !== 'none') ? G.S : G.textSub },
+                { k: 'severity',   v: turn.attack_severity != null ? turn.attack_severity.toFixed(3) : '—',
+                  c: (turn.attack_severity ?? 0) >= 0.7 ? '#ef4444' : G.textSub },
+                { k: 'memory',     v: turn.memory_injected ? 'injected' : 'none', c: turn.memory_injected ? '#a855f7' : G.textSub },
+              ].map(({ k, v, c }) => (
+                <div key={k} className="flex gap-3 items-start">
+                  <span className="text-[11px] w-20 flex-shrink-0 pt-0.5" style={{ color: G.textSub }}>{k}</span>
+                  <span className="text-[12px] font-bold break-all" style={{ color: c }}>{v}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -536,7 +570,7 @@ const MessageBubble = memo(function MessageBubble({
             style={{ borderColor: G.border }}>
             {(['raw', 'audit', 'analysis'] as MsgTab[]).map(t => (
               <button key={t} onClick={() => onOpenTab(openTab === t ? null : t)}
-                className="px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all active:scale-95 min-h-[36px]"
+                className="lex-focusable px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all active:scale-95 min-h-[36px]"
                 style={{
                   color: openTab === t ? G.gold : G.textSub,
                   background: openTab === t ? `${G.gold}12` : 'transparent',
@@ -577,7 +611,7 @@ function BottomSheet({ open, onClose, title, children }: {
             {title}
           </span>
           <button onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-[14px]"
+            className="lex-focusable w-8 h-8 rounded-xl flex items-center justify-center text-[14px]"
             style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
         </div>
         <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -614,14 +648,14 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
       <div className="flex border-b flex-shrink-0" style={{ borderColor: G.border }}>
         {(['files','editor','terminal'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className="flex-1 py-3 text-[11px] uppercase tracking-wider transition-colors"
+            className="lex-focusable flex-1 py-3 text-[11px] uppercase tracking-wider transition-colors"
             style={{
               color: tab === t ? G.gold : G.textSub,
               borderBottom: `2px solid ${tab === t ? G.gold : 'transparent'}`,
             }}>{t}</button>
         ))}
         <button onClick={() => setShowNew(s => !s)}
-          className="px-4 py-3 text-[11px] flex-shrink-0"
+          className="lex-focusable px-4 py-3 text-[11px] flex-shrink-0"
           style={{ color: G.R }}>+ new</button>
       </div>
 
@@ -630,9 +664,9 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
           <input value={newName} onChange={e => setNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submitNew(); }}
             placeholder="filename.ts" autoFocus
-            className="flex-1 bg-transparent text-[13px] focus:outline-none"
+            className="lex-focusable flex-1 bg-transparent text-[13px] focus:outline-none"
             style={{ color: G.gold, caretColor: G.gold }} />
-          <button onClick={submitNew} className="text-[11px] px-3 py-1.5 rounded-xl min-h-[36px]"
+          <button onClick={submitNew} className="lex-focusable text-[11px] px-3 py-1.5 rounded-xl min-h-[36px]"
             style={{ color: G.R, background: `${G.R}12`, border: `1px solid ${G.R}22` }}>create</button>
         </div>
       )}
@@ -658,7 +692,7 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
                 </p>
               </div>
               <button onClick={e => { e.stopPropagation(); onDeleteFile(f.id); }}
-                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                className="lex-focusable w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                 style={{ color: '#ef4444', background: '#ef444410' }}>✕</button>
             </div>
           ))}
@@ -677,7 +711,7 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
               </div>
               <textarea value={activeFile.content}
                 onChange={e => onUpdateFile(activeFile.id, e.target.value)}
-                className="flex-1 w-full resize-none focus:outline-none p-4 leading-relaxed"
+                className="lex-focusable flex-1 w-full resize-none focus:outline-none p-4 leading-relaxed"
                 style={{ background: 'transparent', color: '#8fa0b4', caretColor: G.gold,
                   fontSize: 13, fontFamily: 'inherit', minHeight: '45vh' }}
                 spellCheck={false} />
@@ -712,13 +746,6 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
 
 /* ─────────────────────────────────────────────────────────────────────
    TOOLS SHEET — consolidates self-test + session stats + sandbox entry.
-   fix (2026-07-11): previously self-test and sandbox each had their own
-   permanent header/footer icon — 5+ controls competing for space on a
-   375px screen. Self-test and session diagnostics are occasional actions,
-   not constant-use ones; they belong in one place you open when you want
-   them, not permanent chrome. Sandbox keeps a slim footer entry (it's used
-   more often in code mode) but its old standalone button is now paired
-   with these here for a single "instrument panel" home.
 ───────────────────────────────────────────────────────────────────── */
 function ToolsSheet({
   apiCalls, callsLeft, sandboxFileCount, onOpenSandbox, onSelfTest, selfTestLoading, onUpgrade, onClose,
@@ -730,7 +757,7 @@ function ToolsSheet({
   return (
     <div className="p-4 space-y-2">
       <button onClick={() => { onSelfTest(); }} disabled={selfTestLoading}
-        className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98] disabled:opacity-40"
+        className="lex-focusable w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98] disabled:opacity-40"
         style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}>
         <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: G.R }}>{selfTestLoading ? '…' : '⊕'}</span>
         <div className="flex-1 min-w-0">
@@ -740,7 +767,7 @@ function ToolsSheet({
       </button>
 
       <button onClick={() => { onOpenSandbox(); onClose(); }}
-        className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+        className="lex-focusable w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
         style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}>
         <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: '#38bdf8' }}>{'</>'}</span>
         <div className="flex-1 min-w-0">
@@ -760,8 +787,20 @@ function ToolsSheet({
         </div>
       </div>
 
+      <Link
+        href="/audit" target="_blank" rel="noopener noreferrer"
+        className="lex-focusable w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+        style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}
+      >
+        <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: G.gold }}>▤</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-bold font-mono" style={{ color: G.textOn }}>Canonical audit log ↗</p>
+          <p className="text-[11px] mt-0.5" style={{ color: G.textSub }}>Every receipt, publicly verifiable</p>
+        </div>
+      </Link>
+
       <button onClick={() => { onUpgrade(); onClose(); }}
-        className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+        className="lex-focusable w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
         style={{ background: `${G.gold}0e`, border: `1px solid ${G.gold}28` }}>
         <span className="text-lg w-7 text-center flex-shrink-0" style={{ color: G.gold }}>↑</span>
         <div className="flex-1 min-w-0">
@@ -783,7 +822,7 @@ function ModeSheet({ current, onSelect, onClose }: {
     <div className="p-4 space-y-2">
       {MODES.map(m => (
         <button key={m.key} onClick={() => { onSelect(m.key); onClose(); }}
-          className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
+          className="lex-focusable w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all active:scale-[0.98]"
           style={{
             background: current === m.key ? `${G.gold}0e` : G.surfaceHi,
             border: `1px solid ${current === m.key ? `${G.gold}30` : G.border}`,
@@ -832,7 +871,7 @@ function SuggestionsSheet({ turns, activeCategory, onCategoryChange, onSelect, o
       <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {SUGGESTION_CATEGORIES.map(cat => (
           <button key={cat.key} onClick={() => onCategoryChange(cat.key)}
-            className="flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-mono min-h-[36px]"
+            className="lex-focusable flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-mono min-h-[36px]"
             style={{
               color: activeCategory === cat.key ? G.gold : G.textSub,
               background: activeCategory === cat.key ? `${G.gold}12` : G.surfaceHi,
@@ -844,7 +883,7 @@ function SuggestionsSheet({ turns, activeCategory, onCategoryChange, onSelect, o
         {suggestions.map((s, i) => (
           <button key={i} disabled={disabled}
             onClick={() => { if (!disabled) { onSelect(s.prompt); onClose(); } }}
-            className="w-full flex items-start gap-3 px-4 py-3.5 rounded-xl text-left transition-all active:scale-[0.98] disabled:opacity-30"
+            className="lex-focusable w-full flex items-start gap-3 px-4 py-3.5 rounded-xl text-left transition-all active:scale-[0.98] disabled:opacity-30"
             style={{ background: G.surfaceHi, border: `1px solid ${G.border}` }}>
             <span className="mt-1.5 flex-shrink-0" style={{ color: dotColor[s.category] ?? G.textSub, fontSize: 8 }}>●</span>
             <span className="text-[13px] leading-relaxed" style={{ color: G.text }}>{s.label}</span>
@@ -899,7 +938,7 @@ function EmptyState({ mode, onSuggestion }: { mode: SandboxMode; onSuggestion: (
       </div>
 
       <button onClick={onSuggestion}
-        className="px-6 py-3.5 rounded-2xl text-[13px] font-mono font-bold transition-all active:scale-95"
+        className="lex-focusable px-6 py-3.5 rounded-2xl text-[13px] font-mono font-bold transition-all active:scale-95"
         style={{ background: `${G.gold}12`, border: `1px solid ${G.gold}28`, color: G.gold }}>
         Browse suggestions →
       </button>
@@ -917,7 +956,7 @@ function SelfTestBanner({ result, onClose }: { result: string; onClose: () => vo
       <div className="flex items-center justify-between px-4 py-3"
         style={{ borderBottom: `1px solid ${G.border}` }}>
         <span className="text-[10px] font-mono uppercase tracking-widest" style={{ color: G.R }}>⊕ Self-Test</span>
-        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center"
+        <button onClick={onClose} className="lex-focusable w-7 h-7 rounded-lg flex items-center justify-center"
           style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
       </div>
       <pre className="p-4 whitespace-pre-wrap text-[12px] leading-relaxed font-mono max-h-40 overflow-y-auto"
@@ -1104,33 +1143,51 @@ export default function ChatConsole() {
       <style>{`
         @keyframes lex-blink   { 0%,100%{opacity:1}  50%{opacity:0}   }
         @keyframes lex-breathe { 0%,100%{opacity:.4}  50%{opacity:1}  }
-        @keyframes lex-seal-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         .lex-cursor { animation: lex-blink   0.9s step-end  infinite; }
         .lex-pulse  { animation: lex-breathe 2.4s ease-in-out infinite; }
-        .lex-seal-spin { animation: lex-seal-spin 6s linear infinite; }
         ::-webkit-scrollbar { display: none; }
         * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
         textarea { font-size: 16px !important; -webkit-user-select: text; user-select: text; }
         input    { -webkit-user-select: text; user-select: text; }
+
+        /* fix (2026-07-11) — production accessibility pass */
+        @media (prefers-reduced-motion: reduce) {
+          .lex-cursor, .lex-pulse { animation: none !important; opacity: 1 !important; }
+          * { transition-duration: 0.01ms !important; }
+        }
+        .lex-focusable:focus-visible {
+          outline: 2px solid ${G.gold};
+          outline-offset: 2px;
+          border-radius: 8px;
+        }
+        a.lex-focusable:focus-visible { outline-offset: 3px; }
       `}</style>
 
-      <div className="h-[100dvh] flex flex-col overflow-hidden select-none"
-        style={{ background: G.bg, fontFamily: "'SF Mono','JetBrains Mono',ui-monospace,monospace", color: G.text }}>
+      <div
+        className="h-[100dvh] flex flex-col overflow-hidden select-none"
+        style={{ background: G.bg, fontFamily: "'SF Mono','JetBrains Mono',ui-monospace,monospace", color: G.text, overscrollBehaviorY: 'contain' }}
+      >
 
-        {/* ══════════════════════════ HEADER — decluttered ══════════════════════════ */}
-        <header className="flex-shrink-0 z-30"
-          style={{ background: G.bg, borderBottom: `1px solid ${G.border}` }}>
+        {/* ══════════════════════ HEADER — explicitly static ══════════════════════
+            fix (2026-07-11): the flex layout already prevented header scroll,
+            but position:sticky is added as defense-in-depth against iOS
+            Safari's rubber-band overscroll visually shifting fixed chrome —
+            combined with overscroll-behavior-y:contain on the outer container
+            above, the header now genuinely cannot move once mounted. */}
+        <header
+          className="flex-shrink-0 z-30"
+          style={{ position: 'sticky', top: 0, background: G.bg, borderBottom: `1px solid ${G.border}` }}
+        >
           <div className="flex items-center h-14 px-4 gap-3">
 
             <Link href="/"
-              className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              className="lex-focusable flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
               style={{ color: G.textSub, background: G.surface, border: `1px solid ${G.border}` }}>
               <svg width="9" height="14" viewBox="0 0 9 14" fill="none">
                 <path d="M7 1L1 7L7 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </Link>
 
-            {/* Seal — signature element, replaces the old badge+wordmark clutter */}
             <Seal m={liveM} health={liveHealth} active={isStreaming} />
 
             <div className="flex-1 min-w-0">
@@ -1142,9 +1199,8 @@ export default function ChatConsole() {
               </p>
             </div>
 
-            {/* Single tools entry — consolidates what used to be self-test + calls-left icons */}
             <button onClick={() => setSheet(sheet === 'tools' ? null : 'tools')}
-              className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              className="lex-focusable flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
               style={{
                 color: sheet === 'tools' ? G.gold : G.textSub,
                 background: G.surface, border: `1px solid ${sheet === 'tools' ? `${G.gold}28` : G.border}`,
@@ -1185,7 +1241,7 @@ export default function ChatConsole() {
           </div>
         </main>
 
-        {/* ══════════════════════════ FOOTER — decluttered to a single row ══════════════════════════ */}
+        {/* ══════════════════════════ FOOTER ══════════════════════════ */}
         <footer className="flex-shrink-0 z-20"
           style={{
             background: G.bg,
@@ -1204,7 +1260,7 @@ export default function ChatConsole() {
           <div className="flex items-end gap-2 px-3 pt-2.5 pb-2">
 
             <button onClick={() => setSheet(sheet === 'mode' ? null : 'mode')}
-              className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              className="lex-focusable flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
               style={{
                 color: sheet === 'mode' ? G.gold : G.textSub,
                 background: G.surface, border: `1px solid ${sheet === 'mode' ? `${G.gold}28` : G.border}`,
@@ -1240,12 +1296,12 @@ export default function ChatConsole() {
                   :                              'Message Lex Aureon…'
                 }
                 rows={1} disabled={isStreaming}
-                className="w-full bg-transparent px-4 py-3 resize-none focus:outline-none leading-relaxed disabled:opacity-40"
+                className="lex-focusable w-full bg-transparent px-4 py-3 resize-none focus:outline-none leading-relaxed disabled:opacity-40"
                 style={{ color: G.textOn, caretColor: G.gold, fontFamily: 'inherit', maxHeight: '140px' }} />
             </div>
 
             <button onClick={() => setSheet(sheet === 'suggestions' ? null : 'suggestions')}
-              className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              className="lex-focusable flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
               style={{
                 color: sheet === 'suggestions' ? G.gold : G.textSub,
                 background: G.surface, border: `1px solid ${sheet === 'suggestions' ? `${G.gold}28` : G.border}`,
@@ -1258,7 +1314,7 @@ export default function ChatConsole() {
 
             {isStreaming ? (
               <button onClick={cancel}
-                className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                className="lex-focusable flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
                 style={{ background: '#1e0808', border: '1px solid #4a1010', color: '#f87171' }}>
                 <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
                   <rect width="11" height="11" rx="2.5"/>
@@ -1266,7 +1322,7 @@ export default function ChatConsole() {
               </button>
             ) : (
               <button onClick={() => sendMessage()} disabled={!input.trim() || apiCalls >= MAX_CALLS}
-                className="flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-all disabled:opacity-20"
+                className="lex-focusable flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-95 transition-all disabled:opacity-20"
                 style={{
                   background: input.trim() ? `linear-gradient(135deg,${G.gold},${G.goldL})` : G.surface,
                   border: `1px solid ${input.trim() ? G.gold : G.border}`,
