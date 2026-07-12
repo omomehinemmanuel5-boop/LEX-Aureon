@@ -66,6 +66,28 @@
  * scripts/lexbench/runner.ts needs them to exclude true double-provider-
  * failure turns (governed_source: 'unavailable') from benchmark scoring,
  * rather than counting a no-content turn as a real refusal or over-refusal.
+ *
+ * INPUT-SIDE THREAT SIGNAL (2026-07-12): direct query of lex_memory across
+ * ~37,000 logged turns found avg M statistically flat across every benchmark
+ * (0.2575-0.2768), with AdvBench (explicit harmful requests) reading HIGHER
+ * than benign XSTest — the constitutional state had no channel by which
+ * actual prompt threat content could move it; transduce() only ever read
+ * length/word-count/punctuation, and detectSemanticAttack's narrow keyword
+ * patterns essentially never fire on realistic AdvBench/HarmBench/
+ * JailbreakBench phrasing (confirmed: intervention=0 across ~17,000 turns on
+ * those three benchmarks). Now computes cosine similarity between the
+ * already-resolved prompt embedding and a held-out harm reference centroid
+ * (lib/lex_memory.ts's getHarmReferenceCentroid — built from the first half
+ * of advbench/harmbench/jailbreakbench.jsonl, so evaluation against the
+ * untouched second half is not circular), pinned to the same embed provider
+ * per the existing CORRECTNESS CONSTRAINT (mixing embedding spaces produces
+ * a meaningless cosine value), and passes it into kernel.runCycle() as
+ * threatSignal. Defaults to 0 (no additional pressure) when the embedding or
+ * centroid is unavailable this turn — same honest-default convention as
+ * detection_degraded elsewhere in this route. NOT YET VALIDATED against
+ * published benchmark numbers — see the shard-rerun validation plan
+ * (does avg M finally separate adversarial from benign benchmarks; does
+ * XSTest regress) before this feeds anything published.
  */
 
 import { NextResponse } from 'next/server';
@@ -76,6 +98,7 @@ import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
+  getHarmReferenceCentroid, cosineSimilarity,
   type EmbedProvider,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
@@ -138,9 +161,28 @@ export async function POST(req: Request) {
     memoryPromise,
   ]);
 
+  // ── Input-side threat signal (2026-07-12) — see file header ───────────────
+  // Reuses the prompt embedding already resolved above (no second embed
+  // call). Pinned to the SAME provider that resolved the prompt embedding —
+  // mixing embedding spaces would produce a meaningless cosine value (see
+  // this file's long-standing CORRECTNESS CONSTRAINT, mirrored from
+  // lib/lex_memory.ts). Defaults to 0 (no additional pressure) when the
+  // embedding or centroid is unavailable this turn.
+  let threatSignal = 0;
+  if (promptEmbedding.length && promptEmbedProvider) {
+    try {
+      const harmCentroid = await getHarmReferenceCentroid(promptEmbedProvider);
+      if (harmCentroid) {
+        threatSignal = Math.max(0, Math.min(1, cosineSimilarity(promptEmbedding, harmCentroid)));
+      }
+    } catch (e) {
+      logger.warn('govern.threat_signal', 'harm reference centroid unavailable', errorFields(e));
+    }
+  }
+
   // ── TypeScript kernel cycle ───────────────────────────────────────────────
   const kernel = getCachedKernel(session_id, savedState);
-  const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
+  const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, threatSignal);
 
   if (result.status === 'Error') {
     return NextResponse.json({ error: result.error }, { status: 500 });
@@ -309,6 +351,9 @@ export async function POST(req: Request) {
     sovereignty_raw:       sovereigntyRaw,
     detection_degraded:    detectionDegraded,
     embed_provider:        promptEmbedProvider,
+    // Input-side threat signal (2026-07-12) — see file header. NOT YET
+    // VALIDATED; surfaced for audit alongside sovereignty_raw.
+    prompt_threat_signal:  threatSignal,
     // Refusal decision (Move A) — full evidence trail for the receipt
     refused:               decision.refused,
     refusal_reasons:       decision.reasons,
@@ -342,8 +387,8 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     name:     'Lex Aureon SovereignKernel API',
-    version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal+CalibrationDB',
+    version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal+CalibrationDB+ThreatSignal',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B).',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + input-side threat signal (2026-07-12, held-out harm reference centroid) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B).',
   });
 }
