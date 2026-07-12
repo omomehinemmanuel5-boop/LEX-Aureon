@@ -102,15 +102,53 @@
  * match realistic AdvBench/HarmBench/JailbreakBench phrasing (confirmed:
  * intervention=0 across ~17,000 turns on those three benchmarks). There was
  * no channel by which actual prompt threat content could move C/R/S at all.
- * transduce() now accepts a threatSignal in [0,1] — cosine similarity between
- * the prompt embedding and a held-out harm-reference centroid, computed by
- * the caller (app/api/lex/govern/route.ts) using lib/lex_memory.ts's
- * getHarmReferenceCentroid() — and applies it additively alongside the
- * existing length/punctuation intensity term, same pattern as the postMetrics
- * fix above. NOT YET VALIDATED against published benchmark numbers — the
- * weights (0.06 base / 1.6x on ds) are a first-pass guess; see the shard-
- * rerun validation plan (does avg M finally separate adversarial from benign
- * benchmarks; does XSTest regress) before this feeds anything published.
+ * transduce() was given a threatSignal in [0,1] — cosine similarity between
+ * the prompt embedding and a held-out harm-reference centroid (see
+ * lib/lex_memory.ts / lib/harm_reference_prompts.ts) — applied additively
+ * alongside the existing length/punctuation intensity term.
+ *
+ * fix (2026-07-12, fourth pass, same day) — SIGNAL WAS REAL BUT STRUCTURALLY
+ * INERT: after verifying (via live spot-check + runtime logs) that the third
+ * pass's threatSignal was actually reaching this file correctly, M still
+ * barely moved (0.30→0.31) even on prompts scoring threat≈0.9. Root cause:
+ * transduce()'s delta is applied EARLY (`this.state.C += delta.dc` etc.,
+ * well before the recentering block below), and the recentering step —
+ * `biasStrength = 0.1 + 0.3*(1-M)`, roughly 0.25-0.4 at typical M — pulls
+ * the state back toward (1/3,1/3,1/3) by that fraction of the distance
+ * EVERY turn. A transduce-stage delta of ~0.03-0.06 magnitude is mostly
+ * erased by a ~0.3-magnitude recentering pull applied immediately after.
+ * This is exactly why the existing `semanticSignal.severity >= 0.7` hard
+ * shift (C-=0.20/R-=0.10/S+=0.30, below) actually works: it's applied AFTER
+ * recentering, so nothing dilutes it before the Lyapunov/projection step.
+ *
+ * Fixed with the same placement pattern: threatSignal now also applies a
+ * continuous, proportional post-recentering pressure (see the block right
+ * after the severity>=0.7 one), so a high threatSignal survives to the
+ * turn's actual M_final and persists into next turn's starting state — not
+ * just a residual nudge that gets recentered away. Weights (C -0.55×, R
+ * -0.30×, S +0.85× of a 0.30×threatSignal base) were chosen so a strongly
+ * matched prompt (threat≈0.9, the observed value on genuinely harmful
+ * held-out AdvBench/JailbreakBench prompts) pushes M from a typical healthy
+ * ~0.30 down into the STRESSED band (~0.10-0.15), without single-handedly
+ * forcing CRITICAL/hard-projection on threat alone — that remains reserved
+ * for combination with real severity signals, consistent with the existing
+ * design where multiple signals compound rather than any one signal being
+ * an automatic kill switch.
+ *
+ * ALSO fixed: threatSignal now discounts the M value used to select THIS
+ * turn's context/temperature/health_band (buildContractContext), not just
+ * the persisted state carried into next turn. Previously a high-threat
+ * prompt would only become visible in the state AFTER generation — this
+ * turn's own response would still be generated under the pre-threat
+ * (typically OPTIMAL) prompt. Now `threatAdjustedM0` (M0 minus up to 0.20 at
+ * threatSignal=1) is what selects this turn's band, so the response itself
+ * — not just next turn's bookkeeping — reflects the detected risk.
+ *
+ * STILL NOT VALIDATED against published benchmark numbers or checked for new
+ * false positives on legitimate-but-adjacent content (e.g. "how do ransomware
+ * attacks work, for defensive purposes") — see the shard-rerun validation
+ * plan. This pass fixes the mechanism's structural inertness; it does not
+ * substitute for the full benchmark validation.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -311,18 +349,17 @@ export class SovereignKernel {
   }
 
   /**
-   * fix (2026-07-12, third pass): threatSignal is a cosine-similarity score
-   * in [0,1] against a held-out harm reference centroid, computed by the
-   * caller (see file header + lib/lex_memory.ts getHarmReferenceCentroid).
-   * Defaults to 0 (no signal / not supplied) so all existing callers of
-   * transduce() are unaffected. Applied ADDITIVELY alongside the existing
-   * length/punctuation intensity term — not a replacement — same pattern as
-   * the postMetrics fix above. threatPressure pushes C/R down and S up,
-   * mirroring the direction the existing semantic-attack severity scaling
-   * already pushes state (see the `pressure` block later in runCycle), on
-   * the theory that a semantically threatening prompt should register as a
-   * sovereignty-relevant event even when it doesn't match detectSemanticAttack's
-   * narrow keyword patterns. Weights are a first-pass guess, not tuned.
+   * threatSignal is a cosine-similarity score in [0,1] against a held-out
+   * harm reference centroid, computed by the caller (see file header +
+   * lib/lex_memory.ts getHarmReferenceCentroid). Defaults to 0 (no signal /
+   * not supplied). Applied ADDITIVELY here alongside the existing
+   * length/punctuation intensity term — a small, early-stage residual signal.
+   * NOTE (2026-07-12, fourth pass): this early-stage application is mostly
+   * washed out by the recentering step in runCycle() — see that file's
+   * header. The real, structurally-meaningful application of threatSignal is
+   * the post-recentering block in runCycle(), analogous to the existing
+   * severity>=0.7 hard shift. This function's use of threatSignal is kept as
+   * a harmless small residual, not the primary mechanism.
    */
   transduce(prompt: string, threatSignal: number = 0): { dc: number; dr: number; ds: number } {
     const len = prompt.length;
@@ -532,6 +569,14 @@ export class SovereignKernel {
 
     // ── STEP 1: F(x,z) ───────────────────────────────────────────────────────
     const M0 = Math.min(this.state.C, this.state.R, this.state.S);
+    const clampedThreat = Math.max(0, Math.min(1, threatSignal));
+    // fix (2026-07-12, fourth pass): discount THIS turn's M — used to select
+    // context/temperature/health_band below — by the threat signal, so a
+    // high-threat prompt gets a more conservative response THIS turn, not
+    // only via state carried into next turn. Capped at -0.20 (threatSignal=1)
+    // so threat alone doesn't single-handedly force CRITICAL from a healthy
+    // starting M; see file header for the calibration reasoning.
+    const threatAdjustedM0 = Math.max(0, M0 - 0.20 * clampedThreat);
     if (M0 < 0.15) this.attack_pressure = Math.min(0.5, this.attack_pressure + 0.05);
     else this.attack_pressure *= 0.92;
     const effectiveTheta = this.theta * (1 + this.attack_pressure);
@@ -551,7 +596,7 @@ export class SovereignKernel {
       ? await this.selectActiveLaw(semanticSignal, M0) : null;
     const activeLaw = activeLawData?.name || null;
 
-    let { context, temperature, health_band } = await this.buildContractContext(M0, semanticSignal, activeLawData);
+    let { context, temperature, health_band } = await this.buildContractContext(threatAdjustedM0, semanticSignal, activeLawData);
 
     if (semanticSignal.severity >= 0.7) {
       context = M0 < 0.15
@@ -700,6 +745,21 @@ export class SovereignKernel {
 
     if (semanticSignal.severity >= 0.7) { this.state.C -= 0.20; this.state.R -= 0.10; this.state.S += 0.30; }
 
+    // fix (2026-07-12, fourth pass): the actual, structurally-meaningful
+    // application of threatSignal — placed here, AFTER recentering, for the
+    // same reason the block directly above survives to M_final while
+    // transduce()'s early-stage delta mostly doesn't. See file header for
+    // the calibration reasoning and the weight choice (0.30 base, split
+    // 0.55/0.30/0.85 across C/R/S — comparable order of magnitude to the
+    // severity>=0.7 block above, deliberately softer so threat alone does
+    // not automatically force CRITICAL from a healthy starting state).
+    if (clampedThreat > 0) {
+      const tp = 0.30 * clampedThreat;
+      this.state.C -= tp * 0.55;
+      this.state.R -= tp * 0.30;
+      this.state.S += tp * 0.85;
+    }
+
     const rawState = { ...this.state };
     const preProjBelow = Object.values(rawState).some(v => v < TAU);
     const projectionTriggered = this.projectToSimplex();
@@ -749,12 +809,12 @@ export class SovereignKernel {
       stability_ratio: Math.round(stabilityRatio * 1e6) / 1e6,
       epsilon_injected: epsilonInjected, suspension_triggered: suspensionTriggered,
       semantic_signal: semanticSignal,
-      prompt_threat_signal: Math.round(Math.max(0, Math.min(1, threatSignal)) * 1e6) / 1e6,
+      prompt_threat_signal: Math.round(clampedThreat * 1e6) / 1e6,
       temperature: Math.round(temperature * 1e6) / 1e6,
       invariance_violations: this.invariance_violations,
       governor_sensing: governorSensing,
       z_weights: activeZ,
-      version: 'SovereignKernel-TS-v2+AsyncGovernor+PaperExactCRS+ThreatSignal',
+      version: 'SovereignKernel-TS-v2+AsyncGovernor+PaperExactCRS+ThreatSignal-Calibrated',
       raw_provider: rawProvider,
       governed_provider: governedProvider,
       governed_source: governedSource,
