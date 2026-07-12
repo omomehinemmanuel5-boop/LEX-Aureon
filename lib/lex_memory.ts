@@ -28,6 +28,27 @@
  * for the output embedding and the constitutional centroid — if that forced
  * provider then fails, the request honestly reports detection_degraded rather
  * than silently comparing across embedding spaces.
+ *
+ * feat (2026-07-12) — INPUT-SIDE THREAT SIGNAL: getConstitutionalCentroid /
+ * self-referential detection measures the OUTPUT side (is the response
+ * drifting from the constitutional identity). Nothing measured the INPUT
+ * side's actual threat content — transduce() in sovereign_kernel.ts only read
+ * prompt length/word-count/punctuation density, and detectSemanticAttack()'s
+ * narrow multi-word keyword patterns essentially never fire on realistic
+ * AdvBench/HarmBench/JailbreakBench phrasing (confirmed via direct query:
+ * intervention=0 across ~17,000 turns on those three benchmarks). Direct
+ * measurement confirmed the consequence: avg M was statistically flat across
+ * every benchmark (0.2575-0.2768), with AdvBench — the most directly harmful
+ * corpus — reading HIGHER (healthier) than benign XSTest. The state literally
+ * was not responding to prompt threat content.
+ *
+ * getHarmReferenceCentroid mirrors getConstitutionalCentroid's caching/
+ * provider-pinning pattern exactly, but is built from a HELD-OUT half of the
+ * harm benchmark files (first half of each, by line order) so that later
+ * evaluation against the untouched second half is not circular — the
+ * centroid must generalize to prompts it was never built from. This is a
+ * first-pass reference set, not a validated detector; see the shard-rerun
+ * validation plan before any benchmark numbers built on this are published.
  */
 
 import { getClient } from './db';
@@ -329,7 +350,9 @@ export async function pruneEmbeddingCache(ttlDays = 30): Promise<number> {
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────
-function cosineSimilarity(a: number[], b: number[]): number {
+// Exported (2026-07-12) — app/api/lex/govern/route.ts needs this directly to
+// score the input-side threat signal against getHarmReferenceCentroid().
+export function cosineSimilarity(a: number[], b: number[]): number {
   if (!a.length || !b.length) return 0.0;
   const limit = Math.min(a.length, b.length);
   let dot = 0, magA = 0, magB = 0;
@@ -578,7 +601,68 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
   }
 }
 
+// ── Harm reference centroid (2026-07-12) — INPUT-SIDE threat signal ───────────
+// See file header. Mirrors getConstitutionalCentroid's provider-pinned caching
+// pattern exactly, but the reference set is a HELD-OUT half of the harm
+// benchmark corpora — first half of each file, by line order — so that
+// evaluating against the untouched second half is not circular. This is a
+// first-pass reference set (raw prompt text from three benchmark files, not a
+// curated taxonomy) — expect to iterate on composition once the validation
+// shard rerun (see commit note / conversation) shows how well it separates
+// M by benchmark category.
+const _harmCentroidCache = new Map<EmbedProvider, { vec: number[]; ts: number }>();
+const HARM_CENTROID_TTL_MS = 60 * 60 * 1000; // longer TTL than the law centroid — this set is static per deploy, not traffic-sensitive
+
+async function loadHeldOutHarmPrompts(): Promise<string[]> {
+  const fs = await import('fs');
+  const path = await import('path');
+  const files = ['data/advbench.jsonl', 'data/harmbench.jsonl', 'data/jailbreakbench.jsonl'];
+  const prompts: string[] = [];
+  for (const f of files) {
+    try {
+      const full = path.join(process.cwd(), f);
+      const lines = fs.readFileSync(full, 'utf-8').trim().split('\n').filter(Boolean);
+      // Held-out guard: only the FIRST half of each file is used to build the
+      // centroid. The second half stays untouched for evaluation, so a shard
+      // rerun scoring separation-by-category is not circular.
+      const half = lines.slice(0, Math.floor(lines.length / 2));
+      for (const line of half) {
+        try {
+          const obj = JSON.parse(line);
+          const p = obj.prompt || obj.behavior || obj.jailbreak || '';
+          if (p) prompts.push(p);
+        } catch { /* skip malformed line */ }
+      }
+    } catch (e) {
+      console.error(`loadHeldOutHarmPrompts: failed to read ${f}:`, e);
+    }
+  }
+  return prompts;
+}
+
+export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Promise<number[] | null> {
+  const now = Date.now();
+  const cached = _harmCentroidCache.get(forceProvider);
+  if (cached && (now - cached.ts) < HARM_CENTROID_TTL_MS) return cached.vec;
+  try {
+    const prompts = await loadHeldOutHarmPrompts();
+    if (!prompts.length) return null;
+    // No cross-provider fallback here by design, same reasoning as
+    // getConstitutionalCentroid(forceProvider) — this centroid must be
+    // compared against a prompt embedding from the SAME provider, or the
+    // cosine similarity is meaningless.
+    const embeddings = await Promise.all(prompts.map(p => embedTextWithProvider(p, forceProvider)));
+    const centroid = computeCentroidFor(embeddings);
+    if (!centroid) return null;
+    _harmCentroidCache.set(forceProvider, { vec: centroid, ts: now });
+    return centroid;
+  } catch (e) {
+    console.error('getHarmReferenceCentroid error:', e);
+    return null;
+  }
+}
+
 export function invalidateCentroidCache(provider?: EmbedProvider): void {
-  if (provider) _centroidCache.delete(provider);
-  else _centroidCache.clear();
+  if (provider) { _centroidCache.delete(provider); _harmCentroidCache.delete(provider); }
+  else { _centroidCache.clear(); _harmCentroidCache.clear(); }
 }
