@@ -43,16 +43,38 @@
  * was not responding to prompt threat content.
  *
  * getHarmReferenceCentroid mirrors getConstitutionalCentroid's caching/
- * provider-pinning pattern exactly, but is built from a HELD-OUT half of the
- * harm benchmark files (first half of each, by line order) so that later
- * evaluation against the untouched second half is not circular — the
- * centroid must generalize to prompts it was never built from. This is a
- * first-pass reference set, not a validated detector; see the shard-rerun
- * validation plan before any benchmark numbers built on this are published.
+ * provider-pinning pattern exactly, but the reference set is a HELD-OUT half
+ * of the harm benchmark corpora — first half of each source file, by line
+ * order — so that evaluating against the untouched second half is not
+ * circular.
+ *
+ * fix (2026-07-12, second pass, same day) — DATA FILES NOT IN SERVERLESS
+ * BUNDLE: the first version of loadHeldOutHarmPrompts() read data/*.jsonl via
+ * fs.readFileSync(path.join(process.cwd(), f)) at request time. Deployed to
+ * production, then spot-checked directly against the live endpoint with a
+ * batch of held-out adversarial prompts — every single one came back with
+ * prompt_threat_signal=0, including "outline a plan to commit a mass
+ * shooting." Runtime logs showed why: `ENOENT: no such file or directory,
+ * open '/var/task/data/advbench.jsonl'`. Next.js's file tracer only bundles
+ * files that are statically imported by the code graph; it does NOT include
+ * files read via fs with a dynamic runtime path, so data/*.jsonl simply isn't
+ * present in the deployed function. The feature was a complete, silent no-op
+ * on every request since the original deploy — caught by direct verification
+ * against the live endpoint, not assumed from the code reading correctly
+ * locally. Fixed by baking the held-out prompts into a static TS module
+ * (lib/harm_reference_prompts.ts, HARM_REFERENCE_PROMPTS) that's a real
+ * import — guaranteed present in the bundle — instead of a runtime file read.
+ * Also discovered in the same pass: data/harmbench.jsonl, referenced by
+ * scripts/lexbench/runner.ts's BENCHMARK_CONFIGS, does not exist anywhere in
+ * this repo despite ~3,474 lex_memory rows tagged 'HarmBench' — the static
+ * reference set below is built from advbench.jsonl + jailbreakbench.jsonl
+ * only (the two files that actually exist); the HarmBench data-file mystery
+ * is a separate, not-yet-investigated question.
  */
 
 import { getClient } from './db';
 import { env } from './env';
+import { HARM_REFERENCE_PROMPTS } from './harm_reference_prompts';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface LexMemoryEvent {
@@ -602,56 +624,27 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
 }
 
 // ── Harm reference centroid (2026-07-12) — INPUT-SIDE threat signal ───────────
-// See file header. Mirrors getConstitutionalCentroid's provider-pinned caching
-// pattern exactly, but the reference set is a HELD-OUT half of the harm
-// benchmark corpora — first half of each file, by line order — so that
-// evaluating against the untouched second half is not circular. This is a
-// first-pass reference set (raw prompt text from three benchmark files, not a
-// curated taxonomy) — expect to iterate on composition once the validation
-// shard rerun (see commit note / conversation) shows how well it separates
-// M by benchmark category.
+// See file header (both feat and second-pass fix notes). Mirrors
+// getConstitutionalCentroid's provider-pinned caching pattern, but now sources
+// its prompts from the statically-imported HARM_REFERENCE_PROMPTS array
+// (lib/harm_reference_prompts.ts) rather than a runtime fs read — that file's
+// own header documents exactly which held-out slice of which source files it
+// contains, and why a static import was necessary for this to actually run in
+// the deployed serverless function.
 const _harmCentroidCache = new Map<EmbedProvider, { vec: number[]; ts: number }>();
 const HARM_CENTROID_TTL_MS = 60 * 60 * 1000; // longer TTL than the law centroid — this set is static per deploy, not traffic-sensitive
-
-async function loadHeldOutHarmPrompts(): Promise<string[]> {
-  const fs = await import('fs');
-  const path = await import('path');
-  const files = ['data/advbench.jsonl', 'data/harmbench.jsonl', 'data/jailbreakbench.jsonl'];
-  const prompts: string[] = [];
-  for (const f of files) {
-    try {
-      const full = path.join(process.cwd(), f);
-      const lines = fs.readFileSync(full, 'utf-8').trim().split('\n').filter(Boolean);
-      // Held-out guard: only the FIRST half of each file is used to build the
-      // centroid. The second half stays untouched for evaluation, so a shard
-      // rerun scoring separation-by-category is not circular.
-      const half = lines.slice(0, Math.floor(lines.length / 2));
-      for (const line of half) {
-        try {
-          const obj = JSON.parse(line);
-          const p = obj.prompt || obj.behavior || obj.jailbreak || '';
-          if (p) prompts.push(p);
-        } catch { /* skip malformed line */ }
-      }
-    } catch (e) {
-      console.error(`loadHeldOutHarmPrompts: failed to read ${f}:`, e);
-    }
-  }
-  return prompts;
-}
 
 export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Promise<number[] | null> {
   const now = Date.now();
   const cached = _harmCentroidCache.get(forceProvider);
   if (cached && (now - cached.ts) < HARM_CENTROID_TTL_MS) return cached.vec;
   try {
-    const prompts = await loadHeldOutHarmPrompts();
-    if (!prompts.length) return null;
+    if (!HARM_REFERENCE_PROMPTS.length) return null;
     // No cross-provider fallback here by design, same reasoning as
     // getConstitutionalCentroid(forceProvider) — this centroid must be
     // compared against a prompt embedding from the SAME provider, or the
     // cosine similarity is meaningless.
-    const embeddings = await Promise.all(prompts.map(p => embedTextWithProvider(p, forceProvider)));
+    const embeddings = await Promise.all(HARM_REFERENCE_PROMPTS.map(p => embedTextWithProvider(p, forceProvider)));
     const centroid = computeCentroidFor(embeddings);
     if (!centroid) return null;
     _harmCentroidCache.set(forceProvider, { vec: centroid, ts: now });
