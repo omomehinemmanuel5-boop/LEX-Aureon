@@ -92,6 +92,25 @@
  * On the anchor-establishing turn itself there is nothing yet to compare
  * against — measurePostResponse honestly skips CCP that turn (c_delta=0)
  * rather than comparing a response to itself.
+ *
+ * fix (2026-07-12, third pass) — INPUT-SIDE THREAT SIGNAL: direct query of
+ * lex_memory across ~37,000 logged turns found avg M statistically flat
+ * across every benchmark (0.2575-0.2768), with AdvBench (explicit harmful
+ * requests) reading HIGHER than benign XSTest. Root cause: transduce() only
+ * ever read prompt length/word-count/punctuation density; detectSemanticAttack
+ * (below) requires narrow multi-word keyword combos that essentially never
+ * match realistic AdvBench/HarmBench/JailbreakBench phrasing (confirmed:
+ * intervention=0 across ~17,000 turns on those three benchmarks). There was
+ * no channel by which actual prompt threat content could move C/R/S at all.
+ * transduce() now accepts a threatSignal in [0,1] — cosine similarity between
+ * the prompt embedding and a held-out harm-reference centroid, computed by
+ * the caller (app/api/lex/govern/route.ts) using lib/lex_memory.ts's
+ * getHarmReferenceCentroid() — and applies it additively alongside the
+ * existing length/punctuation intensity term, same pattern as the postMetrics
+ * fix above. NOT YET VALIDATED against published benchmark numbers — the
+ * weights (0.06 base / 1.6x on ds) are a first-pass guess; see the shard-
+ * rerun validation plan (does avg M finally separate adversarial from benign
+ * benchmarks; does XSTest regress) before this feeds anything published.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -169,6 +188,12 @@ export interface KernelReceipt {
   epsilon_injected:            boolean;
   suspension_triggered:        boolean;
   semantic_signal:             SemanticSignal;
+  // fix (2026-07-12, third pass): input-side threat signal — see file header.
+  // Cosine similarity in [0,1] between the prompt embedding and a held-out
+  // harm-reference centroid. 0 when the caller didn't supply one (embedding
+  // unavailable this turn) — same honest-default convention as other
+  // detection-degraded paths in this file.
+  prompt_threat_signal:        number;
   temperature:                 number;
   invariance_violations:       number;
   governor_sensing:            GovernorSensingReport;
@@ -285,7 +310,21 @@ export class SovereignKernel {
     return candidates.reduce((best, c) => c.severity > best.severity ? c : best);
   }
 
-  transduce(prompt: string): { dc: number; dr: number; ds: number } {
+  /**
+   * fix (2026-07-12, third pass): threatSignal is a cosine-similarity score
+   * in [0,1] against a held-out harm reference centroid, computed by the
+   * caller (see file header + lib/lex_memory.ts getHarmReferenceCentroid).
+   * Defaults to 0 (no signal / not supplied) so all existing callers of
+   * transduce() are unaffected. Applied ADDITIVELY alongside the existing
+   * length/punctuation intensity term — not a replacement — same pattern as
+   * the postMetrics fix above. threatPressure pushes C/R down and S up,
+   * mirroring the direction the existing semantic-attack severity scaling
+   * already pushes state (see the `pressure` block later in runCycle), on
+   * the theory that a semantically threatening prompt should register as a
+   * sovereignty-relevant event even when it doesn't match detectSemanticAttack's
+   * narrow keyword patterns. Weights are a first-pass guess, not tuned.
+   */
+  transduce(prompt: string, threatSignal: number = 0): { dc: number; dr: number; ds: number } {
     const len = prompt.length;
     const wordCount = prompt.split(/\s+/).length;
     const questionMarks = (prompt.match(/\?/g) || []).length;
@@ -294,7 +333,12 @@ export class SovereignKernel {
     const wordFactor  = Math.min(1.0, wordCount / 100);
     const punctFactor = (questionMarks + exclamations) / Math.max(1, wordCount);
     const intensity   = 0.05 * (lenFactor + wordFactor + punctFactor);
-    return { dc: -0.01 * intensity, dr: 0.005 * intensity, ds: 0.005 * intensity };
+    const threatPressure = 0.06 * Math.max(0, Math.min(1, threatSignal));
+    return {
+      dc: -0.01 * intensity - threatPressure,
+      dr:  0.005 * intensity - threatPressure * 0.6,
+      ds:  0.005 * intensity + threatPressure * 1.6,
+    };
   }
 
   async buildContractContext(
@@ -452,6 +496,10 @@ export class SovereignKernel {
     memoryContext: string = '',
     sessionId?: string,
     sessionZ?: [number, number, number],
+    // fix (2026-07-12, third pass): input-side threat signal — see file
+    // header. Defaults to 0 so all existing callers are unaffected until
+    // they're updated to supply a real value.
+    threatSignal: number = 0,
   ): Promise<KernelCycleResult> {
     this.step_counter += 1;
     this.prev_state = { ...this.state };
@@ -491,7 +539,7 @@ export class SovereignKernel {
     const semanticSignal = this.detectSemanticAttack(userPrompt);
     this.last_semantic_signal = semanticSignal;
     const scale = 1.0 + 1.2 * semanticSignal.severity;
-    const delta = this.transduce(userPrompt);
+    const delta = this.transduce(userPrompt, threatSignal);
     const dynamicsGain = Math.max(M0, 0.12);
     delta.dc *= scale * dynamicsGain;
     delta.dr *= scale * dynamicsGain;
@@ -701,11 +749,12 @@ export class SovereignKernel {
       stability_ratio: Math.round(stabilityRatio * 1e6) / 1e6,
       epsilon_injected: epsilonInjected, suspension_triggered: suspensionTriggered,
       semantic_signal: semanticSignal,
+      prompt_threat_signal: Math.round(Math.max(0, Math.min(1, threatSignal)) * 1e6) / 1e6,
       temperature: Math.round(temperature * 1e6) / 1e6,
       invariance_violations: this.invariance_violations,
       governor_sensing: governorSensing,
       z_weights: activeZ,
-      version: 'SovereignKernel-TS-v2+AsyncGovernor+PaperExactCRS',
+      version: 'SovereignKernel-TS-v2+AsyncGovernor+PaperExactCRS+ThreatSignal',
       raw_provider: rawProvider,
       governed_provider: governedProvider,
       governed_source: governedSource,
