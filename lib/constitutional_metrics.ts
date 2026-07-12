@@ -4,11 +4,34 @@
  *
  * Paper-exact implementations of the three operational measurement proxies:
  *   CCP — Constitutional Continuity Proxy (C measurement)
- *   IEC — Information Exchange Coherence (R measurement)  
+ *   IEC — Information Exchange Coherence (R measurement)
  *   ADV — Adaptive Decision Variance (S measurement)
  *
  * Used for post-response CRS measurement in the SovereignKernel.
  * These replace the keyword-delta approach with paper-exact computation.
+ *
+ * fix (2026-07-12, second pass, same day) — CCP'S ANCHOR WAS A FIXED
+ * VOCABULARY STRING, NOT THE PAPER'S DESIGN: measurePostResponse() used to
+ * compare every response against a hardcoded string ("continuity reciprocity
+ * sovereignty constitutional framework governance..."), not against the
+ * paper's actual §5.1 design — a context vector C_(t_b) established at an
+ * anchor turn, measuring whether LATER responses stay coherent with THAT
+ * established context. Verified directly: two genuinely coherent, on-topic
+ * responses (photosynthesis, then cellular respiration, same session) both
+ * scored ccp=0, because neither shares vocabulary with the fixed anchor
+ * string — meaning c_delta was silently negative on nearly every real turn,
+ * regardless of actual continuity, immediately after wiring postMetrics into
+ * live state (see sovereign_kernel.ts's same-day fix).
+ *
+ * Fixed: measurePostResponse now takes the session's own first governed
+ * response as the anchor (sessionAnchor) plus how many turns have elapsed
+ * since it was set (turnsSinceAnchor) — both threaded in from
+ * SovereignKernel's new session_responses history. On the anchor-establishing
+ * turn itself (sessionAnchor === null, nothing to compare against yet), CCP
+ * is honestly left unmeasured (c_delta = 0) rather than measured against
+ * itself or a placeholder — matching the same "don't guess what you can't
+ * measure" standard used throughout the rest of this project's governance
+ * and evaluation code.
  */
 
 const EPSILON = 1e-9;
@@ -233,11 +256,8 @@ export interface PostResponseCRS {
   ccp:        CCPResult;
   iec:        IECResult;
   adv:        ADVResult;
+  ccp_skipped: boolean; // true on the anchor-establishing turn -- see file header
 }
-
-const CONSTITUTIONAL_ANCHOR =
-  'continuity reciprocity sovereignty constitutional framework governance ' +
-  'stability maintain coherence lawful identity balance lex aureon';
 
 export function measurePostResponse(
   userPrompt:       string,
@@ -248,13 +268,18 @@ export function measurePostResponse(
   currentC:         number,
   currentR:         number,
   currentS:         number,
+  sessionAnchor:    string | null, // fix (2026-07-12): the session's own first governed response, null on the anchor-establishing turn
+  turnsSinceAnchor: number,        // fix (2026-07-12): elapsed turns since sessionAnchor was set
 ): PostResponseCRS {
-  // C — CCP: how well did the response maintain constitutional continuity?
-  const ccp = computeCCP(
-    CONSTITUTIONAL_ANCHOR,
-    [governedResponse],
-    [1.0],
-  );
+  // C — CCP: how well did THIS response maintain continuity with the
+  // context this session actually established, not a fixed vocabulary list.
+  // fix (2026-07-12): see file header. On the anchor-establishing turn there
+  // is nothing yet to measure continuity against -- honestly skipped rather
+  // than compared to itself or a placeholder.
+  const ccpSkipped = sessionAnchor === null;
+  const ccp = ccpSkipped
+    ? { ccp: 0, lambda: 0, mean_similarity: 0, anchor_coverage: 0, contradiction_penalty: 0 }
+    : computeCCP(sessionAnchor, [governedResponse], [Math.max(1, turnsSinceAnchor)]);
 
   // R — IEC: how coherent was the exchange between prompt and response?
   const iec = computeIEC([[userPrompt, governedResponse]]);
@@ -269,7 +294,7 @@ export function measurePostResponse(
   // Compute deltas — small adjustment toward measured values
   // Weight: 0.15 (don't let measurement dominate the controller)
   const weight = 0.15;
-  const c_delta = weight * (ccp.ccp - currentC);
+  const c_delta = ccpSkipped ? 0 : weight * (ccp.ccp - currentC);
   const r_delta = weight * (iec.iec - currentR);
   const s_delta = weight * (adv.adv - currentS);
 
@@ -281,5 +306,6 @@ export function measurePostResponse(
     r_delta: Math.round(r_delta * 1e6) / 1e6,
     s_delta: Math.round(s_delta * 1e6) / 1e6,
     ccp, iec, adv,
+    ccp_skipped: ccpSkipped,
   };
 }
