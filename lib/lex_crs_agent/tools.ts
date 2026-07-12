@@ -1,7 +1,7 @@
 /**
  * Lex CRS Agent — Tool Implementations
  *
- * 13 canonical tools giving the agent live access to the Lexaureon system.
+ * 15 canonical tools giving the agent live access to the Lexaureon system.
  * Unified, coherent, no redundant logging.
  *
  * READ TOOLS:  read_file, list_directory, search_code, get_build_status,
@@ -13,6 +13,8 @@
  * TEST TOOLS:  write_file_governed
  *
  * SELF-REFLECTION TOOLS: self_reflect
+ *
+ * DESIGN JOURNAL TOOLS: log_decision, narrate_origin
  *
  * MULTI-REPO:  read_file, write_file, list_directory, search_code all accept
  *              an optional `repo` parameter. Defaults to the frontend repo.
@@ -37,12 +39,20 @@
  * its own tool_receipts history and compute real aggregate statistics — see
  * lib/self_reflection.ts. Also runs on a daily cron (app/api/cron/self-reflect)
  * so reflections accumulate on their own, not just when explicitly asked for.
+ *
+ * feat (2026-07-11) — DESIGN JOURNAL: log_decision / narrate_origin let the
+ * agent record WHY a significant change was made (not just what, and not
+ * just per-call CRS scores) and later synthesize an evidence-grounded
+ * account of its own history — see lib/design_journal.ts. Deliberately
+ * scoped as self-evidence, not self-awareness: narrate_origin only ever
+ * reads what was actually logged, never invents a plausible-sounding reason.
  */
 
 import { env } from '../env';
 import { interceptToolCall } from '../agents/tool_interceptor';
 import type { ToolCallInput } from '../agents/types';
 import { runSelfReflection } from '../self_reflection';
+import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
@@ -387,11 +397,7 @@ export async function run_self_test(): Promise<string> {
   return results.join('\n');
 }
 
-// ── self_reflect (2026-07-11) ─────────────────────────────────────────────────
-// Reads back the agent's own tool_receipts history and computes real
-// aggregate stats — see lib/self_reflection.ts. Also runs daily via cron
-// (app/api/cron/self-reflect), so this is callable both on-demand and
-// recurring, not just when explicitly invoked.
+// ── self_reflect ───────────────────────────────────────────────────────────────
 export async function self_reflect(): Promise<string> {
   try {
     const result = await runSelfReflection();
@@ -410,6 +416,27 @@ export async function self_reflect(): Promise<string> {
   } catch (e) { return `Error: ${String(e)}`; }
 }
 
+// ── log_decision / narrate_origin (2026-07-11) ────────────────────────────────
+// See lib/design_journal.ts. log_decision records WHY a significant change
+// was made, with real evidence. narrate_origin synthesizes an account of the
+// system's own history from ONLY what's actually been logged -- self-evidence,
+// not self-awareness. If nothing relevant was logged, it says so rather than
+// inventing a plausible-sounding reason.
+export async function log_decision({
+  decision, reasoning, evidence, commit_sha, component,
+}: { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }): Promise<string> {
+  try {
+    await logDecision({ decision, reasoning, evidence, commit_sha, component });
+    return `✓ Logged: [${component}] ${decision}`;
+  } catch (e) { return `Error: ${String(e)}`; }
+}
+
+export async function narrate_origin({ component }: { component?: string }): Promise<string> {
+  try {
+    return await narrateOrigin(component);
+  } catch (e) { return `Error: ${String(e)}`; }
+}
+
 // ── Tool registry ─────────────────────────────────────────────────────────────
 export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
   read_file:                (a) => read_file(a as { path: string; repo?: string }),
@@ -425,6 +452,8 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   get_vercel_logs:          (a) => get_vercel_logs(a as { limit?: number }),
   run_self_test:            ()  => run_self_test(),
   self_reflect:             ()  => self_reflect(),
+  log_decision:              (a) => log_decision(a as { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }),
+  narrate_origin:            (a) => narrate_origin(a as { component?: string }),
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
@@ -509,5 +538,30 @@ export const TOOL_DEFINITIONS = [
     name: 'self_reflect',
     description: 'Read back the agent\'s own tool_receipts history (from write_file_governed and any other governed tool calls) and compute real aggregate statistics -- approval/denial counts, mean constitutional state, denial rate. Factual, not a narrative -- the agent reading its own audit trail. Also runs automatically once a day via cron; calling this on-demand computes the same thing for the period since the last recorded reflection.',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'log_decision',
+    description: 'Record WHY a significant design decision was made -- what changed, the reasoning, and (ideally) real evidence that motivated it. Separate from per-call CRS scores: this is the reasoning layer. Use this after making any non-trivial fix or design change, so narrate_origin can later cite it as real evidence rather than having to guess.',
+    parameters: {
+      type: 'object',
+      properties: {
+        decision: { type: 'string', description: 'What changed, briefly' },
+        reasoning: { type: 'string', description: 'Why, in plain language' },
+        evidence: { type: 'string', description: 'Optional. What observation or data motivated this -- a real test result, an error message, a measured number.' },
+        commit_sha: { type: 'string', description: 'Optional. The git commit this decision corresponds to.' },
+        component: { type: 'string', description: 'Which subsystem this belongs to, e.g. "tool_crs", "audit", "self_reflection"' },
+      },
+      required: ['decision', 'reasoning', 'component'],
+    },
+  },
+  {
+    name: 'narrate_origin',
+    description: 'Synthesize a plain-language account of why the system is the way it is, grounded ONLY in decisions actually logged via log_decision -- self-evidence, not self-awareness. Never invents a reason that wasn\'t stored. Says so plainly if nothing relevant has been logged for the requested scope.',
+    parameters: {
+      type: 'object',
+      properties: {
+        component: { type: 'string', description: 'Optional. Scope to one subsystem, e.g. "tool_crs" or "audit". Omit for the full recent history across all components.' },
+      },
+    },
   },
 ];
