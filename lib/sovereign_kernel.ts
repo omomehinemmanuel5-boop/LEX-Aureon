@@ -57,6 +57,30 @@
  * "unavailable" message survive, tagged `governed_source: 'unavailable'` so
  * scripts/lexbench/runner.ts can exclude it from scoring rather than count
  * it as a real refusal or a real over-refusal.
+ *
+ * fix (2026-07-12) — measurePostResponse() (lib/constitutional_metrics.ts)
+ * computes paper-exact CCP/IEC/ADV every turn — cosine-similarity decay for
+ * Continuity, entropy-ratio variance for Reciprocity, decision-variance ×
+ * compliance for Sovereignty, matching Aureonics §5 precisely. Its result
+ * (c_delta/r_delta/s_delta) was computed, stored in this.last_metrics, and
+ * then never applied to this.state — a `void postMetrics;` marked it
+ * explicitly unused. The live constitutional state was being driven entirely
+ * by transduce()'s heuristic (prompt length/word-count/punctuation density),
+ * not by the paper's actual operationalization. Found by direct comparison
+ * of this file's runtime behavior against the paper's §5 formulas, not
+ * assumed from the file's docstring claims.
+ *
+ * Fixed by applying postMetrics's deltas alongside transduce()'s existing
+ * ones, not replacing them: transduce() reacts to attack SEVERITY in the
+ * prompt before generation even happens (a real, useful signal, scaled by
+ * semantic-attack detection) — replacing it outright would lose that.
+ * postMetrics's deltas are the real, paper-faithful measurement of the
+ * actual response's continuity/reciprocity/sovereignty, added on top. Both
+ * now genuinely influence live state; previously only one did. Whether the
+ * two should eventually be reweighted, or transduce() phased out entirely,
+ * is a further, separate, deliberately-not-rushed design decision — this
+ * fix closes the specific bug (a real computation being silently discarded),
+ * not a wholesale redesign of the state-update mechanism.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -143,6 +167,10 @@ export interface KernelReceipt {
   raw_provider:                string;         // provider that produced raw_response ('static' = all 5 failed)
   governed_provider:           string;         // provider that produced the TEXT now in governed_response
   governed_source:             GovernedSource;
+  // fix (2026-07-12): paper-exact CCP/IEC/ADV measurement, now actually
+  // applied to state (see file header) — surfaced on the receipt so it's
+  // auditable, not just internal.
+  post_response_metrics?:      PostResponseCRS;
 }
 
 export interface KernelCycleResult {
@@ -540,13 +568,22 @@ export class SovereignKernel {
     this.session_decisions.push(health_band as 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL');
     this.session_compliance.push(governedResponse !== rawResponse && governedResponse.length > 0);
     if (this.session_decisions.length > 20) { this.session_decisions.shift(); this.session_compliance.shift(); }
-    void postMetrics;
 
     this.state.C += delta.dc; this.state.R += delta.dr; this.state.S += delta.ds;
     for (const k of ['C', 'R', 'S'] as (keyof KernelState)[]) {
       const d = k === 'C' ? delta.dc : k === 'R' ? delta.dr : delta.ds;
       if (Math.abs(d) < MIN_DELTA) this.state[k] += (d !== 0 ? Math.sign(d) : 1) * MIN_DELTA;
     }
+
+    // fix (2026-07-12): apply the paper-exact CCP/IEC/ADV deltas that
+    // measurePostResponse() computes every turn — previously computed and
+    // discarded (`void postMetrics;`), so the live state was driven entirely
+    // by transduce()'s heuristic above, never by the actual §5 operationalization.
+    // Added alongside transduce()'s deltas, not replacing them — see file
+    // header for why. weight=0.15 is baked into measurePostResponse itself.
+    this.state.C += postMetrics.c_delta;
+    this.state.R += postMetrics.r_delta;
+    this.state.S += postMetrics.s_delta;
 
     if (activeLawData?.deltas) {
       const s = semanticSignal.severity;
@@ -638,10 +675,11 @@ export class SovereignKernel {
       invariance_violations: this.invariance_violations,
       governor_sensing: governorSensing,
       z_weights: activeZ,
-      version: 'SovereignKernel-TS-v2+AsyncGovernor',
+      version: 'SovereignKernel-TS-v2+AsyncGovernor+PaperExactCRS',
       raw_provider: rawProvider,
       governed_provider: governedProvider,
       governed_source: governedSource,
+      post_response_metrics: postMetrics,
     };
 
     return {
