@@ -76,11 +76,22 @@
  * semantic-attack detection) — replacing it outright would lose that.
  * postMetrics's deltas are the real, paper-faithful measurement of the
  * actual response's continuity/reciprocity/sovereignty, added on top. Both
- * now genuinely influence live state; previously only one did. Whether the
- * two should eventually be reweighted, or transduce() phased out entirely,
- * is a further, separate, deliberately-not-rushed design decision — this
- * fix closes the specific bug (a real computation being silently discarded),
- * not a wholesale redesign of the state-update mechanism.
+ * now genuinely influence live state; previously only one did.
+ *
+ * fix (2026-07-12, second pass, same day) — CCP'S ANCHOR WAS A FIXED
+ * VOCABULARY STRING, NOT A SESSION CONTEXT: once the discard bug above was
+ * fixed, direct testing showed ccp=0 on two genuinely coherent, on-topic
+ * responses in the same session (photosynthesis, then cellular respiration)
+ * — because CCP was comparing every response against a hardcoded string of
+ * constitutional vocabulary, not against the paper's actual §5.1 design (a
+ * context vector established at an anchor turn, measuring later responses'
+ * coherence with THAT). This meant c_delta was silently negative on nearly
+ * every real turn regardless of actual continuity. Fixed by tracking
+ * session_responses (this session's own governed responses) and using the
+ * FIRST one as the anchor for all later turns, matching the paper's design.
+ * On the anchor-establishing turn itself there is nothing yet to compare
+ * against — measurePostResponse honestly skips CCP that turn (c_delta=0)
+ * rather than comparing a response to itself.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -232,6 +243,11 @@ export class SovereignKernel {
   invariance_violations: number = 0;
   session_decisions: ('OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL')[] = [];
   session_compliance: boolean[] = [];
+  // fix (2026-07-12, second pass): tracks this session's own governed
+  // responses so CCP can measure continuity against the session's actual
+  // established context (session_responses[0], the anchor) instead of a
+  // fixed vocabulary string — see file header.
+  session_responses: string[] = [];
   last_semantic_signal: SemanticSignal = { attack_type: 'none', severity: 0 };
   last_metrics: PostResponseCRS | null = null;
 
@@ -563,11 +579,25 @@ export class SovereignKernel {
     }
 
     const advGain = this.scoreAdv(governedResponse);
-    const postMetrics = measurePostResponse(userPrompt, governedResponse, rawResponse, this.session_decisions, this.session_compliance, this.state.C, this.state.R, this.state.S);
+    // fix (2026-07-12, second pass): the anchor is this session's OWN first
+    // governed response, not a fixed vocabulary string — see file header.
+    // Captured BEFORE pushing this turn's response, so turn 1 correctly sees
+    // sessionAnchor=null (nothing established yet) and turn 2+ compares
+    // against what was actually said first in this session.
+    const sessionAnchor    = this.session_responses[0] ?? null;
+    const turnsSinceAnchor = this.session_responses.length;
+    const postMetrics = measurePostResponse(
+      userPrompt, governedResponse, rawResponse,
+      this.session_decisions, this.session_compliance,
+      this.state.C, this.state.R, this.state.S,
+      sessionAnchor, turnsSinceAnchor,
+    );
     this.last_metrics = postMetrics;
     this.session_decisions.push(health_band as 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL');
     this.session_compliance.push(governedResponse !== rawResponse && governedResponse.length > 0);
+    this.session_responses.push(governedResponse);
     if (this.session_decisions.length > 20) { this.session_decisions.shift(); this.session_compliance.shift(); }
+    if (this.session_responses.length > 20) this.session_responses.shift();
 
     this.state.C += delta.dc; this.state.R += delta.dr; this.state.S += delta.ds;
     for (const k of ['C', 'R', 'S'] as (keyof KernelState)[]) {
