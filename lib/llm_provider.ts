@@ -44,6 +44,29 @@
  * chain silently swallowing every failure reason is a maintainability gap
  * on its own, independent of today's specific incident.
  *
+ * fix (2026-07-12) — RATE/QUOTA COOLDOWN CACHE: diagnosed a slow LexBench run
+ * directly against Vercel runtime logs — Gemini (both tiers) returning 429
+ * quota-exceeded and Groq 70b returning 429 (94,663/100,000 daily tokens
+ * used) on essentially EVERY prompt in the run. The chain had no memory
+ * between calls: a provider that had just failed with a 429 on prompt N was
+ * re-tried from scratch on prompt N+1, N+2, ... — every single governed AND
+ * raw call paying the full round-trip cost (network + provider processing
+ * time before the 429 response, not instant) of re-discovering the same
+ * already-known-dead provider, before falling through to whatever was left.
+ * Added an in-memory cooldown: when a provider fails with a 429 (rate limit)
+ * or 402/403 (quota/billing), it's marked dead for COOLDOWN_MS and every
+ * chain simply skips it — no request sent — until the cooldown expires. Non
+ * rate/quota failures (timeouts, 5xx, malformed responses) do NOT trigger a
+ * cooldown, since those are more likely transient/request-specific rather
+ * than an account-level exhaustion that will repeat identically on the next
+ * call. Cooldown state is per-serverless-instance (module-level Map, not
+ * persisted) — it self-heals on cold start and does not need a TTL sweep
+ * beyond the per-entry expiry check at lookup time. This does not change
+ * correctness (a real recovery within the cooldown window just means one
+ * skipped attempt that would have failed anyway); it only removes the
+ * repeated cost of asking a provider a question whose answer is already
+ * known for the next few minutes.
+ *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
  *   2. Groq     llama-3.1-8b-instant     — same provider, higher TPM limit
@@ -94,9 +117,37 @@ function logProviderFailure(provider: string, reason: string): void {
   console.warn(`[llm_provider] ${provider} failed: ${reason}`);
 }
 
+// ── Rate/quota cooldown cache (2026-07-12) — see file header ──────────────────
+// Keyed by "provider:model" so e.g. Gemini lite and Gemini full (separate
+// quota buckets on Google's side, confirmed by them failing independently in
+// the diagnosing run) don't share a cooldown incorrectly.
+const COOLDOWN_MS = 3 * 60 * 1000; // 3 min — short enough to recover promptly if quota resets mid-run, long enough to skip the bulk of a burst of same-cause 429s
+const _cooldownUntil = new Map<string, number>();
+
+function cooldownKey(provider: string, model: string): string {
+  return `${provider}:${model}`;
+}
+
+function isOnCooldown(provider: string, model: string): boolean {
+  const until = _cooldownUntil.get(cooldownKey(provider, model));
+  return until !== undefined && Date.now() < until;
+}
+
+// Only rate-limit/quota signals (429, 402, 403) mark a cooldown. Other
+// failures (timeouts, 5xx, malformed/empty responses) are more likely
+// transient or request-specific, not an account-level exhaustion that will
+// reproduce identically on the very next call — see file header.
+function markCooldownIfRateLimited(provider: string, model: string, status: number | null): void {
+  if (status === 429 || status === 402 || status === 403) {
+    _cooldownUntil.set(cooldownKey(provider, model), Date.now() + COOLDOWN_MS);
+    logProviderFailure(provider, `entering ${COOLDOWN_MS / 1000}s cooldown for model=${model} after HTTP ${status}`);
+  }
+}
+
 // ── Provider implementations ─────────────────────────────────────────────────
 
 async function tryGroq(messages: LLMMessage[], model: string): Promise<string | null> {
+  if (isOnCooldown('groq', model)) return null; // no request sent — known-dead until cooldown expires
   const key = process.env.GROQ_API_KEY;
   if (!key) { logProviderFailure('groq', 'GROQ_API_KEY not set'); return null; }
   try {
@@ -112,6 +163,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
     if (!r.ok) {
       const body = await r.text().catch(() => '');
       logProviderFailure('groq', `HTTP ${r.status} model=${model} ${body.slice(0, 200)}`);
+      markCooldownIfRateLimited('groq', model, r.status);
       return null;
     }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -131,6 +183,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
 // base URL) so each provider's own quirks/rate-limit handling can diverge
 // later without entangling the two.
 async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
+  if (isOnCooldown('cerebras', model)) return null;
   const key = process.env.CEREBRAS_API_KEY;
   if (!key) { logProviderFailure('cerebras', 'CEREBRAS_API_KEY not set'); return null; }
   try {
@@ -146,6 +199,7 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
     if (!r.ok) {
       const body = await r.text().catch(() => '');
       logProviderFailure('cerebras', `HTTP ${r.status} model=${model} ${body.slice(0, 200)}`);
+      markCooldownIfRateLimited('cerebras', model, r.status);
       return null;
     }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -156,6 +210,7 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
 }
 
 async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
+  if (isOnCooldown('mistral', MODELS.MISTRAL)) return null;
   const key = process.env.MISTRAL_API_KEY;
   if (!key) { logProviderFailure('mistral', 'MISTRAL_API_KEY not set'); return null; }
   try {
@@ -171,6 +226,7 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
     if (!r.ok) {
       const body = await r.text().catch(() => '');
       logProviderFailure('mistral', `HTTP ${r.status} ${body.slice(0, 200)}`);
+      markCooldownIfRateLimited('mistral', MODELS.MISTRAL, r.status);
       return null;
     }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -181,6 +237,7 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
 }
 
 async function tryGemini(messages: LLMMessage[], model: string): Promise<string | null> {
+  if (isOnCooldown('gemini', model)) return null;
   const key = process.env.GEMINI_API_KEY;
   if (!key) { logProviderFailure('gemini', 'GEMINI_API_KEY not set'); return null; }
   try {
@@ -208,6 +265,7 @@ async function tryGemini(messages: LLMMessage[], model: string): Promise<string 
     if (!r.ok) {
       const respBody = await r.text().catch(() => '');
       logProviderFailure('gemini', `HTTP ${r.status} model=${model} ${respBody.slice(0, 200)}`);
+      markCooldownIfRateLimited('gemini', model, r.status);
       return null;
     }
     const d = await r.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
