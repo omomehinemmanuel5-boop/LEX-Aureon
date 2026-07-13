@@ -52,16 +52,16 @@ export default function HeroTicker() {
       }}
     >
       <span className="w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0" style={{ background: healthColor }} />
-      <span className="text-slate-500 dark:text-slate-500">Canonical M-Score:</span>
+      <span className="text-slate-600 dark:text-slate-500">Canonical M-Score:</span>
       <span className="font-black" style={{ color: healthColor }}>
         {M !== null ? `${(M * 100).toFixed(1)}%` : 'SYNCING…'}
       </span>
       <span className="text-slate-300 dark:text-slate-700">·</span>
-      <span className="text-slate-500 dark:text-slate-500">
+      <span className="text-slate-600 dark:text-slate-500">
         <span style={{ color: healthColor }}>{healthLabel}</span>
       </span>
       <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">·</span>
-      <span className="text-slate-400 dark:text-slate-600 hidden sm:inline">SovereignKernel v2</span>
+      <span className="text-slate-600 dark:text-slate-600 hidden sm:inline">SovereignKernel v2</span>
     </div>
   );
 }
