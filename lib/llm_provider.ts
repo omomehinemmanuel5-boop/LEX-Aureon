@@ -69,7 +69,9 @@
  *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
- *   2. Groq     llama-3.1-8b-instant     — same provider, higher TPM limit
+ *   2. Groq     llama-3.1-8b-instant     — same provider; LOWER 6k TPM ceiling
+ *                                          than the primary, capped accordingly
+ *                                          (see 2026-07-13 fix note below)
  *   3. Cerebras gpt-oss-120b             — independent quota, high daily volume
  *   4. Mistral  open-mistral-7b          — different provider, confirmed live
  *   5. Gemini   gemini-3.1-flash-lite    — confirmed live, cost-efficient
@@ -98,6 +100,26 @@ const TIMEOUT_MS = 25_000;
 // all normal chat/console responses. It is a CAP, not a target — short answers
 // stay short, so the cost/latency impact on typical turns is minimal.
 const MAX_OUTPUT_TOKENS = 8192;
+
+// fix (2026-07-13) — llama-3.1-8b-instant has a 6,000 TPM ceiling on Groq's
+// on_demand tier (confirmed directly against the API's own error response),
+// far below every other model in the chain. Groq counts requested max_tokens
+// toward that per-minute budget, so sending the global MAX_OUTPUT_TOKENS
+// (8192) to this model alone exceeds its entire TPM cap before a single
+// input token is counted — confirmed firing on nearly every call to this
+// model across two full benchmark runs' worth of Vercel logs (413 "Request
+// too large... Limit 6000, Requested 8xxx-9xxx", not intermittent). This
+// model sits as the 2nd link in generateWithFallback/generateGoverned's
+// chain specifically because the in-code comment assumed it had HIGHER TPM
+// headroom than the 70B primary — live evidence says the opposite; as
+// configured it was a guaranteed-dead fallback link, wasting one full
+// round-trip on every request that reached it instead of ever actually
+// catching one. Per-model cap, well under its real ceiling with margin for
+// input tokens, restores it as a genuine fallback rather than dead weight.
+function maxTokensFor(model: string): number {
+  if (model === MODELS.FAST) return 2048;
+  return MAX_OUTPUT_TOKENS;
+}
 
 export const MODELS = {
   PRIMARY: 'llama-3.3-70b-versatile',
@@ -156,7 +178,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model, messages,
-        max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.7,
+        max_tokens: maxTokensFor(model), temperature: 0.7,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
