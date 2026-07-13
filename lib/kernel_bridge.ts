@@ -39,7 +39,7 @@
  *   added idempotently; rows written before this change have NULL hashes.
  */
 
-import { createHash } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { getClient } from './db';
 import { KernelCycleResult, KernelState } from './sovereign_kernel';
 import { TAU, Z_RECOVERY } from './aureonics_core';
@@ -71,6 +71,20 @@ async function ensureHashColumns(db: ReturnType<typeof getClient>): Promise<void
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN input_hash TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN output_hash TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN receipt_hash TEXT');
+  // fix: HMAC signature column, added alongside the existing plain-hash
+  // columns above. See computeReceiptSignature() docstring for why a plain
+  // SHA-256 hash (receipt_hash, above) is NOT tamper-evident on its own —
+  // anyone can recompute it without any secret. signature is.
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN signature TEXT');
+  // fix: c_after/r_after/s_after -- the HMAC signature is computed over the
+  // FULL state (C, R, S individually), but this table previously only stored
+  // m_after (min(C,R,S)). Verification needs to reconstruct the exact signed
+  // input, and M alone cannot be inverted back to (C,R,S) -- information is
+  // lost. Without these columns, /api/audits/verify could never succeed even
+  // on an untampered receipt.
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN c_after REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN r_after REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN s_after REAL');
   _hashColsReady = true;
 }
 
@@ -87,6 +101,80 @@ function computeReceiptHash(
 ): string {
   const stateStr = `C=${state.C.toFixed(6)},R=${state.R.toFixed(6)},S=${state.S.toFixed(6)},M=${M.toFixed(6)}`;
   return createHash('sha256').update(`${stateStr}‖${inputHash}‖${outputHash}`).digest('hex');
+}
+
+/**
+ * fix (2026-07-13) — HMAC SIGNATURE, TAMPER-EVIDENT: receipt_hash above is a
+ * PLAIN SHA-256 hash. It has no secret input, so anyone — including someone
+ * with direct DB write access — can edit a row's state/M/health_band and
+ * recompute a matching receipt_hash from the edited values. It proves
+ * internal consistency of a receipt against itself; it proves nothing about
+ * whether the receipt was altered after Lex Aureon wrote it.
+ *
+ * computeReceiptSignature() adds a real HMAC-SHA256 over the same canonical
+ * fields PLUS receipt_hash itself, keyed by a server-only secret
+ * (AUDITOR_SECRET, matching the naming convention already used in
+ * lib/agents/auditor.ts). Recomputing a MATCHING signature requires knowing
+ * that secret — a DB edit that doesn't also know the secret produces a
+ * signature mismatch, which /api/audits/verify surfaces.
+ *
+ * Deliberately NOT truncated (unlike lib/agents/auditor.ts's
+ * signature.slice(0, 32), which weakens a 256-bit HMAC down to 128 bits of
+ * output for no benefit) — full 64 hex char digest.
+ *
+ * Falls back to a default key with a loud warning if AUDITOR_SECRET is unset,
+ * same fallback pattern as auditor.ts — but every signature produced under
+ * the fallback key is marked in the receipt via a distinct key version, so a
+ * verifier can't be fooled into treating a fallback-keyed signature as
+ * produced under a real secret.
+ */
+const SIGNING_KEY_VERSION = process.env.AUDITOR_SECRET ? 'v1' : 'v1-fallback';
+function signingKey(): string {
+  if (!process.env.AUDITOR_SECRET) {
+    logger.warn('kernel_bridge.sign', 'AUDITOR_SECRET not set — signing with fallback key, receipts will be marked v1-fallback', {});
+  }
+  return process.env.AUDITOR_SECRET || 'lex-aureon-sovereign-key-2026';
+}
+
+export function computeReceiptSignature(fields: {
+  receiptId: string;
+  sessionId: string;
+  state: { C: number; R: number; S: number };
+  M: number;
+  healthBand: string;
+  inputHash: string;
+  outputHash: string;
+  receiptHash: string;
+  createdAt: string;
+}): string {
+  const canonical = [
+    fields.receiptId,
+    fields.sessionId,
+    fields.state.C.toFixed(6), fields.state.R.toFixed(6), fields.state.S.toFixed(6),
+    fields.M.toFixed(6),
+    fields.healthBand,
+    fields.inputHash,
+    fields.outputHash,
+    fields.receiptHash,
+    fields.createdAt,
+    SIGNING_KEY_VERSION,
+  ].join('|');
+  return createHmac('sha256', signingKey()).update(canonical).digest('hex');
+}
+
+/**
+ * Constant-time comparison — a naive `===` on hex strings leaks timing
+ * information proportional to how many leading characters match, which is
+ * exactly the side channel HMAC verification exists to avoid. Both inputs
+ * must be equal length for timingSafeEqual; unequal length is treated as
+ * simply not matching rather than throwing.
+ */
+export function verifyReceiptSignature(fields: Parameters<typeof computeReceiptSignature>[0], signature: string): boolean {
+  const expected = computeReceiptSignature(fields);
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(signature, 'hex');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 export async function writeKernelReceipt(
@@ -109,6 +197,12 @@ export async function writeKernelReceipt(
   const inputHash   = r.input_hash ?? '';
   const outputHash  = r.output_hash ?? '';
   const receiptHash = computeReceiptHash(result.state, result.M, inputHash, outputHash);
+  const createdAt   = new Date().toISOString();
+  const signature   = computeReceiptSignature({
+    receiptId, sessionId, state: result.state, M: result.M,
+    healthBand: result.health_band, inputHash, outputHash,
+    receiptHash, createdAt,
+  });
 
   // ── governor_effort: max(async G correction, CBF projection) ─────────────
   // Async G(x,z) magnitude: non-zero on turns where sensing fired last turn
@@ -158,14 +252,15 @@ export async function writeKernelReceipt(
 
     const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
 
-    // ── Write receipt (now including SHA-256 proof columns) ────────────────────
+    // ── Write receipt (now including SHA-256 proof + HMAC signature) ───────────
     await db.execute({
       sql: `INSERT OR IGNORE INTO praxis_receipts
               (receipt_id, session_id, turn, pre_eval_label,
                m_before, m_after, governor_mode, intervention,
                slow_drip, governor_effort, sigma_viol, crs_method,
-               input_hash, output_hash, receipt_hash, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               input_hash, output_hash, receipt_hash, signature,
+               c_after, r_after, s_after, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         receiptId, sessionId, turn, 'CLEAR',
         mBefore,
@@ -179,7 +274,11 @@ export async function writeKernelReceipt(
         inputHash,
         outputHash,
         receiptHash,
-        new Date().toISOString(),
+        signature,
+        result.state.C,
+        result.state.R,
+        result.state.S,
+        createdAt,
       ],
     });
 
