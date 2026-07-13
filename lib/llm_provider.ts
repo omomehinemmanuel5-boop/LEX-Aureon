@@ -73,10 +73,15 @@
  *                                          than the primary, capped accordingly
  *                                          (see 2026-07-13 fix note below)
  *   3. Cerebras gpt-oss-120b             — independent quota, high daily volume
- *   4. Mistral  open-mistral-7b          — different provider, confirmed live
- *   5. Gemini   gemini-3.1-flash-lite    — confirmed live, cost-efficient
- *   6. Gemini   gemini-2.5-flash         — higher capability fallback
- *   7. Static constitutional response    — deterministic, no LLM
+ *   4. Groq     gpt-oss-120b             — same weights as #3, independent
+ *                                          quota bucket on Groq's own
+ *                                          infrastructure (see 2026-07-13 fix
+ *                                          note below) — resilience, not a
+ *                                          capability upgrade over #3
+ *   5. Mistral  open-mistral-7b          — different provider, confirmed live
+ *   6. Gemini   gemini-3.1-flash-lite    — confirmed live, cost-efficient
+ *   7. Gemini   gemini-2.5-flash         — higher capability fallback
+ *   8. Static constitutional response    — deterministic, no LLM
  */
 
 export interface LLMMessage {
@@ -125,6 +130,17 @@ export const MODELS = {
   PRIMARY: 'llama-3.3-70b-versatile',
   FAST: 'llama-3.1-8b-instant',
   CEREBRAS: 'gpt-oss-120b', // verified against this account's live GET /v1/models — see file header
+  // fix (2026-07-13): same underlying model as CEREBRAS above, but hosted on
+  // GROQ's infrastructure instead — an independent quota bucket for the
+  // exact model Groq's own deprecation notices confirm they've consolidated
+  // Kimi K2, Qwen3-32B, Llama 4 Scout, and DeepSeek-R1-Distill-70B users onto
+  // as of mid-2026 (console.groq.com/docs/deprecations), so this is Groq's
+  // current recommended model, not a guess. NOT a capability upgrade over
+  // CEREBRAS's gpt-oss-120b (same weights) — this is purely resilience: if
+  // Cerebras is in cooldown/exhausted, Groq's copy of the same model can
+  // still catch the request, and vice versa, rather than falling straight
+  // through to a smaller/different model.
+  GROQ_OSS: 'openai/gpt-oss-120b',
   MISTRAL: 'open-mistral-7b',
   GEMINI_LITE: 'gemini-3.1-flash-lite',
   GEMINI_FULL: 'gemini-2.5-flash',
@@ -308,6 +324,7 @@ export async function generateWithFallback(
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
@@ -369,6 +386,7 @@ export async function generateGoverned(
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
@@ -394,6 +412,7 @@ export async function generateRewrite(
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
@@ -432,6 +451,7 @@ export async function generateJudge(
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
