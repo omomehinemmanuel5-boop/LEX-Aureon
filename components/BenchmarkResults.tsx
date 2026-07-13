@@ -39,6 +39,13 @@
  * server-side cache on /api/benchmarks (see that route's 2026-07-10 fix note)
  * — results only change in discrete jumps on publish, continuous fast
  * polling was never buying real freshness.
+ *
+ * fix (2026-07-13) — LIGHT-THEME CONTRAST: every text-slate-400 (and one
+ * text-slate-300) used as the light-theme color here fails WCAG AA on the
+ * white/slate-50 backgrounds this component renders on (~2.5:1 measured,
+ * needs 4.5:1 at this font size) — labels, timestamps, and footnotes were
+ * legitimately hard to read in light mode. Bumped light-theme values to
+ * slate-600 (~7.5:1 on white); dark-theme values are untouched.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -199,7 +206,7 @@ export default function BenchmarkResults({
               reported separately. Numbers appear here automatically, read live from the results
               table, the moment a scored run is published. No figure is shown before it is earned.
             </p>
-            <p className="text-xs font-mono text-slate-400 dark:text-slate-500">
+            <p className="text-xs font-mono text-slate-600 dark:text-slate-500">
               {loading ? 'Checking results table…' : err ? `Results unavailable (${err})` : 'No scored run published yet.'}
             </p>
           </div>
@@ -210,9 +217,9 @@ export default function BenchmarkResults({
           <>
             <h2 className={`text-center font-black text-slate-900 dark:text-white mb-2 ${compact ? 'text-2xl' : 'text-3xl sm:text-4xl'}`}>
               Governed vs ungoverned,{' '}
-              <span className="text-slate-400 dark:text-slate-500 font-light">same judge.</span>
+              <span className="text-slate-600 dark:text-slate-500 font-light">same judge.</span>
             </h2>
-            <p className="text-center text-xs font-mono text-slate-400 dark:text-slate-500 mb-8">
+            <p className="text-center text-xs font-mono text-slate-600 dark:text-slate-500 mb-8">
               Each metric below is tagged for its own direction — read the badge, not just the bar.
               {lastUpdated ? ` Updated ${lastUpdated.toLocaleTimeString()}.` : ''}
             </p>
@@ -227,7 +234,7 @@ export default function BenchmarkResults({
                     <span className="text-sm font-mono font-black" style={{ color: GOLD }}>
                       {prettyBench(bench)}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
+                    <span className="text-[10px] font-mono text-slate-600 dark:text-slate-500">
                       {rows[0]?.run_date} · n={rows[0]?.n_total}
                     </span>
                   </div>
@@ -266,17 +273,17 @@ export default function BenchmarkResults({
                         </div>
 
                         <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 text-[11px] font-mono">
-                          <span className="text-slate-400 dark:text-slate-500 w-16">ungoverned</span>
+                          <span className="text-slate-600 dark:text-slate-500 w-16">ungoverned</span>
                           <Bar value={r.bare_score} tone="bare" />
                           <span className="text-red-500 font-bold w-12 text-right">{r.bare_score.toFixed(1)}%</span>
 
-                          <span className="text-slate-400 dark:text-slate-500 w-16">governed</span>
+                          <span className="text-slate-600 dark:text-slate-500 w-16">governed</span>
                           <Bar value={r.governed_score} tone="governed" />
                           <span className="text-emerald-600 dark:text-emerald-400 font-bold w-12 text-right">{r.governed_score.toFixed(1)}%</span>
                         </div>
 
                         {!compact && r.notes && (
-                          <p className="mt-2 text-[10px] font-mono text-slate-400 dark:text-slate-600 leading-relaxed">
+                          <p className="mt-2 text-[10px] font-mono text-slate-600 dark:text-slate-600 leading-relaxed">
                             {r.notes}
                           </p>
                         )}
@@ -287,7 +294,7 @@ export default function BenchmarkResults({
               ))}
             </div>
 
-            <p className="text-center text-[11px] font-mono text-slate-400 dark:text-slate-600 mt-6">
+            <p className="text-center text-[11px] font-mono text-slate-600 dark:text-slate-600 mt-6">
               Single source of truth — these figures, the dashboard, and the README all read the
               same results table. Re-running a suite updates them everywhere.
             </p>
