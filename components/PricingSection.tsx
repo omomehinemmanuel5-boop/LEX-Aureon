@@ -81,10 +81,25 @@ export default function PricingSection() {
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
             Pricing
           </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-3">
+          {/*
+            fix (2026-07-13) — DARK-ON-DARK: this section's background is
+            unconditionally #07070d (see style prop above, no dark: variant,
+            no light-mode override anywhere in this component). The text
+            below previously used `text-slate-900 dark:text-white` /
+            `text-slate-700 dark:text-slate-300` style hybrids — in light
+            mode, that resolves to text-slate-900 (near-black) against a
+            background that is ALWAYS near-black regardless of theme. Not
+            low-contrast — close to invisible. The Hero section (same
+            always-dark-background pattern) already established the correct
+            approach: use unconditional light colors here, since the
+            background never actually goes light. Every text color in this
+            component below is now unconditional for that reason, not an
+            oversight of the dark: variant.
+          */}
+          <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">
             Choose your governance tier
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-600 font-mono">
+          <p className="text-xs text-slate-500 font-mono">
             Early supporter pricing — first 50 customers lock in this rate forever.
           </p>
         </div>
@@ -122,9 +137,9 @@ export default function PricingSection() {
                   {plan.name}
                 </div>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-black text-slate-900 dark:text-white">{plan.price}</span>
+                  <span className="text-3xl font-black text-white">{plan.price}</span>
                   {plan.period && (
-                    <span className="text-slate-500 dark:text-slate-500 text-sm font-bold">{plan.period}</span>
+                    <span className="text-slate-500 text-sm font-bold">{plan.period}</span>
                   )}
                 </div>
               </div>
@@ -132,7 +147,7 @@ export default function PricingSection() {
               {/* Features */}
               <ul className="space-y-2 flex-1 mb-6">
                 {plan.features.map(f => (
-                  <li key={f} className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                  <li key={f} className="flex items-start gap-2 text-xs text-slate-300 font-medium leading-relaxed">
                     <span
                       className="flex-shrink-0 mt-0.5 font-black"
                       style={{ color: plan.highlight ? G.gold : '#10b981' }}
@@ -181,14 +196,14 @@ export default function PricingSection() {
           <div className="text-xs font-mono font-bold mb-1" style={{ color: G.gold }}>
             What changed in v2
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-500 leading-relaxed">
+          <p className="text-xs text-slate-500 leading-relaxed">
             Sovereign raised to $29/mo — now includes the Async Governor G(x,z), IEC-filtered
             search sensing, z-trajectory memory, and published TruthfulQA + HarmBench results.
             Anyone who subscribed at $19 keeps that price forever.
           </p>
         </div>
 
-        <div className="mt-4 text-center text-xs text-slate-400 dark:text-slate-600 font-mono font-bold uppercase tracking-tighter">
+        <div className="mt-4 text-center text-xs text-slate-500 font-mono font-bold uppercase tracking-tighter">
           All plans include cryptographic audit receipts · AI governance always provable
         </div>
 
