@@ -36,7 +36,31 @@
 
   // ── Schema ────────────────────────────────────────────────────────────────────
 
+  // fix (2026-07-13) — READ EXHAUSTION: initSchema() ran its FULL migration
+  // script -- every CREATE TABLE IF NOT EXISTS, every ALTER TABLE, every
+  // CREATE INDEX IF NOT EXISTS, AND a full-table `UPDATE praxis_receipts SET
+  // health_band = ... WHERE health_band IS NULL` -- on EVERY call, because
+  // initSchema() is invoked at the top of getSession, saveSession,
+  // getAggregateConstitutionalState, saveAudit, and getRecentAudits, not
+  // once at process startup. The health_band UPDATE in particular has to
+  // scan the whole table to confirm there's nothing left to update, every
+  // single time, even though that migration only ever has real work to do
+  // once (the first time it runs after being added). On a table with tens
+  // of thousands of rows this was a large, entirely avoidable, and totally
+  // silent contributor to Turso's monthly row-read quota being exhausted --
+  // on top of the missing index and duplicated /api/stats subquery fixed
+  // alongside this (see idx_receipts_created_at's fix note in this file and
+  // app/api/stats/route.ts's HEAVY_SESSIONS fix note).
+  //
+  // Fixed with the same per-warm-lambda memoization pattern already used
+  // for _hashColsReady in lib/kernel_bridge.ts: run the full migration once
+  // per lambda instance, then every subsequent call in that instance's
+  // lifetime is a no-op. A cold start re-runs it once, which is correct
+  // and cheap (every statement here is already idempotent/IF NOT EXISTS).
+  let _schemaReady = false;
+
   export async function initSchema(): Promise<void> {
+    if (_schemaReady) return;
     const c = getClient();
     await c.batch([
       {
@@ -115,6 +139,7 @@
     await safeAlter('ALTER TABLE audit_log ADD COLUMN s_after REAL');
     await safeAlter('ALTER TABLE audit_log ADD COLUMN metrics_version TEXT');
     await runZTrajMigrations();
+    _schemaReady = true;
   }
 
   // ── Session State ─────────────────────────────────────────────────────────────
