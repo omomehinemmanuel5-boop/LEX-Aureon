@@ -294,12 +294,12 @@ function ComparisonSection() {
     <section className="py-20 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-[#0d0d1a]">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-500 dark:text-slate-500 font-bold">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600 dark:text-slate-500 font-bold">
             What Lex Aureon combines
           </div>
           <h2 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white mb-4">
             Six capabilities,{' '}
-            <span className="text-slate-400 dark:text-slate-500 font-light">one governance layer.</span>
+            <span className="text-slate-600 dark:text-slate-500 font-light">one governance layer.</span>
           </h2>
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -316,7 +316,7 @@ function ComparisonSection() {
             </div>
           ))}
         </div>
-        <p className="text-center text-xs font-mono text-slate-500 dark:text-slate-600 mt-6">
+        <p className="text-center text-xs font-mono text-slate-600 dark:text-slate-600 mt-6">
           Combined in one layer — above any LLM, with no retraining or fine-tuning.
         </p>
       </div>
@@ -334,7 +334,13 @@ function ComparisonSection() {
    "diverging" share is real too, and the copy is honest that its correlation
    with attack-response turns is a plausible but not yet cleanly verified
    hypothesis — see the chat history / commit log for how this number was
-   derived and what wasn't confirmed. */
+   derived and what wasn't confirmed.
+   fix (2026-07-13) — LIGHT-THEME CONTRAST: labels here used text-slate-500
+   dark:text-slate-500 / text-slate-500 dark:text-slate-600 — slate-500 on
+   white measures ~4.47:1, just under the 4.5:1 WCAG AA minimum at this font
+   size. This section's background genuinely IS responsive (bg-slate-50
+   dark:bg-[#0d0d1a]), so the fix here is a straightforward contrast bump,
+   not the dark-on-dark bug found and fixed separately in PricingSection.tsx. */
 function TechnicalFoundationSection() {
   return (
     <section className="py-16 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-[#0d0d1a] border-y border-slate-100 dark:border-white/5">
@@ -345,7 +351,7 @@ function TechnicalFoundationSection() {
           </div>
           <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white mb-4">
             A control barrier function,{' '}
-            <span className="text-slate-400 dark:text-slate-500 font-light">not a prompt trick.</span>
+            <span className="text-slate-600 dark:text-slate-500 font-light">not a prompt trick.</span>
           </h2>
           <p className="text-slate-600 dark:text-slate-400 text-sm max-w-xl mx-auto leading-relaxed">
             Constitutional state is a point on the probability simplex. Safety is enforced by a barrier function. Stability is argued with a Lyapunov function. Here is the actual math, and how closely the deployed system tracks it — measured, not asserted.
@@ -353,7 +359,7 @@ function TechnicalFoundationSection() {
         </div>
 
         <div className="rounded-2xl border p-6 sm:p-8 bg-white dark:bg-black/30 border-slate-200 dark:border-white/10 mb-6">
-          <div className="text-slate-500 dark:text-slate-500 text-xs uppercase tracking-widest mb-4 font-bold font-mono">The z-weighted Lyapunov barrier</div>
+          <div className="text-slate-600 dark:text-slate-500 text-xs uppercase tracking-widest mb-4 font-bold font-mono">The z-weighted Lyapunov barrier</div>
           <div className="text-slate-800 dark:text-slate-200 text-base sm:text-lg mb-4 overflow-x-auto whitespace-nowrap font-mono">
             V<sub>z</sub>(x) = −Σ z<sub>i</sub>·log(x<sub>i</sub>) + (μ/2)·Σ max(0, τ−x<sub>i</sub>)²
           </div>
@@ -368,8 +374,8 @@ function TechnicalFoundationSection() {
 
         <div className="rounded-2xl border p-6 sm:p-8 bg-white dark:bg-black/30 border-slate-200 dark:border-white/10">
           <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
-            <span className="text-xs uppercase tracking-widest font-bold text-slate-500 dark:text-slate-500 font-mono">Measured, not asserted</span>
-            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-600">~47,000 logged turns, real traffic</span>
+            <span className="text-xs uppercase tracking-widest font-bold text-slate-600 dark:text-slate-500 font-mono">Measured, not asserted</span>
+            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-600">~47,000 logged turns, real traffic</span>
           </div>
           <div className="flex items-end gap-2 h-24 mb-5">
             <div className="flex-1 flex flex-col items-center gap-1.5">
@@ -393,7 +399,7 @@ function TechnicalFoundationSection() {
           </p>
         </div>
 
-        <p className="text-center text-[11px] font-mono text-slate-500 dark:text-slate-600 mt-6">
+        <p className="text-center text-[11px] font-mono text-slate-600 dark:text-slate-600 mt-6">
           Full derivation and the CBF floor (τ = 0.05) in the{' '}
           <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors underline underline-offset-2">paper</a>.
           Every receipt records the constitutional state — <Link href="/console" className="text-amber-500 hover:text-amber-400 transition-colors">verify it live</Link>.
