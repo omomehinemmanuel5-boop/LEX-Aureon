@@ -11,6 +11,11 @@ interface Stats {
   governed_turns?: number;
   intervention_rate_pct?: number;
   avg_stability_margin?: number;
+  // fix (2026-07-14): raw, unfiltered all-time counter from run_stats —
+  // distinct from governed_turns, which excludes benchmark/synthetic
+  // sessions. Both are real, different numbers; showing only one hides
+  // the other. See the new "All-Time Runs" cell below.
+  total_runs?: number;
 }
 
 export default function LiveStatsBar() {
@@ -71,8 +76,23 @@ export default function LiveStatsBar() {
   // (praxis_receipts) from /api/stats, falling back to the run_stats counter.
   const governedTurns = stats?.governed_turns ?? liveState?.total_runs ?? null;
 
+  // fix (2026-07-14): the raw run_stats counter (all-time, unfiltered —
+  // includes benchmark/synthetic sessions that governedTurns above
+  // deliberately excludes). Previously only used as governedTurns' fallback,
+  // never shown as its own figure. Backfilled to 74,409 on 2026-07-14 to
+  // restore true historical continuity after the Turso database migration
+  // reset it to zero — see /api/admin/backfill-run-count.
+  const totalRuns = stats?.total_runs ?? liveState?.total_runs ?? null;
+
   // Every cell below reads live deployment state and refreshes on a 60s poll.
   const cells = [
+    {
+      label: 'All-Time Runs',
+      value: !loaded ? '…' : totalRuns !== null ? totalRuns.toLocaleString() : '—',
+      sub:   'raw counter, all sessions',
+      color: '#c9a84c',
+      pulse: true,
+    },
     {
       label: 'Governed Turns',
       value: !loaded ? '…' : governedTurns !== null ? governedTurns.toLocaleString() : '—',
@@ -112,7 +132,7 @@ export default function LiveStatsBar() {
 
   return (
     <div className="border-y overflow-x-auto bg-slate-50 dark:bg-[#0d0d1a] border-slate-200 dark:border-white/5">
-      <div className="flex" style={{ minWidth: 480 }}>
+      <div className="flex" style={{ minWidth: 576 }}>
         {cells.map(({ label, value, sub, color, pulse }, i) => (
           <div
             key={label}
