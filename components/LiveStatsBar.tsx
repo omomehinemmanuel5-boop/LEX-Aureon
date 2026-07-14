@@ -121,7 +121,7 @@ export default function LiveStatsBar() {
           >
             <div className="flex items-center justify-center gap-1.5 mb-0.5">
               {pulse && <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: color }} />}
-              <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 whitespace-nowrap font-bold uppercase tracking-wider">{label}</span>
+              <span className="text-[10px] font-mono text-slate-600 dark:text-slate-500 whitespace-nowrap font-bold uppercase tracking-wider">{label}</span>
             </div>
             <div
               className={`text-xl sm:text-2xl font-black font-mono leading-none tabular-nums transition-opacity ${flash ? 'opacity-50' : 'opacity-100'}`}
