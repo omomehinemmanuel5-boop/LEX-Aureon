@@ -59,7 +59,13 @@ export default function ObservabilityPage() {
     };
 
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 5000);
+    // fix (2026-07-13) — READ EXHAUSTION: /api/observability/metrics sets
+    // `export const revalidate = 30` (30s intent) but no response-level
+    // Cache-Control header, so a 5s client poll was still forcing a fresh
+    // Turso read on nearly every tick (see HeroTicker.tsx's fix note for
+    // the full diagnosis across all six components found this way).
+    // Matched to the route's own 30s revalidate intent.
+    const interval = setInterval(fetchMetrics, 30_000);
     return () => clearInterval(interval);
   }, []);
 
