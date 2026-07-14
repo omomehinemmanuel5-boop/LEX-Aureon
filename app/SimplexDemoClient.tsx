@@ -22,9 +22,14 @@ export default function SimplexDemoClient() {
   useEffect(() => {
     if (!mounted) return;
 
+    // fix (2026-07-13) — READ EXHAUSTION: same pattern as HeroTicker.tsx
+    // (see that file's fix note for the full diagnosis) — no-store on a 4s
+    // interval bypassed /api/live-state's real 60s server cache, forcing a
+    // fresh Turso read every tick. Plain fetch(), interval matched to the
+    // route's actual cache window.
     const load = async () => {
       try {
-        const r = await fetch('/api/live-state', { cache: 'no-store' });
+        const r = await fetch('/api/live-state');
         if (!r.ok) return;
         const data = await r.json() as LiveStatePayload;
         setLive(data.state);
@@ -34,7 +39,7 @@ export default function SimplexDemoClient() {
     };
 
     load();
-    const t = setInterval(load, 4000);
+    const t = setInterval(load, 60_000);
     return () => clearInterval(t);
   }, [mounted]);
 
