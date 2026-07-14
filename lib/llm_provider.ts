@@ -126,6 +126,28 @@ function maxTokensFor(model: string): number {
   return MAX_OUTPUT_TOKENS;
 }
 
+// fix (2026-07-14) — REASONING LAYER FOR GPT-OSS-120B: confirmed live against
+// current Groq and Cerebras documentation that `reasoning_effort` (low /
+// medium / high) is a real, currently-supported parameter for gpt-oss-120b
+// on both providers — the model does chain-of-thought internally by default,
+// this parameter controls how much of it. Not set anywhere previously, so
+// the model was running at whatever its provider-side default is.
+//
+// Set to 'medium', not 'high', deliberately: a live smoke test earlier this
+// session measured one governed call at 22.5s against this file's 25s
+// TIMEOUT_MS. Higher reasoning effort means more latency before the model
+// commits to an answer — pushing straight to 'high' risks tipping more
+// calls over that ceiling, which would mean MORE fallback-chain failures,
+// not fewer. 'medium' is the deliberately conservative starting point.
+//
+// To raise to 'high' later: change this one constant, redeploy. No other
+// code changes, no migration — same as any other config value.
+const GPT_OSS_REASONING_EFFORT: 'low' | 'medium' | 'high' = 'medium';
+
+function isReasoningModel(model: string): boolean {
+  return model === MODELS.CEREBRAS || model === MODELS.GROQ_OSS;
+}
+
 export const MODELS = {
   PRIMARY: 'llama-3.3-70b-versatile',
   FAST: 'llama-3.1-8b-instant',
@@ -195,6 +217,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
       body: JSON.stringify({
         model, messages,
         max_tokens: maxTokensFor(model), temperature: 0.7,
+        reasoning_effort: isReasoningModel(model) ? GPT_OSS_REASONING_EFFORT : undefined,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -231,6 +254,7 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
       body: JSON.stringify({
         model, messages,
         max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.7,
+        reasoning_effort: isReasoningModel(model) ? GPT_OSS_REASONING_EFFORT : undefined,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
