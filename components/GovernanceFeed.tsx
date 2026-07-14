@@ -49,7 +49,11 @@ export default function GovernanceFeed() {
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      const res = await fetch('/api/audits/recent?limit=8', { cache: 'no-store' });
+      // fix (2026-07-13) — READ EXHAUSTION: same pattern found across six
+      // components (see HeroTicker.tsx's fix note for the full diagnosis).
+      // no-store bypassed /api/audits/recent's real 30s server cache at an
+      // 8s poll interval — forcing a fresh Turso read on nearly every tick.
+      const res = await fetch('/api/audits/recent?limit=8');
       if (!res.ok) return;
       const data = await res.json() as { receipts?: Receipt[] };
       const receipts = data.receipts ?? [];
@@ -70,7 +74,7 @@ export default function GovernanceFeed() {
 
   useEffect(() => {
     load();
-    const t = setInterval(() => load(), 8000);
+    const t = setInterval(() => load(), 30_000);
     return () => clearInterval(t);
   }, [load]);
 
