@@ -27,11 +27,19 @@ const G = { gold: '#c9a84c', navy: '#07070d', surface: '#0f1017', border: '#1a20
  * 
  * Shows the (C, R, S) state trajectory in a 2D ternary plot.
  * The trajectory is rendered as a path with color-coded health bands.
+ *
+ * fix (2026-07-13) — READ EXHAUSTION: default refreshInterval was 3000ms.
+ * Unlike the other pollers fixed alongside this one (see HeroTicker.tsx's
+ * fix note), /api/lex/trajectory carries NO server-side Cache-Control at
+ * all, so every tick here was already a guaranteed fresh Turso read -- the
+ * interval itself was the entire problem, not a cache bypass. Raised the
+ * default to 30s, matching the interval used elsewhere for routes with a
+ * real cache once caching was actually in play.
  */
 export default function LyapunovVisualizer({
   sessionId,
   autoRefresh = true,
-  refreshInterval = 3000,
+  refreshInterval = 30_000,
   height = 400,
 }: LyapunovVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
