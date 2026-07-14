@@ -379,6 +379,17 @@
 
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_governor_log_session ON governor_log(session_id)`);
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_receipts_session ON praxis_receipts(session_id)`);
+    // fix (2026-07-13) — READ EXHAUSTION: praxis_receipts had an index on
+    // session_id but NOT on created_at, despite /api/audits/recent running
+    // `ORDER BY created_at DESC LIMIT ?` on every call. Without an index
+    // backing that ORDER BY, SQLite/libSQL must scan the ENTIRE table to
+    // sort it before applying the LIMIT -- on a table with tens of
+    // thousands of rows, a "LIMIT 8" query was reading the whole table,
+    // every single call. This was very likely the dominant contributor to
+    // Turso's monthly row-read quota being exhausted, well beyond the
+    // client polling-interval issues fixed alongside this (see
+    // HeroTicker.tsx's fix note).
+    await safeExec(`CREATE INDEX IF NOT EXISTS idx_receipts_created_at ON praxis_receipts(created_at DESC)`);
 
     await safeExec(`CREATE TABLE IF NOT EXISTS clause_bank (
       id TEXT PRIMARY KEY, pillar TEXT NOT NULL,
