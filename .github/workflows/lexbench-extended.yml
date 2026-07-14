@@ -148,10 +148,13 @@ jobs:
             echo "shard-size=${LIMIT}" >> $GITHUB_OUTPUT
           else
             # For XSTest + StrongREJECT, typically smaller datasets
-            # Use shard-size=50 for faster iteration
+            # fix (2026-07-14): 50 -> 100 -- same reasoning as lexbench-prod.yml's
+            # 2026-07-14 fix note: halves the number of sequential batches at
+            # max-parallel:2, saving fixed per-shard setup overhead, without
+            # increasing concurrent provider load.
             TOTAL_PROMPTS=$(npx tsx scripts/lexbench/get-total-prompts.ts | tail -1)
             echo "Total prompts: $TOTAL_PROMPTS"
-            SHARD_SIZE=50
+            SHARD_SIZE=100
             NUM_SHARDS=$(( (TOTAL_PROMPTS + SHARD_SIZE - 1) / SHARD_SIZE ))
             if [ "$NUM_SHARDS" -lt 1 ]; then NUM_SHARDS=1; fi
             INDICES=$(seq 0 $((NUM_SHARDS - 1)) | paste -sd, -)
