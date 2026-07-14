@@ -44,7 +44,15 @@ interface ReceiptRow {
   timestamp: number;
 }
 
-async function getRecentReceipts(limit: number): Promise<ReceiptRow[]> {
+// fix (2026-07-13) — HONEST EMPTY STATE: getRecentReceipts() previously
+// caught ANY failure (including Turso's read-quota BLOCKED error) and
+// returned [] indistinguishably from a genuinely empty table. The page then
+// rendered "No receipts yet." either way -- actively misleading during a
+// quota outage, where tens of thousands of real receipts exist and are
+// simply unreadable right now, not nonexistent. Returns null specifically
+// on a read failure so the page can render an honest, distinct message
+// instead of implying the system has never processed anything.
+async function getRecentReceipts(limit: number): Promise<ReceiptRow[] | null> {
   try {
     await initSchema();
     const r = await getClient().execute({
@@ -64,7 +72,7 @@ async function getRecentReceipts(limit: number): Promise<ReceiptRow[]> {
       timestamp: new Date(row.created_at as string).getTime(),
     }));
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -105,7 +113,17 @@ export default async function AuditIndexPage() {
           </p>
         </div>
 
-        {receipts.length === 0 ? (
+        {receipts === null ? (
+          <div className="text-center py-20 border border-amber-500/20 rounded-2xl bg-amber-500/[0.04]">
+            <div className="text-3xl mb-3">⚠</div>
+            <p className="text-amber-400 text-sm font-semibold mb-1">Live receipts temporarily unavailable</p>
+            <p className="text-slate-500 text-xs max-w-md mx-auto leading-relaxed">
+              The database read quota is currently exhausted. Real receipts continue to be
+              generated on every governed turn — this list will repopulate automatically once
+              read access resumes. This is not evidence of an empty log.
+            </p>
+          </div>
+        ) : receipts.length === 0 ? (
           <div className="text-center py-20 border border-white/5 rounded-2xl bg-white/[0.02]">
             <div className="text-3xl mb-3">📜</div>
             <p className="text-slate-500 text-sm">No receipts yet.</p>
