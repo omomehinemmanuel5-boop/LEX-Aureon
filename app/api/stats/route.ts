@@ -24,22 +24,48 @@ async function ensureTable() {
   await c.execute(`INSERT OR IGNORE INTO run_stats (key, value) VALUES ('total_runs', 0)`);
 }
 
+// fix (2026-07-13) — READ EXHAUSTION: HEAVY_SESSIONS is a full aggregation
+// scan (GROUP BY session_id HAVING COUNT(*) > 80) over the entire
+// praxis_receipts table. It was previously embedded as a subquery inside
+// REAL_ONLY, which was then used in TWO separate top-level queries below
+// (receiptsRealResult and interventionResult) — meaning this expensive scan
+// ran TWICE on every single call to this route, on top of three more
+// independent full-table COUNT(*) scans (praxis_receipts total, lex_memory,
+// embedding_cache). Combined with praxis_receipts having tens of thousands
+// of rows, one call to /api/stats plausibly cost hundreds of thousands of
+// row reads — far beyond what a stats summary should need, and very likely
+// the dominant contributor to Turso's monthly quota being exhausted (see
+// lib/db.ts's idx_receipts_created_at fix note for the other half of this
+// diagnosis). Fixed by running HEAVY_SESSIONS once, up front, and reusing
+// its result as bound parameters in both queries that need it — same
+// filtering logic, one scan instead of two.
 const HEAVY_SESSIONS = `
   SELECT session_id FROM praxis_receipts GROUP BY session_id HAVING COUNT(*) > 80
 `;
-const REAL_ONLY = `
-  session_id NOT LIKE 'lexbench-%'
-  AND session_id NOT LIKE 'synthetic_%'
-  AND session_id NOT LIKE 'bench-%'
-  AND session_id NOT LIKE 'jbb_%'
-  AND session_id NOT LIKE 'adv_%'
-  AND session_id NOT LIKE 'hb_%'
-  AND session_id NOT IN (${HEAVY_SESSIONS})
-`;
+
+function realOnlyClause(heavySessionIds: string[]): { sql: string; args: string[] } {
+  const placeholders = heavySessionIds.length > 0 ? heavySessionIds.map(() => '?').join(',') : `''`;
+  return {
+    sql: `
+      session_id NOT LIKE 'lexbench-%'
+      AND session_id NOT LIKE 'synthetic_%'
+      AND session_id NOT LIKE 'bench-%'
+      AND session_id NOT LIKE 'jbb_%'
+      AND session_id NOT LIKE 'adv_%'
+      AND session_id NOT LIKE 'hb_%'
+      ${heavySessionIds.length > 0 ? `AND session_id NOT IN (${placeholders})` : ''}
+    `,
+    args: heavySessionIds,
+  };
+}
 
 export async function GET() {
   await ensureTable();
   const c = getClient();
+
+  const heavyRes = await c.execute(HEAVY_SESSIONS);
+  const heavySessionIds = heavyRes.rows.map(r => String(r.session_id));
+  const { sql: realOnlySql, args: realOnlyArgs } = realOnlyClause(heavySessionIds);
 
   const [
     runsResult,
@@ -51,21 +77,24 @@ export async function GET() {
   ] = await Promise.all([
     c.execute(`SELECT value FROM run_stats WHERE key = 'total_runs'`),
     c.execute(`SELECT COUNT(*) as cnt FROM praxis_receipts`).catch(() => null),
-    c.execute(`SELECT COUNT(*) as cnt FROM praxis_receipts WHERE ${REAL_ONLY}`).catch(() => null),
+    c.execute({ sql: `SELECT COUNT(*) as cnt FROM praxis_receipts WHERE ${realOnlySql}`, args: realOnlyArgs }).catch(() => null),
     c.execute(`SELECT COUNT(*) as cnt FROM lex_memory`).catch(() => null),
     c.execute(`
       SELECT COUNT(*) as entries, COALESCE(SUM(hits), 0) as total_hits
       FROM embedding_cache
     `).catch(() => null),
-    c.execute(`
-      SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN intervention = 1 THEN 1 ELSE 0 END) as interventions,
-        ROUND(AVG(m_after), 4) as avg_m,
-        ROUND(MIN(m_after), 4) as min_m
-      FROM praxis_receipts
-      WHERE ${REAL_ONLY}
-    `).catch(() => null),
+    c.execute({
+      sql: `
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN intervention = 1 THEN 1 ELSE 0 END) as interventions,
+          ROUND(AVG(m_after), 4) as avg_m,
+          ROUND(MIN(m_after), 4) as min_m
+        FROM praxis_receipts
+        WHERE ${realOnlySql}
+      `,
+      args: realOnlyArgs,
+    }).catch(() => null),
   ]);
 
   const total_runs                  = (runsResult.rows[0]?.value as number) ?? 0;
