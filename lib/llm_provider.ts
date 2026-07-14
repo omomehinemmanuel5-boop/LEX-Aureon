@@ -121,8 +121,23 @@ const MAX_OUTPUT_TOKENS = 8192;
 // round-trip on every request that reached it instead of ever actually
 // catching one. Per-model cap, well under its real ceiling with margin for
 // input tokens, restores it as a genuine fallback rather than dead weight.
+//
+// fix (2026-07-14) — SAME BUG CLASS, SELF-INFLICTED THIS TIME: adding
+// reasoning_effort (see GPT_OSS_REASONING_EFFORT below) made openai/gpt-oss-120b
+// on Groq hit the identical failure — confirmed directly in Vercel logs from
+// the benchmark run that tested this change: "413 Request too large...
+// Limit 8000, Requested 9083-9126" on nearly every call. Groq's real TPM
+// ceiling for THIS model is 8000, and reasoning tokens count against the
+// same max_tokens budget as the final answer — the previous global default
+// (8192) was already at the model's ceiling with zero room for reasoning
+// tokens or input, guaranteeing overflow the moment reasoning_effort asked
+// the model to spend tokens thinking before answering. That benchmark run's
+// results are not a valid read on reasoning_effort's real effect: this
+// model was a dead fallback link for nearly the entire run, same as FAST
+// was before its fix above.
 function maxTokensFor(model: string): number {
   if (model === MODELS.FAST) return 2048;
+  if (isReasoningModel(model)) return 4000;
   return MAX_OUTPUT_TOKENS;
 }
 
@@ -253,7 +268,7 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model, messages,
-        max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.7,
+        max_tokens: maxTokensFor(model), temperature: 0.7,
         reasoning_effort: isReasoningModel(model) ? GPT_OSS_REASONING_EFFORT : undefined,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
