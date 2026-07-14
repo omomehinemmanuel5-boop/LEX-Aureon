@@ -37,11 +37,17 @@ export default function LiveAuditFeed() {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
+    // fix (2026-07-13) — READ EXHAUSTION: same pattern found across six
+    // components (see HeroTicker.tsx's fix note for the full diagnosis).
+    // no-store on BOTH calls here bypassed /api/audits/recent's 30s cache
+    // and /api/stats's 300s cache, at a 5s poll interval — forcing two fresh
+    // Turso reads every tick. Interval matched to the faster of the two
+    // real cache windows (30s); polling faster never bought real freshness.
     const load = async () => {
       try {
         const [auditsRes, statsRes] = await Promise.all([
-          fetch('/api/audits/recent?limit=8', { cache: 'no-store' }),
-          fetch('/api/stats', { cache: 'no-store' }),
+          fetch('/api/audits/recent?limit=8'),
+          fetch('/api/stats'),
         ]);
         if (statsRes.ok) {
           const stats = await statsRes.json() as { runs?: number };
@@ -72,7 +78,7 @@ export default function LiveAuditFeed() {
     };
 
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, 30_000);
     return () => clearInterval(t);
   }, []);
 
