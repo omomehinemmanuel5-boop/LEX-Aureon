@@ -46,6 +46,11 @@
  * needs 4.5:1 at this font size) — labels, timestamps, and footnotes were
  * legitimately hard to read in light mode. Bumped light-theme values to
  * slate-600 (~7.5:1 on white); dark-theme values are untouched.
+ *
+ * fix (2026-07-13, second pass) — VISIBILITY DURING TURSO OUTAGE: /api/benchmarks
+ * now serves a real last-known-good static snapshot when the live read fails
+ * (see that route's fix note) instead of an empty result. Added an honest
+ * `stale` banner so cached numbers are never presented as a live read.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -71,6 +76,12 @@ interface ApiShape {
   published: boolean;
   results:   ResultRow[];
   fetched_at?: string;
+  // fix (2026-07-13): present when /api/benchmarks served its last-known-good
+  // static fallback because the live Turso read failed (see that route's
+  // fix note). The UI must show this honestly, not silently render cached
+  // numbers as if they were a fresh read.
+  stale?: boolean;
+  snapshot_at?: string;
 }
 
 const PRETTY: Record<string, string> = {
@@ -215,13 +226,21 @@ export default function BenchmarkResults({
         {/* ── Published results ──────────────────────────────────── */}
         {published && (
           <>
+            {data?.stale && (
+              <div className="text-center mb-4 mx-auto max-w-lg rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-2">
+                <span className="text-[11px] font-mono text-amber-700 dark:text-amber-400 font-bold">
+                  ⚠ Showing last known results — live database temporarily unreachable
+                  {data.snapshot_at ? ` (snapshot: ${new Date(data.snapshot_at).toLocaleString()})` : ''}
+                </span>
+              </div>
+            )}
             <h2 className={`text-center font-black text-slate-900 dark:text-white mb-2 ${compact ? 'text-2xl' : 'text-3xl sm:text-4xl'}`}>
               Governed vs ungoverned,{' '}
               <span className="text-slate-600 dark:text-slate-500 font-light">same judge.</span>
             </h2>
             <p className="text-center text-xs font-mono text-slate-600 dark:text-slate-500 mb-8">
               Each metric below is tagged for its own direction — read the badge, not just the bar.
-              {lastUpdated ? ` Updated ${lastUpdated.toLocaleTimeString()}.` : ''}
+              {data?.stale ? '' : lastUpdated ? ` Updated ${lastUpdated.toLocaleTimeString()}.` : ''}
             </p>
 
             <div className="space-y-4">
