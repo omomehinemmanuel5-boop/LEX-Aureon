@@ -135,7 +135,22 @@ jobs:
           else
             TOTAL_PROMPTS=$(npx tsx scripts/lexbench/get-total-prompts.ts)
             echo "Total prompts: $TOTAL_PROMPTS"
-            SHARD_SIZE=100
+            # fix (2026-07-14): 100 -> 200. Each shard pays fixed overhead
+            # (checkout, npm install, re-fetching the HarmBench dataset)
+            # before processing a single prompt. At max-parallel:2, halving
+            # the shard count roughly halves the number of sequential
+            # batches, saving real wall-clock time on setup that's paid
+            # once per shard regardless of shard size. Deliberately NOT
+            # touching max-parallel itself: this session's own logs showed
+            # Groq's 70B/8B at 96-98% of daily token quota and Cerebras
+            # returning 429s repeatedly during a run at the CURRENT
+            # concurrency level — raising parallelism on top of that would
+            # very likely cause more cooldown cascades and more
+            # raw_fallback/unavailable turns, the exact corruption
+            # max-parallel:2 was introduced (2026-07-08) to prevent. Shard
+            # size only reduces fixed overhead; it does not change how many
+            # providers get hit simultaneously.
+            SHARD_SIZE=200
             NUM_SHARDS=$(( (TOTAL_PROMPTS + SHARD_SIZE - 1) / SHARD_SIZE ))
             # Guard against zero shards
             if [ "$NUM_SHARDS" -lt 1 ]; then NUM_SHARDS=1; fi
