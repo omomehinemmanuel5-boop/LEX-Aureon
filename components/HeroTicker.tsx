@@ -20,7 +20,20 @@ export default function HeroTicker() {
   useEffect(() => {
     const fetchState = async () => {
       try {
-        const r = await fetch('/api/live-state', { cache: 'no-store' });
+        // fix (2026-07-13) — READ EXHAUSTION: was `cache: 'no-store'` on a
+        // 3s interval, on a component mounted on every landing-page visit.
+        // /api/live-state carries a real 60s server-side Cache-Control
+        // (see that route) — no-store explicitly bypassed it, forcing a
+        // fresh Turso read on every single tick regardless. This was one of
+        // six components with the same pattern (see also SimplexDemoClient,
+        // LiveAuditFeed, GovernanceFeed, LyapunovVisualizer,
+        // observability/page.tsx) found while diagnosing Turso's read quota
+        // being exhausted. Plain fetch() now, so the browser/CDN honors the
+        // route's own Cache-Control instead of forcing it fresh — and the
+        // poll interval is raised to match that 60s window, since polling
+        // faster than the cache TTL was never buying real freshness (same
+        // reasoning already applied to LiveStatsBar on 2026-07-10).
+        const r = await fetch('/api/live-state');
         if (!r.ok) return;
         const d = await r.json() as { state?: { M?: number | null } };
         const newM = d.state?.M ?? null;
@@ -34,7 +47,7 @@ export default function HeroTicker() {
     };
 
     fetchState();
-    const id = setInterval(fetchState, 3000);
+    const id = setInterval(fetchState, 60_000);
     return () => clearInterval(id);
   }, []);
 
