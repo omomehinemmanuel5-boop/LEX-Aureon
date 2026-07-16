@@ -45,6 +45,22 @@
  * Result files written by the pre-2026-07-15 judge carry the old
  * strong_reject_severity_norm field on the old scale; this file refuses to
  * aggregate them rather than silently mixing incompatible scales.
+ *
+ * feat (2026-07-16) — MEASUREMENT PROVENANCE: the fixes above make a run
+ * internally sound (paired delta, honest n, CIs, no mixed scales). They do
+ * nothing for comparability ACROSS runs, which is where the remaining
+ * unexplained movement lives: HarmBench's BARE arm went 12.8%→24.2% between
+ * 2026-07-14 and 07-16 with no change to the bare code path. A bare arm is
+ * supposed to be the fixed reference the governed arm is measured against; if
+ * it moves on its own, either the judge or the generator changed underneath
+ * it, and NOTHING in the result rows recorded which. Both were in fact free to
+ * change: generateJudge falls back across a seven-entry provider/model chain,
+ * and a full production suite issues more novel output embeddings than
+ * Gemini's 1,000/day quota allows, so the embedding space that computes C/R/S
+ * flips to mistral-embed partway through a run. This file now tallies the
+ * distribution of every such identity per benchmark. It reports them; it does
+ * not correct for them, and it never imputes one onto a row that didn't record
+ * it.
  */
 
 import * as fs from 'fs';
@@ -65,9 +81,21 @@ interface OutputMetrics {
   /** LEGACY (pre-2026-07-15): invented 1–5 severity scale, higher = better. Incompatible. */
   strong_reject_severity_norm?: number | null;
   judge_method: string;
+  /** feat (2026-07-16): judge MODEL, not just rubric. Absent on pre-2026-07-16 rows. */
+  judge_model?: string | null;
 }
 
 interface LexBenchResult {
+  /** feat (2026-07-16): per-row measurement provenance written by runner.ts.
+   * Optional: rows from before 2026-07-16 simply lack it, and are tallied as
+   * 'unknown' rather than silently attributed to the current providers. */
+  provenance?: {
+    source?: 'live' | 'cache';
+    raw_provider?: string | null;
+    governed_provider?: string | null;
+    governed_source?: string | null;
+    embed_provider?: string | null;
+  };
   benchmark: string;
   prompt_id: string;
   bare_metrics: OutputMetrics;
@@ -169,6 +197,27 @@ interface BenchmarkSummary {
 
   judge_methods_used: string[];
 
+  /**
+   * feat (2026-07-16): distribution of what actually produced this benchmark's
+   * numbers — counts per provider/model across the run's rows. This exists
+   * because a run is NOT served by one provider: generateJudge and the govern
+   * route each fall back across a chain, and Gemini's 1,000/day embed quota is
+   * exceeded by a single production suite (~1,764 novel output embeddings), so
+   * the embedding space changes partway through. The bare-vs-governed delta is
+   * unaffected (both arms of a prompt share one request, hence one pinned
+   * provider), but cross-RUN comparison of a bare score is uninterpretable
+   * without knowing this. Reported, not corrected for.
+   */
+  provenance: {
+    rows_live: number;
+    rows_cached: number;
+    rows_unknown: number;      // pre-2026-07-16 result files with no provenance field
+    raw_providers: Record<string, number>;
+    governed_providers: Record<string, number>;
+    embed_providers: Record<string, number>;
+    judge_models: Record<string, number>;
+  };
+
   // Populated only when scored_prompts clears BOTH MIN_SCORED_FRACTION and
   // MIN_SCORED_ABSOLUTE. Percentages 0–100.
   avg_bare_pct?: number;
@@ -236,8 +285,19 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
     droppedUnpaired: number;
     legacyStrongReject: number;
     judgeMethods: Set<string>;
+    rowsLive: number; rowsCached: number; rowsUnknown: number;
+    rawProviders: Map<string, number>;
+    govProviders: Map<string, number>;
+    embedProviders: Map<string, number>;
+    judgeModels: Map<string, number>;
     cSum: number; rSum: number; sSum: number; mSum: number;
   }
+  const bump = (m: Map<string, number>, k: string | null | undefined): void => {
+    const key = k ?? 'unknown';
+    m.set(key, (m.get(key) ?? 0) + 1);
+  };
+  const asRecord = (m: Map<string, number>): Record<string, number> =>
+    Object.fromEntries([...m.entries()].sort((x, y) => y[1] - x[1]));
   const acc: Record<string, Accum> = {};
 
   for (const r of results) {
@@ -249,13 +309,36 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
         pairedN: 0, bareSum: 0, govSum: 0, bareSq: 0, govSq: 0,
         discordantB: 0, discordantC: 0,
         droppedUnpaired: 0, legacyStrongReject: 0,
-        judgeMethods: new Set(), cSum: 0, rSum: 0, sSum: 0, mSum: 0,
+        judgeMethods: new Set(),
+        rowsLive: 0, rowsCached: 0, rowsUnknown: 0,
+        rawProviders: new Map(), govProviders: new Map(),
+        embedProviders: new Map(), judgeModels: new Map(),
+        cSum: 0, rSum: 0, sSum: 0, mSum: 0,
       };
     }
     const a = acc[key];
     a.total++;
     a.judgeMethods.add(r.bare_metrics?.judge_method ?? 'unknown');
     a.judgeMethods.add(r.governed_metrics?.judge_method ?? 'unknown');
+
+    // Provenance tally. A row with no provenance field is a pre-2026-07-16
+    // result file — counted as unknown, never imputed. A cache replay made no
+    // govern call at all, so it has no provider identity to report: counted
+    // separately rather than attributed to whatever served the live rows.
+    const prov = r.provenance;
+    if (!prov) a.rowsUnknown++;
+    else if (prov.source === 'cache') a.rowsCached++;
+    else a.rowsLive++;
+    if (prov && prov.source !== 'cache') {
+      bump(a.rawProviders, prov.raw_provider);
+      bump(a.govProviders, prov.governed_source === 'unavailable' ? 'unavailable' : prov.governed_provider);
+      bump(a.embedProviders, prov.embed_provider);
+    }
+    // Counted per ARM, not per row — the two arms of one prompt can be graded
+    // by different models when the judge chain falls back mid-run, which is
+    // exactly the asymmetry worth seeing.
+    if (r.bare_metrics?.judge_model) bump(a.judgeModels, r.bare_metrics.judge_model);
+    if (r.governed_metrics?.judge_model) bump(a.judgeModels, r.governed_metrics.judge_model);
 
     if (kind === 'severity'
         && (isLegacyStrongReject(r.bare_metrics) || isLegacyStrongReject(r.governed_metrics))) {
@@ -313,6 +396,13 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
       scored_prompts: a.pairedN,
       dropped_unpaired: a.droppedUnpaired,
       judge_methods_used: [...a.judgeMethods].sort(),
+      provenance: {
+        rows_live: a.rowsLive, rows_cached: a.rowsCached, rows_unknown: a.rowsUnknown,
+        raw_providers: asRecord(a.rawProviders),
+        governed_providers: asRecord(a.govProviders),
+        embed_providers: asRecord(a.embedProviders),
+        judge_models: asRecord(a.judgeModels),
+      },
       avg_C: +(a.cSum / n).toFixed(4), avg_R: +(a.rSum / n).toFixed(4),
       avg_S: +(a.sSum / n).toFixed(4), avg_M: +(a.mSum / n).toFixed(4),
     };
@@ -359,6 +449,25 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
       console.warn(
         `  ⚠ ${a.benchmark}: ${a.droppedUnpaired}/${a.total} prompts had a verdict on only ONE arm ` +
         `— excluded from the paired delta. Before 2026-07-15 these silently skewed delta_pp.`,
+      );
+    }
+
+    // A run whose embedding provider changed partway through still produces a
+    // valid paired delta (both arms of a prompt share one pinned provider), but
+    // its per-prompt C/R/S values live in two different spaces. Flagged, not
+    // corrected: the aggregate is honest, the cross-prompt comparison is not.
+    if (Object.keys(s.provenance.embed_providers).length > 1) {
+      console.warn(
+        `  ⚠ ${a.benchmark}: embedding provider CHANGED mid-run ` +
+        `(${Object.entries(s.provenance.embed_providers).map(([k, v]) => `${k}:${v}`).join(', ')}). ` +
+        `Paired deltas remain valid; cross-prompt C/R/S comparisons mix embedding spaces.`,
+      );
+    }
+    if (Object.keys(s.provenance.judge_models).length > 1) {
+      console.warn(
+        `  ⚠ ${a.benchmark}: more than one JUDGE MODEL graded this benchmark ` +
+        `(${Object.entries(s.provenance.judge_models).map(([k, v]) => `${k}:${v}`).join(', ')}). ` +
+        `The judge chain fell back mid-run — scores are not all from the same grader.`,
       );
     }
 
