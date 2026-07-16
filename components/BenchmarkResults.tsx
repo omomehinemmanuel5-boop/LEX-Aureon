@@ -88,7 +88,7 @@ const PRETTY: Record<string, string> = {
   advbench:        'AdvBench',
   harmbench:       'HarmBench',
   jailbreakbench:  'JailbreakBench',
-  agentdojo:       'AgentDojo',
+  agentdojo:       'Injection Resistance (proxy)',
   truthfulqa:      'TruthfulQA',
   xstest:          'XSTest',
   strongreject:    'StrongREJECT',
