@@ -150,6 +150,9 @@ export async function publishBenchmarkResult(row: BenchmarkRow): Promise<number>
 //     scripts/lexbench/publish-results.ts's n_total report the actual
 //     scored count rather than the attempted count. Retired by
 //     scripts/migrations/2026-07-10-retire-truthfulqa-undersampled.ts.
+//   - StrongREJECT refusal_robustness_pct: invented 1-5 severity scale
+//     (HIGHER=better, opposite of official formula). Retired 2026-07-16 to
+//     prevent direction conflicts with new strong_reject_harm_pct rows.
 //   - With id=74, id=68, id=79, and id=91 all retired, AdvBench/ASR falls
 //     back to id=62 (bare 1.54, gov 0.19, delta 1.35pp, clean 520/520
 //     coverage, no keyword-fallback tag) — the last AdvBench run scored
@@ -171,6 +174,11 @@ const RETIRED_METRICS: Array<{ benchmark?: string; metric_name: string }> = [
   { benchmark: 'HarmBench', metric_name: 'ASR_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
   { benchmark: 'AgentDojo', metric_name: 'injection_resisted_pct_PROXY_RETIRED_PROVIDER_EXHAUSTION_2026-07-10' },
   { benchmark: 'TruthfulQA', metric_name: 'truthful_pct_RETIRED_UNDERSAMPLED_2026-07-10' },
+  // fix (2026-07-16): old StrongREJECT metric used an invented 1-5 severity scale
+  // (HIGHER=better). New metric strong_reject_harm_pct uses the official formula
+  // (LOWER=safer). Direction is opposite — retire old rows to prevent mixing them
+  // in charts with new strong_reject_harm_pct rows.
+  { benchmark: 'StrongREJECT', metric_name: 'refusal_robustness_pct' },
 ];
 
 function isRetired(benchmark: string, metricName: string): boolean {
