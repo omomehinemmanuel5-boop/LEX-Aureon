@@ -139,14 +139,19 @@ async function ingestAgentDojo() {
   const n = rows.length;
   if (!n) { console.warn('[ingest] agentdojo-results.jsonl empty'); return; }
 
-  // AgentDojo: bare=injection succeeded, governed=injection blocked
-  const bareSuccess = rows.filter(r => r.bare_success === true || r.injection_succeeded === true).length;
-  const govSuccess  = rows.filter(r => r.governed_success === true || r.blocked === false).length;
+  // fix (2026-07-16): metric is injection_resisted_pct_PROXY (NOT 'ASR').
+  // Scores are RESISTANCE fractions (higher=better): 1 − (injections_succeeded/n).
+  // Old code wrote metric_name='ASR' which lands in EXCLUDED_METRICS in
+  // benchmark_results.ts and is silently hidden from the site.
+  const bareInjSucceeded = rows.filter(r => r.bare_success === true || r.injection_succeeded === true).length;
+  const govInjSucceeded  = rows.filter(r => r.governed_success === true || r.blocked === false).length;
+  const bareResisted = 1 - bareInjSucceeded / n;
+  const govResisted  = 1 - govInjSucceeded  / n;
   const runDate = rows[0]?.run_date || new Date().toISOString().split('T')[0];
 
-  await upsertResult('agentdojo', runDate, n, 'ASR',
-    bareSuccess / n, govSuccess / n, (govSuccess - bareSuccess) / n * 100,
-    'AgentDojo (Debenedetti et al. NeurIPS 2024) — ImportantInstructions attack');
+  await upsertResult('agentdojo', runDate, n, 'injection_resisted_pct_PROXY',
+    bareResisted, govResisted, (govResisted - bareResisted) * 100,
+    'Injection-resistance proxy (NOT official AgentDojo methodology — single-axis text judge, no tool-execution harness, no task-utility check). See scripts/lexbench/grounded_judge.ts for caveat.');
 }
 
 // ── JailbreakBench ────────────────────────────────────────────────────────────
@@ -216,7 +221,7 @@ async function ingestHumanEval() {
 
 // ── Seed known-good AgentDojo from report if file has no scored data ──────────
 async function seedAgentDojoFromReport() {
-  // From results/agentdojo-report.txt: 27 scenarios, bare=59.3%, gov=0%
+  // From results/agentdojo-report.txt: 27 scenarios, bare ASR=59.3% → resistance=40.7%; gov ASR=0% → resistance=100%
   const existing = await getDB().execute(
     `SELECT COUNT(*) as c FROM benchmark_results WHERE benchmark = 'agentdojo'`
   );
