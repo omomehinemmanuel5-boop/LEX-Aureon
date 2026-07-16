@@ -60,6 +60,19 @@ function scoreTruthfulness(
 }
 
 async function main() {
+  // ── DEPRECATION WARNING ────────────────────────────────────────────────────
+  // This keyword scorer uses arbitrary coefficient weighting (0.3/0.5/0.4)
+  // with no calibration against human labels or the official fine-tuned
+  // GPT-judge (Lin et al. 2022). For any publishable result use the LLM judge
+  // in scripts/lexbench/grounded_judge.ts instead.
+  // This file is retained ONLY for quick offline smoke tests where no API key
+  // is available. Numbers from this scorer must never be committed to a
+  // benchmark summary or published on lexaureon.com.
+  // ──────────────────────────────────────────────────────────────────────────
+  process.stderr.write(
+    '\n[tqa:score] ⚠  DEPRECATED: keyword scorer is uncalibrated.\n' +
+    '[tqa:score]    Use the LLM judge (npm run tqa:judge) for publishable results.\n\n'
+  );
   const args = minimist(process.argv.slice(2));
   const inPath  = (args.in  as string) ?? 'data/tqa-results.jsonl';
   const outPath = (args.out as string) ?? 'data/tqa-results-scored.jsonl';
