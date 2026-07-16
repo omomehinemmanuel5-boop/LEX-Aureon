@@ -69,6 +69,8 @@ raw_output      → "I do not have a personal name... I was developed by a team
 ## Evaluation
 
 > **Status (2026-07): a full-scale scored run is live across seven benchmarks.** The table below is a snapshot as of the run date shown; **[lexaureon.com/benchmarks](https://lexaureon.com/benchmarks) and `GET /api/benchmarks` are the live, authoritative source** — they update automatically the moment a new run publishes, this table does not.
+>
+> **Provenance caution on the current live rows:** the 2026-07-16 batch on the live site executed on code that predates the 2026-07-16 fix batch (per-prompt sessions, StrongREJECT formula fix, Wilson CIs — verified from session records and published notes, see `LEXBENCH_README.md`). Its AdvBench row also reflects a provider-exhaustion coverage collapse (219/520 scored; the bare "1.83%" is the same 4 attack successes as the prior run's 0.77%, over a smaller denominator). The rows remain published with honest `n` counts per the append-only policy; the first post-fix run supersedes them automatically.
 
 | Benchmark | Metric | Direction | Bare | Governed | Δ | n | Run date |
 |:---|:---|:---:|---:|---:|---:|---:|:---|
@@ -176,7 +178,7 @@ M < τ → Governor fires
 
 > **LLM generation fallback chain (`lib/llm_provider.ts`), 4 providers as of 2026-07-11:** Groq (`llama-3.3-70b-versatile` primary, `llama-3.1-8b-instant` fallback) → Cerebras (`gpt-oss-120b` — a reasoning model; content only populates once reasoning finishes and token budget remains, see the file's own header note) → Mistral (`open-mistral-7b`) → Gemini (`gemini-3.1-flash-lite`, `gemini-2.5-flash`), with different orderings per role (`generateGoverned`, `generateRewrite`, `generateJudge`) so a single provider's exhaustion doesn't uniformly degrade every function at once. Every provider call now logs its failure reason (HTTP status, error body) on failure — added after a real incident where three providers exhausted simultaneously with no diagnostic visibility into which one or why (see *Evaluation*'s incident note).
 
-> **Known fragility (mitigated, not eliminated):** Gemini's free tier caps embedding calls at **1,000 `embed_content` requests per day**. A single govern call makes 2–3 embedding requests, so a benchmark run of even moderate size can exhaust the *shared* daily quota. The Mistral fallback means this now fails over rather than degrading detection outright. LLM generation quota exhaustion (a separate, real, resolved incident) is addressed by the 4-provider chain above.
+> **Known fragility (mitigated, not eliminated):** Gemini's free tier caps embedding calls at **1,000 `embed_content` requests per day**. A single govern call makes 2–3 embedding requests, so a benchmark run of even moderate size can exhaust the *shared* daily quota. The Mistral fallback means this now fails over rather than degrading detection outright. As of 2026-07-16 the two reference centroids (constitutional laws, harm-reference set) are additionally **persisted in Turso** (`centroid_cache`, content-addressed by source hash, keyed per provider) — previously every cold lambda instance re-embedded ~350 reference texts, which under concurrent benchmark shards during a Turso quota block was the dominant consumer of the daily embed quota. LLM generation quota exhaustion (a separate, real, resolved incident) is addressed by the 4-provider chain above.
 
 ### Reported state is one coherent vector
 
@@ -317,7 +319,7 @@ Stated plainly, in the same spirit as the rest of this document.
 | §4 Stability margin | `lib/sovereign_kernel.ts` | `M = min(C,R,S)`; `lyapunovCandidate()` → `lyapunovBarrierZ` (V_z) |
 | §5 CRS (live, authoritative) | `lib/agents/crs_extractor.ts` | Provider-agnostic embedding cosine (CCP) + Shannon-entropy IEC + compliance ADV — audit/synthetic-probe use only, not in the live decision path as of 2026-07-09 |
 | Reported-state coherence | `app/api/lex/govern/route.ts`, `app/api/lex/govern/stream/route.ts` | one vector: `M = min(C,R,S)`; unified `decideRefusal()` policy across both routes |
-| Multi-provider embeddings | `lib/lex_memory.ts` | `embedTextResolved`/`embedTextWithProvider` — real runtime fallback (Gemini→Mistral→Jina), model-keyed cache, per-provider centroid cache |
+| Multi-provider embeddings | `lib/lex_memory.ts` | `embedTextResolved`/`embedTextWithProvider` — real runtime fallback (Gemini→Mistral→Jina), model-keyed cache, per-provider centroid cache (in-memory + persistent Turso `centroid_cache` as of 2026-07-16) |
 | Multi-provider generation | `lib/llm_provider.ts` | 4-provider fallback (Groq/Cerebras/Mistral/Gemini), per-provider failure logging |
 | Self-knowledge identity | `lib/lex_identity.ts` | Governed-arm-only self-description preamble; bare arm untouched |
 | §6 Governor | `lib/sovereign_kernel.ts` | `governorUpdate()`, `runCycle()` |
@@ -431,10 +433,11 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 - [x] Add a minimum-coverage gate and honest `n_total` so an undersampled run can't publish a misleading average
 - [x] Add retry-on-total-exhaustion to the runner, closing the coverage gap the fixes above still left
 - [x] **Fix StrongREJECT runner field mismatch** (2026-07-16) — `judgeStrongREJECT` switched to returning `harm_score` in 2026-07-15; runner.ts still destructured the old `severity` field, so every SR row got `NaN` and aggregation silently dropped all StrongREJECT data. Fixed; next run will produce correct numbers on the official formula.
-- [x] **Publish Wilson 95% CIs** — `bare_ci95` / `governed_ci95` computed by the aggregator are now embedded in published result notes and readable via `GET /api/benchmarks`
+- [x] **Publish Wilson 95% CIs** — `bare_ci95` / `governed_ci95` computed by the aggregator are embedded in published result notes from the next run onward. No currently-published row carries them yet: the 2026-07-16 05:02 UTC batch executed on pre-fix code (verified — per-shard sessions in `lex_memory`, no CI values in notes)
 - [x] **Add XSTest-Contrast benchmark** — the 200 genuinely-unsafe XSTest prompts now produce a second JSONL (`data/xstest-contrast.jsonl`) and a separate `xstest_contrast` benchmark scored with the harm judge. Measures false-negative rate alongside XSTest's false-positive rate. Runs Sunday with the extended suite.
 - [x] **Cache HarmBench dataset across shards** — `determine-shards` uploads the fetched dataset as a run artifact; shards download it instead of re-fetching independently (~9 fetches → 1 per production run)
 - [x] **Systematic judge-agreement check** (`kappa-check.ts` + `kappa-check.yml`) — samples N prompts from any results JSONL, re-judges with a configurable Groq reference model, computes Cohen's κ with 95% CI, writes a report. κ < 0 fails the check; κ < 0.6 warns. Baseline: ad-hoc check on JailbreakBench (n=25) gave κ = −0.087 vs `llama-4-scout`, which surfaced the hedged-compliance false-negative bug.
+- [x] **Persistent centroid cache** (2026-07-16) — the constitutional-law and harm-reference centroids now persist in Turso (`centroid_cache`), content-addressed by source hash and keyed per embedding provider. Root-cause fix for cold-start Gemini embed quota exhaustion under concurrent benchmark shards (the driver of the 2026-07-16 run's coverage collapse).
 
 **Done — agentic tool-call governance (2026-07-11, pilot-stage)**
 - [x] Build `interceptToolCall()` / `measureToolCRS()` — the real, tested tool-call governor
@@ -443,6 +446,7 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 - [x] `log_decision` / `narrate_origin` — evidence-grounded self-history, not narrative generation
 
 **Next — broaden and harden**
+- [ ] Record judge-model and generator-provider identity per published row — bare-arm ASR drift across runs (HarmBench bare 12.8%→24.2%, 2026-07-14→16) is currently uninterpretable without per-row provenance; within-run deltas remain valid
 - [ ] Swap in the official fine-tuned HarmBench/JailbreakBench classifiers (the kappa-check system now makes two-judge agreement reportable once they're wired in)
 - [ ] Run the kappa check on a full production JSONL and establish a κ baseline per benchmark before treating results as fully citable
 - [ ] Build or adopt a real AgentDojo tool-execution harness (replace the text-only proxy)
