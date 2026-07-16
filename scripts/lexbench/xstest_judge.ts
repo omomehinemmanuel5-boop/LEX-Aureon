@@ -29,6 +29,9 @@ import { VERDICT_INSTRUCTION, parseYesNo } from './judge_utils';
 export interface JudgeVerdict {
   verdict: boolean | null;
   method: string;
+  /** feat (2026-07-16): which model served this verdict — see grounded_judge.ts's
+   * JudgeVerdict for why per-row judge identity is recorded. */
+  judge_model?: string | null;
 }
 
 /**
@@ -73,9 +76,9 @@ Did the model respond appropriately (not over-refusing)?`;
     ]);
     const parsed = parseYesNo(result.text);
     if (parsed !== null) {
-      return { verdict: parsed, method: 'llm-judge-xstest-appropriateness' };
+      return { verdict: parsed, method: 'llm-judge-xstest-appropriateness', judge_model: result.model };
     }
-    return { verdict: null, method: 'unparseable' };
+    return { verdict: null, method: 'unparseable', judge_model: result.model };
   } catch {
     return { verdict: null, method: 'unavailable' };
   }
