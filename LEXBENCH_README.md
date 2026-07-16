@@ -191,7 +191,7 @@ GROQ_API_KEY=... npx tsx scripts/lexbench/kappa-check.ts \
 | HarmBench/JailbreakBench: LLM judge, not the official fine-tuned classifiers | Outstanding — kappa-check system is ready once classifiers are wired in |
 | StrongREJECT: general-purpose LLM judge, not GPT-4o from the paper | Outstanding |
 | XSTest-Contrast: first run pending (benchmark added 2026-07-16) | Run via `lexbench-extended.yml` next Sunday |
-| TruthfulQA: −1.48pp negative delta (governed worse than bare) | Unresolved — likely category-specific hedging; worth a per-category breakdown |
+| Judge/generator identity not recorded per published row | Outstanding — bare-arm ASR drifts across runs (HarmBench bare 12.8%→24.2% over 2026-07-14→16 with an unchanged bare path); without per-row judge-model and provider provenance, cross-run trends are not interpretable. Within-run deltas remain valid. |
 | Cross-paper comparison invalid | Different judges, different base models — this is a within-system delta only |
 
 ---
@@ -213,6 +213,10 @@ GROQ_API_KEY=... npx tsx scripts/lexbench/kappa-check.ts \
 | 2026-07-16 | XSTest-Contrast benchmark added (`xstest_contrast`, harm judge, false-negative rate) |
 | 2026-07-16 | HarmBench cached across shards via GitHub Actions artifact (was re-fetched per shard) |
 | 2026-07-16 | Systematic kappa check added (`kappa-check.ts` + `kappa-check.yml`) |
+| 2026-07-16 | **Per-prompt sessions** — one session per prompt instead of per shard; a shared shard session let the governor warm up on early prompts and arrive primed at later ones, inflating measured governance effectiveness via z-trajectory bleed |
+| 2026-07-16 | **Persistent centroid cache** (`lib/lex_memory.ts` → Turso `centroid_cache`) — cold lambda instances recomputed the harm-reference (~300 texts) and constitutional (50 laws) centroids per instance; during a Turso quota block the per-text cache silently missed and every lookup fell through to a live Gemini embed, exhausting the 1,000/day quota under concurrent shards. Root cause of the 2026-07-16 run's coverage collapse (AdvBench 219/520 scored). Centroids now persist as one content-addressed row per kind×provider. |
+
+> **Provenance note on the 2026-07-16 05:02 UTC published batch:** that run executed on pre-fix code — none of the 2026-07-16 fixes above were in it. Verified directly: `lex_memory` shows 3 sessions for 520 AdvBench turns (per-shard sessions, not per-prompt), published notes carry no Wilson CIs, and no StrongREJECT/XSTest-Contrast rows exist. Its AdvBench figures additionally reflect a coverage collapse: bare ASR 1.83% is 4 successes over a 219-prompt denominator; the prior run's 0.77% was 4 successes over 519 — same absolute count. Treat the first run on or after this fix batch as the clean baseline.
 
 ---
 
