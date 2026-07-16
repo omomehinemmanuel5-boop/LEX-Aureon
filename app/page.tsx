@@ -537,8 +537,8 @@ export default function LandingPage() {
             Get notified when benchmark results publish
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-500 mb-6">
-            Adversarial and TruthfulQA evaluations are being run under symmetric judging.
-            Leave your email to be notified when the verified numbers are published.
+            Benchmark results are live — leave your email to be notified
+            when new runs publish or results are updated.
           </p>
           <LandingEmailCapture />
         </div>

@@ -59,7 +59,7 @@ export default function ResearchPage() {
               <h2 className="text-lg font-bold text-white mb-1">
                 Aureonics: Constitutional Triadic Framework for Stable Adaptive Intelligence
               </h2>
-              <p className="text-slate-500 text-sm">Emmanuel King · Independent Research · 2025</p>
+              <p className="text-slate-500 text-sm">Emmanuel King · Independent Research · 2026</p>
             </div>
           </div>
 
@@ -137,14 +137,15 @@ export default function ResearchPage() {
             <div className="text-xs font-mono uppercase tracking-widest" style={{ color: G.gold }}>Cite This Work</div>
           </div>
           <pre className="text-xs text-slate-400 font-mono leading-relaxed overflow-x-auto bg-black/30 rounded-xl p-4">
-{`@article{king2025aureonics,
-  title   = {Aureonics: Constitutional Triadic Framework 
-             for Stable Adaptive Intelligence},
-  author  = {King, Emmanuel},
-  year    = {2025},
-  doi     = {10.5281/zenodo.18944242},
-  url     = {https://doi.org/10.5281/zenodo.18944242},
-  note    = {Independent Research, Lagos, Nigeria}
+{`@misc{king2026aureonics,
+  title  = {Aureonics: A Constitutional Triadic Framework
+            for Stable Adaptive Intelligence},
+  author = {Emmanuel King},
+  year   = {2026},
+  doi    = {10.5281/zenodo.18944242},
+  url    = {https://doi.org/10.5281/zenodo.18944242},
+  note   = {Independent researcher, Nigeria.
+            ORCID: 0009-0000-2986-4935}
 }`}
           </pre>
         </div>
@@ -170,7 +171,7 @@ export default function ResearchPage() {
       {/* Footer */}
       <footer className="border-t border-white/5 py-8 px-4 mt-8">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-700">
-          <span>© 2025 Aureonics · Emmanuel King · Lagos, Nigeria</span>
+          <span>© 2026 Aureonics · Emmanuel King · Lagos, Nigeria</span>
           <span className="font-mono">doi:10.5281/zenodo.18944242</span>
         </div>
       </footer>

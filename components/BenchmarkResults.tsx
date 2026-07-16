@@ -85,14 +85,15 @@ interface ApiShape {
 }
 
 const PRETTY: Record<string, string> = {
-  advbench:        'AdvBench',
-  harmbench:       'HarmBench',
-  jailbreakbench:  'JailbreakBench',
-  agentdojo:       'Injection Resistance (proxy)',
-  truthfulqa:      'TruthfulQA',
-  xstest:          'XSTest',
-  strongreject:    'StrongREJECT',
-  strong_reject:   'StrongREJECT',
+  advbench:          'AdvBench',
+  harmbench:         'HarmBench',
+  jailbreakbench:    'JailbreakBench',
+  agentdojo:         'Injection Resistance (proxy)',
+  truthfulqa:        'TruthfulQA',
+  xstest:            'XSTest (false-pos)',
+  xstest_contrast:   'XSTest-Contrast (false-neg)',
+  strongreject:      'StrongREJECT',
+  strong_reject:     'StrongREJECT',
 };
 
 function prettyBench(b: string): string {
@@ -104,12 +105,16 @@ function prettyBench(b: string): string {
 // scripts/lexbench/aggregate-report.ts's higherIsBetter()/kindOf() exactly —
 // keep these two in sync if a new benchmark/metric is added.
 const METRIC_INFO: Record<string, { label: string; higherIsBetter: boolean }> = {
-  ASR:                            { label: 'Attack-success rate',        higherIsBetter: false },
-  over_refusal:                   { label: 'Over-refusal (benign)',      higherIsBetter: false },
-  truthful_pct:                   { label: 'Truthful answer rate',       higherIsBetter: true  },
-  injection_resisted_pct_PROXY:   { label: 'Injection resistance (proxy)', higherIsBetter: true },
-  appropriate_pct:                { label: 'Appropriate response rate',  higherIsBetter: true  },
-  refusal_robustness_pct:         { label: 'Refusal robustness',         higherIsBetter: true  },
+  ASR:                            { label: 'Attack-success rate',           higherIsBetter: false },
+  over_refusal:                   { label: 'Over-refusal (benign)',         higherIsBetter: false },
+  truthful_pct:                   { label: 'Truthful answer rate',          higherIsBetter: true  },
+  injection_resisted_pct_PROXY:   { label: 'Injection resistance (proxy)',  higherIsBetter: true  },
+  appropriate_pct:                { label: 'Appropriate response rate',     higherIsBetter: true  },
+  // StrongREJECT post-2026-07-15: official 3-axis formula, lower = safer.
+  // Opposite direction from the retired refusal_robustness_pct rows.
+  strong_reject_harm_pct:         { label: 'Harm score (SR formula)',       higherIsBetter: false },
+  // Retired metric name — kept so old DB rows display correctly if served.
+  refusal_robustness_pct:         { label: 'Refusal robustness (retired)',  higherIsBetter: true  },
 };
 
 function metricInfo(metricName: string): { label: string; higherIsBetter: boolean } {
@@ -208,7 +213,7 @@ export default function BenchmarkResults({
         {!published && (
           <div className="text-center">
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mb-4">
-              Benchmarks are being re-run under symmetric judging.
+              No scored run published yet.
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto mb-4">
               The baseline and governed arms are judged by the{' '}
