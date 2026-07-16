@@ -70,6 +70,27 @@
  * reference set below is built from advbench.jsonl + jailbreakbench.jsonl
  * only (the two files that actually exist); the HarmBench data-file mystery
  * is a separate, not-yet-investigated question.
+ *
+ * feat (2026-07-16) — PERSISTENT CENTROID CACHE: _centroidCache and
+ * _harmCentroidCache are module-level in-memory Maps, so on Vercel serverless
+ * EVERY cold lambda instance recomputed both centroids from scratch: ~300
+ * harm-reference embeds + 50 law embeds per instance. The per-text
+ * embedding_cache absorbs most Gemini calls when Turso reads succeed, but
+ * (a) that is still 350+ Turso point reads PLUS 350 hit-counter UPDATE writes
+ * per cold start, and (b) getCachedEmbedding() returns null on ANY error —
+ * so during a Turso quota block every one of those lookups silently falls
+ * through to a live Gemini embed call. That coupling is how concurrent shard
+ * runs burned Gemini's 1,000/day quota in a handful of cold starts
+ * (diagnosed 2026-07-14 from live runtime logs; it then gutted the
+ * 2026-07-16 run's coverage — AdvBench 219/520 scored). The fix persists the
+ * COMPUTED centroid itself in Turso (centroid_cache, one row per
+ * kind×provider): a cold start now costs one Turso read per centroid.
+ * Invalidation is content-addressed, not TTL-based — each row stores a
+ * SHA-256 of the exact source texts, so a deploy that changes
+ * HARM_REFERENCE_PROMPTS or the laws forces a recompute. Provider-space
+ * correctness is preserved: rows are keyed by provider and carry the model
+ * name, so a Gemini-space centroid is never served into a Jina-space
+ * comparison.
  */
 
 import { getClient } from './db';
@@ -156,6 +177,87 @@ async function putCachedEmbedding(hash: string, embedding: number[]): Promise<vo
             VALUES (?, ?)
             ON CONFLICT(text_hash) DO UPDATE SET hits = hits + 1`,
       args: [hash, JSON.stringify(embedding)],
+    });
+  } catch {
+    // Non-fatal — cache store failure never blocks the main flow
+  }
+}
+
+// ── Persistent centroid cache (2026-07-16 — see file header feat note) ───────
+// One row per (kind, provider). kind ∈ 'constitutional' | 'harm_reference'.
+// source_hash = SHA-256 of the exact source texts the centroid was computed
+// from — content-addressed invalidation instead of TTL. All operations are
+// non-fatal: any failure falls through to the existing recompute path, which
+// itself degrades honestly (detection_degraded) exactly as before.
+
+type CentroidKind = 'constitutional' | 'harm_reference';
+
+let _centroidTableEnsured = false;
+async function ensureCentroidTable(): Promise<void> {
+  if (_centroidTableEnsured) return;
+  try {
+    await getClient().execute(`
+      CREATE TABLE IF NOT EXISTS centroid_cache (
+        kind         TEXT    NOT NULL,
+        provider     TEXT    NOT NULL,
+        model        TEXT    NOT NULL,
+        source_hash  TEXT    NOT NULL,
+        embedding    TEXT    NOT NULL,
+        source_count INTEGER NOT NULL DEFAULT 0,
+        updated_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (kind, provider)
+      )
+    `);
+    _centroidTableEnsured = true;
+  } catch {
+    // Non-fatal — persistence failure never blocks centroid computation
+  }
+}
+
+async function getPersistedCentroid(
+  kind: CentroidKind,
+  provider: EmbedProvider,
+  expectedSourceHash: string,
+): Promise<number[] | null> {
+  try {
+    await ensureCentroidTable();
+    const r = await getClient().execute({
+      sql:  'SELECT embedding, model, source_hash FROM centroid_cache WHERE kind = ? AND provider = ?',
+      args: [kind, provider],
+    });
+    if (!r.rows.length) return null;
+    const row = r.rows[0];
+    // Content-addressed staleness check: source texts changed → recompute.
+    if (String(row.source_hash) !== expectedSourceHash) return null;
+    // Model swapped for this provider in code → the stored vector is in a
+    // different embedding space; refuse to serve it.
+    if (String(row.model) !== modelNameFor(provider)) return null;
+    const vec = JSON.parse(String(row.embedding)) as number[];
+    return Array.isArray(vec) && vec.length > 0 ? vec : null;
+  } catch {
+    return null;
+  }
+}
+
+async function putPersistedCentroid(
+  kind: CentroidKind,
+  provider: EmbedProvider,
+  sourceHash: string,
+  vec: number[],
+  sourceCount: number,
+): Promise<void> {
+  try {
+    await ensureCentroidTable();
+    await getClient().execute({
+      sql: `INSERT INTO centroid_cache (kind, provider, model, source_hash, embedding, source_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, unixepoch())
+            ON CONFLICT(kind, provider) DO UPDATE SET
+              model        = excluded.model,
+              source_hash  = excluded.source_hash,
+              embedding    = excluded.embedding,
+              source_count = excluded.source_count,
+              updated_at   = excluded.updated_at`,
+      args: [kind, provider, modelNameFor(provider), sourceHash, JSON.stringify(vec), sourceCount],
     });
   } catch {
     // Non-fatal — cache store failure never blocks the main flow
@@ -553,12 +655,22 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
     try {
       const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
       const lawTexts = SOVEREIGN_LAWS.slice(0, 50).map(law => `${law.name}: ${law.text}`);
+      // Persistent layer (2026-07-16): one Turso read replaces re-embedding
+      // all 50 laws on every cold lambda instance / TTL expiry.
+      const sourceHash = await hashText(lawTexts.join('\n'));
+      const persisted = await getPersistedCentroid('constitutional', forceProvider, sourceHash);
+      if (persisted) {
+        _centroidCache.set(forceProvider, { vec: persisted, ts: now });
+        return persisted;
+      }
       // No fallback here by design — mixing this centroid's provider with a
       // different provider's output embedding would be an invalid comparison.
       const embeddings = await Promise.all(lawTexts.map(t => embedTextWithProvider(t, forceProvider)));
       const centroid = computeCentroidFor(embeddings);
       if (!centroid) return null;
       _centroidCache.set(forceProvider, { vec: centroid, ts: now });
+      putPersistedCentroid('constitutional', forceProvider, sourceHash, centroid, lawTexts.length)
+        .catch(() => undefined);
       return centroid;
     } catch (e) {
       console.error('getConstitutionalCentroid (forced provider) error:', e);
@@ -574,11 +686,25 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
   try {
     const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
     const lawTexts = SOVEREIGN_LAWS.slice(0, 50).map(law => `${law.name}: ${law.text}`);
+    // Persistent layer (2026-07-16): callers on this branch accept any
+    // provider's centroid, so serve the first persisted hit in priority order.
+    const sourceHash = await hashText(lawTexts.join('\n'));
+    for (const p of providerOrder()) {
+      const persisted = await getPersistedCentroid('constitutional', p, sourceHash);
+      if (persisted) {
+        _centroidCache.set(p, { vec: persisted, ts: now });
+        return persisted;
+      }
+    }
     const embeddings = await embedTexts(lawTexts); // provider-consistent fallback chain
     const centroid = computeCentroidFor(embeddings);
     if (!centroid) return null;
     const resolvedProvider = _lastResolvedProvider ?? providerOrder()[0];
-    if (resolvedProvider) _centroidCache.set(resolvedProvider, { vec: centroid, ts: now });
+    if (resolvedProvider) {
+      _centroidCache.set(resolvedProvider, { vec: centroid, ts: now });
+      putPersistedCentroid('constitutional', resolvedProvider, sourceHash, centroid, lawTexts.length)
+        .catch(() => undefined);
+    }
     return centroid;
   } catch (e) {
     console.error('getConstitutionalCentroid error:', e);
@@ -640,6 +766,14 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
   if (cached && (now - cached.ts) < HARM_CENTROID_TTL_MS) return cached.vec;
   try {
     if (!HARM_REFERENCE_PROMPTS.length) return null;
+    // Persistent layer (2026-07-16): one Turso read replaces re-embedding the
+    // full reference set (~300 texts) on every cold lambda instance.
+    const sourceHash = await hashText(HARM_REFERENCE_PROMPTS.join('\n'));
+    const persisted = await getPersistedCentroid('harm_reference', forceProvider, sourceHash);
+    if (persisted) {
+      _harmCentroidCache.set(forceProvider, { vec: persisted, ts: now });
+      return persisted;
+    }
     // No cross-provider fallback here by design, same reasoning as
     // getConstitutionalCentroid(forceProvider) — this centroid must be
     // compared against a prompt embedding from the SAME provider, or the
@@ -648,6 +782,8 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
     const centroid = computeCentroidFor(embeddings);
     if (!centroid) return null;
     _harmCentroidCache.set(forceProvider, { vec: centroid, ts: now });
+    putPersistedCentroid('harm_reference', forceProvider, sourceHash, centroid, HARM_REFERENCE_PROMPTS.length)
+      .catch(() => undefined);
     return centroid;
   } catch (e) {
     console.error('getHarmReferenceCentroid error:', e);
@@ -658,4 +794,17 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
 export function invalidateCentroidCache(provider?: EmbedProvider): void {
   if (provider) { _centroidCache.delete(provider); _harmCentroidCache.delete(provider); }
   else { _centroidCache.clear(); _harmCentroidCache.clear(); }
+  // Also clear the persistent Turso layer (2026-07-16), best-effort — the
+  // content-addressed source_hash already protects against staleness, so
+  // this only matters for a deliberate manual invalidation.
+  try {
+    const db = getClient();
+    if (provider) {
+      db.execute({ sql: 'DELETE FROM centroid_cache WHERE provider = ?', args: [provider] }).catch(() => undefined);
+    } else {
+      db.execute('DELETE FROM centroid_cache').catch(() => undefined);
+    }
+  } catch {
+    // Non-fatal
+  }
 }
