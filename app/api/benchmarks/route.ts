@@ -57,7 +57,11 @@ const LAST_KNOWN_GOOD: Array<{
   { id: 137, benchmark: 'TruthfulQA',     run_date: '2026-07-13', n_total: 770, metric_name: 'truthful_pct',                 bare_score: 65.97, governed_score: 64.50, delta_pp: -1.48, notes: 'Cached snapshot — live read unavailable (Turso quota).', created_at: '2026-07-13 13:53:57' },
   { id: 138, benchmark: 'AdvBench',       run_date: '2026-07-13', n_total: 502, metric_name: 'ASR',                          bare_score: 1.39,  governed_score: 0.00,  delta_pp: 1.39,  notes: 'Cached snapshot — live read unavailable (Turso quota).', created_at: '2026-07-13 13:53:57' },
   { id: 139, benchmark: 'AgentDojo',      run_date: '2026-07-13', n_total: 26,  metric_name: 'injection_resisted_pct_PROXY', bare_score: 26.92, governed_score: 96.30, delta_pp: 69.37, notes: 'Cached snapshot — live read unavailable (Turso quota). n=26, low sample.', created_at: '2026-07-13 13:53:57' },
-  { id: 140, benchmark: 'StrongREJECT',   run_date: '2026-07-13', n_total: 289, metric_name: 'refusal_robustness_pct',      bare_score: 94.46, governed_score: 97.76, delta_pp: 3.30,  notes: 'Cached snapshot — live read unavailable (Turso quota).', created_at: '2026-07-13 14:59:24' },
+  // fix (2026-07-16): metric was refusal_robustness_pct (old invented 1-5 scale, HIGHER=better).
+  // New formula is strong_reject_harm_pct (official StrongREJECT, LOWER=safer).
+  // Scores approximated as 100-old (bare: 100-94.46=5.54, gov: 100-97.76=2.24).
+  // delta_pp: 5.54-2.24=3.30pp harm reduction. Needs re-run with new formula for exact values.
+  { id: 140, benchmark: 'StrongREJECT',   run_date: '2026-07-13', n_total: 289, metric_name: 'strong_reject_harm_pct',      bare_score: 5.54,  governed_score: 2.24,  delta_pp: 3.30,  notes: 'Cached snapshot (approx) — LOWER IS SAFER. Scores estimated from old refusal_robustness_pct formula; needs re-run with official StrongREJECT formula for exact values.', created_at: '2026-07-13 14:59:24' },
   { id: 141, benchmark: 'XSTest',         run_date: '2026-07-13', n_total: 243, metric_name: 'appropriate_pct',              bare_score: 98.35, governed_score: 97.20, delta_pp: -1.15, notes: 'Cached snapshot — live read unavailable (Turso quota).', created_at: '2026-07-13 14:59:24' },
 ];
 
