@@ -182,10 +182,36 @@ interface BenchmarkSummary {
 
   // Joint constitutional transition metrics (unaffected by the judge change)
   avg_C: number; avg_R: number; avg_S: number; avg_M: number;
+  /** McNemar's test p-value (paired binary only). p<0.05 = significantly different arms. */
+  mcnemar_p?: number | null;
+  /** Cohen's h effect size for the proportion difference (binary only). */
+  cohen_h?: number;
 }
 
 function pct(x: number): number { return +(x * 100).toFixed(2); }
 function pctInterval(i: Interval): [number, number] { return [pct(i.low), pct(i.high)]; }
+
+// ── McNemar's test for paired binary outcomes ─────────────────────────────
+// b = #prompts where bare=1, governed=0 (governance helped)
+// c = #prompts where bare=0, governed=1 (governance hurt)
+// chi2 = (|b−c|−1)² / (b+c)  with Yates continuity correction, df=1
+// P(chi2_1 > x) via erfc approximation (A&S 7.1.26, max err 1.5e-7)
+function mcnemarP(b: number, c: number): number | null {
+  const n = b + c;
+  if (n < 5) return null;
+  const chi2 = Math.pow(Math.abs(b - c) - 1, 2) / n;
+  const x = Math.sqrt(chi2 / 2);
+  const t = 1 / (1 + 0.3275911 * x);
+  const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+  return +(poly * Math.exp(-(x * x))).toFixed(4);
+}
+
+// ── Cohen's h — effect size for two proportions ───────────────────────────
+// |h|<0.2 negligible · 0.2–0.5 small · 0.5–0.8 medium · >0.8 large
+function cohensH(p1: number, p2: number): number {
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  return +(2 * Math.asin(Math.sqrt(clamp(p1))) - 2 * Math.asin(Math.sqrt(clamp(p2)))).toFixed(4);
+}
 
 async function aggregateResults(inputFile: string): Promise<Record<string, BenchmarkSummary>> {
   const results: LexBenchResult[] = [];
@@ -202,6 +228,9 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
     total: number;
     // fix (2026-07-15): paired accumulators — an item contributes to BOTH or NEITHER.
     pairedN: number; bareSum: number; govSum: number;
+    // Discordant pairs for McNemar's test (binary kinds only)
+    discordantB: number; // bare=1, governed=0 (governance helped)
+    discordantC: number; // bare=0, governed=1 (governance hurt)
     // Sum of squares, for the continuous (severity) kind's SE.
     bareSq: number; govSq: number;
     droppedUnpaired: number;
@@ -218,6 +247,7 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
       acc[key] = {
         benchmark: r.benchmark, kind, total: 0,
         pairedN: 0, bareSum: 0, govSum: 0, bareSq: 0, govSq: 0,
+        discordantB: 0, discordantC: 0,
         droppedUnpaired: 0, legacyStrongReject: 0,
         judgeMethods: new Set(), cSum: 0, rSum: 0, sSum: 0, mSum: 0,
       };
@@ -249,6 +279,11 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
       a.pairedN++;
       a.bareSum += bareVal!; a.bareSq += bareVal! * bareVal!;
       a.govSum  += govVal!;  a.govSq  += govVal!  * govVal!;
+      // Track discordant pairs for McNemar's test (binary kinds only)
+      if (isBinary(a.kind)) {
+        if (bareVal === 1 && govVal === 0) a.discordantB++;
+        else if (bareVal === 0 && govVal === 1) a.discordantC++;
+      }
     } else if (eitherPresent) {
       a.droppedUnpaired++;
     }
@@ -298,6 +333,8 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
         // Sums of 0/1 values ARE the success counts.
         s.bare_ci95     = pctInterval(wilsonInterval(a.bareSum, a.pairedN));
         s.governed_ci95 = pctInterval(wilsonInterval(a.govSum,  a.pairedN));
+        s.mcnemar_p = mcnemarP(a.discordantB, a.discordantC);
+        s.cohen_h   = Math.abs(cohensH(govAvg, bareAvg));
       } else {
         // Continuous [0,1] score — normal-approximation SE on the mean.
         const se = (sum: number, sq: number) => {
