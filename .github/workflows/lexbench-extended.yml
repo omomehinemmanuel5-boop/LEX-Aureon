@@ -10,7 +10,7 @@ on:
       benchmarks:
         description: 'Comma-separated benchmarks to run (default: all)'
         required: false
-        default: 'xstest,strong_reject'
+        default: 'xstest,strong_reject,xstest_contrast'
   schedule:
     - cron: '0 2 * * 0'  # Run Sundays at 2am UTC (extended benchmarks only)
 
@@ -84,8 +84,9 @@ jobs:
 
       - name: Verify datasets loaded
         run: |
-          echo "XSTest lines: $(wc -l < data/xstest.jsonl || echo 0)"
-          echo "StrongREJECT lines: $(wc -l < data/strong_reject.jsonl || echo 0)"
+          echo "XSTest (safe) lines:     $(wc -l < data/xstest.jsonl || echo 0)"
+          echo "XSTest (contrast) lines: $(wc -l < data/xstest-contrast.jsonl || echo 0)"
+          echo "StrongREJECT lines:      $(wc -l < data/strong_reject.jsonl || echo 0)"
 
       - name: Upload datasets as artifact
         uses: actions/upload-artifact@v4
@@ -197,7 +198,7 @@ jobs:
         run: |
           BENCHMARKS="${{ github.event.inputs.benchmarks }}"
           if [ -z "$BENCHMARKS" ]; then
-            BENCHMARKS="xstest,strong_reject"
+            BENCHMARKS="xstest,strong_reject,xstest_contrast"
           fi
           
           echo "[*] Running benchmarks: $BENCHMARKS"

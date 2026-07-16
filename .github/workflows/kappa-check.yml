@@ -1,0 +1,149 @@
+name: LexBench Kappa Check
+
+# Systematic inter-rater agreement check for LexBench judges.
+#
+# Re-judges a sample of prompts from a recent results JSONL with a reference
+# model and computes Cohen's kappa between the primary and reference verdicts.
+# κ < 0.60 triggers a warning; κ < 0.40 is a strong signal to review the
+# judge prompt or model.
+#
+# Run this:
+#   - After any judge prompt change (grounded_judge.ts, xstest_judge.ts,
+#     strong_reject_judge.ts, judge_utils.ts)
+#   - After changing the primary judge model in lib/llm_provider.ts
+#   - Periodically (weekly) to catch silent drift
+#   - Whenever a published result looks implausible
+#
+# The workflow downloads a JSONL results file from a previous LexBench run
+# artifact, or accepts a direct URL to an already-stored file.
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: 'GitHub Actions run ID of the LexBench run whose shard results to check (leave empty to use the latest run)'
+        required: false
+        default: ''
+      benchmark:
+        description: 'Benchmark to check (jailbreakbench, advbench, harmbench, truthfulqa, xstest, strong_reject, xstest_contrast)'
+        required: true
+        default: 'jailbreakbench'
+      n:
+        description: 'Number of prompts to sample (default: 50)'
+        required: false
+        default: '50'
+      arm:
+        description: 'Which arm to check: bare or governed'
+        required: false
+        default: 'bare'
+      ref_model:
+        description: 'Groq reference model (must differ from primary judge — see lib/llm_provider.ts)'
+        required: false
+        default: 'llama-4-scout-17b-16e-instruct'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  kappa-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      # Download results from the specified run (or try to find the latest
+      # shard-results artifact from a recent lexbench-prod run).
+      - name: Download shard results
+        uses: actions/download-artifact@v4
+        with:
+          # If artifact_run_id is provided, download from that specific run.
+          # Otherwise, attempt to find results from any recent run.
+          # Note: actions/download-artifact@v4 can cross-run download when
+          # run-id is specified; leave it blank to download from this run
+          # (which has no shard results, so this will warn — acceptable;
+          # user should supply a run_id for a meaningful check).
+          name: lexbench-shard-results-0
+          path: data/
+          run-id: ${{ github.event.inputs.artifact_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: List available result files
+        run: |
+          echo "Files in data/:"
+          ls -lh data/ 2>/dev/null || echo "(none downloaded)"
+          JSONL_COUNT=$(find data/ -name "lexbench-${{ github.event.inputs.benchmark }}*.jsonl" 2>/dev/null | wc -l)
+          echo "Matching JSONL files: $JSONL_COUNT"
+          if [ "$JSONL_COUNT" -eq 0 ]; then
+            echo "::warning::No results file found for benchmark '${{ github.event.inputs.benchmark }}'. Provide a valid artifact_run_id from a completed LexBench run."
+          fi
+
+      - name: Run kappa check
+        run: |
+          BENCHMARK="${{ github.event.inputs.benchmark }}"
+          N="${{ github.event.inputs.n }}"
+          ARM="${{ github.event.inputs.arm }}"
+          REF_MODEL="${{ github.event.inputs.ref_model }}"
+
+          # Find the most recent JSONL for this benchmark
+          INPUT_FILE=$(find data/ -name "lexbench-${BENCHMARK}*.jsonl" 2>/dev/null | sort | tail -1)
+          if [ -z "$INPUT_FILE" ]; then
+            echo "::error::No JSONL file found for benchmark '$BENCHMARK'. Run a LexBench production run first, then supply its run_id as artifact_run_id."
+            exit 1
+          fi
+
+          echo "Input file: $INPUT_FILE"
+          echo "Lines: $(wc -l < "$INPUT_FILE")"
+
+          npx tsx scripts/lexbench/kappa-check.ts \
+            --input "$INPUT_FILE" \
+            --benchmark "$BENCHMARK" \
+            --n "$N" \
+            --arm "$ARM" \
+            --ref-model "$REF_MODEL" \
+            --out "reports/kappa-${BENCHMARK}-$(date +%Y-%m-%d).json"
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+      - name: Upload kappa report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kappa-report-${{ github.event.inputs.benchmark }}-${{ github.run_id }}
+          path: reports/kappa-*.json
+          if-no-files-found: warn
+
+      - name: Check kappa threshold
+        run: |
+          REPORT=$(find reports/ -name "kappa-*.json" | sort | tail -1)
+          if [ -z "$REPORT" ]; then
+            echo "::warning::No kappa report generated."
+            exit 0
+          fi
+          KAPPA=$(node -e "const r=require('./$REPORT'); console.log(r.cohens_kappa)")
+          LEVEL=$(node -e "const r=require('./$REPORT'); console.log(r.kappa_level)")
+          N=$(node -e "const r=require('./$REPORT'); console.log(r.n_paired)")
+          echo "κ = $KAPPA  ($LEVEL)  n=$N"
+          # Warn (but don't fail) on fair or below — triggers review without
+          # blocking the run. κ < 0 would indicate a systematic problem.
+          node -e "
+            const r = require('./$REPORT');
+            if (r.cohens_kappa < 0) {
+              console.error('κ < 0: worse-than-chance agreement. Review the judge prompt immediately.');
+              process.exit(1);
+            } else if (r.cohens_kappa < 0.4) {
+              console.log('::warning::κ < 0.40 (fair agreement). Review judge prompt and disagreement examples in the artifact.');
+            } else if (r.cohens_kappa < 0.6) {
+              console.log('::warning::κ < 0.60 (moderate agreement). Consider reviewing the judge for systematic errors.');
+            } else {
+              console.log('κ ≥ 0.60 — substantial or better agreement. Judge appears reliable.');
+            }
+          "

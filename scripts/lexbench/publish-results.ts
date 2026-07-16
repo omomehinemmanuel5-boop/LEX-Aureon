@@ -47,10 +47,18 @@ interface BenchmarkSummary {
   kind: BenchmarkKind;
   total_prompts: number;
   scored_prompts: number;
+  dropped_unpaired?: number;
   judge_methods_used: string[];
   avg_bare_pct?: number;
   avg_governed_pct?: number;
   delta_pp?: number;
+  // Wilson 95% CIs computed by aggregate-report.ts (post-2026-07-15).
+  // Included in published notes so the leaderboard reader can report them
+  // without a schema migration (the underlying table has no separate CI columns).
+  bare_ci95?: [number, number];
+  governed_ci95?: [number, number];
+  mcnemar_p?: number | null;
+  cohen_h?: number;
 }
 
 interface PublishRow {
@@ -78,22 +86,36 @@ function buildRows(summary: Record<string, BenchmarkSummary>, runDate: string): 
       ? `attempted ${s.total_prompts}, scored ${s.scored_prompts} (rest: judge unavailable / provider exhausted)`
       : `scored ${s.scored_prompts}/${s.total_prompts}`;
     const judgeNote = `judge_methods=${s.judge_methods_used.join('|')}`;
+
+    // fix (2026-07-16): Wilson 95% CIs computed by aggregate-report.ts are now
+    // embedded in notes so the leaderboard reader can surface them without a
+    // schema migration. bare_ci95/governed_ci95 are [lo, hi] in percentage points.
+    const ciNote = (s.bare_ci95 && s.governed_ci95)
+      ? `; bare_ci95=[${s.bare_ci95[0].toFixed(2)},${s.bare_ci95[1].toFixed(2)}] governed_ci95=[${s.governed_ci95[0].toFixed(2)},${s.governed_ci95[1].toFixed(2)}]`
+      : '';
+    const statsFragments = [
+      s.dropped_unpaired ? `dropped_unpaired=${s.dropped_unpaired}` : '',
+      s.mcnemar_p != null ? `mcnemar_p=${s.mcnemar_p.toFixed(4)}` : '',
+      s.cohen_h != null ? `cohen_h=${s.cohen_h.toFixed(3)}` : '',
+    ].filter(Boolean);
+    const statsNote = statsFragments.length ? `; ${statsFragments.join('; ')}` : '';
+
     // fix (2026-07-10): n_total = scored_prompts (what bare/governed are
     // actually computed from), not total_prompts (what was attempted).
     const base = { benchmark: s.benchmark, run_date: runDate, n_total: s.scored_prompts, bare_score: s.avg_bare_pct, governed_score: s.avg_governed_pct, delta_pp: s.delta_pp ?? 0 };
 
     if (s.kind === 'harm') {
       rows.push({ ...base, metric_name: 'ASR',
-        notes: `LexBench run; same-model bare=raw_output vs governed (generateGoverned); ASR via LLM judge (harm-compliance rubric approximating HarmBench/JailbreakBench classifiers, NOT the official fine-tuned classifiers); ${scoredNote}; ${judgeNote}` });
+        notes: `LexBench run; same-model bare=raw_output vs governed (generateGoverned); ASR via LLM judge (harm-compliance rubric approximating HarmBench/JailbreakBench classifiers, NOT the official fine-tuned classifiers); ${scoredNote}; ${judgeNote}${ciNote}${statsNote}` });
     } else if (s.kind === 'truthfulness') {
       rows.push({ ...base, metric_name: 'truthful_pct',
-        notes: `LexBench run; truthfulness via LLM judge comparing against the dataset's own correct_answers/incorrect_answers (same reference-comparison as the original paper's fine-tuned GPT-judge, general-purpose model here); does not separately score informativeness; ${scoredNote}; ${judgeNote}` });
+        notes: `LexBench run; truthfulness via LLM judge comparing against the dataset's own correct_answers/incorrect_answers (same reference-comparison as the original paper's fine-tuned GPT-judge, general-purpose model here); does not separately score informativeness; ${scoredNote}; ${judgeNote}${ciNote}${statsNote}` });
     } else if (s.kind === 'injection') {
       rows.push({ ...base, metric_name: 'injection_resisted_pct_PROXY',
-        notes: `NOT the official AgentDojo methodology — measures injection-resistance ONLY via text judgment of a single prompt/response pair; no tool-execution harness, no task-utility check, so a model that refuses everything would score well here despite failing every legitimate task. LexBench run; ${scoredNote}; ${judgeNote}` });
+        notes: `NOT the official AgentDojo methodology — measures injection-resistance ONLY via text judgment of a single prompt/response pair; no tool-execution harness, no task-utility check, so a model that refuses everything would score well here despite failing every legitimate task. LexBench run; ${scoredNote}; ${judgeNote}${ciNote}${statsNote}` });
     } else if (s.kind === 'over_refusal') {
       rows.push({ ...base, metric_name: 'appropriate_pct',
-        notes: `XSTest (Röttger et al., NAACL 2024) over-refusal check — percentage of BENIGN prompts answered appropriately rather than refused on incorrect safety grounds; higher is better. The dataset's 200-prompt "contrast" set of genuinely unsafe prompts is excluded upstream (not part of this metric — see transform-xstest.ts). LLM judge, general-purpose model, not the paper's own annotation process. LexBench run; ${scoredNote}; ${judgeNote}` });
+        notes: `XSTest (Röttger et al., NAACL 2024) over-refusal check — percentage of BENIGN prompts answered appropriately rather than refused on incorrect safety grounds; higher is better. The dataset's 200-prompt contrast set of genuinely unsafe prompts is scored separately as XSTest-Contrast (kind=harm, metric=ASR) — see xstest_contrast benchmark. LLM judge, general-purpose model, not the paper's own annotation process. LexBench run; ${scoredNote}; ${judgeNote}${ciNote}${statsNote}` });
     } else {
       // fix (2026-07-16): old metric was refusal_robustness_pct on an invented
       // 1-5 severity scale (higher=better). New metric uses the official
@@ -102,7 +124,7 @@ function buildRows(summary: Record<string, BenchmarkSummary>, runDate: string): 
       // rows from before and after 2026-07-15 in any trend chart without
       // normalising direction first.
       rows.push({ ...base, metric_name: 'strong_reject_harm_pct',
-        notes: `StrongREJECT (Souly et al. 2024) official 3-axis formula: harm=(1−refused)×(specificity+convincingness−2)/8 ∈ [0,1]; LOWER=SAFER (opposite direction from old refusal_robustness_pct rows pre-2026-07-15). General-purpose LLM judge, NOT GPT-4o from paper. LexBench run; ${scoredNote}; ${judgeNote}` });
+        notes: `StrongREJECT (Souly et al. 2024) official 3-axis formula: harm=(1−refused)×(specificity+convincingness−2)/8 ∈ [0,1]; LOWER=SAFER (opposite direction from old refusal_robustness_pct rows pre-2026-07-15). General-purpose LLM judge, NOT GPT-4o from paper. LexBench run; ${scoredNote}; ${judgeNote}${ciNote}${statsNote}` });
     }
   }
   return rows;

@@ -121,6 +121,16 @@ jobs:
       - name: Fetch HarmBench dataset
         run: npx tsx scripts/harmbench/fetch-dataset.ts --out data/harmbench.jsonl
 
+      # fix (2026-07-16): each shard previously re-fetched HarmBench independently
+      # (~9 shards × one network fetch = same data downloaded 9 times). Upload it
+      # once here and let shards download the artifact instead.
+      - name: Cache HarmBench dataset for shards
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmbench-dataset-${{ github.run_id }}
+          path: data/harmbench.jsonl
+          retention-days: 1
+
       - name: Determine total prompts and shards
         id: set-matrix
         run: |
@@ -193,10 +203,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Each shard runs in a fresh checkout, so re-fetch the un-committed
-      # HarmBench dataset here too.
-      - name: Fetch HarmBench dataset
-        run: npx tsx scripts/harmbench/fetch-dataset.ts --out data/harmbench.jsonl
+      # fix (2026-07-16): use the cached dataset from determine-shards instead
+      # of re-fetching from the network on every shard (was ~9 identical fetches).
+      - name: Download HarmBench dataset
+        uses: actions/download-artifact@v4
+        with:
+          name: harmbench-dataset-${{ github.run_id }}
+          path: data/
 
       # fix (2026-07-07): loop over the explicit BENCHMARKS list (env, top of
       # file) instead of `--benchmark all` — see the env block comment for why.
