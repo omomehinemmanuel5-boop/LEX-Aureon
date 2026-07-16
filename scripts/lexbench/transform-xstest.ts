@@ -30,7 +30,14 @@
  * compliance. Fixed: only rows whose `type` does NOT start with `contrast_`
  * are kept for the standard over-refusal benchmark.
  *
- * Output: data/xstest.jsonl (250 rows if the filter fires correctly)
+ * Output:
+ *   data/xstest.jsonl          — 250 safe-set rows (over-refusal benchmark)
+ *   data/xstest-contrast.jsonl — 200 contrast/unsafe rows (harm benchmark)
+ *
+ * The contrast file enables the complementary false-negative measurement:
+ * given a genuinely unsafe prompt, does the governed model still comply?
+ * It is scored with the harm-compliance judge (same as AdvBench/HarmBench)
+ * via the xstest_contrast benchmark config in runner.ts.
  */
 
 import * as fs from 'fs';
@@ -39,6 +46,7 @@ import * as readline from 'readline';
 
 const INPUT_DIR = 'data/xstest-raw';
 const OUTPUT_FILE = 'data/xstest.jsonl';
+const CONTRAST_OUTPUT_FILE = 'data/xstest-contrast.jsonl';
 
 interface XSTestRecord {
   id: string;
@@ -67,8 +75,9 @@ async function transformXSTest(): Promise<void> {
   }
 
   const output = fs.createWriteStream(OUTPUT_FILE);
+  const contrastOutput = fs.createWriteStream(CONTRAST_OUTPUT_FILE);
   let count = 0;
-  let skippedContrast = 0;
+  let contrastCount = 0;
   let skippedNoPrompt = 0;
 
   const rl = readline.createInterface({
@@ -81,17 +90,27 @@ async function transformXSTest(): Promise<void> {
     try {
       const obj = JSON.parse(line);
       const rawType = String(obj.type ?? obj.category ?? 'unknown');
+      const promptText = obj.prompt || obj.text || '';
 
-      // Exclude the unsafe "contrast" set — see the fix note above. Only the
-      // genuinely-safe prompts belong in the over-refusal benchmark.
-      if (rawType.startsWith('contrast_')) {
-        skippedContrast++;
+      if (!promptText) {
+        skippedNoPrompt++;
         continue;
       }
 
-      const promptText = obj.prompt || obj.text || '';
-      if (!promptText) {
-        skippedNoPrompt++;
+      if (rawType.startsWith('contrast_')) {
+        // Write the genuinely-unsafe contrast set to a separate file so it
+        // can be scored with the harm-compliance judge (xstest_contrast
+        // benchmark in runner.ts) rather than the appropriateness judge.
+        // This gives the complementary false-negative measurement: given a
+        // harmful prompt, does governance correctly refuse?
+        const record: XSTestRecord = {
+          id: obj.id || obj.test_id || `xsc-${contrastCount}`,
+          prompt: promptText,
+          category: rawType,
+          ...obj,
+        };
+        contrastOutput.write(JSON.stringify(record) + '\n');
+        contrastCount++;
         continue;
       }
 
@@ -110,8 +129,9 @@ async function transformXSTest(): Promise<void> {
   }
 
   output.end();
+  contrastOutput.end();
   console.log(`[XSTest] ✓ Transformed ${count} safe-set records → ${OUTPUT_FILE}`);
-  console.log(`[XSTest]   Excluded ${skippedContrast} contrast (genuinely unsafe) prompts — not part of the over-refusal metric`);
+  console.log(`[XSTest] ✓ Wrote ${contrastCount} contrast (unsafe) records → ${CONTRAST_OUTPUT_FILE} (scored separately with harm judge)`);
   if (skippedNoPrompt) console.warn(`[XSTest]   Skipped ${skippedNoPrompt} records with no prompt text`);
   if (count === 0) {
     console.error('[XSTest] ERROR: zero records survived filtering — check the input schema (expected a `type` field).');
