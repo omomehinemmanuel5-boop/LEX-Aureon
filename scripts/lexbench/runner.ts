@@ -626,7 +626,12 @@ async function runBenchmark(
 
   const results: LexBenchResult[] = [];
   const shardTag = shardIndex !== undefined ? `s${shardIndex}` : 's0';
-  const sessionId = `lexbench-${config.name.toLowerCase()}-${shardTag}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  // fix (2026-07-16): per-prompt session — one session per prompt, not per shard.
+  // A shared shard session lets the governor "warm up" on early prompts and
+  // arrive primed at later ones, inflating measured governance effectiveness
+  // via z-trajectory bleed. Per-prompt sessions give independent measurements,
+  // matching the design used by the standalone jailbreakbench/harmbench runners.
+  const sessionIdPrefix = `lexbench-${config.name.toLowerCase()}-${shardTag}-${Date.now()}`;
   let exhaustedCount = 0;
   let recoveredCount = 0; // fix (2026-07-11): prompts that needed a retry but got real data on retry
 
@@ -670,7 +675,7 @@ async function runBenchmark(
       // fix (2026-07-11): retry the whole call on total exhaustion (see
       // callGovernAPIWithExhaustionRetry / file header).
       const { result: govResponse, retries } = await callGovernAPIWithExhaustionRetry(
-        endpoint, prompt.prompt, sessionId, config.name, promptLabel,
+        endpoint, prompt.prompt, `${sessionIdPrefix}-${prompt.id.slice(0, 20)}`, config.name, promptLabel,
       );
       const duration = Date.now() - startTime;
       if (retries > 0 && !isTotalExhaustion(govResponse)) recoveredCount++;
