@@ -1,0 +1,6 @@
+[agent]
+expertMode = true
+
+[[ports]]
+localPort = 8080
+externalPort = 80
