@@ -90,6 +90,27 @@
  * quota for a partial gap that's already the honest, correct outcome per
  * the 2026-07-10 fix).
  *
+ * feat (2026-07-16) — PER-ROW MEASUREMENT PROVENANCE: every LexBenchResult now
+ * carries a provenance block recording what actually produced its numbers —
+ * generation providers for both arms, embedding provider, and (via
+ * OutputMetrics.judge_model, set by scoreOutput's judge calls) which model
+ * graded each arm. Nothing here is new information: raw_provider and
+ * governed_provider were already computed to detect exhaustion and then
+ * discarded, embed_provider was already returned by the /api/lex/govern route
+ * and never read, judge_model was already resolved by generateJudge and
+ * dropped by every judge. The reason to persist them is direct: HarmBench's
+ * BARE arm moved 12.8%→24.2% between 2026-07-14 and 07-16 with no change to
+ * the bare code path, and with only judge_method (which rubric ran) recorded,
+ * there is no way from the row itself to tell whether the judge chain fell
+ * back to a different model or the govern route's generation provider
+ * changed. Both are permitted to change and both do change: generateJudge
+ * cascades across a 7-entry provider/model chain (lib/llm_provider.ts), and
+ * Gemini's 1,000/day embedding quota is exceeded by a single production suite
+ * (~1,764 novel output embeddings) so the embedding space that computes C/R/S
+ * flips to mistral-embed partway through. Reported at the row level;
+ * aggregate-report.ts summarises the distribution per benchmark; both live
+ * inside notes so no benchmark_results schema change is required.
+ *
  * Usage:
  *   npm run lexbench -- --benchmark truthfulqa --n 50
  *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
@@ -155,6 +176,14 @@ interface OutputMetrics {
    *  aggregate-report.ts can detect and refuse to mix old cached entries (which carry this field) with new ones. */
   strong_reject_severity_norm?: number | null;
   judge_method: string;                      // which judge/fallback produced this score
+  /** feat (2026-07-16): the judge MODEL that produced this score, not just the
+   * method. judge_method already told us WHICH RUBRIC ran; it never told us
+   * which model ran it, and generateJudge falls back across a 7-entry chain
+   * (lib/llm_provider.ts). Bare-arm ASR moved 12.8%→24.2% across 2026-07-14→16
+   * with an unchanged bare code path — with only judge_method recorded, judge
+   * drift and generator drift are indistinguishable. null when no judge call
+   * was made (empty/exhausted output) or on a pre-2026-07-16 cached row. */
+  judge_model?: string | null;
 }
 
 interface LexBenchResult {
@@ -176,6 +205,22 @@ interface LexBenchResult {
   duration_ms: number;
   error?: string;
   exhaustion_retries?: number; // fix (2026-07-11): how many retries this prompt needed, for visibility in output
+  /** feat (2026-07-16) — PER-ROW MEASUREMENT PROVENANCE. Every field here was
+   * already being computed and then thrown away: raw_provider/governed_provider
+   * were read only to detect exhaustion (see isProviderExhausted call sites) and
+   * never persisted; embed_provider was returned by the API and never read;
+   * judge_model was resolved by generateJudge and dropped by every judge.
+   * Recording them is what makes a published row interpretable NEXT to another
+   * run rather than only within itself. `source` distinguishes a live govern
+   * call from a cache replay — a replayed row has no provider identity at all,
+   * which is itself a fact the aggregate should surface rather than impute. */
+  provenance?: {
+    source: 'live' | 'cache';
+    raw_provider: string | null;
+    governed_provider: string | null;
+    governed_source: string | null;
+    embed_provider: string | null;
+  };
 }
 
 interface PromptRecord {
@@ -381,6 +426,17 @@ interface GovernAPIResult {
   governed_source?: string | null;
   raw_provider?: string | null;
   governed_provider?: string | null;
+  /** feat (2026-07-16): which embedding provider served THIS turn's C/R/S
+   * measurement. The govern route already returns it (route.ts embed_provider);
+   * the runner was discarding it. It matters because Gemini's embed quota is
+   * 1,000/day and a production suite issues ~1,764 novel output embeddings, so
+   * a full run crosses into mistral-embed partway through — a different, lower-
+   * fidelity embedding space (truncated 1024→256, no Matryoshka objective; see
+   * lib/lex_memory.ts). Per-request pinning keeps each prompt's bare-vs-governed
+   * pair inside ONE space, so the paired delta stays valid — but cross-prompt
+   * aggregates silently mix spaces, and until now nothing recorded where the
+   * boundary fell. */
+  embed_provider?: string | null;
   error?: string;
 }
 
@@ -433,6 +489,7 @@ async function callGovernAPI(
         governed_source: data.governed_source ?? null,
         raw_provider: data.raw_provider ?? null,
         governed_provider: data.governed_provider ?? null,
+        embed_provider: data.embed_provider ?? null,
       };
     } catch (err) {
       if (attempt < RETRIES.length) {
@@ -541,7 +598,7 @@ async function scoreOutput(
     const correct   = Array.isArray(promptRecord.correct_answers)   ? promptRecord.correct_answers as string[]   : [];
     const incorrect = Array.isArray(promptRecord.incorrect_answers) ? promptRecord.incorrect_answers as string[] : [];
     const best      = typeof promptRecord.best_answer === 'string'  ? promptRecord.best_answer : undefined;
-    const { verdict, method } = await judgeTruthfulness(promptRecord.prompt, output, correct, incorrect, best);
+    const { verdict, method, judge_model } = await judgeTruthfulness(promptRecord.prompt, output, correct, incorrect, best);
     return {
       asr: null,
       truthful: verdict === null ? null : (verdict ? 1 : 0),
@@ -549,12 +606,13 @@ async function scoreOutput(
       xstest_appropriate: null,
       strong_reject_harm: null,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
   if (config.kind === 'injection') {
     const injectionGoal = typeof promptRecord.injection_goal === 'string' ? promptRecord.injection_goal : promptRecord.prompt;
-    const { verdict, method } = await judgeInjectionResistanceProxy(injectionGoal, output);
+    const { verdict, method, judge_model } = await judgeInjectionResistanceProxy(injectionGoal, output);
     return {
       asr: null,
       truthful: null,
@@ -562,12 +620,13 @@ async function scoreOutput(
       xstest_appropriate: null,
       strong_reject_harm: null,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
   if (config.kind === 'over_refusal') {
     const category = typeof promptRecord.category === 'string' ? promptRecord.category : 'unknown';
-    const { verdict, method } = await judgeXSTestAppropriate(promptRecord.prompt, output, category);
+    const { verdict, method, judge_model } = await judgeXSTestAppropriate(promptRecord.prompt, output, category);
     return {
       asr: null,
       truthful: null,
@@ -575,6 +634,7 @@ async function scoreOutput(
       xstest_appropriate: verdict === null ? null : (verdict ? 1 : 0),
       strong_reject_harm: null,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
@@ -588,7 +648,7 @@ async function scoreOutput(
     // found null on every row, effectively dropping all StrongREJECT data
     // from aggregation. Now reads harm_score directly and stores it in
     // strong_reject_harm, the field aggregate-report.ts expects.
-    const { harm_score, method } = await judgeStrongREJECT(promptRecord.prompt, output);
+    const { harm_score, method, judge_model } = await judgeStrongREJECT(promptRecord.prompt, output);
     return {
       asr: null,
       truthful: null,
@@ -596,12 +656,13 @@ async function scoreOutput(
       xstest_appropriate: null,
       strong_reject_harm: harm_score,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
   // 'harm' — AdvBench, HarmBench, JailbreakBench, XSTest-Contrast
   const target = typeof promptRecord.target === 'string' ? promptRecord.target : undefined;
-  const { verdict, method } = await judgeHarmCompliance(promptRecord.prompt, output, target);
+  const { verdict, method, judge_model } = await judgeHarmCompliance(promptRecord.prompt, output, target);
   return {
     asr: verdict === null ? null : (verdict ? 1 : 0),
     truthful: null,
@@ -609,6 +670,7 @@ async function scoreOutput(
     xstest_appropriate: null,
     strong_reject_harm: null,
     judge_method: method,
+    judge_model: judge_model ?? null,
   };
 }
 
@@ -697,6 +759,15 @@ async function runBenchmark(
         intervention: cachedResult.intervention ?? lexMetrics.M < 0.08,
         timestamp: cachedResult.timestamp,
         duration_ms: 0,
+        // A cache replay made no govern call: there is no provider identity to
+        // report. Recorded as such rather than imputed from the current run.
+        provenance: {
+          source: 'cache',
+          raw_provider: null,
+          governed_provider: null,
+          governed_source: null,
+          embed_provider: null,
+        },
       });
       continue;
     }
@@ -742,6 +813,13 @@ async function runBenchmark(
         timestamp: new Date().toISOString(),
         duration_ms: duration,
         ...(retries > 0 ? { exhaustion_retries: retries } : {}),
+        provenance: {
+          source: 'live',
+          raw_provider: govResponse.raw_provider ?? null,
+          governed_provider: govResponse.governed_provider ?? null,
+          governed_source: govResponse.governed_source ?? null,
+          embed_provider: govResponse.embed_provider ?? null,
+        },
       };
 
       if (govResponse.error) {
