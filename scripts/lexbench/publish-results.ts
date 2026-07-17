@@ -45,6 +45,13 @@
  * 1,000/day quota allows, so the embedding space itself changes partway
  * through. Reported, never corrected for.
  *
+ * feat (2026-07-17) — SKIPPED ROWS: rows_skipped (prompts the runner's
+ * sustained-exhaustion circuit breaker chose not to attempt at all, once a
+ * confirmed outage looked durable rather than momentary — see runner.ts's
+ * SUSTAINED_EXHAUSTION_THRESHOLD) now renders in the same rows= segment as
+ * live/cached, when present. Optional field: an older summary.json without it
+ * still publishes unchanged.
+ *
  * Usage:
  *   BENCH_SECRET=... NEXT_PUBLIC_SITE_URL=https://www.lexaureon.com \
  *     npx tsx scripts/lexbench/publish-results.ts summary.json
@@ -67,6 +74,9 @@ interface BenchmarkSummary {
   provenance?: {
     rows_live: number;
     rows_cached: number;
+    /** feat (2026-07-17): prompts the sustained-exhaustion circuit breaker
+     * skipped entirely rather than attempting — see runner.ts. */
+    rows_skipped?: number;
     rows_unknown: number;
     raw_providers: Record<string, number>;
     governed_providers: Record<string, number>;
@@ -126,7 +136,9 @@ function buildRows(summary: Record<string, BenchmarkSummary>, runDate: string): 
         : 'unrecorded';
     const p = s.provenance;
     const provNote = p
-      ? `; rows=live:${p.rows_live}|cached:${p.rows_cached}${p.rows_unknown ? `|unknown:${p.rows_unknown}` : ''}`
+      ? `; rows=live:${p.rows_live}|cached:${p.rows_cached}` +
+        `${p.rows_skipped ? `|skipped:${p.rows_skipped}` : ''}` +
+        `${p.rows_unknown ? `|unknown:${p.rows_unknown}` : ''}`
         + `; judge_models=${dist(p.judge_models)}`
         + `; bare_gen=${dist(p.raw_providers)}`
         + `; governed_gen=${dist(p.governed_providers)}`
