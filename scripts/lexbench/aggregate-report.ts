@@ -61,6 +61,23 @@
  * distribution of every such identity per benchmark. It reports them; it does
  * not correct for them, and it never imputes one onto a row that didn't record
  * it.
+ *
+ * fix (2026-07-17) — STDOUT LEAK IN BELOW-COVERAGE-FLOOR BRANCH: the workflow
+ * runs `aggregate-report.ts all_results.jsonl > summary.json`, redirecting
+ * this script's stdout into summary.json. Every other diagnostic in this file
+ * correctly uses console.warn/console.error (stderr, harmless). The single
+ * exception was the below-coverage-floor branch — for a benchmark with
+ * pairedN>0 but below MIN_SCORED_ABSOLUTE / MIN_SCORED_FRACTION, it emitted a
+ * plaintext diagnostic via console.log — STDOUT. Result: a plaintext line got
+ * prepended to summary.json, invalidating it as JSON, and publish-results.ts's
+ * JSON.parse threw before any HTTP call, failing "Publish results to live
+ * leaderboard" in 1s. Confirmed cause of both 2026-07-17 workflow failures
+ * (prod and extended). AgentDojo landed 4 of 27 scored on that run — the
+ * first time any benchmark hit the 0 < pairedN < MIN_SCORED_ABSOLUTE band,
+ * which is the ONLY branch that fired the leak. Fixed: that one console.log
+ * is now console.warn, matching every other diagnostic. All new provenance
+ * warnings introduced in the 2026-07-16 batch were already on stderr and were
+ * not affected.
  */
 
 import * as fs from 'fs';
@@ -439,7 +456,14 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
         s.governed_ci95 = [pct(Math.max(0, govAvg  - gm)), pct(Math.min(1, govAvg  + gm))];
       }
     } else if (a.pairedN > 0) {
-      console.log(
+      // fix (2026-07-17): console.warn (stderr), NOT console.log (stdout). The
+      // workflow redirects this script's stdout into summary.json; a plaintext
+      // line here contaminates the file so publish-results.ts's JSON.parse
+      // throws in 1s. Every other diagnostic in this file already uses stderr.
+      // Confirmed cause of both 2026-07-17 workflows failing at the publish
+      // step: AgentDojo scored 4/27 (below the 10-sample floor), triggering
+      // this branch and corrupting summary.json.
+      console.warn(
         `  (${a.benchmark}: ${a.pairedN}/${a.total} paired — below the ${MIN_SCORED_ABSOLUTE}-sample / ` +
         `${MIN_SCORED_FRACTION * 100}% coverage floor, not publishing an average)`,
       );
