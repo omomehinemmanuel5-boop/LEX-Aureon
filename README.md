@@ -71,6 +71,8 @@ raw_output      → "I do not have a personal name... I was developed by a team
 > **Status (2026-07): a full-scale scored run is live across seven benchmarks.** The table below is a snapshot as of the run date shown; **[lexaureon.com/benchmarks](https://lexaureon.com/benchmarks) and `GET /api/benchmarks` are the live, authoritative source** — they update automatically the moment a new run publishes, this table does not.
 >
 > **Provenance caution on the current live rows:** the 2026-07-16 batch on the live site executed on code that predates the 2026-07-16 fix batch (per-prompt sessions, StrongREJECT formula fix, Wilson CIs — verified from session records and published notes, see `LEXBENCH_README.md`). Its AdvBench row also reflects a provider-exhaustion coverage collapse (219/520 scored; the bare "1.83%" is the same 4 attack successes as the prior run's 0.77%, over a smaller denominator). The rows remain published with honest `n` counts per the append-only policy; the first post-fix run supersedes them automatically.
+>
+> **2026-07-17 run attempt published nothing.** Both benchmark workflows ran to completion but hit a pipeline bug (a diagnostic line corrupting the aggregator's JSON output — fixed, see `LEXBENCH_README.md`'s Fix History) and, once recovered, showed genuinely low coverage from provider-quota exhaustion (AdvBench 46/520, HarmBench 42/200, JailbreakBench 0/200, AgentDojo 0/27) — below the minimum-coverage gate, so nothing was published rather than a misleading partial average. Two structural fixes landed the same day (a sustained-exhaustion circuit breaker so a shard fails fast instead of grinding through hundreds of doomed retries; AgentDojo reordered first instead of last in the per-shard sequence) aimed at the next clean run.
 
 | Benchmark | Metric | Direction | Bare | Governed | Δ | n | Run date |
 |:---|:---|:---:|---:|---:|---:|---:|:---|
@@ -178,7 +180,7 @@ M < τ → Governor fires
 
 > **LLM generation fallback chain (`lib/llm_provider.ts`), 4 providers as of 2026-07-11:** Groq (`llama-3.3-70b-versatile` primary, `llama-3.1-8b-instant` fallback) → Cerebras (`gpt-oss-120b` — a reasoning model; content only populates once reasoning finishes and token budget remains, see the file's own header note) → Mistral (`open-mistral-7b`) → Gemini (`gemini-3.1-flash-lite`, `gemini-2.5-flash`), with different orderings per role (`generateGoverned`, `generateRewrite`, `generateJudge`) so a single provider's exhaustion doesn't uniformly degrade every function at once. Every provider call now logs its failure reason (HTTP status, error body) on failure — added after a real incident where three providers exhausted simultaneously with no diagnostic visibility into which one or why (see *Evaluation*'s incident note).
 
-> **Known fragility (mitigated, not eliminated):** Gemini's free tier caps embedding calls at **1,000 `embed_content` requests per day**. A single govern call makes 2–3 embedding requests, so a benchmark run of even moderate size can exhaust the *shared* daily quota. The Mistral fallback means this now fails over rather than degrading detection outright. As of 2026-07-16 the two reference centroids (constitutional laws, harm-reference set) are additionally **persisted in Turso** (`centroid_cache`, content-addressed by source hash, keyed per provider) — previously every cold lambda instance re-embedded ~350 reference texts, which under concurrent benchmark shards during a Turso quota block was the dominant consumer of the daily embed quota. LLM generation quota exhaustion (a separate, real, resolved incident) is addressed by the 4-provider chain above.
+> **Known fragility (mitigated, not eliminated):** Gemini's free tier caps embedding calls at **1,000 `embed_content` requests per day**. A single govern call makes 2–3 embedding requests, so a benchmark run of even moderate size can exhaust the *shared* daily quota. The Mistral fallback means this now fails over rather than degrading detection outright. As of 2026-07-16 the two reference centroids (constitutional laws, harm-reference set) are additionally **persisted in Turso** (`centroid_cache`, content-addressed by source hash, keyed per provider) — previously every cold lambda instance re-embedded all 410 reference texts (360 harm-reference + 50 constitutional laws — measured directly against the live `centroid_cache` table, not estimated), which under concurrent benchmark shards during a Turso quota block was the dominant consumer of the daily embed quota. LLM generation quota exhaustion (a separate, real, resolved incident) is addressed by the 4-provider chain above.
 
 ### Reported state is one coherent vector
 
@@ -334,9 +336,10 @@ Stated plainly, in the same spirit as the rest of this document.
 | Benchmark results (data) | `lib/benchmark_results.ts` | one writer / one reader over `benchmark_results`; `RETIRED_METRICS` allowlist |
 | Benchmark results (write) | `app/api/benchmarks/publish/route.ts` | `POST` (write) + `GET` (auth-only precheck) |
 | Grounded judges | `scripts/lexbench/grounded_judge.ts`, `xstest_judge.ts`, `strong_reject_judge.ts` | per-benchmark-kind judging, no keyword fallback |
-| LexBench runner | `scripts/lexbench/runner.ts` | same-model bare vs governed, session-tagged, retries on total simultaneous-provider exhaustion |
+| LexBench runner | `scripts/lexbench/runner.ts` | same-model bare vs governed, session-tagged, retries on total simultaneous-provider exhaustion, sustained-exhaustion circuit breaker |
 | LexBench aggregator | `scripts/lexbench/aggregate-report.ts` | minimum-coverage gate before publishing an average |
 | LexBench publisher | `scripts/lexbench/publish-results.ts` | `n_total` = scored count, not attempted count |
+| LexBench recovery | `.github/workflows/lexbench-recovery.yml` | re-aggregate + publish from a prior run's artifacts at current main HEAD |
 | Public audit trail | `app/audit/page.tsx`, `app/audit/[id]/page.tsx` | index + per-receipt view, covers both `praxis_receipts` and `tool_receipts` |
 
 ---
@@ -347,6 +350,7 @@ Stated plainly, in the same spirit as the rest of this document.
 - `LexBench Production` (`.github/workflows/lexbench-prod.yml`) — TruthfulQA, HarmBench, JailbreakBench, AdvBench, AgentDojo; sharded, max-parallel:2, auto-publishes. **Actions → LexBench Production → Run workflow**.
 - `LexBench Extended` (`.github/workflows/lexbench-extended.yml`) — XSTest, StrongREJECT, XSTest-Contrast; runs Sundays at 2am UTC.
 - `LexBench Kappa Check` (`.github/workflows/kappa-check.yml`) — manual dispatch; samples a results JSONL and reports Cohen's κ between the primary judge and a reference model. Run this after any judge prompt or model change.
+- `LexBench Recovery` (`.github/workflows/lexbench-recovery.yml`) — manual dispatch; re-runs aggregate+publish against a prior failed run's already-uploaded shard artifacts, at current main HEAD. Use when `aggregate-and-report` fails on a run whose shards completed — sidesteps GitHub Actions' "re-run failed jobs replays the original commit" behavior.
 
 A `precheck-auth` job verifies `BENCH_SECRET` before anything expensive runs. Use the `limit` input (e.g. `5`) for a fast end-to-end smoke test first.
 
@@ -377,7 +381,9 @@ Once published, numbers appear automatically at [lexaureon.com/benchmarks](https
 
 ```bash
 npm run test          # math, governor, constitution, schemas, API, bench auth
-npm run typecheck     # tsc --noEmit
+npx tsc --noEmit      # typecheck — no `npm run typecheck` script exists;
+                       # this is the actual command (verified 2026-07-17
+                       # after `npm run typecheck` was found not to exist)
 ```
 
 Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PROMPT_CHARS`) rather than hardcoding a value, so they can't silently drift.
@@ -438,6 +444,8 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 - [x] **Cache HarmBench dataset across shards** — `determine-shards` uploads the fetched dataset as a run artifact; shards download it instead of re-fetching independently (~9 fetches → 1 per production run)
 - [x] **Systematic judge-agreement check** (`kappa-check.ts` + `kappa-check.yml`) — samples N prompts from any results JSONL, re-judges with a configurable Groq reference model, computes Cohen's κ with 95% CI, writes a report. κ < 0 fails the check; κ < 0.6 warns. Baseline: ad-hoc check on JailbreakBench (n=25) gave κ = −0.087 vs `llama-4-scout`, which surfaced the hedged-compliance false-negative bug.
 - [x] **Persistent centroid cache** (2026-07-16) — the constitutional-law and harm-reference centroids now persist in Turso (`centroid_cache`), content-addressed by source hash and keyed per embedding provider. Root-cause fix for cold-start Gemini embed quota exhaustion under concurrent benchmark shards (the driver of the 2026-07-16 run's coverage collapse).
+- [x] **Record judge-model and generator-provider identity per published row** (2026-07-16/17) — every published row's notes now embed judge model, both arms' generation providers, embedding provider, and live/cache/skipped row counts, closing the gap that made cross-run bare-arm drift uninterpretable.
+- [x] **Sustained-exhaustion circuit breaker + AgentDojo reordering** (2026-07-17) — a run that hits real, durable provider exhaustion now fails fast after 8 confirmed consecutive exhaustions instead of grinding through hundreds of doomed retries; AgentDojo moved from last to first in the per-shard sequence after two consecutive runs showed it inheriting the worst accumulated exhaustion purely from running last.
 
 **Done — agentic tool-call governance (2026-07-11, pilot-stage)**
 - [x] Build `interceptToolCall()` / `measureToolCRS()` — the real, tested tool-call governor
@@ -446,7 +454,6 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 - [x] `log_decision` / `narrate_origin` — evidence-grounded self-history, not narrative generation
 
 **Next — broaden and harden**
-- [ ] Record judge-model and generator-provider identity per published row — bare-arm ASR drift across runs (HarmBench bare 12.8%→24.2%, 2026-07-14→16) is currently uninterpretable without per-row provenance; within-run deltas remain valid
 - [ ] Swap in the official fine-tuned HarmBench/JailbreakBench classifiers (the kappa-check system now makes two-judge agreement reportable once they're wired in)
 - [ ] Run the kappa check on a full production JSONL and establish a κ baseline per benchmark before treating results as fully citable
 - [ ] Build or adopt a real AgentDojo tool-execution harness (replace the text-only proxy)
