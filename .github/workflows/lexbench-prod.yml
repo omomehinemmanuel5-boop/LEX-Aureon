@@ -63,7 +63,17 @@ env:
   # lexbench-extended.yml already avoided this by looping over an explicit
   # list rather than relying on "all" — this applies that same proven pattern
   # here instead of touching the shared runner.ts.
-  BENCHMARKS: truthfulqa,harmbench,jailbreakbench,advbench,agentdojo
+  # fix (2026-07-17): agentdojo moved from LAST to FIRST. It ran last on both
+  # 2026-07-16 and 2026-07-17 and had by far the worst coverage of any
+  # benchmark both times (4/27, then 0/27) while earlier benchmarks in the
+  # same sequence scored real (if degraded) verdicts. Since every benchmark
+  # in this list runs sequentially within ONE shard process sharing ONE set
+  # of provider keys, whichever benchmark runs last inherits the MOST
+  # accumulated exhaustion from everything before it — a structural bias
+  # independent of anything AgentDojo-specific. Also the smallest dataset
+  # (27 prompts) of the five, so it clears fastest and has the best chance
+  # of finishing before quota degrades, if it goes first instead of last.
+  BENCHMARKS: agentdojo,truthfulqa,harmbench,jailbreakbench,advbench
 
 jobs:
   # ── Fail FAST if BENCH_SECRET won't authorize a publish ─────────────────
