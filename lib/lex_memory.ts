@@ -73,10 +73,12 @@
  *
  * feat (2026-07-16) — PERSISTENT CENTROID CACHE: _centroidCache and
  * _harmCentroidCache are module-level in-memory Maps, so on Vercel serverless
- * EVERY cold lambda instance recomputed both centroids from scratch: ~300
- * harm-reference embeds + 50 law embeds per instance. The per-text
+ * EVERY cold lambda instance recomputed both centroids from scratch: 360
+ * harm-reference embeds + 50 law embeds per instance (measured directly
+ * against the live centroid_cache table on 2026-07-16; the ~300 estimate
+ * this comment originally carried was off by ~20%). The per-text
  * embedding_cache absorbs most Gemini calls when Turso reads succeed, but
- * (a) that is still 350+ Turso point reads PLUS 350 hit-counter UPDATE writes
+ * (a) that is still 410 Turso point reads PLUS 410 hit-counter UPDATE writes
  * per cold start, and (b) getCachedEmbedding() returns null on ANY error —
  * so during a Turso quota block every one of those lookups silently falls
  * through to a live Gemini embed call. That coupling is how concurrent shard
@@ -767,7 +769,8 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
   try {
     if (!HARM_REFERENCE_PROMPTS.length) return null;
     // Persistent layer (2026-07-16): one Turso read replaces re-embedding the
-    // full reference set (~300 texts) on every cold lambda instance.
+    // full reference set (360 texts, measured — not the originally-estimated
+    // ~300) on every cold lambda instance.
     const sourceHash = await hashText(HARM_REFERENCE_PROMPTS.join('\n'));
     const persisted = await getPersistedCentroid('harm_reference', forceProvider, sourceHash);
     if (persisted) {
