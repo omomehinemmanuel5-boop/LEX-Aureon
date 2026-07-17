@@ -52,6 +52,19 @@ env:
   # header. See lexbench-prod.yml env block for the full incident note.
   SITE_URL: https://www.lexaureon.com
 
+# fix (2026-07-17): the default GITHUB_TOKEN's scopes depend on the repo's
+# "Workflow permissions" setting (Settings → Actions → General). Many repos
+# default to the restrictive "Read repository contents permission" option,
+# which grants contents:read but NOT actions:read. `gh run download` needs
+# actions:read to list and fetch another run's artifacts — without this
+# block it silently gets a token that can check out the repo but cannot see
+# any workflow run's artifacts, and the download step fails. Declared
+# explicitly here rather than relying on the repo-level default, so this
+# workflow works regardless of what that setting is.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   # Same fail-fast auth precheck as the main workflows. Runs in under a
   # second; if BENCH_SECRET is wrong the recovery is aborted before we
