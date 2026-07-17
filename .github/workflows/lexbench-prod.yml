@@ -271,13 +271,17 @@ jobs:
         run: npm install
 
       # Fix: use pattern + merge-multiple to collect all shard artifacts
+      # fix (2026-07-17): removed if-no-files-found — that input exists on
+      # actions/upload-artifact, NOT actions/download-artifact. Harmless
+      # (GitHub Actions warns and ignores an unrecognized input rather than
+      # failing), but it was noise on every run's Annotations panel,
+      # surfaced while diagnosing the 2026-07-17 publish failure.
       - name: Download all shard results
         uses: actions/download-artifact@v4
         with:
           pattern: lexbench-shard-results-*
           merge-multiple: true
           path: results/
-          if-no-files-found: warn
 
       - name: Aggregate results and generate report
         run: |
