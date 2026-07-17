@@ -20,7 +20,8 @@ name: LexBench Recovery — Aggregate & Publish From Prior Run
 # USAGE:
 #   Actions → "LexBench Recovery — Aggregate & Publish From Prior Run" → Run
 #   workflow → enter the numeric run ID of the failed run (the digits at the
-#   end of its URL) → Run. That's it.
+#   end of its URL) → Run. That's it. Works for a failed lexbench-prod.yml
+#   run OR a failed lexbench-extended.yml run — no need to specify which.
 #
 # INITIAL CONTEXT (2026-07-17): the two workflows dispatched on 2026-07-17
 # had all shards succeed but the aggregate-and-report job crashed at
@@ -68,7 +69,10 @@ permissions:
 jobs:
   # Same fail-fast auth precheck as the main workflows. Runs in under a
   # second; if BENCH_SECRET is wrong the recovery is aborted before we
-  # touch the artifacts at all.
+  # touch the artifacts at all. Verified directly against
+  # app/api/benchmarks/publish/route.ts's GET handler (2026-07-05 precheck
+  # addition) — GET with the same Authorization header returns 200 {ok:true}
+  # or 401/503 with a safe diagnostic reason, in under a second.
   precheck-auth:
     runs-on: ubuntu-latest
     steps:
@@ -105,23 +109,40 @@ jobs:
       # gh is pre-installed on ubuntu-latest and auto-authenticates for the
       # current repository via GITHUB_TOKEN — enough scope to list and
       # download this repo's own Actions artifacts. No PAT required.
-      - name: Download shard artifacts from run ${{ inputs.run_id }}
+      #
+      # fix (2026-07-17): NO --pattern filter. The two source workflows wrap
+      # their per-shard result files in DIFFERENTLY NAMED artifacts —
+      # lexbench-prod.yml uploads "lexbench-shard-results-N", but
+      # lexbench-extended.yml uploads "extended-benchmark-shard-N". A single
+      # hardcoded --pattern can only ever match one of the two workflows, so
+      # this recovery workflow would silently find 0 artifacts (and fail)
+      # every time it was pointed at an extended run. Downloading everything
+      # for the run and filtering by FILE name in the next step is what
+      # actually distinguishes real result shards from everything else in
+      # the run's artifacts (input datasets, final-report JSON, etc.) —
+      # runner.ts's saveResults() always writes result files as
+      # data/lexbench-<benchmark>-<timestamp>.jsonl regardless of which
+      # artifact name wraps them, so filtering on that filename prefix in
+      # the Aggregate step below is both correct and workflow-agnostic.
+      - name: Download all artifacts from run ${{ inputs.run_id }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p results
-          echo "Downloading shard artifacts from run ${{ inputs.run_id }} ..."
+          echo "Downloading all artifacts from run ${{ inputs.run_id }} ..."
           gh run download ${{ inputs.run_id }} \
             --repo ${{ github.repository }} \
-            --pattern "lexbench-shard-results-*" \
             --dir results/
           echo ""
-          echo "Shard files discovered:"
-          find results/ -type f -name "*.jsonl" | sort
-          COUNT=$(find results/ -type f -name "*.jsonl" | wc -l)
-          echo "Total shard files: $COUNT"
+          echo "Artifacts downloaded:"
+          find results/ -maxdepth 1 -mindepth 1 -type d | sort
+          echo ""
+          echo "Result-shard files discovered (data/lexbench-*.jsonl, any artifact):"
+          find results/ -type f -name "lexbench-*.jsonl" | sort
+          COUNT=$(find results/ -type f -name "lexbench-*.jsonl" | wc -l)
+          echo "Total result-shard files: $COUNT"
           if [ "$COUNT" -eq 0 ]; then
-            echo "::error::No shard artifacts found in run ${{ inputs.run_id }}. Either the run ID is wrong, the artifacts have expired (~90 days), or the run's shards never uploaded anything."
+            echo "::error::No result-shard files (lexbench-*.jsonl) found anywhere in run ${{ inputs.run_id }}'s artifacts. Either the run ID is wrong, the artifacts have expired (~90 days), or every shard in that run failed before producing output."
             exit 1
           fi
 
