@@ -78,6 +78,21 @@
  * is now console.warn, matching every other diagnostic. All new provenance
  * warnings introduced in the 2026-07-16 batch were already on stderr and were
  * not affected.
+ *
+ * feat (2026-07-17) — SKIPPED-ROW PROVENANCE: 'skipped' joins 'live'/'cache'
+ * as a provenance.source value, tallied into its own rows_skipped bucket,
+ * excluded from provider tallies (no call was ever made, nothing to
+ * attribute). Written by runner.ts's new sustained-exhaustion circuit
+ * breaker — see SUSTAINED_EXHAUSTION_THRESHOLD there for why: the 2026-07-17
+ * run ground through hundreds of doomed retries once real exhaustion set in
+ * (HarmBench 42/200, JailbreakBench 0/200, AgentDojo 0/27), each one paying
+ * the full per-prompt retry cost to arrive at the same outcome. The breaker
+ * now stops attempting after enough CONSECUTIVE confirmed exhaustions to be
+ * confident it's sustained rather than momentary, and this file records that
+ * honestly as its own category rather than folding it into 'live' (which
+ * would misrepresent a never-attempted prompt as an attempted one) or
+ * silently dropping it from total_prompts (which would break cross-run
+ * comparability of dataset size).
  */
 
 import * as fs from 'fs';
@@ -107,7 +122,7 @@ interface LexBenchResult {
    * Optional: rows from before 2026-07-16 simply lack it, and are tallied as
    * 'unknown' rather than silently attributed to the current providers. */
   provenance?: {
-    source?: 'live' | 'cache';
+    source?: 'live' | 'cache' | 'skipped';
     raw_provider?: string | null;
     governed_provider?: string | null;
     governed_source?: string | null;
@@ -228,6 +243,11 @@ interface BenchmarkSummary {
   provenance: {
     rows_live: number;
     rows_cached: number;
+    /** feat (2026-07-17): rows the runner's sustained-exhaustion circuit
+     * breaker chose not to attempt at all — see runner.ts's
+     * SUSTAINED_EXHAUSTION_THRESHOLD. Distinct from rows_cached (a real
+     * attempt happened previously) and never folded into rows_live. */
+    rows_skipped: number;
     rows_unknown: number;      // pre-2026-07-16 result files with no provenance field
     raw_providers: Record<string, number>;
     governed_providers: Record<string, number>;
@@ -302,7 +322,7 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
     droppedUnpaired: number;
     legacyStrongReject: number;
     judgeMethods: Set<string>;
-    rowsLive: number; rowsCached: number; rowsUnknown: number;
+    rowsLive: number; rowsCached: number; rowsSkipped: number; rowsUnknown: number;
     rawProviders: Map<string, number>;
     govProviders: Map<string, number>;
     embedProviders: Map<string, number>;
@@ -327,7 +347,7 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
         discordantB: 0, discordantC: 0,
         droppedUnpaired: 0, legacyStrongReject: 0,
         judgeMethods: new Set(),
-        rowsLive: 0, rowsCached: 0, rowsUnknown: 0,
+        rowsLive: 0, rowsCached: 0, rowsSkipped: 0, rowsUnknown: 0,
         rawProviders: new Map(), govProviders: new Map(),
         embedProviders: new Map(), judgeModels: new Map(),
         cSum: 0, rSum: 0, sSum: 0, mSum: 0,
@@ -345,8 +365,12 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
     const prov = r.provenance;
     if (!prov) a.rowsUnknown++;
     else if (prov.source === 'cache') a.rowsCached++;
+    else if (prov.source === 'skipped') a.rowsSkipped++;
     else a.rowsLive++;
-    if (prov && prov.source !== 'cache') {
+    // 'skipped' rows carry no provider identity at all (no call was ever
+    // made) — excluded from provider tallies exactly like 'cache' rows,
+    // for the same reason: nothing to honestly attribute.
+    if (prov && prov.source !== 'cache' && prov.source !== 'skipped') {
       bump(a.rawProviders, prov.raw_provider);
       bump(a.govProviders, prov.governed_source === 'unavailable' ? 'unavailable' : prov.governed_provider);
       bump(a.embedProviders, prov.embed_provider);
@@ -414,7 +438,8 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
       dropped_unpaired: a.droppedUnpaired,
       judge_methods_used: [...a.judgeMethods].sort(),
       provenance: {
-        rows_live: a.rowsLive, rows_cached: a.rowsCached, rows_unknown: a.rowsUnknown,
+        rows_live: a.rowsLive, rows_cached: a.rowsCached,
+        rows_skipped: a.rowsSkipped, rows_unknown: a.rowsUnknown,
         raw_providers: asRecord(a.rawProviders),
         governed_providers: asRecord(a.govProviders),
         embed_providers: asRecord(a.embedProviders),
