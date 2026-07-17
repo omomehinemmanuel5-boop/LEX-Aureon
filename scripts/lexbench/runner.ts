@@ -111,6 +111,21 @@
  * aggregate-report.ts summarises the distribution per benchmark; both live
  * inside notes so no benchmark_results schema change is required.
  *
+ * fix (2026-07-17) — SUSTAINED EXHAUSTION CIRCUIT BREAKER: the 2026-07-11
+ * retry logic assumes a MOMENTARY collision — a rate-limit window rolling
+ * over within ~15-45s. It had no concept of a SUSTAINED outage (e.g. a daily
+ * quota genuinely exhausted for the rest of the day), and none was needed
+ * until this run: HarmBench scored 42/200, JailbreakBench 0/200, AgentDojo
+ * 0/27 — once real exhaustion set in, every remaining prompt still paid the
+ * full retry cost to arrive at the same doomed outcome, for zero usable
+ * data. See SUSTAINED_EXHAUSTION_THRESHOLD below for the mechanism: once N
+ * prompts in a row come back CONFIRMED exhausted (each already past its own
+ * per-prompt retries), the rest of that benchmark's shard is recorded as
+ * skipped rather than ground through one at a time. Skipped rows carry
+ * provenance.source:'skipped' (not 'live') — a never-attempted prompt is a
+ * different fact from an attempted-and-exhausted one, and conflating them
+ * would misrepresent what happened.
+ *
  * Usage:
  *   npm run lexbench -- --benchmark truthfulqa --n 50
  *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
@@ -157,6 +172,34 @@ function isProviderExhausted(text: string, provider: string | null | undefined):
 // run needed this for well under 10% of prompts on every benchmark).
 const MAX_EXHAUSTION_RETRIES = 2;
 const EXHAUSTION_RETRY_DELAY_MS = 15_000;
+
+// fix (2026-07-17) — SUSTAINED EXHAUSTION CIRCUIT BREAKER: the retry logic
+// above (MAX_EXHAUSTION_RETRIES / EXHAUSTION_RETRY_DELAY_MS) was designed for
+// a MOMENTARY collision across providers' independent rate limits — the
+// 2026-07-11 fix note is explicit that a prompt retried a few seconds later
+// usually succeeds once that momentary collision passes. It has no concept of
+// SUSTAINED exhaustion (a daily quota genuinely exhausted for the rest of the
+// day), and none was needed until now: every prior run recovered within a few
+// retries. The 2026-07-17 run did not. HarmBench scored 42/200, JailbreakBench
+// scored 0/200, AgentDojo scored 0/27 — once real exhaustion set in, every
+// remaining prompt still paid the full retry cost (up to 2 × 15s + processing)
+// to arrive at the same doomed outcome, for zero usable data. A benchmark can
+// spend most of its wall-clock time proving, prompt by prompt, that a quota
+// that was already exhausted is still exhausted.
+//
+// SUSTAINED_EXHAUSTION_THRESHOLD: once this many prompts IN A ROW come back
+// totally exhausted (i.e. each one ALREADY exhausted its own per-prompt
+// retries — see isTotalExhaustion/callGovernAPIWithExhaustionRetry), the
+// benchmark's remaining prompts are recorded as skipped (not attempted, not
+// scored) rather than ground through one at a time. 8 was chosen so an
+// isolated run of failures — which today's data shows CAN happen without
+// being terminal, since several benchmarks mixed real verdicts with
+// exhausted ones throughout their run — does not trip it; only a run long
+// enough to be a confident signal of "this is not coming back today" does.
+// Scoped per-benchmark, per-process (each benchmark in a shard is its own
+// node invocation — see lexbench-prod.yml's per-shard loop) — so a benchmark
+// that recovers, or one that never gets exhausted, is entirely unaffected.
+const SUSTAINED_EXHAUSTION_THRESHOLD = 8;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Type Definitions
@@ -213,9 +256,17 @@ interface LexBenchResult {
    * Recording them is what makes a published row interpretable NEXT to another
    * run rather than only within itself. `source` distinguishes a live govern
    * call from a cache replay — a replayed row has no provider identity at all,
-   * which is itself a fact the aggregate should surface rather than impute. */
+   * which is itself a fact the aggregate should surface rather than impute.
+   *
+   * 'skipped' (2026-07-17): a prompt the sustained-exhaustion circuit breaker
+   * (SUSTAINED_EXHAUSTION_THRESHOLD) chose not to attempt at all, after enough
+   * consecutive confirmed exhaustions to conclude further attempts were
+   * doomed. Distinct from 'live' (a real attempt happened) and 'cache' (a
+   * prior real attempt was replayed) — tagging a never-attempted row as
+   * 'live' would itself be a provenance inaccuracy of exactly the kind this
+   * whole feature exists to prevent. */
   provenance?: {
-    source: 'live' | 'cache';
+    source: 'live' | 'cache' | 'skipped';
     raw_provider: string | null;
     governed_provider: string | null;
     governed_source: string | null;
@@ -729,6 +780,11 @@ async function runBenchmark(
   const sessionIdPrefix = `lexbench-${config.name.toLowerCase()}-${shardTag}-${Date.now()}`;
   let exhaustedCount = 0;
   let recoveredCount = 0; // fix (2026-07-11): prompts that needed a retry but got real data on retry
+  // fix (2026-07-17): consecutive TOTAL exhaustions (both arms, each already
+  // past its own per-prompt retry) — feeds the SUSTAINED_EXHAUSTION_THRESHOLD
+  // circuit breaker below. Resets to 0 on any prompt that isn't totally
+  // exhausted, so an isolated bad streak doesn't trip it.
+  let consecutiveExhaustions = 0;
 
   for (let i = 0; i < promptsToRun.length; i++) {
     const prompt = promptsToRun[i];
@@ -839,6 +895,58 @@ async function runBenchmark(
       }
 
       results.push(result);
+
+      // fix (2026-07-17): sustained-exhaustion circuit breaker - see
+      // SUSTAINED_EXHAUSTION_THRESHOLD's definition above for the full
+      // reasoning. isTotalExhaustion(govResponse) reflects the FINAL state
+      // after callGovernAPIWithExhaustionRetry already tried up to
+      // MAX_EXHAUSTION_RETRIES times, so this counts prompts that were
+      // confirmed exhausted, not just slow.
+      if (isTotalExhaustion(govResponse)) {
+        consecutiveExhaustions++;
+      } else {
+        consecutiveExhaustions = 0;
+      }
+
+      if (consecutiveExhaustions >= SUSTAINED_EXHAUSTION_THRESHOLD) {
+        const remaining = promptsToRun.length - (i + 1);
+        console.warn(
+          `[${config.name}] CIRCUIT BREAKER: ${consecutiveExhaustions} consecutive TOTAL provider ` +
+          `exhaustions (each already past its own retries) - this looks like a SUSTAINED outage ` +
+          `(daily quota), not a momentary collision. Skipping the remaining ${remaining} prompt(s) ` +
+          `in this benchmark/shard rather than grinding through them for the same doomed outcome. ` +
+          `Re-run once provider quota resets.`,
+        );
+        const skipTimestamp = new Date().toISOString();
+        for (let j = i + 1; j < promptsToRun.length; j++) {
+          const skippedPrompt = promptsToRun[j];
+          const skippedMetrics: OutputMetrics = {
+            asr: null, truthful: null, injection_resisted: null,
+            xstest_appropriate: null, strong_reject_harm: null,
+            judge_method: 'skipped-sustained-exhaustion',
+          };
+          results.push({
+            benchmark: config.name,
+            prompt_id: String(skippedPrompt.id),
+            prompt: skippedPrompt.prompt,
+            raw_output: '',
+            governed_output: '',
+            bare_metrics: skippedMetrics,
+            governed_metrics: skippedMetrics,
+            lex_metrics: { C: 0, R: 0, S: 0, M: 0 },
+            intervention: false,
+            timestamp: skipTimestamp,
+            duration_ms: 0,
+            provenance: {
+              source: 'skipped',
+              raw_provider: null, governed_provider: null,
+              governed_source: null, embed_provider: null,
+            },
+          });
+        }
+        exhaustedCount += remaining;
+        break;
+      }
     } catch (err) {
       console.error(`[${config.name}] Error processing prompt ${i + 1}: ${err}`);
       results.push({
