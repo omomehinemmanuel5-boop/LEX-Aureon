@@ -246,13 +246,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # fix (2026-07-17): removed if-no-files-found — same invalid-input
+      # bug as lexbench-prod.yml's identical step; see that file's note.
       - name: Download all shard results
         uses: actions/download-artifact@v4
         with:
           pattern: extended-benchmark-shard-*
           merge-multiple: true
           path: results/
-          if-no-files-found: warn
 
       - name: Aggregate results
         run: |
