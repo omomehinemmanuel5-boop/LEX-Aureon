@@ -8,6 +8,7 @@ CBF is always applied LAST, guaranteeing min(x_i) >= TAU_CBF for all time.
 Basin Intelligence Layer shapes convergence toward meaningful interior structure.
 """
 import json
+import math
 import os
 import random
 
@@ -37,11 +38,67 @@ MARGIN_SAFETY_CUTOFF = 0.1   # zero basin force when system is close to collapse
 NORMALIZATION_EPSILON = 1e-12
 FLOAT_TOLERANCE = 1e-9  # floating-point noise threshold for safety check
 
+# ── Lyapunov certificate parameters (2026-07-18 fix — see below) ──────────────
+MU_LYAPUNOV = 2.0        # Barrier penalty weight — matches lib/aureonics_core.ts's MU
+LYAPUNOV_FLOOR = 1e-9    # Prevents log(0) — matches lib/aureonics_core.ts's FLOOR
 
 
-def lyapunov_candidate(x: list[float]) -> float:
+def lyapunov_quadratic(x: list[float]) -> float:
+    """
+    The SUPERSEDED candidate this file used until 2026-07-18: V(x) = sum((x_i - 1/3)^2).
+    Kept for reference/comparison only — no longer called by simulate_cbf().
+    Matches lib/aureonics_core.ts's lyapunovQuadratic(), which is likewise kept
+    there only as a labeled historical alternative, not the live certificate.
+    """
     center = 1.0 / 3.0
     return sum((xi - center) ** 2 for xi in x)
+
+
+def lyapunov_candidate(x: list[float], z: list[float] | None = None) -> float:
+    """
+    fix (2026-07-18) — THE PUBLISHED CERTIFICATE, NOT A SUBSTITUTE: this
+    function previously computed the simple quadratic V(x) = sum((x_i-1/3)^2)
+    (see lyapunov_quadratic above), not the Aureonics §11 published
+    certificate. Direct comparison against lib/aureonics_core.ts's
+    lyapunovBarrierZ() (the TypeScript kernel's live certificate) found the
+    two were never the same function — this file was silently substituting a
+    simpler, unpublished candidate for the one the paper actually claims.
+
+    Now matches lyapunovBarrierZ() exactly:
+        V_z(x) = -sum(z_i * log(x_i)) + (mu/2) * sum(max(0, tau - x_i)^2)
+    z defaults to uniform (1/3, 1/3, 1/3) — this simulation has no
+    session-specific z (it's an offline system-property proof, not a live
+    session), matching the TypeScript side's own Z_RECOVERY fallback for
+    exactly that case.
+
+    IMPORTANT, VERIFIED BY DIRECT LOCAL TESTING (2026-07-18) — fixing this
+    formula does NOT by itself make the FPL-1 classification below pass, and
+    should not be assumed to:
+      - This candidate has a nonzero floor even at the ideal centroid
+        (-log(1/3) ≈ 1.0986, uniform z), unlike the quadratic's floor of 0.
+        Comparing its RAW value against the quadratic-calibrated 0.25
+        threshold is meaningless — raw values run ~1.1-1.5 across 5 tested
+        seeds, always exceeding 0.25 regardless of actual stability.
+      - Even the mathematically correct fix — measuring EXCURSION from V(0)
+        rather than raw V, which is what "deviation" should mean for any
+        Lyapunov-style certificate with a nonzero interior minimum — still
+        produced 0.27-0.40 across the same 5 seeds under this file's current
+        noise/gain parameters (NOISE_SIGMA=0.08, THETA_0=1.0, etc.), and
+        stability_ratio sat at 0.52-0.58, below the existing 0.6 bar,
+        REGARDLESS of which candidate was used to compute it (verified
+        against both lyapunov_quadratic and this function on identical
+        trajectories).
+    In short: the candidate was genuinely wrong and is now fixed, but FPL-1
+    passing or failing is a separate, still-open question — see
+    simulate_cbf()'s fpl1_report for the honest excursion-based numbers
+    rather than a classification that was quietly re-thresholded to make
+    the failure disappear.
+    """
+    if z is None:
+        z = [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]
+    barrier = -sum(z[i] * math.log(max(x[i], LYAPUNOV_FLOOR)) for i in range(3))
+    penalty = (MU_LYAPUNOV / 2.0) * sum(max(0.0, TAU_CBF - xi) ** 2 for xi in x)
+    return barrier + penalty
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -368,7 +425,22 @@ def simulate_cbf(
     )
     stability_ratio = (delta_v_negative_steps + corrected_positive_steps) / total_delta_steps
     destabilizing_ratio = delta_v_positive_steps / total_delta_steps
-    max_deviation = max(lyapunov_values) if lyapunov_values else 0.0
+
+    # fix (2026-07-18) — EXCURSION, NOT RAW VALUE: the log-barrier certificate
+    # (lyapunov_candidate, above) has a nonzero floor even at the ideal
+    # centroid (-log(1/3) ≈ 1.0986 for uniform z), unlike the superseded
+    # quadratic candidate's floor of 0. Comparing RAW V against a threshold
+    # calibrated for a candidate that starts at 0 is meaningless — raw V now
+    # always sits above ~1.0 regardless of actual stability. "Deviation"
+    # for any Lyapunov-style certificate with a nonzero interior minimum
+    # should mean excursion FROM that minimum (or from V(0)), not the
+    # absolute level. Both are reported below; max_deviation (used in
+    # fpl1_report, preserving the existing field name/threshold for
+    # continuity) is now the excursion from V(0).
+    v0 = lyapunov_values[0] if lyapunov_values else 0.0
+    vmin = min(lyapunov_values) if lyapunov_values else 0.0
+    max_deviation_raw = max(lyapunov_values) if lyapunov_values else 0.0
+    max_deviation = max((v - v0) for v in lyapunov_values) if lyapunov_values else 0.0
     classification = (
         "LYAPUNOV STABLE + FORWARD INVARIANT"
         if stability_ratio > 0.6 and invariance_violations == 0 and max_deviation < 0.25
@@ -383,6 +455,12 @@ def simulate_cbf(
         "stability_ratio": round(stability_ratio, 6),
         "invariance_violations": invariance_violations,
         "max_deviation": round(max_deviation, 8),
+        # (2026-07-18) surfaced for audit — NOT part of the classification
+        # decision, which still uses max_deviation (now excursion-based)
+        # above, unchanged in name/threshold for continuity with prior runs.
+        "lyapunov_v0": round(v0, 8),
+        "lyapunov_vmin": round(vmin, 8),
+        "lyapunov_max_raw": round(max_deviation_raw, 8),
         "classification": classification,
     }
     
@@ -409,6 +487,9 @@ def simulate_cbf(
         "stability_ratio": round(stability_ratio, 6),
         "delta_v_positive_ratio": round(destabilizing_ratio, 6),
         "max_deviation": round(max_deviation, 8),
+        "lyapunov_v0": round(v0, 8),
+        "lyapunov_vmin": round(vmin, 8),
+        "lyapunov_max_raw": round(max_deviation_raw, 8),
         "invariance_violations": invariance_violations,
         "fpl1_classification": classification,
     }
