@@ -219,6 +219,89 @@ export async function get_build_status(): Promise<string> {
   ).join('\n');
 }
 
+// ── get_workflow_run ───────────────────────────────────────────────────────────
+// fix (2026-07-19): get_build_status() above is hardcoded to the 3 MOST
+// RECENT runs across the ENTIRE repo, with no workflow filter — so on any
+// night with active commits, ci.yml (which fires on every push) crowds out
+// manually-dispatched workflows like lexbench-prod.yml or lexbench-
+// recovery.yml from ever appearing. Root cause of a real multi-hour
+// diagnostic gap: no tool existed to check a SPECIFIC workflow's runs, or a
+// SPECIFIC run's job/step status, so every check had to go through
+// unauthenticated curl from outside this server (60 req/hr per IP, shared
+// across whatever else hits that pool — exhausted repeatedly in one night).
+// This tool uses the SAME already-configured GITHUB_TOKEN as read_file/
+// write_file (ghFetch, defined above) — properly authenticated, 5,000
+// req/hr, no new secret required.
+//
+// With no run_id: lists recent runs for the given workflow file (filterable
+// by name, unlike get_build_status). With a run_id: shows that run's
+// job/step-level status — exactly what "is it actually still running, and
+// which step failed" requires, without leaving this server.
+export async function get_workflow_run({
+  workflow,
+  run_id,
+  repo = FRONTEND_REPO,
+}: { workflow?: string; run_id?: number; repo?: string }): Promise<string> {
+  if (run_id) {
+    const res = await ghFetch(`/repos/${repo}/actions/runs/${run_id}/jobs`);
+    if (!res.ok) return `Error: ${res.status} — could not fetch jobs for run ${run_id}`;
+    const data = await res.json() as {
+      jobs?: Array<{
+        id: number; name: string; status: string; conclusion: string | null;
+        started_at: string | null; completed_at: string | null;
+        steps?: Array<{ number: number; name: string; status: string; conclusion: string | null }>;
+      }>;
+    };
+    if (!data.jobs?.length) return `No jobs found for run ${run_id}.`;
+    return data.jobs.map(j => {
+      const icon = j.conclusion === 'success' ? '✓' : j.conclusion === 'failure' ? '✗' : j.status === 'in_progress' ? '⏳' : '·';
+      const steps = (j.steps ?? []).map(s =>
+        `    ${s.conclusion === 'success' ? '✓' : s.conclusion === 'failure' ? '✗' : s.status === 'in_progress' ? '⏳' : '·'} [${s.number}] ${s.name} (job_id=${j.id})`
+      ).join('\n');
+      return `${icon} ${j.name} | ${j.status} ${j.conclusion ?? ''}\n${steps}`;
+    }).join('\n\n');
+  }
+
+  if (!workflow) return 'Error: provide either workflow (filename, e.g. "lexbench-recovery.yml") or run_id.';
+  const res = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/runs?per_page=5`);
+  if (!res.ok) return `Error: ${res.status} — could not fetch runs for workflow ${workflow}`;
+  const data = await res.json() as {
+    workflow_runs?: Array<{
+      id: number; status: string; conclusion: string | null;
+      event: string; created_at: string; html_url: string;
+    }>;
+  };
+  if (!data.workflow_runs?.length) return `No runs found for workflow ${workflow}.`;
+  return data.workflow_runs.map(r =>
+    `${r.conclusion === 'success' ? '✓' : r.conclusion === 'failure' ? '✗' : r.status === 'in_progress' ? '⏳' : '·'} run_id=${r.id} | ${r.status} ${r.conclusion ?? ''} | ${r.event} | ${r.created_at}\n   ${r.html_url}`
+  ).join('\n');
+}
+
+// ── get_workflow_log ───────────────────────────────────────────────────────────
+// The piece that was FULLY blocked all night: unauthenticated calls to
+// GitHub's job-logs endpoint return 403 ("Must have admin rights to
+// Repository") regardless of the repo being public — log content requires
+// real auth, unlike run/job status metadata. With GITHUB_TOKEN (already
+// configured, already used by write_file) this works normally, since the
+// token's owner has actual admin rights on their own repo.
+//
+// Returns raw step log text. Logs can be large — this truncates to the last
+// maxChars characters by default (where the actual result/error usually is,
+// e.g. "Published successfully: ..." or the last diagnostic before a
+// failure), not the first, since the beginning of a long job log is almost
+// always npm install noise.
+export async function get_workflow_log({
+  job_id,
+  repo = FRONTEND_REPO,
+  maxChars = 8000,
+}: { job_id: number; repo?: string; maxChars?: number }): Promise<string> {
+  const res = await ghFetch(`/repos/${repo}/actions/jobs/${job_id}/logs`);
+  if (!res.ok) return `Error: ${res.status} — could not fetch logs for job ${job_id}. If this is a 403, GITHUB_TOKEN may lack the "actions:read" scope (or, for a classic PAT, the "repo" scope, which includes it).`;
+  const text = await res.text();
+  if (text.length <= maxChars) return text;
+  return `[...truncated ${text.length - maxChars} earlier characters...]\n\n${text.slice(-maxChars)}`;
+}
+
 // ── get_constitutional_state ──────────────────────────────────────────────────
 export async function get_constitutional_state(): Promise<string> {
   try {
@@ -445,6 +528,8 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   write_file:               (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
   write_file_governed:      (a) => write_file_governed(a as { path: string; content: string; message: string; repo?: string; session_id?: string; task_context?: string }),
   get_build_status:         ()  => get_build_status(),
+  get_workflow_run:         (a) => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }),
+  get_workflow_log:         (a) => get_workflow_log(a as { job_id: number; repo?: string; maxChars?: number }),
   get_constitutional_state: ()  => get_constitutional_state(),
   query_database:           (a) => query_database(a as { sql: string }),
   run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string }),
@@ -503,6 +588,31 @@ export const TOOL_DEFINITIONS = [
     name: 'get_build_status',
     description: 'Get the latest GitHub Actions build status.',
     parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_workflow_run',
+    description: 'Check a specific GitHub Actions workflow (by filename, e.g. "lexbench-recovery.yml") for its recent runs, or a specific run_id for job/step-level status. Unlike get_build_status (repo-wide, last 3 runs only), this filters by workflow and goes down to step granularity — use this for anything beyond "did the last push pass CI".',
+    parameters: {
+      type: 'object',
+      properties: {
+        workflow: { type: 'string', description: 'Workflow filename, e.g. "lexbench-prod.yml", "lexbench-recovery.yml". Lists its 5 most recent runs.' },
+        run_id: { type: 'number', description: 'A specific run ID (from a prior get_workflow_run call, or the digits at the end of a run URL). Returns job/step status for that run instead of a run list.' },
+        ...REPO_PARAM,
+      },
+    },
+  },
+  {
+    name: 'get_workflow_log',
+    description: 'Get the raw console log text for a specific job (job_id from get_workflow_run\'s run_id lookup). Use this to read what a step actually printed — e.g. whether "Publish to live leaderboard" published real rows or hit "nothing to publish". Returns the LAST maxChars characters by default (where the real result usually is), since the start of a log is almost always npm install noise.',
+    parameters: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'number', description: 'Job ID from get_workflow_run(run_id=...)\'s output.' },
+        maxChars: { type: 'number', description: 'How many characters to return from the end of the log. Default 8000.' },
+        ...REPO_PARAM,
+      },
+      required: ['job_id'],
+    },
   },
   {
     name: 'get_constitutional_state',
