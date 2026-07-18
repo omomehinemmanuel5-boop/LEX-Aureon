@@ -157,11 +157,13 @@ jobs:
             echo "Total prompts: $TOTAL_PROMPTS"
             # fix (2026-07-14): 100 -> 200. Each shard pays fixed overhead
             # (checkout, npm install, re-fetching the HarmBench dataset)
-            # before processing a single prompt. At max-parallel:2, halving
+            # before processing a single prompt. At max-parallel:2 (the value
+            # at the time — see the 2026-07-18 note on the run-lexbench job
+            # below for why this was later raised to 3), halving
             # the shard count roughly halves the number of sequential
             # batches, saving real wall-clock time on setup that's paid
             # once per shard regardless of shard size. Deliberately NOT
-            # touching max-parallel itself: this session's own logs showed
+            # touching max-parallel itself AT THE TIME: this session's own logs showed
             # Groq's 70B/8B at 96-98% of daily token quota and Cerebras
             # returning 429s repeatedly during a run at the CURRENT
             # concurrency level — raising parallelism on top of that would
@@ -191,16 +193,35 @@ jobs:
   # entire 5-provider fallback chain exhausting simultaneously under load,
   # producing governed_source='raw_fallback'/'unavailable' turns that
   # previously silently corrupted scored results (see AdvBench id=74
-  # retirement, lib/benchmark_results.ts). max-parallel:2 bounds this
+  # retirement, lib/benchmark_results.ts). max-parallel (bounded, see the
+  # 2026-07-18 note directly below for the current value and why) caps this
   # workflow's own shard concurrency. (The cross-workflow mutex against
   # lexbench-extended.yml now lives at the top-level `concurrency:` block —
   # see the 2026-07-10 fix note there for why it was moved off this job.)
+  #
+  # fix (2026-07-18) — max-parallel 2 -> 3: verified the ~3-4hr wall clock is
+  # NOT a fixable shard-imbalance bug (checked the actual math: shard 0
+  # uniquely absorbs one full 200-prompt slice of every benchmark <=200
+  # prompts, ~827 prompts, but shards 5-8 sit empty and GitHub Actions
+  # backfills those slots almost instantly, so the OTHER lane ends up doing
+  # ~937 prompts across its shards -- already close to a 50/50 split). The
+  # wall clock is fundamentally total-prompt-count x per-prompt latency /
+  # max-parallel, and the only real lever is max-parallel itself -- the same
+  # lever that caused the original 2026-07-08 provider-exhaustion incident
+  # this constant exists to prevent, so this is a deliberate, bounded
+  # increase (+50%, not a doubling), not a reversal of that reasoning. The
+  # 2026-07-17 sustained-exhaustion circuit breaker (runner.ts,
+  # SUSTAINED_EXHAUSTION_THRESHOLD) changes the risk calculus: if 3 concurrent
+  # shards DO saturate shared provider quota, a shard now fails fast (minutes)
+  # rather than silently grinding through hundreds of doomed retries for
+  # hours, so the downside of this increase is now bounded in a way it wasn't
+  # when max-parallel:2 was first chosen.
   run-lexbench:
     needs: determine-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
       matrix: ${{ fromJson(needs.determine-shards.outputs.matrix) }}
 
     steps:
