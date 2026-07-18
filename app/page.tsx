@@ -11,6 +11,7 @@ import LiveStatsBar from '@/components/LiveStatsBar';
 import RedTeamSection from '@/components/RedTeamSection';
 import ArchitectureSection from '@/components/ArchitectureSection';
 import BenchmarkResults from '@/components/BenchmarkResults';
+import CbfInvariancePanel from '@/components/CbfInvariancePanel';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
@@ -340,7 +341,14 @@ function ComparisonSection() {
    white measures ~4.47:1, just under the 4.5:1 WCAG AA minimum at this font
    size. This section's background genuinely IS responsive (bg-slate-50
    dark:bg-[#0d0d1a]), so the fix here is a straightforward contrast bump,
-   not the dark-on-dark bug found and fixed separately in PricingSection.tsx. */
+   not the dark-on-dark bug found and fixed separately in PricingSection.tsx.
+   feat (2026-07-18) — added <CbfInvariancePanel/> as a third card. The two
+   cards above cover the proof (idealized) and the real empirical measurement
+   (production ΔV_z). Neither can show the governed-vs-ungoverned
+   counterfactual — production never runs without the barrier, for real
+   users, so there's no ethical way to demonstrate what it prevents except a
+   controlled simulation. See that component's own header for the honesty
+   constraints applied to its copy. */
 function TechnicalFoundationSection() {
   return (
     <section className="py-16 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-[#0d0d1a] border-y border-slate-100 dark:border-white/5">
@@ -398,6 +406,8 @@ function TechnicalFoundationSection() {
             Every governed turn logs whether V<sub>z</sub> decreased, held, or increased that step. Across real production traffic, the non-increasing condition (ΔV<sub>z</sub> ≤ 0 — stable + converging) holds on <b className="text-slate-800 dark:text-white">~79.7%</b> of turns. The remaining ~20.3% appear concentrated in attack-response turns, where the governor deliberately trades smooth descent for aggressively suspending the exchange — a plausible explanation we have measured evidence for but have not yet cleanly isolated. We are not claiming the proof holds in production; we are showing the number and where the open gap is.
           </p>
         </div>
+
+        <CbfInvariancePanel />
 
         <p className="text-center text-[11px] font-mono text-slate-600 dark:text-slate-600 mt-6">
           Full derivation and the CBF floor (τ = 0.05) in the{' '}
