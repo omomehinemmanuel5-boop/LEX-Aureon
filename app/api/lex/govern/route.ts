@@ -84,10 +84,28 @@
  * a meaningless cosine value), and passes it into kernel.runCycle() as
  * threatSignal. Defaults to 0 (no additional pressure) when the embedding or
  * centroid is unavailable this turn — same honest-default convention as
- * detection_degraded elsewhere in this route. NOT YET VALIDATED against
- * published benchmark numbers — see the shard-rerun validation plan
- * (does avg M finally separate adversarial from benign benchmarks; does
- * XSTest regress) before this feeds anything published.
+ * detection_degraded elsewhere in this route.
+ *
+ * fix (2026-07-18) — CONTRASTIVE RECALIBRATION: live probe testing found the
+ * raw absolute cosine similarity above essentially non-discriminating —
+ * benign prompts (including plain factual questions with no adversarial
+ * content whatsoever) scored 0.79-0.82, genuinely harmful prompts scored
+ * 0.90-0.91: a real but narrow ~0.10-0.12 gap against a shared 0.78-0.91
+ * floor, consistent with known anisotropy in sentence-embedding spaces for
+ * short, syntactically similar text. threatSignal is now computed as
+ * harm-centroid similarity MINUS benign-centroid similarity (see
+ * lib/lex_memory.ts getBenignReferenceCentroid /
+ * lib/benign_reference_prompts.ts), netting out the register-level
+ * similarity both corpora share so the remaining signal reflects content,
+ * not sentence shape. Falls back to the pre-fix absolute-value behavior if
+ * the benign centroid is unavailable this turn (degraded, not blocked) —
+ * same honest-default convention as detection_degraded. NOT statistically
+ * validated at scale — verified only against the specific probe set that
+ * surfaced the original problem (see lib/lex_memory.ts header for the
+ * numbers). The downstream weight constants in lib/sovereign_kernel.ts that
+ * consume threatSignal were calibrated against the OLD compressed range and
+ * may need re-tuning now that typical values should be smaller — flagged as
+ * follow-up, not assumed resolved by this pass alone.
  *
  * IDENTITY MODE (2026-07-18): accepts an optional identity_mode field
  * ('full' | 'minimal' | 'dynamic' | 'none') in the request body, threaded to
@@ -100,9 +118,11 @@
  * LEX_IDENTITY's self-knowledge/safety-framing itself moves benchmark
  * outcomes, independent of the governance mechanism (see
  * lib/lex_identity.ts header for the full rationale — including the
- * 2026-07-18 probe that FALSIFIED the original over-refusal hypothesis).
- * 'dynamic' pairs invariant self-knowledge with a live, per-turn state line
- * computed from the kernel's actual C/R/S/M rather than narrated — see
+ * 2026-07-18 probe that FALSIFIED the original over-refusal hypothesis, and
+ * the self-referential vocabulary collision it surfaced instead, fixed in
+ * lib/sovereign_kernel.ts's detectSemanticAttackEmbedding). 'dynamic' pairs
+ * invariant self-knowledge with a live, per-turn state line computed from
+ * the kernel's actual C/R/S/M rather than narrated — see
  * lib/sovereign_kernel.ts's buildLiveStateLine(). The mode actually used is
  * surfaced back on the response (identity_mode) for audit.
  */
@@ -115,7 +135,7 @@ import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
-  getHarmReferenceCentroid, cosineSimilarity,
+  getHarmReferenceCentroid, getBenignReferenceCentroid, cosineSimilarity,
   type EmbedProvider,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
@@ -188,22 +208,31 @@ export async function POST(req: Request) {
     memoryPromise,
   ]);
 
-  // ── Input-side threat signal (2026-07-12) — see file header ───────────────
-  // Reuses the prompt embedding already resolved above (no second embed
-  // call). Pinned to the SAME provider that resolved the prompt embedding —
-  // mixing embedding spaces would produce a meaningless cosine value (see
-  // this file's long-standing CORRECTNESS CONSTRAINT, mirrored from
-  // lib/lex_memory.ts). Defaults to 0 (no additional pressure) when the
-  // embedding or centroid is unavailable this turn.
+  // ── Input-side threat signal (2026-07-12, contrastive fix 2026-07-18) ─────
+  // See file header. Reuses the prompt embedding already resolved above (no
+  // second embed call). Both centroids pinned to the SAME provider that
+  // resolved the prompt embedding — mixing embedding spaces would produce a
+  // meaningless cosine value (see this file's long-standing CORRECTNESS
+  // CONSTRAINT, mirrored from lib/lex_memory.ts). threatSignal is
+  // harm-similarity MINUS benign-similarity, clamped to [0,1]; falls back to
+  // the pre-fix absolute harm-similarity if the benign centroid is
+  // unavailable this turn (degraded, not blocked). Defaults to 0 when the
+  // embedding or the harm centroid itself is unavailable — same honest-
+  // default convention as detection_degraded elsewhere in this route.
   let threatSignal = 0;
   if (promptEmbedding.length && promptEmbedProvider) {
     try {
-      const harmCentroid = await getHarmReferenceCentroid(promptEmbedProvider);
+      const [harmCentroid, benignCentroid] = await Promise.all([
+        getHarmReferenceCentroid(promptEmbedProvider),
+        getBenignReferenceCentroid(promptEmbedProvider),
+      ]);
       if (harmCentroid) {
-        threatSignal = Math.max(0, Math.min(1, cosineSimilarity(promptEmbedding, harmCentroid)));
+        const harmSim   = cosineSimilarity(promptEmbedding, harmCentroid);
+        const benignSim = benignCentroid ? cosineSimilarity(promptEmbedding, benignCentroid) : 0;
+        threatSignal = Math.max(0, Math.min(1, harmSim - benignSim));
       }
     } catch (e) {
-      logger.warn('govern.threat_signal', 'harm reference centroid unavailable', errorFields(e));
+      logger.warn('govern.threat_signal', 'harm/benign reference centroid unavailable', errorFields(e));
     }
   }
 
@@ -378,8 +407,9 @@ export async function POST(req: Request) {
     sovereignty_raw:       sovereigntyRaw,
     detection_degraded:    detectionDegraded,
     embed_provider:        promptEmbedProvider,
-    // Input-side threat signal (2026-07-12) — see file header. NOT YET
-    // VALIDATED; surfaced for audit alongside sovereignty_raw.
+    // Input-side threat signal (2026-07-12, contrastive fix 2026-07-18) — see
+    // file header. NOT statistically validated at scale; surfaced for audit
+    // alongside sovereignty_raw.
     prompt_threat_signal:  threatSignal,
     // Identity mode (2026-07-18) — which self-knowledge block was actually
     // used this turn. See file header.
@@ -419,6 +449,6 @@ export async function GET() {
     name:     'Lex Aureon SovereignKernel API',
     version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal+CalibrationDB+ThreatSignal+IdentityMode',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + input-side threat signal (2026-07-12, held-out harm reference centroid) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B); optional identity_mode override (2026-07-18: full/minimal/dynamic/none) for governed-arm self-knowledge A/B/C/D testing.',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + input-side threat signal (2026-07-12, held-out harm reference centroid, contrastive recalibration 2026-07-18) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B); optional identity_mode override (2026-07-18: full/minimal/dynamic/none) for governed-arm self-knowledge A/B/C/D testing.',
   });
 }
