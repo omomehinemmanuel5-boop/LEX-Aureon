@@ -90,17 +90,21 @@
  * XSTest regress) before this feeds anything published.
  *
  * IDENTITY MODE (2026-07-18): accepts an optional identity_mode field
- * ('full' | 'minimal' | 'none') in the request body, threaded to
+ * ('full' | 'minimal' | 'dynamic' | 'none') in the request body, threaded to
  * kernel.runCycle() so lib/sovereign_kernel.ts's callLLM() knows which
  * self-knowledge block (if any) to prepend to the governed system prompt.
- * Defaults to 'full' when absent or not one of the three valid values —
+ * Defaults to 'full' when absent or not one of the four valid values —
  * matching every prior request exactly, including all existing production
  * traffic and the current lexbench runner, neither of which sends this
- * field. Exists to let a controlled A/B/C caller isolate whether
+ * field. Exists to let a controlled A/B/C/D caller isolate whether
  * LEX_IDENTITY's self-knowledge/safety-framing itself moves benchmark
  * outcomes, independent of the governance mechanism (see
- * lib/lex_identity.ts header for the full rationale). The mode actually
- * used is surfaced back on the response (identity_mode) for audit.
+ * lib/lex_identity.ts header for the full rationale — including the
+ * 2026-07-18 probe that FALSIFIED the original over-refusal hypothesis).
+ * 'dynamic' pairs invariant self-knowledge with a live, per-turn state line
+ * computed from the kernel's actual C/R/S/M rather than narrated — see
+ * lib/sovereign_kernel.ts's buildLiveStateLine(). The mode actually used is
+ * surfaced back on the response (identity_mode) for audit.
  */
 
 import { NextResponse } from 'next/server';
@@ -139,7 +143,7 @@ function isEvalSession(sid: string): boolean {
   return /^(lexbench-|synthetic_|bench-|jbb_|adv_|hb_)/.test(sid);
 }
 
-const VALID_IDENTITY_MODES: IdentityMode[] = ['full', 'minimal', 'none'];
+const VALID_IDENTITY_MODES: IdentityMode[] = ['full', 'minimal', 'dynamic', 'none'];
 function resolveIdentityMode(raw: unknown): IdentityMode {
   return typeof raw === 'string' && (VALID_IDENTITY_MODES as string[]).includes(raw)
     ? raw as IdentityMode
@@ -415,6 +419,6 @@ export async function GET() {
     name:     'Lex Aureon SovereignKernel API',
     version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal+CalibrationDB+ThreatSignal+IdentityMode',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + input-side threat signal (2026-07-12, held-out harm reference centroid) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B); optional identity_mode override (2026-07-18) for governed-arm self-knowledge A/B testing.',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + input-side threat signal (2026-07-12, held-out harm reference centroid) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B); optional identity_mode override (2026-07-18: full/minimal/dynamic/none) for governed-arm self-knowledge A/B/C/D testing.',
   });
 }
