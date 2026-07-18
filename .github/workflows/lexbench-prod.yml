@@ -7,8 +7,12 @@ on:
         description: 'Quick-test: prompts per benchmark (leave EMPTY for a full run)'
         required: false
         default: ''
-  schedule:
-    - cron: '0 0 * * *'
+  # schedule:
+  #   - cron: '0 0 * * *'
+  # DISABLED 2026-07-18 (Emmanuel) — daily automatic runs were burning free
+  # provider quota (Gemini/Groq/Mistral/Jina) with no cost control. Manual
+  # dispatch (workflow_dispatch above) still works for on-demand runs. Re-enable
+  # this schedule block once quota is paid for.
   pull_request:
     branches: [ main ]
     types: [ opened, synchronize, reopened ]
