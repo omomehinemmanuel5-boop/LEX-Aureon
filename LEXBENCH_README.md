@@ -1,6 +1,6 @@
 # LexBench: Benchmark Evaluation Pipeline
 
-> **Accurate as of 2026-07-17.** This document describes the pipeline as it actually runs — not a design proposal. Every component listed here is real and in use.
+> **Accurate as of 2026-07-18.** This document describes the pipeline as it actually runs — not a design proposal. Every component listed here is real and in use.
 
 ---
 
@@ -90,7 +90,7 @@ Runs TruthfulQA, HarmBench, JailbreakBench, AdvBench, AgentDojo sharded against 
 
 - `precheck-auth` — verifies `BENCH_SECRET` before anything expensive starts
 - `determine-shards` — fetches HarmBench once, uploads it as a run artifact, computes shard matrix (shard-size: 200)
-- `run-lexbench` — matrix job, max-parallel:2; downloads the HarmBench artifact instead of re-fetching
+- `run-lexbench` — matrix job, max-parallel:3 (raised from 2 on 2026-07-18 — the wall-clock is fundamentally total-prompt-count × per-prompt latency ÷ max-parallel, and this was a deliberate, bounded increase, not a reversal of the reasoning that set it to 2 — see Fix History); downloads the HarmBench artifact instead of re-fetching
 - `aggregate-and-report` — collects all shard JSONLs, aggregates, publishes
 
 **Manual dispatch:** Actions → LexBench Production → Run workflow. Use `limit: 5` for a fast smoke test before a full run.
@@ -155,6 +155,10 @@ The retry above is tuned for a MOMENTARY collision — a rate-limit window rolli
 
 `lexbench-prod.yml`'s `BENCHMARKS` list runs sequentially within one shard process, sharing one set of provider keys. AgentDojo — the smallest dataset (27 prompts) — was last in that list and had the worst coverage of any benchmark on both 2026-07-16 (4/27) and 2026-07-17 (0/27), while earlier benchmarks in the same run scored real verdicts. That's whichever benchmark runs last inheriting the most accumulated exhaustion — a structural bias unrelated to anything AgentDojo-specific. Reordered to run first.
 
+### max-parallel (2026-07-18)
+
+Raised from 2 to 3. Before changing it, the actual sharding math was checked rather than assumed: shard 0 uniquely absorbs one full 200-prompt slice of every benchmark ≤200 prompts (≈827 prompts), while the empty shards this leaves get backfilled almost instantly by GitHub Actions, so the other lane ends up carrying a similar total (≈937 prompts) — already close to a 50/50 split. There was no fixable load-imbalance bug hiding in the sharding logic. The ~3–4hr wall clock is fundamentally `total prompts × per-prompt latency ÷ max-parallel`, and the only real lever is `max-parallel` itself — the same lever that caused the original 2026-07-08 provider-exhaustion incident. This is a deliberate, bounded increase (+50%, not a doubling), made safer by the sustained-exhaustion circuit breaker above: if 3 concurrent shards do saturate shared quota, a shard now fails fast (minutes) instead of grinding for hours.
+
 ---
 
 ## Usage
@@ -216,7 +220,7 @@ GROQ_API_KEY=... npx tsx scripts/lexbench/kappa-check.ts \
 | StrongREJECT: general-purpose LLM judge, not GPT-4o from the paper | Outstanding |
 | XSTest-Contrast: first run pending (benchmark added 2026-07-16) | Run via `lexbench-extended.yml` next Sunday |
 | Cross-paper comparison invalid | Different judges, different base models — this is a within-system delta only |
-| Leaderboard reflects 2026-07-16, not the current pipeline | Live rows are still the 2026-07-16 batch. The 2026-07-17 run's shards had genuinely low coverage (provider quota exhaustion, not a code bug — see Fix History) and correctly published nothing rather than a misleading partial average. Next clean run (post circuit-breaker + AgentDojo reorder) supersedes this automatically. |
+| Leaderboard reflects 2026-07-16, not the current pipeline | Live rows are still the 2026-07-16 batch. The 2026-07-17 run's shards had genuinely low coverage (provider quota exhaustion, not a code bug — see Fix History) and correctly published nothing rather than a misleading partial average. Next clean run (post circuit-breaker + AgentDojo reorder + max-parallel:3) supersedes this automatically. |
 
 ---
 
@@ -244,6 +248,7 @@ GROQ_API_KEY=... npx tsx scripts/lexbench/kappa-check.ts \
 | 2026-07-17 | **Recovery workflow added** (`lexbench-recovery.yml`) — re-runs aggregate+publish against a prior run's shard artifacts at current main HEAD, sidestepping GitHub Actions' "re-run failed jobs uses the original commit SHA" behavior. See *GitHub Actions Workflows* above. |
 | 2026-07-17 | **Sustained-exhaustion circuit breaker** — after 8 consecutive CONFIRMED total exhaustions (each already past its own per-prompt retry), the runner stops attempting the rest of that benchmark's shard and records the remainder as `provenance.source: 'skipped'`, rather than grinding through hundreds of prompts to reconfirm an already-exhausted quota. See *Data Quality Guarantees* above. |
 | 2026-07-17 | **AgentDojo reordered first** in `lexbench-prod.yml`'s sequential benchmark list — it had the worst coverage of any benchmark two runs in a row purely from running last and inheriting the most accumulated exhaustion. |
+| 2026-07-18 | **max-parallel raised 2 → 3.** Checked the actual sharding math before changing anything: shard 0 uniquely absorbs a full 200-prompt slice of every benchmark ≤200 prompts (≈827 prompts), but the empty shards this leaves (5–8) get backfilled almost instantly by GitHub Actions, so the other lane ends up carrying a similar total (≈937 prompts) — already close to a 50/50 split. There was no fixable load-imbalance bug hiding in the sharding logic; the ~3–4hr wall clock is fundamentally `total prompts × per-prompt latency ÷ max-parallel`. The only real lever is `max-parallel` itself — the same lever that caused the original 2026-07-08 provider-exhaustion incident — so this is a deliberate, bounded increase (+50%, not a doubling). The 2026-07-17 sustained-exhaustion circuit breaker changes the downside: if 3 concurrent shards do saturate shared quota, a shard now fails fast (minutes) instead of grinding through hundreds of doomed retries for hours. |
 
 > **Provenance note on the 2026-07-16 05:02 UTC published batch:** that run executed on pre-fix code — none of the 2026-07-16 fixes above were in it. Verified directly: `lex_memory` shows 3 sessions for 520 AdvBench turns (per-shard sessions, not per-prompt), published notes carry no Wilson CIs, and no StrongREJECT/XSTest-Contrast rows exist. Its AdvBench figures additionally reflect a coverage collapse: bare ASR 1.83% is 4 successes over a 219-prompt denominator; the prior run's 0.77% was 4 successes over 519 — same absolute count. Treat the first run on or after this fix batch as the clean baseline.
 
