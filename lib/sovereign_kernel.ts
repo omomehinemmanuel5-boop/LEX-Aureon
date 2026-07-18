@@ -32,12 +32,18 @@
  * what governance adds and never contaminates the bare benchmark baseline.
  *
  * identity: 2026-07-18 — callLLM/runCycle now accept an optional
- * identityMode ('full' | 'minimal' | 'none'), defaulting to 'full' so every
- * existing caller (production traffic, the existing lexbench runner) is
- * byte-identical to prior behavior. This exists to test whether
- * LEX_IDENTITY's safety-enforcement framing density is itself contributing
- * to over-refusal, independent of the underlying governance mechanism — see
- * lib/lex_identity.ts header for the full rationale.
+ * identityMode ('full' | 'minimal' | 'dynamic' | 'none'), defaulting to
+ * 'full' so every existing caller (production traffic, the existing
+ * lexbench runner) is byte-identical to prior behavior. 'dynamic' pairs
+ * LEX_IDENTITY_STABLE_CORE (invariant facts only) with a live state line
+ * built by buildLiveStateLine() from this turn's actual C/R/S/M/health_band/
+ * active_law/threat_signal — self-knowledge that's measured per turn rather
+ * than a fixed narrative, addressing the gap live probe testing surfaced:
+ * FULL/MINIMAL both describe the governance mechanism in the abstract with
+ * no connection to what's actually true on any given turn. See
+ * lib/lex_identity.ts header for the full rationale and the probe results
+ * that motivated this (which FALSIFIED the original hypothesis that
+ * LEX_IDENTITY's framing drove the same-day -8.43pp XSTest regression).
  *
  * fix (2026-07-08) — PROVIDER-EXHAUSTION FALLBACK: under concurrent
  * benchmark + real-traffic load, generateGoverned's entire 5-provider chain
@@ -64,7 +70,11 @@
  * rare case where BOTH arms exhaust simultaneously does the honest
  * "unavailable" message survive, tagged `governed_source: 'unavailable'` so
  * scripts/lexbench/runner.ts can exclude it from scoring rather than count
- * it as a real refusal or a real over-refusal.
+ * it as a real refusal or a real over-refusal. NOTE (2026-07-18): live probe
+ * testing found this still firing at a meaningful rate (4/9 probes, one
+ * short rapid-fire burst) — the 2026-07-08 fix changed what happens when
+ * both arms exhaust, it did not reduce how OFTEN they exhaust. Worth a
+ * dedicated look at current governed_source distribution under load.
  *
  * fix (2026-07-12) — measurePostResponse() (lib/constitutional_metrics.ts)
  * computes paper-exact CCP/IEC/ADV every turn — cosine-similarity decay for
@@ -186,7 +196,7 @@
 import { env } from './env';
 import { generateGoverned } from './llm_provider';
 import type { LLMResult } from './llm_provider';
-import { LEX_IDENTITY, LEX_IDENTITY_MINIMAL } from './lex_identity';
+import { LEX_IDENTITY, LEX_IDENTITY_MINIMAL, LEX_IDENTITY_STABLE_CORE } from './lex_identity';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
@@ -211,9 +221,12 @@ const NORMALIZATION_EPS = 1e-12;
  * is prepended to the governed system prompt. 'full' preserves exact prior
  * behavior (default everywhere). 'minimal' and 'none' exist to test whether
  * LEX_IDENTITY's safety-framing density itself moves benchmark outcomes,
- * independent of the governance mechanism — see lib/lex_identity.ts header.
+ * independent of the governance mechanism. 'dynamic' pairs
+ * LEX_IDENTITY_STABLE_CORE with a per-turn live state line (see
+ * buildLiveStateLine) — self-knowledge grounded in measurement rather than
+ * narration. See lib/lex_identity.ts header.
  */
-export type IdentityMode = 'full' | 'minimal' | 'none';
+export type IdentityMode = 'full' | 'minimal' | 'dynamic' | 'none';
 
 export interface KernelState {
   C: number; R: number; S: number;
@@ -290,6 +303,11 @@ export interface KernelReceipt {
   post_response_metrics?:      PostResponseCRS;
   // identity: 2026-07-18 — which identity block was actually used this turn.
   identity_mode?:               IdentityMode;
+  // identity: 2026-07-18, second pass — the live state line actually sent
+  // to the model this turn, when identityMode === 'dynamic'. Surfaced so
+  // the receipt shows exactly what self-knowledge the model received,
+  // rather than requiring a re-derivation from other receipt fields.
+  identity_live_state_line?:    string;
 }
 
 export interface KernelCycleResult {
@@ -593,6 +611,27 @@ export class SovereignKernel {
   }
 
   /**
+   * identity: 2026-07-18, second pass — self-knowledge for identityMode ===
+   * 'dynamic': what's actually true THIS turn, computed from live state,
+   * not narrated. Called from runCycle just before the LLM call, using
+   * this.state as of the START of this turn (post G(x,z) correction,
+   * pre this-turn dynamics) — the response hasn't been generated yet, so
+   * this can only ever report state as of turn-start, never the state that
+   * will result from this response. That's an honest limitation, not a bug:
+   * it's the same reason the model can't know its own output in advance.
+   */
+  buildLiveStateLine(M: number, health_band: string, activeLaw: string | null, threatSignal: number): string {
+    const { C, R, S } = this.state;
+    const parts = [
+      `Live constitutional state as of the start of this turn: C=${C.toFixed(2)}, R=${R.toFixed(2)}, S=${S.toFixed(2)} (M=${M.toFixed(2)}, band=${health_band}).`,
+    ];
+    if (activeLaw) parts.push(`Active governing law this turn: "${activeLaw}".`);
+    if (threatSignal > 0.3) parts.push(`Elevated input threat signal: ${threatSignal.toFixed(2)}.`);
+    parts.push('This reflects your state before generating this response, not after — you cannot know the state this response will produce.');
+    return parts.join(' ');
+  }
+
+  /**
    * Returns the full LLMResult (not just text) so callers can see WHICH
    * provider produced it — 'static' means the entire 5-provider fallback
    * chain in generateGoverned() was exhausted. See header fix note.
@@ -612,10 +651,17 @@ export class SovereignKernel {
    * identity: 2026-07-18 — identityMode selects which self-knowledge block
    * (if any) is prepended. Defaults to 'full', matching prior behavior
    * exactly for every caller that doesn't explicitly pass a mode.
+   * identity: 2026-07-18, second pass — 'dynamic' combines
+   * LEX_IDENTITY_STABLE_CORE with liveStateLine (built by the caller via
+   * buildLiveStateLine and passed in, since it needs runtime values only
+   * runCycle has in scope at call time).
    */
-  async callLLM(prompt: string, context: string, _temperature: number, identityMode: IdentityMode = 'full'): Promise<LLMResult> {
+  async callLLM(prompt: string, context: string, _temperature: number, identityMode: IdentityMode = 'full', liveStateLine?: string): Promise<LLMResult> {
     try {
-      const identityBlock = identityMode === 'none' ? '' : identityMode === 'minimal' ? LEX_IDENTITY_MINIMAL : LEX_IDENTITY;
+      const identityBlock = identityMode === 'none' ? ''
+        : identityMode === 'minimal' ? LEX_IDENTITY_MINIMAL
+        : identityMode === 'dynamic' ? [LEX_IDENTITY_STABLE_CORE, liveStateLine].filter(Boolean).join('\n\n')
+        : LEX_IDENTITY;
       const systemContent = identityBlock ? `${identityBlock}\n\n${context}` : context;
       const result = await generateGoverned([{ role: 'system', content: systemContent }, { role: 'user', content: prompt }]);
       return result.text ? result : { ...result, text: 'I was unable to generate a response at this time.' };
@@ -770,6 +816,13 @@ export class SovereignKernel {
       health_band = M0 < 0.15 ? 'CRITICAL' : 'STRESSED';
     }
 
+    // identity: 2026-07-18, second pass — built AFTER the severity>=0.7
+    // override above, so a dynamic-mode live state line reports the band
+    // the model is actually being asked to respond under this turn.
+    const liveStateLine = identityMode === 'dynamic'
+      ? this.buildLiveStateLine(M0, health_band, activeLaw, clampedThreat)
+      : undefined;
+
     let rawResponse = '';
     let governedResponse = '';
     let rawProvider = 'unknown';
@@ -779,7 +832,7 @@ export class SovereignKernel {
       const governedContext = memoryContext ? `${memoryContext}\n\n${context}` : context;
       const [rawResult, governedResult] = await Promise.allSettled([
         this.callLLMRaw(userPrompt, '', temperature),
-        this.callLLM(userPrompt, governedContext, temperature, identityMode),
+        this.callLLM(userPrompt, governedContext, temperature, identityMode, liveStateLine),
       ]);
       const rawLLM      = rawResult.status      === 'fulfilled' ? rawResult.value      : { text: '[raw: unavailable]', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
       const governedLLM = governedResult.status === 'fulfilled' ? governedResult.value : { text: 'I was unable to generate a response at this time.', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
@@ -984,6 +1037,7 @@ export class SovereignKernel {
       governed_source: governedSource,
       post_response_metrics: postMetrics,
       identity_mode: identityMode,
+      identity_live_state_line: liveStateLine,
     };
 
     return {
