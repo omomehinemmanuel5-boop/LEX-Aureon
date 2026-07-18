@@ -347,7 +347,7 @@ Stated plainly, in the same spirit as the rest of this document.
 ## Benchmarks
 
 **Running the unified LexBench suite (GitHub Actions):**
-- `LexBench Production` (`.github/workflows/lexbench-prod.yml`) — TruthfulQA, HarmBench, JailbreakBench, AdvBench, AgentDojo; sharded, max-parallel:2, auto-publishes. **Actions → LexBench Production → Run workflow**.
+- `LexBench Production` (`.github/workflows/lexbench-prod.yml`) — TruthfulQA, HarmBench, JailbreakBench, AdvBench, AgentDojo; sharded, max-parallel:3 (raised from 2 on 2026-07-18 — see `LEXBENCH_README.md`'s Fix History), auto-publishes. **Actions → LexBench Production → Run workflow**.
 - `LexBench Extended` (`.github/workflows/lexbench-extended.yml`) — XSTest, StrongREJECT, XSTest-Contrast; runs Sundays at 2am UTC.
 - `LexBench Kappa Check` (`.github/workflows/kappa-check.yml`) — manual dispatch; samples a results JSONL and reports Cohen's κ between the primary judge and a reference model. Run this after any judge prompt or model change.
 - `LexBench Recovery` (`.github/workflows/lexbench-recovery.yml`) — manual dispatch; re-runs aggregate+publish against a prior failed run's already-uploaded shard artifacts, at current main HEAD. Use when `aggregate-and-report` fails on a run whose shards completed — sidesteps GitHub Actions' "re-run failed jobs replays the original commit" behavior.
@@ -446,6 +446,7 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 - [x] **Persistent centroid cache** (2026-07-16) — the constitutional-law and harm-reference centroids now persist in Turso (`centroid_cache`), content-addressed by source hash and keyed per embedding provider. Root-cause fix for cold-start Gemini embed quota exhaustion under concurrent benchmark shards (the driver of the 2026-07-16 run's coverage collapse).
 - [x] **Record judge-model and generator-provider identity per published row** (2026-07-16/17) — every published row's notes now embed judge model, both arms' generation providers, embedding provider, and live/cache/skipped row counts, closing the gap that made cross-run bare-arm drift uninterpretable.
 - [x] **Sustained-exhaustion circuit breaker + AgentDojo reordering** (2026-07-17) — a run that hits real, durable provider exhaustion now fails fast after 8 confirmed consecutive exhaustions instead of grinding through hundreds of doomed retries; AgentDojo moved from last to first in the per-shard sequence after two consecutive runs showed it inheriting the worst accumulated exhaustion purely from running last.
+- [x] **max-parallel raised 2 → 3** (2026-07-18) — verified first that the ~3-4hr wall clock wasn't a fixable shard-imbalance bug (shard 0's load vs. the other lane's is already close to a 50/50 split); the wall clock is fundamentally total-prompt-count × per-prompt latency ÷ max-parallel, so this is a deliberate, bounded increase in the one real lever, made safer by the 2026-07-17 circuit breaker bounding the downside if it does saturate shared quota.
 
 **Done — agentic tool-call governance (2026-07-11, pilot-stage)**
 - [x] Build `interceptToolCall()` / `measureToolCRS()` — the real, tested tool-call governor
