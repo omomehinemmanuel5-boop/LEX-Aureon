@@ -11,8 +11,13 @@ on:
         description: 'Comma-separated benchmarks to run (default: all)'
         required: false
         default: 'xstest,strong_reject,xstest_contrast'
-  schedule:
-    - cron: '0 2 * * 0'  # Run Sundays at 2am UTC (extended benchmarks only)
+  # schedule:
+  #   - cron: '0 2 * * 0'  # Run Sundays at 2am UTC (extended benchmarks only)
+  # DISABLED 2026-07-18 (Emmanuel) — automatic runs (this + lexbench-prod.yml's
+  # daily cron) were burning free provider quota (Gemini/Groq/Mistral/Jina)
+  # with no cost control. Manual dispatch (workflow_dispatch above) still
+  # works for on-demand runs. Re-enable this schedule block once quota is
+  # paid for.
 
 # fix (2026-07-10): moved off the per-shard matrix job (run-extended-benchmarks)
 # onto the workflow level here. Same bug as lexbench-prod.yml — see that
