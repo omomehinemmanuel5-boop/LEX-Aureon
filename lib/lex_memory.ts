@@ -93,11 +93,33 @@
  * correctness is preserved: rows are keyed by provider and carry the model
  * name, so a Gemini-space centroid is never served into a Jina-space
  * comparison.
+ *
+ * fix (2026-07-18) — CONTRASTIVE RECALIBRATION FOR THE HARM CENTROID: live
+ * probe testing found getHarmReferenceCentroid's raw cosine similarity
+ * essentially non-discriminating in production — benign prompts scored
+ * 0.79-0.82, genuinely harmful prompts scored 0.90-0.91, a ~0.10-0.12 gap
+ * against a shared 0.78-0.91 floor. Consistent with known anisotropy in
+ * sentence-embedding spaces: short, syntactically similar sentences (nearly
+ * every prompt in the harm corpus AND ordinary benign traffic share an
+ * imperative/question register) cluster in a narrow, uniformly-high cosine
+ * band regardless of semantic content. Added getBenignReferenceCentroid,
+ * mirroring getHarmReferenceCentroid exactly but sourced from
+ * lib/benign_reference_prompts.ts (ordinary prompts in the same surface
+ * registers). app/api/lex/govern/route.ts now computes threatSignal as
+ * harm-similarity MINUS benign-similarity (contrastive), not an absolute
+ * cosine value — see that file for the actual computation. This is a
+ * heuristic recalibration verified against the specific probe set that
+ * surfaced the problem, not a statistically validated fix; the downstream
+ * weight constants in sovereign_kernel.ts that consume threatSignal were
+ * calibrated against the OLD (compressed, ~0.78-0.91) range and may need
+ * re-tuning now that the typical range should be smaller and more spread
+ * out — flagged as follow-up, not assumed resolved by this pass alone.
  */
 
 import { getClient } from './db';
 import { env } from './env';
 import { HARM_REFERENCE_PROMPTS } from './harm_reference_prompts';
+import { BENIGN_REFERENCE_PROMPTS } from './benign_reference_prompts';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface LexMemoryEvent {
@@ -186,13 +208,14 @@ async function putCachedEmbedding(hash: string, embedding: number[]): Promise<vo
 }
 
 // ── Persistent centroid cache (2026-07-16 — see file header feat note) ───────
-// One row per (kind, provider). kind ∈ 'constitutional' | 'harm_reference'.
+// One row per (kind, provider). kind ∈ 'constitutional' | 'harm_reference' |
+// 'benign_reference' (added 2026-07-18 — see that fix note).
 // source_hash = SHA-256 of the exact source texts the centroid was computed
 // from — content-addressed invalidation instead of TTL. All operations are
 // non-fatal: any failure falls through to the existing recompute path, which
 // itself degrades honestly (detection_degraded) exactly as before.
 
-type CentroidKind = 'constitutional' | 'harm_reference';
+type CentroidKind = 'constitutional' | 'harm_reference' | 'benign_reference';
 
 let _centroidTableEnsured = false;
 async function ensureCentroidTable(): Promise<void> {
@@ -752,7 +775,7 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
 }
 
 // ── Harm reference centroid (2026-07-12) — INPUT-SIDE threat signal ───────────
-// See file header (both feat and second-pass fix notes). Mirrors
+// See file header (feat, second-pass, and 2026-07-18 fix notes). Mirrors
 // getConstitutionalCentroid's provider-pinned caching pattern, but now sources
 // its prompts from the statically-imported HARM_REFERENCE_PROMPTS array
 // (lib/harm_reference_prompts.ts) rather than a runtime fs read — that file's
@@ -794,9 +817,52 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
   }
 }
 
+// ── Benign reference centroid (2026-07-18) — CONTRASTIVE RECALIBRATION ────────
+// See file header 2026-07-18 fix note and lib/benign_reference_prompts.ts.
+// Identical structure to getHarmReferenceCentroid — same caching pattern, same
+// provider-pinning requirement (this centroid must be compared against a
+// prompt embedding from the SAME provider). Exists so the caller can compute
+// threatSignal as harm-similarity MINUS benign-similarity rather than an
+// absolute cosine value, netting out the register-level similarity that both
+// corpora share and that was swamping the actual content signal.
+const _benignCentroidCache = new Map<EmbedProvider, { vec: number[]; ts: number }>();
+const BENIGN_CENTROID_TTL_MS = 60 * 60 * 1000; // same rationale as HARM_CENTROID_TTL_MS — static per deploy
+
+export async function getBenignReferenceCentroid(forceProvider: EmbedProvider): Promise<number[] | null> {
+  const now = Date.now();
+  const cached = _benignCentroidCache.get(forceProvider);
+  if (cached && (now - cached.ts) < BENIGN_CENTROID_TTL_MS) return cached.vec;
+  try {
+    if (!BENIGN_REFERENCE_PROMPTS.length) return null;
+    const sourceHash = await hashText(BENIGN_REFERENCE_PROMPTS.join('\n'));
+    const persisted = await getPersistedCentroid('benign_reference', forceProvider, sourceHash);
+    if (persisted) {
+      _benignCentroidCache.set(forceProvider, { vec: persisted, ts: now });
+      return persisted;
+    }
+    const embeddings = await Promise.all(BENIGN_REFERENCE_PROMPTS.map(p => embedTextWithProvider(p, forceProvider)));
+    const centroid = computeCentroidFor(embeddings);
+    if (!centroid) return null;
+    _benignCentroidCache.set(forceProvider, { vec: centroid, ts: now });
+    putPersistedCentroid('benign_reference', forceProvider, sourceHash, centroid, BENIGN_REFERENCE_PROMPTS.length)
+      .catch(() => undefined);
+    return centroid;
+  } catch (e) {
+    console.error('getBenignReferenceCentroid error:', e);
+    return null;
+  }
+}
+
 export function invalidateCentroidCache(provider?: EmbedProvider): void {
-  if (provider) { _centroidCache.delete(provider); _harmCentroidCache.delete(provider); }
-  else { _centroidCache.clear(); _harmCentroidCache.clear(); }
+  if (provider) {
+    _centroidCache.delete(provider);
+    _harmCentroidCache.delete(provider);
+    _benignCentroidCache.delete(provider);
+  } else {
+    _centroidCache.clear();
+    _harmCentroidCache.clear();
+    _benignCentroidCache.clear();
+  }
   // Also clear the persistent Turso layer (2026-07-16), best-effort — the
   // content-addressed source_hash already protects against staleness, so
   // this only matters for a deliberate manual invalidation.
