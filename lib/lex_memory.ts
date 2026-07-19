@@ -114,12 +114,33 @@
  * calibrated against the OLD (compressed, ~0.78-0.91) range and may need
  * re-tuning now that the typical range should be smaller and more spread
  * out — flagged as follow-up, not assumed resolved by this pass alone.
+ *
+ * fix (2026-07-19) — EMBEDDINGS HAD NO COOLDOWN PROTECTION AT ALL: unlike
+ * lib/llm_provider.ts's generation calls (which have had a rate/quota
+ * cooldown since 2026-07-12), embedGemini/embedMistral/embedJina below had
+ * NO cooldown mechanism whatsoever — every single embed call, on every
+ * governed turn (prompt embedding, output embedding for self-referential
+ * detection, threat-signal comparison), unconditionally tried Gemini first
+ * regardless of how recently or how many times it had already 429'd this
+ * session. Diagnosed as a real, quantified contributor to a benchmark run's
+ * severe provider exhaustion (2026-07-19): Gemini is primary for BOTH
+ * generation (via lib/llm_provider.ts's generateGoverned, used by BOTH the
+ * raw and governed arms — see lib/sovereign_kernel.ts) AND embeddings, so an
+ * exhausted Gemini account was being re-probed from at least 3 call sites
+ * per turn with zero shared memory of the outcome between any of them. Now
+ * uses the same shared, cross-instance cooldown store as generation (see
+ * lib/provider_cooldown.ts) — a 429/402/403 discovered by embedGemini on one
+ * serverless instance is now visible to every other concurrent instance
+ * within lib/provider_cooldown.ts's sync interval, for both embedding AND
+ * generation call sites, instead of each layer and each instance
+ * rediscovering the same exhaustion independently.
  */
 
 import { getClient } from './db';
 import { env } from './env';
 import { HARM_REFERENCE_PROMPTS } from './harm_reference_prompts';
 import { BENIGN_REFERENCE_PROMPTS } from './benign_reference_prompts';
+import { isOnCooldown, markCooldown } from './provider_cooldown';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface LexMemoryEvent {
@@ -313,6 +334,10 @@ export const EMBED_DIM = 256;
 
 export type EmbedProvider = 'gemini' | 'mistral' | 'jina';
 
+// fix (2026-07-19) — cross-instance cooldown for embed calls, same duration
+// as generation's (lib/llm_provider.ts). See file header.
+const EMBED_COOLDOWN_MS = 3 * 60 * 1000;
+
 function providerOrder(): EmbedProvider[] {
   const order: EmbedProvider[] = [];
   if (env.GEMINI_API_KEY)  order.push('gemini');
@@ -345,6 +370,10 @@ function l2normalize(v: number[]): number[] {
 }
 
 async function embedGemini(text: string): Promise<number[]> {
+  const model = 'gemini-embedding-001';
+  if (await isOnCooldown('gemini', model)) {
+    throw new Error(`Gemini embed on cooldown (recent 429/402/403)`);
+  }
   const key = env.GEMINI_API_KEY as string;
   const res = await fetch(
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent',
@@ -360,7 +389,13 @@ async function embedGemini(text: string): Promise<number[]> {
       signal: AbortSignal.timeout(10_000),
     },
   );
-  if (!res.ok) throw new Error(`Gemini embed ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429 || res.status === 402 || res.status === 403) {
+      markCooldown('gemini', model, EMBED_COOLDOWN_MS, `HTTP ${res.status}`);
+    }
+    throw new Error(`Gemini embed ${res.status}: ${body}`);
+  }
   const d = await res.json() as { embedding?: { values?: number[] } };
   const values = d.embedding?.values;
   if (!values?.length) throw new Error('Gemini embed: no values in response');
@@ -370,6 +405,10 @@ async function embedGemini(text: string): Promise<number[]> {
 }
 
 async function embedMistral(text: string): Promise<number[]> {
+  const model = 'mistral-embed';
+  if (await isOnCooldown('mistral', model)) {
+    throw new Error(`Mistral embed on cooldown (recent 429/402/403)`);
+  }
   const key = env.MISTRAL_API_KEY as string;
   const res = await fetch('https://api.mistral.ai/v1/embeddings', {
     method:  'POST',
@@ -377,7 +416,13 @@ async function embedMistral(text: string): Promise<number[]> {
     body: JSON.stringify({ model: 'mistral-embed', input: [text] }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) throw new Error(`Mistral embed ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429 || res.status === 402 || res.status === 403) {
+      markCooldown('mistral', model, EMBED_COOLDOWN_MS, `HTTP ${res.status}`);
+    }
+    throw new Error(`Mistral embed ${res.status}: ${body}`);
+  }
   const d = await res.json() as { data?: { embedding?: number[] }[] };
   const values = d.data?.[0]?.embedding;
   if (!values?.length) throw new Error('Mistral embed: no values in response');
@@ -389,6 +434,10 @@ async function embedMistral(text: string): Promise<number[]> {
 }
 
 async function embedJina(text: string): Promise<number[]> {
+  const model = 'jina-embeddings-v3';
+  if (await isOnCooldown('jina', model)) {
+    throw new Error(`Jina embed on cooldown (recent 429/402/403)`);
+  }
   const key = env.JINA_API_KEY as string;
   const res = await fetch('https://api.jina.ai/v1/embeddings', {
     method:  'POST',
@@ -401,7 +450,13 @@ async function embedJina(text: string): Promise<number[]> {
     }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) throw new Error(`Jina ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429 || res.status === 402 || res.status === 403) {
+      markCooldown('jina', model, EMBED_COOLDOWN_MS, `HTTP ${res.status}`);
+    }
+    throw new Error(`Jina ${res.status}: ${body}`);
+  }
   const d = await res.json() as { data: { embedding: number[] }[] };
   return d.data[0].embedding; // Jina v3 returns normalized vectors
 }
