@@ -58,6 +58,14 @@
  * F(x,z)-vs-V_z gap the README/website describe. Recalibrating thresholds or
  * simulation parameters to actually close it is separate, deliberately
  * unaddressed work — not guessed at here.
+ *
+ * fix (2026-07-19, second pass) — CI TYPECHECK FAILURE: the first version of
+ * lyapunovCandidate() used `([0,1,2] as const).reduce(...)`, which TypeScript
+ * narrows to a `0|1|2` literal tuple — the reduce accumulator's inferred type
+ * then also narrows to `0|1|2`, and a callback returning a plain `number`
+ * (the penalty sum) doesn't satisfy that overload (TS2769). Caught by CI
+ * (`npx tsc --noEmit`) on this exact commit, not assumed passing. Replaced
+ * with a plain for-loop — no behavior change, same computed value.
  */
 
 // ── Safety parameters (mirror api/python/cbf_service.py) ──────────────────
@@ -134,9 +142,12 @@ function lyapunovCandidate(x: [number, number, number], z: [number, number, numb
   const barrier = -(z[0] * Math.log(Math.max(x[0], LYAPUNOV_FLOOR))
                    + z[1] * Math.log(Math.max(x[1], LYAPUNOV_FLOOR))
                    + z[2] * Math.log(Math.max(x[2], LYAPUNOV_FLOOR)));
-  const penalty = (MU_LYAPUNOV / 2) * ([0, 1, 2] as const).reduce((s, i) => {
-    const v = Math.max(0, TAU_CBF - x[i]); return s + v * v;
-  }, 0);
+  let penaltySum = 0;
+  for (let i = 0; i < 3; i++) {
+    const v = Math.max(0, TAU_CBF - x[i]!);
+    penaltySum += v * v;
+  }
+  const penalty = (MU_LYAPUNOV / 2) * penaltySum;
   return barrier + penalty;
 }
 
