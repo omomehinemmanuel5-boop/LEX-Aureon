@@ -75,6 +75,27 @@
  * local sync interval — see that file's header for the full design and
  * why it doesn't just move the problem to hammering Turso instead.
  *
+ * fix (2026-07-19, second pass) — GENERATEGOVERNED ALWAYS TRIED GEMINI
+ * FIRST, EVERY CALL: like lib/lex_memory.ts's embedding providerOrder()
+ * (same-day fix), generateGoverned's chain unconditionally led with Gemini
+ * (both tiers) before ever touching Cerebras/Groq/Mistral — and this
+ * function serves BOTH arms of every governed turn (callLLMRaw in
+ * lib/sovereign_kernel.ts calls this same function), so Gemini's free-tier
+ * budget was the only one actually exercised under normal conditions, twice
+ * per turn. generateGoverned now randomly rotates which of three genuinely
+ * comparable high-capacity options — Gemini-lite, Cerebras, Groq-primary
+ * (70B) — leads the chain on each call, so the three separate companies'
+ * quotas get used in roughly equal proportion by default rather than one
+ * absorbing all traffic until it's exhausted. The remaining links
+ * (Gemini-full, Groq-OSS, Groq-fast, Mistral) stay in their original
+ * relative order as the fallback tail regardless of which of the three
+ * leads — only the leading entry changes, the safety net is unchanged.
+ * generateJudge and generateRewrite are intentionally NOT touched by this
+ * pass: their primaries (Groq-70B and Mistral respectively) were already
+ * chosen specifically to avoid concentrating on Gemini, and generateJudge's
+ * ordering affects verdict consistency across scored benchmark rows, which
+ * is a real cost a change here shouldn't risk without a specific reason.
+ *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
  *   2. Groq     llama-3.1-8b-instant     — same provider; LOWER 6k TPM ceiling
@@ -411,8 +432,11 @@ export async function generateSingle(
 // ── Purpose-specific generators — each uses optimal provider for its role ──
 
 /**
- * Governed arm generation — Gemini primary (1,000 RPM free tier).
- * Rate-limit-proof for benchmarks. Falls back to Cerebras/Groq if Gemini fails.
+ * Governed arm generation — rotates across three independent, comparable
+ * high-capacity providers (Gemini-lite, Cerebras, Groq-70B) rather than
+ * always starting with Gemini. Serves BOTH the raw and governed arms of
+ * every turn (see lib/sovereign_kernel.ts's callLLMRaw). See 2026-07-19,
+ * second pass fix note in the file header for the full rationale.
  *
  * Role: produce the constitutionally governed response every turn.
  */
@@ -420,7 +444,7 @@ export async function generateGoverned(
   messages: LLMMessage[],
   staticFallback?: string,
 ): Promise<LLMResult> {
-  const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
+  const fullChain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
@@ -429,8 +453,18 @@ export async function generateGoverned(
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
   ];
+
+  // fix (2026-07-19, second pass) — see file header. Rotates which of the
+  // three genuinely comparable high-capacity options (indices 0=gemini-lite,
+  // 2=cerebras, 4=groq-primary-70B) leads the chain, instead of always
+  // index 0. The rest of fullChain keeps its original relative order as the
+  // fallback tail — only the leading entry is pulled forward.
+  const primaryPoolIndices = [0, 2, 4];
+  const pick = primaryPoolIndices[Math.floor(Math.random() * primaryPoolIndices.length)]!;
+  const chain = [fullChain[pick]!, ...fullChain.filter((_, i) => i !== pick)];
+
   for (let i = 0; i < chain.length; i++) {
-    const { provider, model, fn } = chain[i];
+    const { provider, model, fn } = chain[i]!;
     const result = await fn();
     if (result) return { text: result, provider, model, fallback_used: i > 0, attempts: i + 1 };
   }
@@ -478,6 +512,10 @@ export async function generateRewrite(
  *
  * fix (2026-07-10): added Cerebras's gpt-oss-120b as a same-class-size,
  * independent-quota fallback before dropping to smaller/different models.
+ *
+ * NOT rotated by the 2026-07-19 distribution fix (see file header) —
+ * verdict-provider consistency across a scored benchmark run has real value
+ * that a random-order change shouldn't risk without a specific reason to.
  *
  * Role: score model outputs against benchmark rubrics (harm-compliance,
  * truthfulness, injection-resistance, over-refusal, refusal-severity) and,
