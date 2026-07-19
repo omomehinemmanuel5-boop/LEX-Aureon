@@ -59,13 +59,21 @@
  * rate/quota failures (timeouts, 5xx, malformed responses) do NOT trigger a
  * cooldown, since those are more likely transient/request-specific rather
  * than an account-level exhaustion that will repeat identically on the next
- * call. Cooldown state is per-serverless-instance (module-level Map, not
- * persisted) — it self-heals on cold start and does not need a TTL sweep
- * beyond the per-entry expiry check at lookup time. This does not change
- * correctness (a real recovery within the cooldown window just means one
- * skipped attempt that would have failed anyway); it only removes the
- * repeated cost of asking a provider a question whose answer is already
- * known for the next few minutes.
+ * call.
+ *
+ * fix (2026-07-19) — COOLDOWN WAS PER-INSTANCE, NOT PER-DEPLOYMENT: the
+ * 2026-07-12 cooldown above was a plain in-memory Map, scoped to ONE Vercel
+ * serverless instance. Diagnosed directly from a real benchmark run's
+ * provenance data: a sharded run triggers MANY concurrent instances, each
+ * with its OWN fresh, empty cooldown state — so instance A discovering
+ * Gemini is 429'ing never became visible to instance B, which re-discovered
+ * the identical exhaustion from scratch on its own next call, paying the
+ * full round-trip cost again. Under a benchmark run's actual concurrency
+ * pattern (the exact scenario this mechanism was built for), it was
+ * structurally incapable of working. Cooldown state now lives in
+ * lib/provider_cooldown.ts, backed by a shared Turso table with a bounded
+ * local sync interval — see that file's header for the full design and
+ * why it doesn't just move the problem to hammering Turso instead.
  *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
@@ -83,6 +91,8 @@
  *   7. Gemini   gemini-2.5-flash         — higher capability fallback
  *   8. Static constitutional response    — deterministic, no LLM
  */
+
+import { isOnCooldown, markCooldown } from './provider_cooldown';
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -192,21 +202,10 @@ function logProviderFailure(provider: string, reason: string): void {
   console.warn(`[llm_provider] ${provider} failed: ${reason}`);
 }
 
-// ── Rate/quota cooldown cache (2026-07-12) — see file header ──────────────────
-// Keyed by "provider:model" so e.g. Gemini lite and Gemini full (separate
-// quota buckets on Google's side, confirmed by them failing independently in
-// the diagnosing run) don't share a cooldown incorrectly.
+// ── Rate/quota cooldown (2026-07-12, made cross-instance 2026-07-19) ──────────
+// See lib/provider_cooldown.ts for the shared implementation and why it
+// replaced the plain in-memory Map that used to live here.
 const COOLDOWN_MS = 3 * 60 * 1000; // 3 min — short enough to recover promptly if quota resets mid-run, long enough to skip the bulk of a burst of same-cause 429s
-const _cooldownUntil = new Map<string, number>();
-
-function cooldownKey(provider: string, model: string): string {
-  return `${provider}:${model}`;
-}
-
-function isOnCooldown(provider: string, model: string): boolean {
-  const until = _cooldownUntil.get(cooldownKey(provider, model));
-  return until !== undefined && Date.now() < until;
-}
 
 // Only rate-limit/quota signals (429, 402, 403) mark a cooldown. Other
 // failures (timeouts, 5xx, malformed/empty responses) are more likely
@@ -214,15 +213,15 @@ function isOnCooldown(provider: string, model: string): boolean {
 // reproduce identically on the very next call — see file header.
 function markCooldownIfRateLimited(provider: string, model: string, status: number | null): void {
   if (status === 429 || status === 402 || status === 403) {
-    _cooldownUntil.set(cooldownKey(provider, model), Date.now() + COOLDOWN_MS);
-    logProviderFailure(provider, `entering ${COOLDOWN_MS / 1000}s cooldown for model=${model} after HTTP ${status}`);
+    markCooldown(provider, model, COOLDOWN_MS, `HTTP ${status}`);
+    logProviderFailure(provider, `entering ${COOLDOWN_MS / 1000}s cross-instance cooldown for model=${model} after HTTP ${status}`);
   }
 }
 
 // ── Provider implementations ─────────────────────────────────────────────────
 
 async function tryGroq(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (isOnCooldown('groq', model)) return null; // no request sent — known-dead until cooldown expires
+  if (await isOnCooldown('groq', model)) return null; // no request sent — known-dead until cooldown expires
   const key = process.env.GROQ_API_KEY;
   if (!key) { logProviderFailure('groq', 'GROQ_API_KEY not set'); return null; }
   try {
@@ -259,7 +258,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
 // base URL) so each provider's own quirks/rate-limit handling can diverge
 // later without entangling the two.
 async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (isOnCooldown('cerebras', model)) return null;
+  if (await isOnCooldown('cerebras', model)) return null;
   const key = process.env.CEREBRAS_API_KEY;
   if (!key) { logProviderFailure('cerebras', 'CEREBRAS_API_KEY not set'); return null; }
   try {
@@ -287,7 +286,7 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
 }
 
 async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
-  if (isOnCooldown('mistral', MODELS.MISTRAL)) return null;
+  if (await isOnCooldown('mistral', MODELS.MISTRAL)) return null;
   const key = process.env.MISTRAL_API_KEY;
   if (!key) { logProviderFailure('mistral', 'MISTRAL_API_KEY not set'); return null; }
   try {
@@ -314,7 +313,7 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
 }
 
 async function tryGemini(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (isOnCooldown('gemini', model)) return null;
+  if (await isOnCooldown('gemini', model)) return null;
   const key = process.env.GEMINI_API_KEY;
   if (!key) { logProviderFailure('gemini', 'GEMINI_API_KEY not set'); return null; }
   try {
