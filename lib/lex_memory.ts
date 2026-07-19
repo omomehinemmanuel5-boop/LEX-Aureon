@@ -134,6 +134,28 @@
  * within lib/provider_cooldown.ts's sync interval, for both embedding AND
  * generation call sites, instead of each layer and each instance
  * rediscovering the same exhaustion independently.
+ *
+ * fix (2026-07-19, second pass) — GEMINI WAS ALWAYS TRIED FIRST, EVERY CALL:
+ * providerOrder() unconditionally put Gemini first whenever it was
+ * configured, meaning Gemini's free-tier budget was the ONLY one actually
+ * used under normal (non-failure) conditions — Mistral and Jina's entirely
+ * separate free-tier budgets sat idle unless Gemini had already failed.
+ * Since each provider is a genuinely independent account/company with its
+ * own quota, concentrating all default traffic on one of them wastes the
+ * other two's available capacity rather than using all three in parallel.
+ * providerOrder() now randomly alternates which of {Gemini, Jina} is tried
+ * first on each call — both are genuinely full-quality, native-dimension
+ * providers (no caveat attached to either in this file). Mistral stays
+ * fallback-only, not promoted into the rotation: its embedding is an
+ * explicit approximation (native 1024-dim truncated + re-normalized, not
+ * trained with a Matryoshka objective like Gemini's — see the "Provider-
+ * agnostic embeddings" section below), so treating it as sometimes-primary
+ * would trade quota savings for embedding quality on a meaningful fraction
+ * of calls. This does not touch the CORRECTNESS CONSTRAINT above — a single
+ * request's prompt/output/centroid embeddings are still pinned to whichever
+ * ONE provider that request resolved first; only the average distribution
+ * of which provider gets picked first, across many separate requests,
+ * changes.
  */
 
 import { getClient } from './db';
@@ -311,14 +333,16 @@ async function putPersistedCentroid(
 }
 
 // ── Provider-agnostic embeddings ───────────────────────────────────────────────
-// Three providers, tried in priority order with REAL runtime fallback:
-// Gemini (gemini-embedding-001, best quality/cost, but a hard 1,000/day free
-// quota) → Mistral (mistral-embed, key already configured for generation) →
-// Jina (jina-embeddings-v3). All vectors are EMBED_DIM-dimensional (Mistral's
-// native 1024-dim output is truncated + re-normalized — an approximation, since
-// mistral-embed was not trained with a Matryoshka objective like Gemini's; only
-// used as a last-resort fallback, never primary) and L2-normalized, so cosine
-// similarity and centroid averaging stay consistent WITHIN a resolved provider.
+// Three providers, with REAL runtime fallback: Gemini (gemini-embedding-001,
+// full quality, native truncatable dims, but a hard 1,000/day free quota) and
+// Jina (jina-embeddings-v3, also full quality, native dims) are ROTATED as the
+// first-tried provider (see 2026-07-19, second pass fix note above) — Mistral
+// (mistral-embed, key already configured for generation) stays a fallback-only
+// tier, since its embedding is an explicit approximation (native 1024-dim
+// truncated + re-normalized — mistral-embed was not trained with a Matryoshka
+// objective like Gemini's). All vectors are EMBED_DIM-dimensional and
+// L2-normalized, so cosine similarity and centroid averaging stay consistent
+// WITHIN a resolved provider.
 //
 // IMPORTANT — switching providers changes the embedding SPACE. Vectors from
 // different models are not comparable even at the same length. Two safeguards:
@@ -338,11 +362,30 @@ export type EmbedProvider = 'gemini' | 'mistral' | 'jina';
 // as generation's (lib/llm_provider.ts). See file header.
 const EMBED_COOLDOWN_MS = 3 * 60 * 1000;
 
+/**
+ * fix (2026-07-19, second pass) — see file header. Randomly alternates which
+ * of {gemini, jina} leads the chain on each call, instead of always starting
+ * with Gemini, so both providers' independent free-tier budgets get used
+ * under normal (non-failure) conditions rather than one sitting idle by
+ * default. Mistral is appended last regardless of the coin flip — see file
+ * header for why it stays fallback-only rather than joining the rotation.
+ */
 function providerOrder(): EmbedProvider[] {
-  const order: EmbedProvider[] = [];
-  if (env.GEMINI_API_KEY)  order.push('gemini');
-  if (env.MISTRAL_API_KEY) order.push('mistral');
-  if (env.JINA_API_KEY)    order.push('jina');
+  const hasGemini  = !!env.GEMINI_API_KEY;
+  const hasJina    = !!env.JINA_API_KEY;
+  const hasMistral = !!env.MISTRAL_API_KEY;
+
+  const primaryPool: EmbedProvider[] = [];
+  if (hasGemini) primaryPool.push('gemini');
+  if (hasJina)   primaryPool.push('jina');
+
+  let order: EmbedProvider[];
+  if (primaryPool.length === 2) {
+    order = Math.random() < 0.5 ? [primaryPool[0], primaryPool[1]] : [primaryPool[1], primaryPool[0]];
+  } else {
+    order = [...primaryPool];
+  }
+  if (hasMistral) order.push('mistral');
   return order;
 }
 
