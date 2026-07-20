@@ -35,7 +35,7 @@ on:
 # Fix: concurrency now lives at the WORKFLOW level (here), not the job level.
 # A top-level `concurrency:` block applies ONCE per whole workflow RUN, not
 # once per matrix instance — so all ~18 shards within one run are governed
-# ONLY by max-parallel:2 on the matrix (unaffected by this bug), while the
+# ONLY by max-parallel on the matrix (unaffected by this bug), while the
 # ENTIRE run, as a single unit, still shares one mutex with lexbench-
 # extended.yml's entire run (and with any overlapping trigger of this same
 # workflow — e.g. a manual dispatch overlapping the daily cron) via the same
@@ -161,21 +161,12 @@ jobs:
             echo "Total prompts: $TOTAL_PROMPTS"
             # fix (2026-07-14): 100 -> 200. Each shard pays fixed overhead
             # (checkout, npm install, re-fetching the HarmBench dataset)
-            # before processing a single prompt. At max-parallel:2 (the value
-            # at the time — see the 2026-07-18 note on the run-lexbench job
-            # below for why this was later raised to 3), halving
-            # the shard count roughly halves the number of sequential
-            # batches, saving real wall-clock time on setup that's paid
-            # once per shard regardless of shard size. Deliberately NOT
-            # touching max-parallel itself AT THE TIME: this session's own logs showed
-            # Groq's 70B/8B at 96-98% of daily token quota and Cerebras
-            # returning 429s repeatedly during a run at the CURRENT
-            # concurrency level — raising parallelism on top of that would
-            # very likely cause more cooldown cascades and more
-            # raw_fallback/unavailable turns, the exact corruption
-            # max-parallel:2 was introduced (2026-07-08) to prevent. Shard
-            # size only reduces fixed overhead; it does not change how many
-            # providers get hit simultaneously.
+            # before processing a single prompt. Halving the shard count
+            # roughly halves the number of sequential batches, saving real
+            # wall-clock time on setup that's paid once per shard regardless
+            # of shard size — independent of max-parallel (see the
+            # 2026-07-19 note below on the run-lexbench job for the current
+            # concurrency value and why it changed).
             SHARD_SIZE=200
             NUM_SHARDS=$(( (TOTAL_PROMPTS + SHARD_SIZE - 1) / SHARD_SIZE ))
             # Guard against zero shards
@@ -198,7 +189,7 @@ jobs:
   # producing governed_source='raw_fallback'/'unavailable' turns that
   # previously silently corrupted scored results (see AdvBench id=74
   # retirement, lib/benchmark_results.ts). max-parallel (bounded, see the
-  # 2026-07-18 note directly below for the current value and why) caps this
+  # 2026-07-19 note directly below for the current value and why) caps this
   # workflow's own shard concurrency. (The cross-workflow mutex against
   # lexbench-extended.yml now lives at the top-level `concurrency:` block —
   # see the 2026-07-10 fix note there for why it was moved off this job.)
@@ -212,20 +203,35 @@ jobs:
   # wall clock is fundamentally total-prompt-count x per-prompt latency /
   # max-parallel, and the only real lever is max-parallel itself -- the same
   # lever that caused the original 2026-07-08 provider-exhaustion incident
-  # this constant exists to prevent, so this is a deliberate, bounded
+  # this constant exists to prevent, so this was a deliberate, bounded
   # increase (+50%, not a doubling), not a reversal of that reasoning. The
   # 2026-07-17 sustained-exhaustion circuit breaker (runner.ts,
-  # SUSTAINED_EXHAUSTION_THRESHOLD) changes the risk calculus: if 3 concurrent
+  # SUSTAINED_EXHAUSTION_THRESHOLD) changed the risk calculus: if concurrent
   # shards DO saturate shared provider quota, a shard now fails fast (minutes)
   # rather than silently grinding through hundreds of doomed retries for
-  # hours, so the downside of this increase is now bounded in a way it wasn't
-  # when max-parallel:2 was first chosen.
+  # hours, so the downside of a further increase is now bounded in a way it
+  # wasn't when max-parallel:2 was first chosen.
+  #
+  # fix (2026-07-19) — max-parallel 3 -> 4: raised further now that the
+  # underlying cause of provider exhaustion is meaningfully mitigated, not
+  # just bounded by the circuit breaker: (a) lib/provider_cooldown.ts makes
+  # cooldown discovery SHARED across concurrent instances (a 429 found by
+  # one shard's requests is now visible to every other shard within ~20s,
+  # instead of each one re-discovering it independently — see that file's
+  # header), and (b) lib/llm_provider.ts's generateGoverned and
+  # lib/lex_memory.ts's embedding provider selection now DISTRIBUTE across
+  # Gemini/Cerebras/Groq and Gemini/Jina by default instead of concentrating
+  # every call on Gemini first (see both files' 2026-07-19 fix notes).
+  # Together these reduce both how much load concentrates on any single
+  # provider AND how much wasted retry latency accumulates once one does
+  # exhaust — the two things max-parallel was originally chosen to bound.
+  # Matches lexbench-extended.yml's same-day increase to the same value.
   run-lexbench:
     needs: determine-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 4
       matrix: ${{ fromJson(needs.determine-shards.outputs.matrix) }}
 
     steps:
@@ -377,6 +383,16 @@ jobs:
           path: summary.json
           if-no-files-found: ignore
 
+      # fix (2026-07-19) — `git add` WAS SILENTLY FAILING: data/ is listed in
+      # .gitignore, so `git add data/lexbench-summary.json` errored ("The
+      # following paths are ignored by one of your .gitignore files") and
+      # the step exited nonzero — confirmed directly in lexbench-extended.yml's
+      # identical step's real run log the same day, then checked here and
+      # found the same bug. This means the committed baseline
+      # (data/lexbench-summary.json), which check-regression.ts above reads
+      # to compare a new run against, was likely never actually updated by
+      # this path since it was introduced. `git add -f` overrides the ignore
+      # rule for this one intentionally-tracked exception.
       - name: Commit summary to repo
         # Don't overwrite the committed baseline with a tiny quick-test summary,
         # and don't commit if nothing was produced this run.
@@ -390,7 +406,7 @@ jobs:
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
           cp summary.json data/lexbench-summary.json
-          git add data/lexbench-summary.json
+          git add -f data/lexbench-summary.json
           git diff --staged --quiet && echo "Nothing to commit" && exit 0
           git commit -m "results: LexBench production run $(date +%Y-%m-%d)"
           git pull --rebase origin main
