@@ -25,6 +25,10 @@ export default function LiveStatsBar() {
   const [receiptCount, setReceiptCount]   = useState<number | null>(null);
   const [flash, setFlash]                 = useState(false);
   const [loaded, setLoaded]               = useState(false);
+  // 2026-07-20: whether the last poll reached the backend at all. The
+  // "Governor: LIVE" cell previously said LIVE unconditionally — including
+  // during the 2026-07-14 window when every backing API was erroring.
+  const [backendUp, setBackendUp]         = useState<boolean | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -53,7 +57,8 @@ export default function LiveStatsBar() {
           setStats(s);
           if (typeof s.total_receipts === 'number') setReceiptCount(s.total_receipts);
         }
-      } catch { /* keep existing */ } finally { setLoaded(true); }
+        setBackendUp(stateRes.ok || auditsRes.ok || statsRes.ok);
+      } catch { setBackendUp(false); /* keep existing values */ } finally { setLoaded(true); }
     };
     load();
     // fix (2026-07-10): 10s -> 60s. /api/live-state, /api/audits/recent, and
@@ -123,10 +128,10 @@ export default function LiveStatsBar() {
     },
     {
       label: 'Governor',
-      value: 'LIVE',
+      value: backendUp === false ? 'OFFLINE' : 'LIVE',
       sub:   'SovereignKernel v2',
-      color: '#10b981',
-      pulse: true,
+      color: backendUp === false ? '#64748b' : '#10b981',
+      pulse: backendUp !== false,
     },
   ];
 
