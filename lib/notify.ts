@@ -33,25 +33,43 @@ import { env } from './env';
 // Alerts also reach the log drain via logger.error regardless of email
 // configuration.
 
-const OPS_ALERT_TO = env.OPS_ALERT_EMAIL || 'omomehinemmanuel5@gmail.com';
+export const OPS_ALERT_TO = env.OPS_ALERT_EMAIL || 'omomehinemmanuel5@gmail.com';
 const OPS_ALERT_THROTTLE_MS = 15 * 60 * 1000; // one email per topic per 15 min per instance
 const lastAlertAt = new Map<string, number>();
 
-export async function sendOpsAlert(topic: string, subject: string, body: string): Promise<void> {
+export interface OpsAlertResult {
+  /** Always true — the structured log/log-drain write is unconditional. */
+  logged: boolean;
+  /** True only when the Resend API accepted the email. */
+  emailed: boolean;
+  /** Why emailed is false (throttled / not configured / provider error), or 'sent'. */
+  reason: string;
+}
+
+export async function sendOpsAlert(
+  topic: string,
+  subject: string,
+  body: string,
+  opts?: { bypassThrottle?: boolean },
+): Promise<OpsAlertResult> {
   // Always hits the structured log (and the log drain when configured),
   // even when email is throttled or unconfigured.
   logger.error(`ops_alert.${topic}`, subject, { body: body.slice(0, 500) });
 
   const now = Date.now();
   const last = lastAlertAt.get(topic) ?? 0;
-  if (now - last < OPS_ALERT_THROTTLE_MS) return;
+  if (!opts?.bypassThrottle && now - last < OPS_ALERT_THROTTLE_MS) {
+    return { logged: true, emailed: false, reason: `throttled (one email per topic per ${OPS_ALERT_THROTTLE_MS / 60000} min)` };
+  }
   lastAlertAt.set(topic, now);
 
   const resendKey = env.RESEND_API_KEY;
-  if (!resendKey) return; // logged above; email needs RESEND_API_KEY
+  if (!resendKey) {
+    return { logged: true, emailed: false, reason: 'RESEND_API_KEY not configured — alert reached the log stream only' };
+  }
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -61,8 +79,15 @@ export async function sendOpsAlert(topic: string, subject: string, body: string)
         text: body,
       }),
     });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      logger.error('ops_alert.send', 'Resend API error', { status: res.status, body: text.slice(0, 200) });
+      return { logged: true, emailed: false, reason: `Resend API error (HTTP ${res.status})` };
+    }
+    return { logged: true, emailed: true, reason: 'sent' };
   } catch (e) {
     logger.error('ops_alert.send', 'ops alert email failed', { error: String(e).slice(0, 200) });
+    return { logged: true, emailed: false, reason: `send failed: ${String(e).slice(0, 120)}` };
   }
 }
 
