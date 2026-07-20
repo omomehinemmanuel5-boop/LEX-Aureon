@@ -73,37 +73,40 @@
  * structurally incapable of working. Cooldown state now lives in
  * lib/provider_cooldown.ts, backed by a shared Turso table with a bounded
  * local sync interval — see that file's header for the full design and
- * why it doesn't just move the problem to hammering Turso instead.
+ * why it doesn't just move the problem to hammering Turso instead. This
+ * part of the 2026-07-19 work is UNAFFECTED by the revert below — it's
+ * still live and still correct.
  *
- * fix (2026-07-19, second pass) — GENERATEGOVERNED ALWAYS TRIED GEMINI
- * FIRST, EVERY CALL: like lib/lex_memory.ts's embedding providerOrder()
- * (same-day fix), generateGoverned's chain unconditionally led with Gemini
- * (both tiers) before ever touching Cerebras/Groq/Mistral — and this
- * function serves BOTH arms of every governed turn (callLLMRaw in
- * lib/sovereign_kernel.ts calls this same function), so Gemini's free-tier
- * budget was the only one actually exercised under normal conditions, twice
- * per turn. generateGoverned was changed to randomly rotate which of three
- * high-capacity options — Gemini-lite, Cerebras, Groq-primary (70B) — led
- * the chain on each call.
- *
- * fix (2026-07-20) — THAT ROTATION COMPETED WITH THE JUDGE FOR GROQ'S OWN
- * QUOTA: including Groq-primary in generateGoverned's rotation pool meant
- * generation calls (2 per turn — this function serves BOTH the raw and
- * governed arms) started drawing on the SAME Groq account-level quota that
- * generateJudge relies on almost exclusively (see that function below,
- * unchanged). A real production run the same day showed judge verdicts
- * dominated by 'constitutional-fallback' (the judge chain fully exhausting)
- * on 4 of 5 benchmarks even after the cross-instance cooldown and provider-
- * distribution fixes landed — Groq's quota being drawn down by generation
- * traffic is a plausible, direct contributor, since generateJudge has no
- * cooldown-sharing benefit if Groq is already exhausted by generation calls
- * made moments earlier in the same run. Removed Groq-primary from the
- * rotation pool — it now rotates ONLY between Gemini-lite and Cerebras
- * (genuinely separate quota pools from Groq), leaving Groq's own quota for
- * generateJudge to draw on without generation-side competition. Groq-70B,
- * Groq-OSS, and Groq-FAST remain in generateGoverned's fallback TAIL (used
- * only if both Gemini and Cerebras fail), so Groq is still available as a
- * safety net — just no longer competing for primary-slot volume.
+ * fix (2026-07-19, second pass) / REVERTED 2026-07-20 — GENERATEGOVERNED
+ * ROTATION ACROSS BASE MODELS WAS A REAL SAFETY REGRESSION, NOT JUST A
+ * QUOTA OPTIMIZATION: this function was changed to rotate which of
+ * {Gemini-lite, Cerebras, (briefly) Groq-primary} led the chain, to spread
+ * load off Gemini. That was a mistake, caught directly by comparing a real
+ * post-change benchmark run against the documented historical baseline:
+ * JailbreakBench governed ASR had been consistently 4-8.5% across every
+ * real run in the preceding week (07-14 through 07-16); the first run after
+ * this rotation landed measured 13.04% governed ASR — 2-3x every historical
+ * value, with bare-arm ASR also elevated. The mechanism: callLLMRaw (the
+ * "bare" baseline arm) calls this SAME function (see
+ * lib/sovereign_kernel.ts) — so rotating the underlying model rotated which
+ * base model produced BOTH the bare baseline AND the governed response,
+ * for every turn. Every historical baseline number was produced by Gemini
+ * specifically, every time; Cerebras's gpt-oss-120b and Groq's models are
+ * plausibly less resistant to this dataset's specific jailbreak techniques
+ * than Gemini is, independent of the constitutional system prompt wrapped
+ * around them. This is not proven with a fully controlled per-provider
+ * comparison — it's strong circumstantial evidence from a real regression
+ * that appeared exactly when the rotation was introduced — but the stakes
+ * (a safety metric, not a convenience metric) mean the burden of proof
+ * belongs to the change, not the status quo. REVERTED: generateGoverned is
+ * now deterministic Gemini-lite-first again, exactly matching the
+ * configuration that produced every historical baseline number. The
+ * quota-distribution goal is still served by lib/lex_memory.ts's embedding
+ * provider rotation (Gemini/Jina) and lib/provider_cooldown.ts's shared
+ * cross-instance cooldown — neither of those touches which model generates
+ * content, so neither carries this risk. Generation-side load distribution,
+ * if revisited, needs a controlled per-provider ASR comparison FIRST, not
+ * shipped and checked afterward.
  *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
@@ -441,17 +444,17 @@ export async function generateSingle(
 // ── Purpose-specific generators — each uses optimal provider for its role ──
 
 /**
- * Governed arm generation — rotates between TWO independent, comparable
- * high-capacity providers (Gemini-lite, Cerebras) rather than always
- * starting with Gemini. Serves BOTH the raw and governed arms of every turn
- * (see lib/sovereign_kernel.ts's callLLMRaw).
- *
- * fix (2026-07-20): Groq-primary was in this rotation pool for one day
- * (2026-07-19) and was removed — see file header fix note. It competed
- * with generateJudge's near-exclusive reliance on Groq for the same
- * account-level quota. Groq remains reachable via the fallback TAIL below
- * (if both Gemini and Cerebras fail) — just no longer a rotation candidate
- * for primary-slot volume.
+ * Governed arm generation — Gemini-lite primary, deterministic (REVERTED
+ * 2026-07-20 — see file header). Serves BOTH the raw and governed arms of
+ * every turn (see lib/sovereign_kernel.ts's callLLMRaw), which is exactly
+ * why this needs to be deterministic: rotating the underlying model here
+ * rotates which model produces BOTH the bare baseline and the governed
+ * response, and a real benchmark run showed that moved a safety metric
+ * (JailbreakBench ASR) 2-3x worse than every historical value the moment
+ * rotation was introduced. Quota distribution for generation specifically
+ * is not attempted here anymore — see lib/lex_memory.ts (embedding
+ * rotation) and lib/provider_cooldown.ts (shared cooldown) for the parts
+ * of the 2026-07-19 distribution work that are safe and still active.
  *
  * Role: produce the constitutionally governed response every turn.
  */
@@ -459,7 +462,7 @@ export async function generateGoverned(
   messages: LLMMessage[],
   staticFallback?: string,
 ): Promise<LLMResult> {
-  const fullChain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
+  const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
@@ -468,17 +471,8 @@ export async function generateGoverned(
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
   ];
-
-  // fix (2026-07-20) — rotation pool is now {gemini-lite, cerebras} ONLY
-  // (indices 0, 2) — Groq-primary (index 4) removed, see file header. The
-  // rest of fullChain keeps its original relative order as the fallback
-  // tail — only the leading entry is pulled forward.
-  const primaryPoolIndices = [0, 2];
-  const pick = primaryPoolIndices[Math.floor(Math.random() * primaryPoolIndices.length)]!;
-  const chain = [fullChain[pick]!, ...fullChain.filter((_, i) => i !== pick)];
-
   for (let i = 0; i < chain.length; i++) {
-    const { provider, model, fn } = chain[i]!;
+    const { provider, model, fn } = chain[i];
     const result = await fn();
     if (result) return { text: result, provider, model, fallback_used: i > 0, attempts: i + 1 };
   }
@@ -527,14 +521,9 @@ export async function generateRewrite(
  * fix (2026-07-10): added Cerebras's gpt-oss-120b as a same-class-size,
  * independent-quota fallback before dropping to smaller/different models.
  *
- * NOT rotated by the 2026-07-19 distribution fix — verdict-provider
- * consistency across a scored benchmark run has real value that a
- * random-order change shouldn't risk without a specific reason to.
- * REINFORCED 2026-07-20: generateGoverned's rotation pool was found
- * competing with THIS function for Groq's quota and was fixed to stop
- * including Groq-primary — see that function's fix note and the file
- * header. This function's exclusive claim on Groq-as-primary is now
- * actually respected by the rest of the system, not just declared here.
+ * Never rotated — verdict-provider consistency across a scored benchmark
+ * run has real value, and (2026-07-20) generateGoverned no longer competes
+ * with it for Groq's quota either — see that function's docstring.
  *
  * Role: score model outputs against benchmark rubrics (harm-compliance,
  * truthfulness, injection-resistance, over-refusal, refusal-severity) and,
