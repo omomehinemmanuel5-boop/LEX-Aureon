@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { postLead, stashPendingLead, flushPendingLead } from '@/lib/lead_retry';
 
 export default function LandingEmailCapture() {
   const [email, setEmail]     = useState('');
@@ -9,6 +10,9 @@ export default function LandingEmailCapture() {
   const [done, setDone]       = useState(false);
   const [error, setError]     = useState('');
   const router = useRouter();
+
+  // Retry any lead a previous visit failed to deliver (see lib/lead_retry.ts).
+  useEffect(() => { void flushPendingLead(); }, []);
 
   const submit = async () => {
     const trimmed = email.trim();
@@ -18,15 +22,11 @@ export default function LandingEmailCapture() {
     }
     setLoading(true);
     setError('');
-    try {
-      await fetch('/api/leads', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email: trimmed, source: 'landing' }),
-      });
-    } catch {
-      // network error — still proceed
-    }
+    // Fail-open but not fail-forgetful (2026-07-20): still proceed on backend
+    // failure, but stash the lead for retry instead of silently dropping it —
+    // the old code also never checked res.ok, so 500s counted as success.
+    const accepted = await postLead(trimmed, 'landing');
+    if (!accepted) stashPendingLead(trimmed, 'landing');
     localStorage.setItem('lex_email', trimmed);
     localStorage.setItem('lex_email_captured', 'true');
     setDone(true);

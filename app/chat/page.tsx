@@ -6,6 +6,7 @@ import {
 import Link from 'next/link';
 import { Libre_Caslon_Display } from 'next/font/google';
 import { useLexStream } from '@/lib/use_lex_stream';
+import { flushPendingLead } from '@/lib/lead_retry';
 import { buildSessionArc, type ChatTurn } from '@/lib/chat_store';
 import {
   getDynamicSuggestions,
@@ -1019,6 +1020,8 @@ export default function ChatConsole() {
     if (s) setApiCalls(parseInt(s, 10));
     try { const f = localStorage.getItem('lex_sandbox_files'); if (f) setSandboxFiles(JSON.parse(f)); } catch { /* ok */ }
   }, []);
+  // Retry any lead a previous visit failed to deliver (see lib/lead_retry.ts).
+  useEffect(() => { void flushPendingLead(); }, []);
   useEffect(() => { localStorage.setItem('lex_api_calls', String(apiCalls)); }, [apiCalls]);
   useEffect(() => { localStorage.setItem('lex_sandbox_files', JSON.stringify(sandboxFiles)); }, [sandboxFiles]);
 
