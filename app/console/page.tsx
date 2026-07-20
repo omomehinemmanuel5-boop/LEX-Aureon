@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { flushPendingLead } from '@/lib/lead_retry';
 import SignalPillBar from '@/components/SignalPillBar';
 import UpgradeModal from '@/components/UpgradeModal';
 import DynamicSimplex from '@/components/DynamicSimplex';
@@ -253,6 +254,9 @@ export default function Console() {
   const loading = stream.loading;
   const error = stream.error;
   const res = stream.complete as GovernanceResponse | null;
+
+  // Retry any lead a previous visit failed to deliver (see lib/lead_retry.ts).
+  useEffect(() => { void flushPendingLead(); }, []);
 
   useEffect(() => {
     fetch('/api/stats')
