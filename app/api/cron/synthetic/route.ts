@@ -1,6 +1,5 @@
 async function fetchGovern(args: { prompt: string; session_id: string }) {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://lexaureon.com';
-  const res = await fetch(`${baseUrl}/api/lex/govern`, {
+  const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
   });

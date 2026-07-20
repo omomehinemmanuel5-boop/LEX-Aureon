@@ -126,6 +126,7 @@
  */
 
 import { isOnCooldown, markCooldown } from './provider_cooldown';
+import { env } from './env';
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -255,6 +256,11 @@ function markCooldownIfRateLimited(provider: string, model: string, status: numb
 
 async function tryGroq(messages: LLMMessage[], model: string): Promise<string | null> {
   if (await isOnCooldown('groq', model)) return null; // no request sent — known-dead until cooldown expires
+  // NOTE: GROQ_API_KEY is REQUIRED in lib/env.ts (app refuses to start without
+  // it), so env.GROQ_API_KEY throws rather than returning undefined if unset —
+  // wrong semantics for this fallback chain, which must degrade gracefully to
+  // the next provider instead of throwing mid-chain. Reads process.env directly
+  // for that reason; see lib/env.ts's REQUIRED set for the enforcement point.
   const key = process.env.GROQ_API_KEY;
   if (!key) { logProviderFailure('groq', 'GROQ_API_KEY not set'); return null; }
   try {
@@ -292,7 +298,7 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
 // later without entangling the two.
 async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
   if (await isOnCooldown('cerebras', model)) return null;
-  const key = process.env.CEREBRAS_API_KEY;
+  const key = env.CEREBRAS_API_KEY;
   if (!key) { logProviderFailure('cerebras', 'CEREBRAS_API_KEY not set'); return null; }
   try {
     const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
@@ -320,7 +326,7 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
 
 async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
   if (await isOnCooldown('mistral', MODELS.MISTRAL)) return null;
-  const key = process.env.MISTRAL_API_KEY;
+  const key = env.MISTRAL_API_KEY;
   if (!key) { logProviderFailure('mistral', 'MISTRAL_API_KEY not set'); return null; }
   try {
     const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -347,7 +353,7 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
 
 async function tryGemini(messages: LLMMessage[], model: string): Promise<string | null> {
   if (await isOnCooldown('gemini', model)) return null;
-  const key = process.env.GEMINI_API_KEY;
+  const key = env.GEMINI_API_KEY;
   if (!key) { logProviderFailure('gemini', 'GEMINI_API_KEY not set'); return null; }
   try {
     // Convert to Gemini format
