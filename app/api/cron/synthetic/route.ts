@@ -12,6 +12,7 @@ import { GeneratorAgent } from '@/lib/agents/generator';
 import { logger, errorFields } from '@/lib/logger';
 import { env } from '@/lib/env';
 import { pruneEmbeddingCache } from '@/lib/lex_memory';
+import { sendOpsAlert } from '@/lib/notify';
 
 interface Probe {
   id: string;
@@ -108,7 +109,22 @@ export async function GET(req: Request) {
   const ok = failed === 0;
 
   if (!ok) {
-    logger.error('cron.synthetic', 'synthetic probe failure', { passed, failed, results: results.filter(r => !r.ok) });
+    const failures = results.filter(r => !r.ok);
+    logger.error('cron.synthetic', 'synthetic probe failure', { passed, failed, results: failures });
+    // 2026-07-20: a failing canary must reach a human — on 2026-07-20 12:03 UTC
+    // both attack probes passed as "clean" (embedding cooldown → keyword-only
+    // detection) and the 503 went nowhere. Throttled per topic in notify.ts.
+    void sendOpsAlert(
+      'synthetic_canary_failed',
+      `Synthetic canary FAILED (${failed}/${results.length} probes)`,
+      failures.map(f =>
+        `${f.id}: expected=${f.expected} observed=${f.observed}` +
+        (f.m_after !== undefined ? ` m_after=${f.m_after.toFixed(4)}` : '') +
+        (f.notes ? ` notes=${f.notes}` : ''),
+      ).join('\n') +
+      `\n\nIf the attack probes scored "clean", check whether embedding providers are on cooldown ` +
+      `(detection degraded to keyword-only) — see /api/health and the govern.detection log scope.`,
+    );
   } else {
     logger.info('cron.synthetic', 'synthetic probe pass', { passed, duration_ms: Date.now() - t });
   }

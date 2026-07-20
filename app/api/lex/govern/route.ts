@@ -127,6 +127,7 @@
  * surfaced back on the response (identity_mode) for audit.
  */
 
+import { publicError } from '@/lib/safe_error';
 import { NextResponse } from 'next/server';
 import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
@@ -241,7 +242,7 @@ export async function POST(req: Request) {
   const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, threatSignal, identityMode);
 
   if (result.status === 'Error') {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    return NextResponse.json({ error: publicError('govern.kernel', result.error) }, { status: 500 });
   }
 
   // ── Pre-governance ("before") state ───────────────────────────────────────
@@ -435,7 +436,10 @@ export async function POST(req: Request) {
     projection_triggered:  projectionTriggered,
     projection_magnitude:  result.projection_magnitude,
     z_weights:             result.receipt.z_weights,
-    receipt_id:            receiptId,
+    receipt_id:            receiptId || null,
+    // False when the audit receipt could not be persisted (e.g. DB quota
+    // exhaustion) — the response is then NOT audit-backed. See kernel_bridge.
+    receipt_persisted:     !!receiptId,
     memory_injected:       memoryContext.length > 0,
     invariance_violations: result.invariance_violations,
     metrics:               result.metrics ?? null,
