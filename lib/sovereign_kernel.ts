@@ -884,7 +884,7 @@ export class SovereignKernel {
     };
 
     if (sessionId) {
-      const pending = consumePendingCorrection(sessionId, this.state);
+      const pending = await consumePendingCorrection(sessionId, this.state);
       if (pending) {
         this.state.C += pending.delta_C;
         this.state.R += pending.delta_R;
@@ -894,10 +894,13 @@ export class SovereignKernel {
         governorSensing = {
           fired: true,
           correction_applied: true,
-          basin_shift: 'collaborative',
-          rho: 1.0,
+          // fix (2026-07-20): carry the REAL basin_shift and ρ from the
+          // computed correction, not the hardcoded 'collaborative'/1.0 that
+          // made every consumed correction misreport its provenance.
+          basin_shift: pending.basin_shift,
+          rho: pending.rho,
           reason: pending.reason,
-          correction_magnitude: pending.correction_magnitude, // ← now populated
+          correction_magnitude: pending.correction_magnitude,
         };
       }
     }
@@ -1006,8 +1009,13 @@ export class SovereignKernel {
     }
 
     // ── STEP 2: Fire async G(x,z) for next turn ───────────────────────────────
+    // Pass this turn's threat picture so an adversarial prompt is never sent
+    // to external search (see fireGovernorLoop's egress gate).
     if (sessionId) {
-      fireGovernorLoop(sessionId, { ...this.state }, userPrompt);
+      fireGovernorLoop(sessionId, { ...this.state }, userPrompt, {
+        semanticSeverity: semanticSignal.severity,
+        threatSignal:     clampedThreat,
+      });
       if (!governorSensing.correction_applied) {
         governorSensing = { ...governorSensing, fired: true, reason: 'sensing_fired_async' };
       }

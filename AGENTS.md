@@ -193,6 +193,9 @@ tool_receipts      agent tool-call audit receipts — owner: lib/agents/tool_int
 sovereign_laws     law definitions — owner: lib/db.ts / lex_crs_agent tools
 provider_cooldowns cross-instance LLM/embedding provider cooldown state
                    (added 2026-07-19) — owner: lib/provider_cooldown.ts
+pending_corrections async governor's turn-lag G(x,z) correction, handed from
+                   turn t to turn t+1 across instances (added 2026-07-20;
+                   apply-once via DELETE...RETURNING) — owner: lib/pending_corrections.ts
 leads              captured leads — owner: app/api/leads/route.ts (NOT lib/kv.ts —
                    schema/migrations live in the route file itself)
 
@@ -453,6 +456,7 @@ npm run build          verify TypeScript
 [2026-07-20] SYSTEM: CSP connect-src tightened to 'self' (api.groq.com/api.jina.ai were browser-allowed but only ever called server-side; api.lexaureon.com is offline); /api/health now reports cerebras alongside the other providers
 [2026-07-20] DESIGN: honest degraded states — HeroTicker shows UNAVAILABLE/OFFLINE after 2 failed polls instead of eternal SYNCING…; LiveStatsBar Governor cell shows OFFLINE when no backing API is reachable; console run counter dot goes gray + 'offline' when /api/stats is down
 [2026-07-20] BUSINESS: console/chat email gate moved from before run 1 to before run 2 — a visitor sees one real governed result before being asked for an email; same 10 free runs total
+[2026-07-20] FIX: async governor sensing was a near-total no-op in production — the turn-lag correction was handed between turns through a per-instance in-memory Map (same bug class as the provider-cooldown Map), so turn t+1 on a different Vercel instance always saw an empty store and dropped it; and the background sensing (incl. an 8s Serper call) ran as bare fire-and-forget that serverless freezes on response. Now: cross-instance Turso store (lib/pending_corrections.ts, apply-once via DELETE...RETURNING) + next/server after() so the work actually completes. Also: (a) egress gate — adversarial/high-threat prompts are never sent to Google (isSafeToSearch); (b) reliability signal rho(t) upgraded from noisy entropy-variance to semantic agreement (mean pairwise cosine of result embeddings, entropy fallback); (c) real basin_shift/rho now carried into the receipt instead of hardcoded 'collaborative'/1.0; (d) compute/consume/reject logged for observability; (e) corrected governor_search header's false 'Groq web browsing fallback' claim. 104 tests (5 new).
 
 ---
 

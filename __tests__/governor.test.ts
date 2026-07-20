@@ -7,7 +7,8 @@ import {
   computeTension, applyGovernorCorrection, RHO_MIN,
   type SearchResult, type GovernorContext,
 } from '../lib/governor_sensing';
-import { consumePendingCorrection } from '../lib/governor_loop';
+import { consumePendingCorrection, isSafeToSearch } from '../lib/governor_loop';
+import { computeSemanticReliability } from '../lib/governor_sensing';
 import { TAU } from '../lib/aureonics_core';
 
 const mockResults = (contents: string[]): SearchResult[] =>
@@ -116,17 +117,48 @@ describe('applyGovernorCorrection — IEC filter', () => {
 });
 
 describe('consumePendingCorrection', () => {
-  it('returns null for unknown session', () => {
-    const result = consumePendingCorrection('nonexistent_session_xyz', { C: 1/3, R: 1/3, S: 1/3 });
+  // 2026-07-20: now async and Turso-backed (lib/pending_corrections.ts). With
+  // no correction stored (and, in the test env, no reachable Turso) it must
+  // resolve to null — the graceful-degradation path that keeps the governor
+  // safe when the store is empty or unavailable.
+  it('resolves to null for unknown session', async () => {
+    const result = await consumePendingCorrection('nonexistent_session_xyz', { C: 1/3, R: 1/3, S: 1/3 });
     expect(result).toBeNull();
   });
 
-  it('is idempotent — consuming twice returns null second time', () => {
-    // consumePendingCorrection deletes on first consume
-    const result1 = consumePendingCorrection('session_double_consume', { C: 1/3, R: 1/3, S: 1/3 });
-    const result2 = consumePendingCorrection('session_double_consume', { C: 1/3, R: 1/3, S: 1/3 });
-    expect(result1).toBeNull(); // no stored correction
+  it('resolves to null when nothing is stored (no double-apply risk)', async () => {
+    const result1 = await consumePendingCorrection('session_double_consume', { C: 1/3, R: 1/3, S: 1/3 });
+    const result2 = await consumePendingCorrection('session_double_consume', { C: 1/3, R: 1/3, S: 1/3 });
+    expect(result1).toBeNull();
     expect(result2).toBeNull();
+  });
+});
+
+describe('isSafeToSearch — egress gate (do not google attacks)', () => {
+  it('allows search when stressed and benign', () => {
+    expect(isSafeToSearch(0.10, 0.0, 0.0, 0.0)).toBe(true);   // low M
+    expect(isSafeToSearch(0.30, 0.4, 0.0, 0.0)).toBe(true);   // high tension
+  });
+  it('blocks search when the prompt is adversarial, even if stressed', () => {
+    expect(isSafeToSearch(0.10, 0.5, 0.9, 0.0)).toBe(false);  // high semantic severity
+    expect(isSafeToSearch(0.10, 0.5, 0.0, 0.9)).toBe(false);  // high threat signal
+    expect(isSafeToSearch(0.10, 0.5, 0.5, 0.0)).toBe(false);  // exactly at threshold
+  });
+  it('blocks search when the state is not stressed (no need to spend the query)', () => {
+    expect(isSafeToSearch(0.33, 0.0, 0.0, 0.0)).toBe(false);
+  });
+});
+
+describe('computeSemanticReliability', () => {
+  it('returns null for fewer than 2 results (cannot measure agreement)', async () => {
+    expect(await computeSemanticReliability([])).toBeNull();
+    expect(await computeSemanticReliability(mockResults(['only one']))).toBeNull();
+  });
+  it('resolves to null when embeddings are unavailable (test env) — caller falls back to entropy', async () => {
+    // With no embedding provider configured, embedTextResolved throws and the
+    // function must degrade to null rather than throwing.
+    const r = await computeSemanticReliability(mockResults(['alpha beta', 'gamma delta']));
+    expect(r).toBeNull();
   });
 });
 
