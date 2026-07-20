@@ -4,13 +4,22 @@
  *
  * Web search adapter for the Governor Sensing Layer.
  *
- * Fires N parallel queries when governor uncertainty spikes (U(t) > 0.5).
- * Results are passed to computeIEC() which calculates ρ(t) — if variance
- * is too high, the correction G(x,z) is rejected before it touches state.
+ * Fires N parallel queries when the governor is stressed but the prompt is
+ * benign. Results feed the reliability signal ρ(t) (semantic agreement, see
+ * lib/governor_sensing.ts) — if the sources disagree, the correction G(x,z)
+ * is rejected before it touches state.
  *
- * Uses the SERPER_API_KEY env var (Google Search API).
- * Falls back to Groq web browsing if Serper unavailable.
- * Returns empty results (safe) if all providers fail.
+ * Uses the SERPER_API_KEY env var (Serper.dev — a Google Search API proxy).
+ * When the key is unset, returns empty results and governor sensing degrades
+ * gracefully (ρ=0 → no correction). There is NO secondary search provider —
+ * an earlier version of this header claimed a "Groq web browsing" fallback
+ * that was never implemented; corrected 2026-07-20.
+ *
+ * EGRESS GATING (2026-07-20): the decision of WHETHER to search — and thus
+ * whether the prompt leaves the server for Google — lives in the caller
+ * (lib/governor_loop.ts fireGovernorLoop), which passes N=0 for adversarial
+ * or high-threat turns so attack prompts are never egressed. This module
+ * assumes that gate has already been applied.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
