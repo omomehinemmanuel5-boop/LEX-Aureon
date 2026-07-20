@@ -1,3 +1,4 @@
+import { publicError } from '@/lib/safe_error';
 import { NextResponse } from 'next/server';
 import { getTopInvokedLaws } from '@/lib/db';
 import { SOVEREIGN_LAWS } from '@/lib/sovereign_laws';
@@ -18,6 +19,6 @@ export async function GET() {
       })),
     });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: publicError('laws.route', e) }, { status: 500 });
   }
 }

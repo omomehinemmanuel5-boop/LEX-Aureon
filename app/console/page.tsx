@@ -228,6 +228,9 @@ export default function Console() {
   const [pulse, setPulse] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
   const [totalRuns, setTotalRuns] = useState<number | null>(null);
+  // 2026-07-20: true when /api/stats can't be reached — the counter's green
+  // "live" dot previously glowed unconditionally, even with the stats API down.
+  const [statsDown, setStatsDown] = useState(false);
   const [outputLines, setOutputLines] = useState<{ ts: string; text: string; color: string }[]>([]);
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'console';
@@ -252,7 +255,10 @@ export default function Console() {
   const res = stream.complete as GovernanceResponse | null;
 
   useEffect(() => {
-    fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
+    fetch('/api/stats')
+      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(d => { if (typeof d.runs === 'number') { setTotalRuns(d.runs); setStatsDown(false); } else { setStatsDown(true); } })
+      .catch(() => setStatsDown(true));
   }, []);
 
   useEffect(() => {
@@ -281,7 +287,11 @@ export default function Console() {
   const run = useCallback(async (promptOverride?: string) => {
     const p = (promptOverride ?? prompt).trim();
     if (apiCalls >= MAX_CALLS) { setShowUpgrade(true); return; }
-    if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 0) {
+    // 2026-07-20: gate moved from BEFORE the first run to before the second —
+    // the live demo is the best sales asset; let a visitor see one real
+    // governed result before asking for their email. They still get the
+    // same 10 free runs total after activating.
+    if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 1) {
       setShowEmail(true); return;
     }
     if (!p) return;
@@ -290,7 +300,10 @@ export default function Console() {
     addLine('> Starting safety analysis...', '#c9a84c');
     await runStream(p, sessionId);
     setTimeout(() => {
-      fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
+      fetch('/api/stats')
+        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+        .then(d => { if (typeof d.runs === 'number') { setTotalRuns(d.runs); setStatsDown(false); } else { setStatsDown(true); } })
+        .catch(() => setStatsDown(true));
     }, 1500);
   }, [apiCalls, prompt, runStream, sessionId, addLine]);
 
@@ -532,13 +545,13 @@ export default function Console() {
           {/* ── Global Runs Counter ─────────────────────── */}
           <div className="rounded-lg border px-4 py-3 flex items-center justify-between" style={{ background: '#070b14', borderColor: '#1a2040' }}>
             <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+              <span className="w-2 h-2 rounded-full" style={statsDown ? { background: '#64748b' } : { background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
               <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#64748b' }}>Total governed runs</span>
             </div>
             {totalRuns !== null ? (
               <CountUp value={totalRuns} className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }} />
             ) : (
-              <span className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#64748b' }} aria-label="Loading total runs">———</span>
+              <span className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#64748b' }} aria-label={statsDown ? 'Total runs unavailable' : 'Loading total runs'}>{statsDown ? 'offline' : '———'}</span>
             )}
           </div>
 

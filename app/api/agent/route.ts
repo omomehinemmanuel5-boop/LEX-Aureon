@@ -4,6 +4,7 @@
  * Body: { task: string, model?: 'groq-70b' | 'groq-8b' | 'gemini-flash', stream?: boolean }
  */
 
+import { publicError } from '@/lib/safe_error';
 import { NextResponse } from 'next/server';
 import { runAgentLoop } from '@/lib/lex_crs_agent/loop';
 import type { ModelId } from '@/lib/lex_crs_agent/router';
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
           });
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         } catch (e) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', content: String(e) })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', content: publicError('agent.stream', e) })}\n\n`));
         }
         controller.close();
       },
@@ -52,6 +53,6 @@ export async function POST(req: Request) {
     const result = await runAgentLoop(task, selectedModel);
     return NextResponse.json(result);
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: publicError('agent.route', e) }, { status: 500 });
   }
 }

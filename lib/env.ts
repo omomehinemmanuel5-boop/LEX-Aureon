@@ -25,6 +25,10 @@ type EnvShape = {
   GEMINI_API_KEY:               string | undefined;
   MISTRAL_API_KEY:              string | undefined;
   CEREBRAS_API_KEY:             string | undefined;
+  AUDITOR_SECRET:               string | undefined;
+  RESEND_API_KEY:               string | undefined;
+  OPS_ALERT_EMAIL:              string | undefined;
+  SERPER_API_KEY:               string | undefined;
   GITHUB_TOKEN:                 string | undefined;
   VERCEL_TOKEN:                 string | undefined;
   CRON_SECRET:                  string;

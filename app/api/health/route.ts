@@ -78,9 +78,12 @@ export async function GET(req: Request) {
   // directly, bypassing the centralized env contract. MISTRAL_API_KEY is now
   // declared in lib/env.ts's EnvShape (it wasn't before — implicitly
   // supported here but undeclared everywhere else).
-  let geminiConfigured = false, mistralConfigured = false;
-  try { geminiConfigured  = !!env.GEMINI_API_KEY; } catch { /* missing */ }
-  try { mistralConfigured = !!env.MISTRAL_API_KEY; } catch { /* missing */ }
+  let geminiConfigured = false, mistralConfigured = false, cerebrasConfigured = false;
+  try { geminiConfigured   = !!env.GEMINI_API_KEY; } catch { /* missing */ }
+  try { mistralConfigured  = !!env.MISTRAL_API_KEY; } catch { /* missing */ }
+  // 2026-07-20: Cerebras joined the provider chain on 2026-07-10 (see
+  // lib/llm_provider.ts) but was never added here.
+  try { cerebrasConfigured = !!env.CEREBRAS_API_KEY; } catch { /* missing */ }
 
   return NextResponse.json(
     {
@@ -93,8 +96,9 @@ export async function GET(req: Request) {
         turso,
         groq:    groqConfigured  ? 'configured' : 'missing',
         jina:    jinaConfigured  ? 'configured' : 'missing',
-        gemini:  geminiConfigured  ? 'configured' : 'missing',
-        mistral: mistralConfigured ? 'configured' : 'missing',
+        gemini:   geminiConfigured   ? 'configured' : 'missing',
+        mistral:  mistralConfigured  ? 'configured' : 'missing',
+        cerebras: cerebrasConfigured ? 'configured' : 'missing',
       },
       storage: {
         mode:           turso === 'connected' ? 'turso' : 'error',

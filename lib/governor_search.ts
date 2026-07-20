@@ -14,6 +14,7 @@
  * ═══════════════════════════════════════════════════════════════════════
  */
 
+import { env } from './env';
 import { shannonEntropy, type SearchResult } from './governor_sensing';
 
 const SERPER_URL = 'https://google.serper.dev/search';
@@ -85,7 +86,7 @@ export async function runParallelSearch(
   prompt:  string,
   n:       number = 3,
 ): Promise<SearchResult[]> {
-  const apiKey = process.env.SERPER_API_KEY;
+  const apiKey = env.SERPER_API_KEY;
   if (!apiKey) {
     // No search key — return empty. Governor sensing degrades gracefully.
     return [];

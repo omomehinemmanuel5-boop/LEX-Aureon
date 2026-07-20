@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { auditorSigningKey } from '@/lib/kernel_bridge';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -23,7 +24,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const signingKey = process.env.AUDITOR_SECRET || 'lex-aureon-sovereign-key-2026';
+    // 2026-07-20: shared key resolution — production refuses the public
+    // fallback key. If the key is unavailable, verification honestly
+    // reports it cannot verify rather than verifying against a key
+    // anyone could have signed with.
+    let signingKey: string;
+    try {
+      signingKey = auditorSigningKey();
+    } catch {
+      return NextResponse.json({
+        verified: false,
+        error: 'Verification unavailable: signing key not configured on this deployment.'
+      }, { status: 503 });
+    }
     
     // Verify HMAC signature
     const expectedSignature = crypto

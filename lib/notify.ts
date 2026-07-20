@@ -22,6 +22,49 @@
  */
 
 import { logger } from './logger';
+import { env } from './env';
+
+// ── Ops alerts (2026-07-20) ──────────────────────────────────────────────────
+// Failures that violate a core guarantee (receipt not persisted, synthetic
+// canary failing) must reach a human, not just the log stream. Sent to the
+// owner via the same Resend integration as key delivery; per-topic throttle
+// so an incident burst (e.g. the 2026-07-14 window with 1,802 receipt-write
+// failures) produces ONE email per topic per window, not thousands.
+// Alerts also reach the log drain via logger.error regardless of email
+// configuration.
+
+const OPS_ALERT_TO = env.OPS_ALERT_EMAIL || 'omomehinemmanuel5@gmail.com';
+const OPS_ALERT_THROTTLE_MS = 15 * 60 * 1000; // one email per topic per 15 min per instance
+const lastAlertAt = new Map<string, number>();
+
+export async function sendOpsAlert(topic: string, subject: string, body: string): Promise<void> {
+  // Always hits the structured log (and the log drain when configured),
+  // even when email is throttled or unconfigured.
+  logger.error(`ops_alert.${topic}`, subject, { body: body.slice(0, 500) });
+
+  const now = Date.now();
+  const last = lastAlertAt.get(topic) ?? 0;
+  if (now - last < OPS_ALERT_THROTTLE_MS) return;
+  lastAlertAt.set(topic, now);
+
+  const resendKey = env.RESEND_API_KEY;
+  if (!resendKey) return; // logged above; email needs RESEND_API_KEY
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'Lex Aureon Ops <noreply@lexaureon.com>',
+        to: OPS_ALERT_TO,
+        subject: `[lexaureon ops] ${subject}`,
+        text: body,
+      }),
+    });
+  } catch (e) {
+    logger.error('ops_alert.send', 'ops alert email failed', { error: String(e).slice(0, 200) });
+  }
+}
 
 export interface KeyDeliveryEmail {
   to: string;
@@ -31,7 +74,7 @@ export interface KeyDeliveryEmail {
 }
 
 export async function sendKeyDeliveryEmail(params: KeyDeliveryEmail): Promise<{ sent: boolean; reason: string }> {
-  const resendKey = process.env.RESEND_API_KEY;
+  const resendKey = env.RESEND_API_KEY;
 
   if (!resendKey) {
     logger.info('notify.key_delivery', 'email provider not configured — key stored on lead row only, needs manual delivery', {

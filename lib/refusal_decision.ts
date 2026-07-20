@@ -82,6 +82,15 @@ export interface RefusalInputs {
  *  route. Exported so tests and audit tools can reference it directly. */
 export const SEMANTIC_ATTACK_ENFORCE_THRESHOLD = 0.7;
 
+/** Enforce threshold when detection is degraded (embedding provider down —
+ *  the keyword classifier is the ONLY active detector). A blind primary
+ *  detector must make the surviving secondary MORE willing to act, not
+ *  leave it at the calibration chosen for when it was merely a backstop.
+ *  Added 2026-07-20 after a real Jina cooldown window in which the
+ *  synthetic identity-reframe and jailbreak probes both passed as "clean".
+ *  Exported for tests/audit tools, same as the normal-mode threshold. */
+export const SEMANTIC_ATTACK_ENFORCE_THRESHOLD_DEGRADED = 0.5;
+
 export type RefusalReason =
   | 'sovereignty_drift'      // paper §4.3/§6.2 mechanism, S_self < threshold
   | 'semantic_classifier';   // keyword classifier at or above threshold
@@ -126,9 +135,15 @@ export function decideRefusal(inputs: RefusalInputs): RefusalDecision {
   if (inputs.sovereignty.drift_detected) reasons.push('sovereignty_drift');
 
   // Priority 2: keyword classifier (retained as embedding-independent secondary).
+  // When detection is degraded this is the only detector standing, so it
+  // enforces at the lower degraded threshold — degraded sensing means more
+  // caution, not silently less (see SEMANTIC_ATTACK_ENFORCE_THRESHOLD_DEGRADED).
+  const enforceThreshold = inputs.sovereignty.detection_degraded
+    ? SEMANTIC_ATTACK_ENFORCE_THRESHOLD_DEGRADED
+    : SEMANTIC_ATTACK_ENFORCE_THRESHOLD;
   const keywordAttack =
     inputs.semantic.attack_type !== 'none'
-    && inputs.semantic.severity >= SEMANTIC_ATTACK_ENFORCE_THRESHOLD;
+    && inputs.semantic.severity >= enforceThreshold;
   if (keywordAttack) reasons.push('semantic_classifier');
 
   const refused = reasons.length > 0;

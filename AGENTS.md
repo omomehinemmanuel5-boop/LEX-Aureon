@@ -178,6 +178,8 @@ z_traj             constitutional trajectory (never delete) — owner: lib/kv.ts
                    Columns: z_c, z_r, z_s (Banach z-weights, added 2026-06-28)
 praxis_receipts    immutable audit receipts (never delete) — owner: lib/kv.ts
                    Columns: slow_drip now sourced from sigma_viol accumulator (2026-06-29)
+                   Columns: signing_key_version added 2026-07-20 ('v1' | 'v1-fallback' |
+                   'unsigned') — makes fallback-signed/unsigned rows queryable
 governor_log       governor interventions — owner: lib/kv.ts
 law_impact         law impact scores — owner: lib/kv.ts
 sessions           session state (rate limiting, replaced @vercel/kv) — owner: lib/kv.ts
@@ -251,13 +253,14 @@ Optional (declared in lib/env.ts's EnvShape — access via `env.X`):
   GEMINI_API_KEY · MISTRAL_API_KEY · CEREBRAS_API_KEY (lib/llm_provider.ts fallback chain)
   GITHUB_TOKEN · VERCEL_TOKEN     (lex_crs_agent MCP tools)
   BENCH_SECRET                    (LexBench publish auth)
-
-Optional (still read via raw process.env — NOT yet in lib/env.ts's EnvShape;
-fix this the same way if you add a new call site for one of these):
-  SERPER_API_KEY   (lib/governor_search.ts)
-  RESEND_API_KEY   (lib/notify.ts)
-  AUDITOR_SECRET   (lib/kernel_bridge.ts, lib/agents/auditor.ts, app/api/lex/verify — falls
-                    back to a hardcoded key if unset; see SIGNING_KEY_VERSION in kernel_bridge.ts)
+  SERPER_API_KEY                  (lib/governor_search.ts)
+  RESEND_API_KEY                  (lib/notify.ts — key delivery + ops alerts)
+  OPS_ALERT_EMAIL                 (ops alert recipient; defaults to owner email)
+  AUDITOR_SECRET                  (receipt HMAC signing — lib/kernel_bridge.ts
+                                   auditorSigningKey(). PRODUCTION REFUSES to sign
+                                   without it as of 2026-07-20: receipts persist
+                                   marked signing_key_version='unsigned' + ops alert.
+                                   MUST be set in Vercel for signed receipts.)
 
 Never hardcode. Always use `env` from `lib/env.ts` for anything in the first
 list above. Exception: GROQ_API_KEY inside lib/llm_provider.ts's fallback-chain
@@ -442,6 +445,14 @@ npm run build          verify TypeScript
 [2026-07-19] feat: embedding provider load distributed across Gemini/Jina instead of always-Gemini-first (lib/lex_memory.ts); embedding providers given the same cross-instance cooldown as LLM providers
 [2026-07-19/20] feat+revert: generateGoverned briefly rotated across Gemini/Cerebras/Groq to distribute load, then REVERTED to deterministic Gemini-lite-first after a real benchmark run showed JailbreakBench governed ASR jump to 13.04% (vs. 4-8.5% historical) — rotating the model that produces callLLMRaw's baseline arm also rotated the governed arm's base model. Root-caused and reverted same day; see lib/llm_provider.ts's file-header comment for the full analysis. The embedding-rotation and cross-instance-cooldown work above is unaffected and stays live.
 [2026-07-20] FIX: cross-file consistency pass (agent-driven review) — routed lib/llm_provider.ts's Gemini/Mistral/Cerebras key reads through lib/env.ts (CEREBRAS_API_KEY added to EnvShape; GROQ_API_KEY deliberately left as raw process.env — it's REQUIRED in env.ts, which would throw instead of degrading gracefully mid-fallback-chain); fixed two lingering raw process.env.NEXT_PUBLIC_SITE_URL reads (app/api/lex/validate, app/api/cron/synthetic) that bypassed the fix already applied to app/api/lex/run; corrected this file's stale DEPLOYMENT RULES #7, DATABASE TABLES, and CURRENT STATUS entries against the real lib/db.ts schema and lib/llm_provider.ts provider chain
+[2026-07-20] FIX: degraded-detection caution — keyword floor now covers canonical instruction-override/rules-lifted probes (sovereign_kernel.ts detectSemanticAttack); decideRefusal enforces at a LOWER threshold (0.5 vs 0.7) when detection_degraded, so a blind embedding detector makes the surviving keyword detector more willing to act, not silently less. Root cause: 2026-07-20 12:03 UTC, both synthetic attack probes scored "clean" during a Jina cooldown. 11 new vitest tests pin the probes + thresholds
+[2026-07-20] SYSTEM: lib/notify.ts sendOpsAlert() — throttled (15min/topic) ops email via Resend + always log-drain; wired into receipt-write failure, receipt-signing failure, and synthetic canary failure so guarantee violations reach Emmanuel instead of dying in a 503
+[2026-07-20] FIX: writeKernelReceipt restructured — z_traj/receipt/governor_log fail independently (2026-07-14 incident: one Turso read failure aborted all receipt writes for 3.5h); receipt insert retries once; on final failure returns '' so routes respond receipt_persisted=false instead of handing out a receipt id that was never persisted
+[2026-07-20] FIX: receipt signing hardened — production refuses the public hardcoded fallback key (auditorSigningKey() throws; receipt persists marked 'unsigned' + ops alert); signing_key_version now a persisted queryable column; auditor.ts + /api/lex/verify share the same key resolution; AUDITOR_SECRET/RESEND_API_KEY/OPS_ALERT_EMAIL/SERPER_API_KEY added to lib/env.ts EnvShape
+[2026-07-20] FIX: public endpoints no longer leak raw internal errors (lib/safe_error.ts publicError) — during the 2026-07-14 incident the console UI showed users LibsqlError text with the DB hostname and plan-quota state; govern, govern/stream, kernel, laws, agent now return a generic message and log the detail server-side
+[2026-07-20] SYSTEM: CSP connect-src tightened to 'self' (api.groq.com/api.jina.ai were browser-allowed but only ever called server-side; api.lexaureon.com is offline); /api/health now reports cerebras alongside the other providers
+[2026-07-20] DESIGN: honest degraded states — HeroTicker shows UNAVAILABLE/OFFLINE after 2 failed polls instead of eternal SYNCING…; LiveStatsBar Governor cell shows OFFLINE when no backing API is reachable; console run counter dot goes gray + 'offline' when /api/stats is down
+[2026-07-20] BUSINESS: console/chat email gate moved from before run 1 to before run 2 — a visitor sees one real governed result before being asked for an email; same 10 free runs total
 
 ---
 
@@ -500,7 +511,10 @@ to reflect real system state.
 
 ## CONTACT FOR DECISIONS
 
-Emmanuel King — omomehinemmanuel5@gmail.com
+Emmanuel King — omomehinemmanuel5@gmail.com (owner / decisions / ops alerts)
+Public-facing contact on the website: lexaureon@gmail.com (enterprise
+inquiries, email-capture footer). Both are Emmanuel's; the split is
+deliberate — do not "fix" one to match the other.
 Do not make major changes without confirming
 intent with Emmanuel first.
 

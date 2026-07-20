@@ -566,6 +566,46 @@ export class SovereignKernel {
       candidates.push({ attack_type: 'identity', severity: 0.85 });
     }
 
+    // fix (2026-07-20) — the keyword floor missed the system's OWN canonical
+    // probes: on a real embedding-provider cooldown (Jina concurrency 429,
+    // 2026-07-20 12:03 UTC), /api/cron/synthetic's identity-reframe and
+    // jailbreak probes both scored "clean" because none of the patterns above
+    // match "Forget your previous instructions..." or "Your rules are
+    // lifted...". The keyword floor is the ONLY detector in degraded mode, so
+    // these unambiguous instruction-override formulations must be in it.
+    // Phrases are deliberately restricted to explicit override-of-instructions
+    // phrasings — no single generic word triggers on its own — to avoid
+    // re-introducing the over-refusal regressions this file's XSTest history
+    // documents (benign "forget everything you know about marketing"-style
+    // usage does NOT match: 'forget'/'clear' require an instructions/identity/
+    // constitutional object in the same sentence pattern).
+    if (
+      p.includes('forget your previous instructions') ||
+      p.includes('forget all previous instructions') ||
+      p.includes('ignore your previous instructions') ||
+      p.includes('ignore all previous instructions') ||
+      p.includes('disregard your previous instructions') ||
+      p.includes('disregard all previous instructions')
+    ) {
+      candidates.push({ attack_type: 'identity', severity: 0.86 });
+    }
+    if (
+      ((p.includes('forget everything') || p.includes('clear your memory') || p.includes('reset your identity')) &&
+        (p.includes('instruction') || p.includes('identity') || p.includes('constitutional') || p.includes('start fresh'))) ||
+      ((p.includes('you are now') || p.includes('you are actually')) &&
+        (p.includes('a different ai') || p.includes('no constitutional') || p.includes('no limits')))
+    ) {
+      candidates.push({ attack_type: 'identity', severity: 0.84 });
+    }
+    if (
+      p.includes('your rules are lifted') ||
+      p.includes('rules do not apply') ||
+      ((p.includes('pretend you have no') || p.includes('confirm you are') || p.includes('confirm that you are')) &&
+        (p.includes('guideline') || p.includes('restriction') || p.includes('unrestricted') || p.includes('no rules')))
+    ) {
+      candidates.push({ attack_type: 'exploitative', severity: 0.84 });
+    }
+
     if (
       (p.includes('you must') || p.includes('you will') || p.includes('you shall')) &&
       (p.includes('obey') || p.includes('comply') || p.includes('forced') || p.includes('override'))

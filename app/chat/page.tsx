@@ -1091,7 +1091,11 @@ export default function ChatConsole() {
     const raw = (promptOverride ?? input).trim();
     if (!raw || stream.loading) return;
     if (apiCalls >= MAX_CALLS) { setShowUpgrade(true); return; }
-    if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 0) {
+    // 2026-07-20: gate moved from BEFORE the first run to before the second —
+    // the live demo is the best sales asset; let a visitor see one real
+    // governed result before asking for their email. They still get the
+    // same 10 free runs total after activating.
+    if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 1) {
       setShowEmail(true); return;
     }
     const governed = (MODE_PREFIX[sandboxMode] + raw).trim();

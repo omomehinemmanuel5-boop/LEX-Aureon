@@ -6,6 +6,7 @@
  * flows into runCycle(). lyapunov_V now certifies V_z(x, z_session).
  */
 
+import { publicError } from '@/lib/safe_error';
 import { NextResponse } from 'next/server';
 import { SovereignKernel } from '@/lib/sovereign_kernel';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
@@ -91,7 +92,7 @@ export async function POST(req: Request) {
   }
 
   if (result.status === 'Error') {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    return NextResponse.json({ error: publicError('kernel.route', result.error) }, { status: 500 });
   }
 
   // ── 3. Persist receipt + store memory ─────────────────────────────────────
@@ -132,7 +133,8 @@ export async function POST(req: Request) {
     projection_magnitude: result.projection_magnitude,
     state:                result.state,
     z_weights:            result.receipt.z_weights,
-    receipt_id:           receiptId,
+    receipt_id:           receiptId || null,
+    receipt_persisted:    !!receiptId,
     memory_injected:      memoryContext.length > 0,
     invariance_violations: result.invariance_violations,
     metrics:              result.metrics ?? null,

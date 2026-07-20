@@ -8,7 +8,13 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://api.jina.ai https://api.groq.com https://api.lexaureon.com",
+  // 2026-07-20: tightened to 'self'. All LLM/embedding provider calls are
+  // server-side (lib/llm_provider.ts, lib/lex_memory.ts) — the browser never
+  // talks to api.jina.ai/api.groq.com directly, and allowing them in the CSP
+  // only widened the exfiltration surface for nothing. api.lexaureon.com is
+  // offline (see app/api/auth/login/route.ts). Vercel Analytics/Speed
+  // Insights use same-origin /_vercel/* endpoints, covered by 'self'.
+  "connect-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
