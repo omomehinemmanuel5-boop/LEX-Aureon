@@ -82,19 +82,28 @@
  * function serves BOTH arms of every governed turn (callLLMRaw in
  * lib/sovereign_kernel.ts calls this same function), so Gemini's free-tier
  * budget was the only one actually exercised under normal conditions, twice
- * per turn. generateGoverned now randomly rotates which of three genuinely
- * comparable high-capacity options — Gemini-lite, Cerebras, Groq-primary
- * (70B) — leads the chain on each call, so the three separate companies'
- * quotas get used in roughly equal proportion by default rather than one
- * absorbing all traffic until it's exhausted. The remaining links
- * (Gemini-full, Groq-OSS, Groq-fast, Mistral) stay in their original
- * relative order as the fallback tail regardless of which of the three
- * leads — only the leading entry changes, the safety net is unchanged.
- * generateJudge and generateRewrite are intentionally NOT touched by this
- * pass: their primaries (Groq-70B and Mistral respectively) were already
- * chosen specifically to avoid concentrating on Gemini, and generateJudge's
- * ordering affects verdict consistency across scored benchmark rows, which
- * is a real cost a change here shouldn't risk without a specific reason.
+ * per turn. generateGoverned was changed to randomly rotate which of three
+ * high-capacity options — Gemini-lite, Cerebras, Groq-primary (70B) — led
+ * the chain on each call.
+ *
+ * fix (2026-07-20) — THAT ROTATION COMPETED WITH THE JUDGE FOR GROQ'S OWN
+ * QUOTA: including Groq-primary in generateGoverned's rotation pool meant
+ * generation calls (2 per turn — this function serves BOTH the raw and
+ * governed arms) started drawing on the SAME Groq account-level quota that
+ * generateJudge relies on almost exclusively (see that function below,
+ * unchanged). A real production run the same day showed judge verdicts
+ * dominated by 'constitutional-fallback' (the judge chain fully exhausting)
+ * on 4 of 5 benchmarks even after the cross-instance cooldown and provider-
+ * distribution fixes landed — Groq's quota being drawn down by generation
+ * traffic is a plausible, direct contributor, since generateJudge has no
+ * cooldown-sharing benefit if Groq is already exhausted by generation calls
+ * made moments earlier in the same run. Removed Groq-primary from the
+ * rotation pool — it now rotates ONLY between Gemini-lite and Cerebras
+ * (genuinely separate quota pools from Groq), leaving Groq's own quota for
+ * generateJudge to draw on without generation-side competition. Groq-70B,
+ * Groq-OSS, and Groq-FAST remain in generateGoverned's fallback TAIL (used
+ * only if both Gemini and Cerebras fail), so Groq is still available as a
+ * safety net — just no longer competing for primary-slot volume.
  *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
@@ -432,11 +441,17 @@ export async function generateSingle(
 // ── Purpose-specific generators — each uses optimal provider for its role ──
 
 /**
- * Governed arm generation — rotates across three independent, comparable
- * high-capacity providers (Gemini-lite, Cerebras, Groq-70B) rather than
- * always starting with Gemini. Serves BOTH the raw and governed arms of
- * every turn (see lib/sovereign_kernel.ts's callLLMRaw). See 2026-07-19,
- * second pass fix note in the file header for the full rationale.
+ * Governed arm generation — rotates between TWO independent, comparable
+ * high-capacity providers (Gemini-lite, Cerebras) rather than always
+ * starting with Gemini. Serves BOTH the raw and governed arms of every turn
+ * (see lib/sovereign_kernel.ts's callLLMRaw).
+ *
+ * fix (2026-07-20): Groq-primary was in this rotation pool for one day
+ * (2026-07-19) and was removed — see file header fix note. It competed
+ * with generateJudge's near-exclusive reliance on Groq for the same
+ * account-level quota. Groq remains reachable via the fallback TAIL below
+ * (if both Gemini and Cerebras fail) — just no longer a rotation candidate
+ * for primary-slot volume.
  *
  * Role: produce the constitutionally governed response every turn.
  */
@@ -454,12 +469,11 @@ export async function generateGoverned(
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
   ];
 
-  // fix (2026-07-19, second pass) — see file header. Rotates which of the
-  // three genuinely comparable high-capacity options (indices 0=gemini-lite,
-  // 2=cerebras, 4=groq-primary-70B) leads the chain, instead of always
-  // index 0. The rest of fullChain keeps its original relative order as the
-  // fallback tail — only the leading entry is pulled forward.
-  const primaryPoolIndices = [0, 2, 4];
+  // fix (2026-07-20) — rotation pool is now {gemini-lite, cerebras} ONLY
+  // (indices 0, 2) — Groq-primary (index 4) removed, see file header. The
+  // rest of fullChain keeps its original relative order as the fallback
+  // tail — only the leading entry is pulled forward.
+  const primaryPoolIndices = [0, 2];
   const pick = primaryPoolIndices[Math.floor(Math.random() * primaryPoolIndices.length)]!;
   const chain = [fullChain[pick]!, ...fullChain.filter((_, i) => i !== pick)];
 
@@ -513,9 +527,14 @@ export async function generateRewrite(
  * fix (2026-07-10): added Cerebras's gpt-oss-120b as a same-class-size,
  * independent-quota fallback before dropping to smaller/different models.
  *
- * NOT rotated by the 2026-07-19 distribution fix (see file header) —
- * verdict-provider consistency across a scored benchmark run has real value
- * that a random-order change shouldn't risk without a specific reason to.
+ * NOT rotated by the 2026-07-19 distribution fix — verdict-provider
+ * consistency across a scored benchmark run has real value that a
+ * random-order change shouldn't risk without a specific reason to.
+ * REINFORCED 2026-07-20: generateGoverned's rotation pool was found
+ * competing with THIS function for Groq's quota and was fixed to stop
+ * including Groq-primary — see that function's fix note and the file
+ * header. This function's exclusive claim on Groq-as-primary is now
+ * actually respected by the rest of the system, not just declared here.
  *
  * Role: score model outputs against benchmark rubrics (harm-compliance,
  * truthfulness, injection-resistance, over-refusal, refusal-severity) and,
