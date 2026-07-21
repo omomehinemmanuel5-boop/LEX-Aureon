@@ -308,6 +308,40 @@ function normalize(x: [number, number, number]): [number, number, number] {
   return [clamped[0] / total, clamped[1] / total, clamped[2] / total];
 }
 
+/**
+ * fix (2026-07-21, FPL-1 resolution B) — FLOOR-RESPECTING SIMPLEX PROJECTION.
+ * The governed arm was projecting its state with the naive x ↦ x/Σx above,
+ * which can push a pillar that was exactly at τ_CBF in the raw next state
+ * back BELOW τ_CBF (every component shrinks by 1/Σ when Σ > 1). That naive
+ * projection was the mechanical source of the FPL-1 invariance_violations —
+ * and it does NOT match the DEPLOYED governor, which uses the exact Euclidean
+ * (Duchi–Shalev-Shwartz–Singer) projection onto {Σx = 1, xᵢ ≥ τ} (see
+ * lib/aureonics_core.ts projectToSimplex, lib/praxis.ts, lib/kv.ts, and
+ * research/paper-updates.md §2). This ports that same projection so the
+ * offline proof simulator's governed arm is faithful to production. Because
+ * the projection returns xᵢ ≥ floor by construction, forward invariance of
+ * the τ_CBF floor holds structurally — the guarantee the CBF exists to make.
+ * Used ONLY for the governed arm; the ungoverned counterfactual keeps the
+ * naive normalize above so it still collapses through the floor.
+ */
+function projectToSimplexFloor(
+  x: [number, number, number],
+  floor: number,
+): [number, number, number] {
+  const y = [x[0] - floor, x[1] - floor, x[2] - floor];
+  const target = 1.0 - 3 * floor;
+  const u = [...y].sort((a, b) => b - a);
+  let cssv = 0, rho = 0;
+  for (let j = 0; j < 3; j++) {
+    cssv += u[j];
+    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
+  }
+  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
+  const xProj = y.map(v => Math.max(v - theta, 0) + floor);
+  const total = xProj[0] + xProj[1] + xProj[2];
+  return [xProj[0] / total, xProj[1] / total, xProj[2] / total];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Main simulation — returns the same shape the Python /api/python/simulate
 // endpoint returns, so any consumer can be pointed at either engine.
@@ -436,7 +470,16 @@ export function simulateCbf(opts: SimulateCbfOptions = {}): CbfSimResult {
       x[2] + dt * totalForce[2],
     ];
     const preProjBelowFloor = xNextRaw[0] < TAU_CBF || xNextRaw[1] < TAU_CBF || xNextRaw[2] < TAU_CBF;
-    const xNext = normalize(xNextRaw);
+    // FPL-1 resolution B (2026-07-21): the governed arm projects with the
+    // floor-respecting Duchi projection the DEPLOYED governor actually uses
+    // (see projectToSimplexFloor); the ungoverned counterfactual keeps the
+    // naive normalize so it still collapses through the floor. The invariance
+    // check below is unchanged — it now passes for the governed arm because
+    // the projection holds the floor by construction, not because the test
+    // was weakened.
+    const xNext = cbfEnabled
+      ? projectToSimplexFloor(xNextRaw, TAU_CBF)
+      : normalize(xNextRaw);
     if (preProjBelowFloor && (xNext[0] < TAU_CBF || xNext[1] < TAU_CBF || xNext[2] < TAU_CBF)) {
       invarianceViolations += 1;
     }
