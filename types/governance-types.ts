@@ -70,6 +70,13 @@ export interface GovernanceResponse {
   vaulturex?: any;
   self_referential_fired?: boolean;
   receipt_id?: string;
+  // Provenance of the two arms' text (2026-07-08). 'unavailable' means BOTH
+  // the raw and governed provider chains exhausted (all LLMs 429'd) and the
+  // shown text is a static fallback, NOT a real answer — the console renders
+  // an explicit rate-limited state for this rather than a fake response.
+  governed_source?: 'governed' | 'raw_fallback' | 'unavailable' | null;
+  raw_provider?: string | null;
+  governed_provider?: string | null;
   version?: string;
   projection_triggered?: boolean;
   // SDK-specific fields that were top-level
