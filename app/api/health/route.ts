@@ -85,6 +85,17 @@ export async function GET(req: Request) {
   // lib/llm_provider.ts) but was never added here.
   try { cerebrasConfigured = !!env.CEREBRAS_API_KEY; } catch { /* missing */ }
 
+  // 2026-07-20: optional integrations that are otherwise invisible per
+  // deployment — surface presence (never the value) so "did my env var take
+  // effect in this deployment?" is a one-URL check. serper gates the async
+  // governor's search grounding; auditor_secret gates real receipt signing
+  // (unsigned without it — see lib/kernel_bridge.ts); resend gates ops-alert
+  // and key-delivery email.
+  let serperConfigured = false, auditorConfigured = false, resendConfigured = false;
+  try { serperConfigured  = !!env.SERPER_API_KEY;  } catch { /* missing */ }
+  try { auditorConfigured = !!env.AUDITOR_SECRET;  } catch { /* missing */ }
+  try { resendConfigured  = !!env.RESEND_API_KEY;  } catch { /* missing */ }
+
   return NextResponse.json(
     {
       ok,
@@ -99,6 +110,10 @@ export async function GET(req: Request) {
         gemini:   geminiConfigured   ? 'configured' : 'missing',
         mistral:  mistralConfigured  ? 'configured' : 'missing',
         cerebras: cerebrasConfigured ? 'configured' : 'missing',
+        // Optional integrations (presence only, never the value):
+        serper:        serperConfigured   ? 'configured' : 'missing',
+        auditor_secret: auditorConfigured ? 'configured' : 'missing',
+        resend:        resendConfigured   ? 'configured' : 'missing',
       },
       storage: {
         mode:           turso === 'connected' ? 'turso' : 'error',
