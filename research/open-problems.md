@@ -9,6 +9,13 @@ non-expansivity of the Duchi simplex projection
 Priority: MEDIUM
 (Downgraded from HIGH after the non-expansive Π_S lemma —
 see research/paper-updates.md §2.)
+Numerical note (2026-07-20): the CBF simulator's FPL-1 classification
+reads NOT PROVEN at dt=1.0 purely as a discretization artifact — it
+passes on all seeds for dt ≤ 0.5 (invariance_violations = 0, excursion
+< 0.25, stability_ratio > 0.6). This is numerical evidence for the
+governed continuous flow, NOT a proof of the multi-pillar analytical
+result above. See research/empirical-results.md "Run 002" and
+scripts/cbf/fpl1-dt-sweep.ts.
 
 ## Open Problem 2 — Nonlinear Pareto Frontier
 Status: Open

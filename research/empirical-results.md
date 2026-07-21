@@ -136,3 +136,90 @@ in the GitHub Actions artifact `harmbench-results-<run-id>` from the
 **HarmBench Benchmark** workflow run dated 2026-05-18. Artifacts retain
 for 14 days. After expiry the analytical JSON in this directory is the
 canonical record.
+
+---
+
+## Run 002 — 2026-07-20 — FPL-1 discretization characterization (CBF simulator)
+
+**Reproduce:** `npx tsx scripts/cbf/fpl1-dt-sweep.ts` (governed arm, 10 seeds
+per step size, simulated horizon T = steps·dt ≈ 150 held constant).
+
+### Question
+
+The landing-page CBF simulator (`lib/cbf_simulation.ts`, `GET /api/cbf-simulation`)
+runs at `dt = 1.0`, `steps = 150` and reports `fpl1_classification = 'NOT PROVEN'`.
+After the 2026-07-19 correction (scoring against the published log-barrier `V_z`
+certificate, excursion measured from `V(0)`), the governed arm still fails two of
+the three classification conditions at `dt = 1.0`: `invariance_violations = 0` and
+`max_deviation < 0.25`. Is this a genuine failure of the governed dynamics, or a
+numerical artifact of a coarse integration step? FPL-1 is a claim about the
+**continuous-time** governed flow `ẋ = −Π_Σ ∇V_z(x)`; `dt = 1.0` forward-Euler is
+a coarse discretization of that flow.
+
+### Result
+
+FPL-1 passes iff `stability_ratio > 0.6` **and** `invariance_violations == 0`
+**and** `excursion < 0.25`. Holding the horizon constant and refining `dt`:
+
+| dt   | steps | inv_viol (mean/max) | V_z excursion (mean/max) | stab_ratio (mean/min) | min_M (min) | verdict |
+|------|-------|---------------------|--------------------------|-----------------------|-------------|---------|
+| 1.00 | 150   | 0.60 / 3            | 0.334 / 0.405            | 0.951 / 0.919         | 0.050       | NOT PROVEN |
+| 0.50 | 300   | **0 / 0**           | **0.154 / 0.199**        | 0.889 / 0.853         | 0.100       | **PASS (all seeds)** |
+| 0.25 | 600   | 0 / 0               | 0.083 / 0.093            | 0.827 / 0.811         | 0.160       | PASS (all seeds) |
+| 0.10 | 1500  | 0 / 0               | 0.059 / 0.061            | 0.752 / 0.738         | 0.187       | PASS (all seeds) |
+| 0.05 | 3000  | 0 / 0               | 0.051 / 0.054            | 0.721 / 0.708         | 0.194       | PASS (all seeds) |
+
+### Findings
+
+1. **`NOT PROVEN` at `dt = 1.0` is a discrete-time (coarse-step) artifact, not a
+   dynamics failure.** At every step size `dt ≤ 0.5`, all three FPL-1 conditions
+   pass on all 10 seeds — including `invariance_violations == 0` exactly. A single
+   large Euler step near the boundary overshoots the CBF floor and inflates the
+   log-barrier excursion (which grows steeply as a pillar → 0); refining the step
+   removes both effects, converging to a clean Lyapunov-stable, forward-invariant
+   certificate — the behavior continuous-time CBF theory predicts.
+
+2. **The safety floor is never breached in the accounting sense at any `dt`**
+   (`safety_violated = false` throughout), and `min_M` *rises* monotonically as
+   `dt` shrinks (0.050 → 0.194) — the floor is respected with growing margin, not
+   luck. The `invariance_violations` count at `dt = 1.0` reflects sub-step overshoot
+   of the raw pre-projection state, corrected by the simplex projection, not a
+   sustained excursion below τ.
+
+3. **`stability_ratio` decreases mildly as `dt → 0` (0.95 → 0.72) but stays well
+   above the 0.6 bar.** Expected: with finer steps, near-equilibrium noise produces
+   proportionally more small non-monotone ΔV wiggles per unit time; the descent
+   condition still holds on ≥72% of steps at the finest resolution.
+
+### What this does and does NOT establish
+
+- It **does** establish that the shipped governed dynamics numerically satisfy the
+  FPL-1 stability + forward-invariance property for `dt ≤ 0.5`, and that the
+  landing-panel `NOT PROVEN` is attributable to integration coarseness at `dt = 1.0`.
+- It **does NOT** by itself close Open Problem 1 (the analytical multi-pillar global
+  Lyapunov proof), nor does it license changing external-facing copy to claim
+  "provably stable." A numerical certificate over 10 seeds at finite horizon is
+  evidence, not a proof.
+
+### Decision this unlocks (owner: Emmanuel — touches the research artifact)
+
+Two honest resolutions, depending on what FPL-1 is claiming:
+
+- **(A) Continuous-flow interpretation.** FPL-1 certifies the continuous governed
+  flow; `dt = 1.0` is simply a bad integration step. Fix: run the classification at
+  an integration step small enough that discretization error is negligible
+  (`dt = 0.1` gives a clean pass with margin: excursion 0.06, inv 0, stab 0.75).
+  This corrects a numerical-integration error — it is not threshold fudging.
+- **(B) Discrete-turn interpretation.** FPL-1 certifies the turn-by-turn discrete
+  dynamics, where one turn = one step (`dt = 1`). Then the sub-step overshoot is
+  real for the discrete system, and the principled fix is a **discrete-time CBF
+  robustness margin** — enforce the CBF constraint at `τ + δ_dt`, where `δ_dt`
+  bounds the worst-case one-step overshoot under the bounded noise model — so the
+  floor is provably forward-invariant in discrete time. This is a real controller
+  improvement, not a test relaxation.
+
+Recommendation: adopt **(A)** for the landing-panel classification (it is the
+mathematically correct way to certify a continuous flow numerically) **and** pursue
+**(B)** as the stronger, publishable result for the discrete deployed system. Until
+one is chosen and implemented, the panel copy stays as-is (`NOT PROVEN`, honestly)
+— this run documents *why*, precisely, and what closes it.
