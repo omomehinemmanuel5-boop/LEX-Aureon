@@ -253,3 +253,75 @@ integration step, not by weakening any threshold. This is a seeded, finite-horiz
 **numerical** certificate of the governed flow; **Open Problem 1** (the analytical
 multi-pillar global proof) remains open and is not claimed closed. The panel and the
 research page state exactly this.
+
+---
+
+## Run 003 — 2026-07-21 — Open Problem 1 progress (multi-pillar global Lyapunov)
+
+**Reproduce:** `npx tsx scripts/cbf/op1-lyapunov-check.ts` (uses the production
+`lyapunovBarrierZ` and `calculateGovernorG` from `lib/aureonics_core.ts`).
+
+Open Problem 1 was stated as: single-pillar Lyapunov descent proven; **multi-pillar
+simultaneous-violation regime open**, with a suggested approach of a comparison
+system / LaSalle invariance leveraging the non-expansive Duchi projection. A
+genuine attempt produced two results that advance it substantially, plus a precise
+statement of what still remains. **None of this claims the problem closed.**
+
+### Result 1 — Idealized flow, multi-pillar: CLOSED (by convexity)
+
+`V_z(x) = −Σ zᵢ·log(xᵢ) + (μ/2)·Σ max(0, τ−xᵢ)²` is **convex** on the
+floor-simplex: it is a sum of convex functions (each `−zᵢ·log(xᵢ)` with `zᵢ ≥ 0`,
+and each `(μ/2)·max(0,τ−xᵢ)²`), and strictly convex on the interior (the log
+Hessian `diag(zᵢ/xᵢ²) ≻ 0`). For the idealized projected-gradient flow
+`ẋ = −Π_{T(x)}∇V_z(x)`, `V̇_z = ⟨∇V_z, ẋ⟩ = −‖Π_{T}∇V_z‖² ≤ 0`, with equality only
+at the unique constrained minimizer. So `V_z` is a **global** Lyapunov function for
+the idealized flow **across all pillars simultaneously** — no single-pillar
+restriction. Notably this needs only convexity, not the comparison-system / LaSalle
+/ non-expansive-projection machinery the problem statement proposed.
+
+Numerically confirmed: 0/200,000 convexity (midpoint) violations; 0 increase-steps
+across 2,000 random starts × 400 steps of `−Π∇V_z` with all three pillars free.
+
+### Result 2 — Deployed governor descends V_z, multi-pillar (Chebyshev lemma)
+
+The deployed governor is `Gᵢ(x) = K·(φᵢ − φ̄)`, `φᵢ` large when `xᵢ` is small. Claim:
+`⟨∇V_z(x), G(x)⟩ ≤ 0` for **all** states, multi-pillar included — the governor never
+pushes uphill on the certificate.
+
+Proof (uniform z): let `aᵢ := −∂V_z/∂xᵢ = zᵢ/xᵢ + μ·max(0,τ−xᵢ) > 0`. Both `aᵢ` and
+`φᵢ` are **decreasing functions of `xᵢ`**, hence concordant (the pillar with the
+smallest `xᵢ` has both the largest `a` and the largest `φ`). By **Chebyshev's sum
+inequality**, `Σ aᵢφᵢ ≥ (1/3)(Σaᵢ)(Σφᵢ) = φ̄·Σaᵢ`, i.e. `Σ aᵢ(φᵢ − φ̄) ≥ 0`.
+Therefore `⟨∇V_z, G⟩ = Σ (∂V_z/∂xᵢ)·K(φᵢ−φ̄) = −K·Σ aᵢ(φᵢ−φ̄) ≤ 0`. ∎
+
+Numerically confirmed on the production functions: 0/300,000 violations over random
+states and 0/200,000 over **two-pillars-near-the-floor** states (the exact
+multi-pillar regime that was open); in that stressed regime the descent is strongly
+negative (≈ −2.2). **Consequence:** the multi-pillar case is *not* a new
+sign/structural obstruction — the governor's action on `V_z` is correctly signed
+everywhere. (Scope: the clean Chebyshev argument uses uniform `z`, the
+`Z_RECOVERY`/certificate case; for skewed session-adaptive `z` the concordance can
+break and it is numerically-supported rather than proven.)
+
+### What remains open (stated honestly)
+
+The full deployed dynamics are `ẋ = F(x) + G(x)` (replicator drift `F` + governor
+`G`). Then `V̇_z = ⟨∇V_z, F⟩ + ⟨∇V_z, G⟩`. Result 2 gives the governor term `≤ 0`
+multi-pillar, but the drift term `⟨∇V_z, F⟩` can be positive, bounded by
+`‖∇V_z‖·B`. Net descent needs the **governor-vs-drift margin**
+`|⟨∇V_z, G⟩| ≥ ⟨∇V_z, F⟩`. Single-pillar, this is the proven `k₀/εₖ > 3B/2`
+condition. Multi-pillar, the governor descent magnitude is empirically *larger* in
+the stressed regime (favorable), but discharging the inequality in closed form —
+bounding `‖∇V_z‖`, which blows up near the boundary, against the drift — is the
+remaining analytical work, and is **not** done here.
+
+### Net status change for Open Problem 1
+
+- **Idealized flow, multi-pillar:** closed (convexity).
+- **Deployed-governor descent term, multi-pillar:** proven `≤ 0` (Chebyshev) — so
+  multi-pillar is not a new structural problem.
+- **Residual:** the quantitative governor-vs-drift margin in the multi-pillar
+  region — the *same type* of condition already discharged single-pillar, now the
+  sole remaining gap. Numerically supported (FPL-1 Run 002; ~80% ΔV_z ≤ 0 on real
+  production traffic), not yet a closed-form multi-pillar theorem. The problem is
+  **substantially advanced, not closed** — and external copy will say exactly that.
