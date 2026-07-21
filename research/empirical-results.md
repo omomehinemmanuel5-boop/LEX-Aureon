@@ -223,3 +223,33 @@ mathematically correct way to certify a continuous flow numerically) **and** pur
 **(B)** as the stronger, publishable result for the discrete deployed system. Until
 one is chosen and implemented, the panel copy stays as-is (`NOT PROVEN`, honestly)
 — this run documents *why*, precisely, and what closes it.
+
+### Resolution applied — 2026-07-21 (both paths)
+
+Run 002's two honest resolutions were implemented (simulator only; no live
+governor constants changed, TAU_FLOOR stays 0.05):
+
+- **(B) Live-consistent projection.** The simulator's governed arm was projecting
+  with the naive `x ↦ x/Σx`, which can push a pillar that was exactly at τ back
+  below τ (every component shrinks by 1/Σ when Σ>1) — the mechanical source of the
+  invariance violations, and NOT what the deployed governor does. The governed arm
+  now uses the same floor-respecting Duchi projection onto `{Σx=1, xᵢ≥τ}` the live
+  system uses (`lib/aureonics_core.ts` `projectToSimplex`, `paper-updates.md §2`),
+  so forward invariance holds by construction. The ungoverned counterfactual keeps
+  the naive projection so it still collapses. Result: `invariance_violations = 0`
+  for the governed arm at **every** dt (verified via `scripts/cbf/fpl1-dt-sweep.ts`),
+  with the ungoverned arm still `safety_violated = true`.
+
+- **(A) Continuous-flow certification.** `GET /api/cbf-simulation` now certifies the
+  FPL-1 classification from a fine-dt governed run (dt=0.1, horizon 150 — negligible
+  discretization error), while the panel chart stays at dt=1.0/150 steps for
+  legibility. The certificate at seed=42: `LYAPUNOV STABLE + FORWARD INVARIANT`,
+  stability_ratio 0.759 (>0.6), invariance_violations 0, excursion 0.056 (<0.25),
+  min_M 0.193.
+
+Net: the landing-panel classification now reads `LYAPUNOV STABLE + FORWARD INVARIANT`
+for the governed arm — legitimately, via a live-consistent projection and a proper
+integration step, not by weakening any threshold. This is a seeded, finite-horizon
+**numerical** certificate of the governed flow; **Open Problem 1** (the analytical
+multi-pillar global proof) remains open and is not claimed closed. The panel and the
+research page state exactly this.

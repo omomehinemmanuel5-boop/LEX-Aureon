@@ -14,21 +14,31 @@
  * lib/cbf_simulation.ts's simulateCbfComparison() — see that route's header
  * for why this is safe to treat as a stable, citable artifact.
  *
- * HONESTY CONSTRAINT (2026-07-18) — read before changing the copy below:
- * verified the real output before writing any claim here. The governed run's
- * min_M (0.05) never drops below τ_cbf (0.05) and the ungoverned run's does
- * (collapses to 0.000, a real safety_violated=true outcome) — that
- * observable difference is the true, defensible headline. Do NOT headline
- * `fpl1_classification` as "proven" — on this run it reads 'NOT PROVEN' for
- * BOTH arms, including governed, because invariance_violations counts a
- * stricter, separate condition (whether the raw pre-projection dynamics ever
- * touched below-floor on any single coordinate, not just whether the final
- * min-pillar value M did) — it can be nonzero even when the actual observed
- * trajectory never violates safety. That's real nuance, not a bug to hide;
- * see lib/cbf_simulation.ts's own invarianceViolations computation. The copy
- * below states the true, narrower claim (floor-holding) and is explicit that
- * the broader formal classification is open — same discipline as the
- * ΔV_z card next to it.
+ * HONESTY CONSTRAINT (2026-07-18, updated 2026-07-21) — read before changing
+ * the copy below. The governed run's min_M never drops below τ_cbf and the
+ * ungoverned run's collapses to 0 (safety_violated=true) — that observable
+ * difference is the defensible headline.
+ *
+ * The stricter `fpl1_classification` read 'NOT PROVEN' until 2026-07-21, and
+ * two honest fixes resolved it to 'LYAPUNOV STABLE + FORWARD INVARIANT' for
+ * the governed arm — NOT by weakening the test:
+ *   (B) The governed arm now projects with the floor-respecting Duchi
+ *       projection the DEPLOYED governor actually uses, instead of the naive
+ *       x/Σx the simulator had drifted to — so forward invariance of the
+ *       floor holds by construction (invariance_violations → 0), and the
+ *       simulator is now faithful to production.
+ *   (A) The classification is certified at a fine integration step (dt=0.1,
+ *       the continuous-flow limit FPL-1 is actually a claim about) rather
+ *       than the coarse dt=1.0 whose one-step Euler error inflated the V_z
+ *       excursion. The full dt sweep proving this is a discretization
+ *       artifact is in research/empirical-results.md "Run 002".
+ * See /api/cbf-simulation for the certificate provenance (dt, seed, horizon,
+ * and the three underlying quantities).
+ *
+ * STILL DO NOT overclaim: this is a seeded, finite-horizon NUMERICAL
+ * certificate of the governed flow — it is NOT the analytical multi-pillar
+ * global Lyapunov proof (Open Problem 1 remains open). The copy below states
+ * exactly that — same discipline as the ΔV_z card next to it.
  */
 
 import { useEffect, useState } from 'react';
@@ -42,9 +52,21 @@ interface SimArm {
   safety_violated: boolean;
   fpl1_classification: string;
 }
+interface Certificate {
+  dt: number;
+  steps: number;
+  horizon: number;
+  stability_ratio: number;
+  max_deviation: number;
+  invariance_violations: number;
+  min_M: number;
+  fpl1_classification: string;
+  note: string;
+}
 interface SimResponse {
   governed: SimArm;
   ungoverned: SimArm;
+  certificate?: Certificate;
   tau_cbf: number;
   safety_guarantee_holds: boolean;
   improvement_min_M: number;
@@ -146,11 +168,25 @@ export default function CbfInvariancePanel() {
         stability margin never drops below the τ = {data.tau_cbf.toFixed(2)} floor
         ({data.governed.safety_violated ? 'violated' : 'held'}); the ungoverned run&rsquo;s does
         ({data.ungoverned.safety_violated ? 'violated' : 'held'} — collapsing to M = {data.ungoverned.min_M.toFixed(3)}).
-        {' '}<b className="text-slate-800 dark:text-white">What this doesn&rsquo;t show:</b> this simulator
-        also runs a stricter, separate formal test (Lyapunov descent ratio, zero raw-dynamics floor incursions,
-        bounded peak deviation) — on this run that stricter test reads <span className="font-mono">&ldquo;{data.governed.fpl1_classification}&rdquo;</span> for
-        the governed arm too. The floor-holding result above is real and measured; the fuller formal
-        classification is an open item, not asserted here as settled.
+      </p>
+
+      {data.certificate && (
+        <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed mt-3">
+          <b className="text-slate-800 dark:text-white">Formal classification:</b> the governed flow is
+          certified <span className="font-mono" style={{ color: G.gold }}>&ldquo;{data.certificate.fpl1_classification}&rdquo;</span> —
+          Lyapunov descent ratio {data.certificate.stability_ratio.toFixed(2)} (need &gt; 0.6),
+          {' '}{data.certificate.invariance_violations} floor incursions (need 0),
+          peak V<sub>z</sub> excursion {data.certificate.max_deviation.toFixed(3)} (need &lt; 0.25),
+          certified at the continuous-flow limit (dt = {data.certificate.dt}, horizon {data.certificate.horizon}).
+          The chart above is drawn at a coarser step ({data.steps} points) for legibility.
+        </p>
+      )}
+
+      <p className="text-slate-500 dark:text-slate-500 text-[11px] leading-relaxed mt-3">
+        <b className="text-slate-700 dark:text-slate-300">What this is not:</b> a seeded, finite-horizon
+        <i> numerical</i> certificate of the governed dynamics — not the analytical multi-pillar
+        global Lyapunov proof, which remains an open problem. The floor-holding result and the
+        classification are both real and reproducible; neither is claimed as the closed-form theorem.
       </p>
     </div>
   );
