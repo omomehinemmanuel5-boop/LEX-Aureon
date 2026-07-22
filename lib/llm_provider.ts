@@ -225,6 +225,15 @@ export const MODELS = {
   MISTRAL: 'open-mistral-7b',
   GEMINI_LITE: 'gemini-3.1-flash-lite',
   GEMINI_FULL: 'gemini-2.5-flash',
+  // gemini-3.6-flash — GA 2026-07-21 (generativelanguage v1beta; 1M ctx, 64k
+  // out, thinking + tools). NOT yet wired into the production fallback chain:
+  // it is a PAID-tier model ($1.50/$7.50 per M tokens vs the flash-lite free
+  // tier), and swapping a base model is the exact class of change the file
+  // header flags as a past safety regression — so it is trialed via a live
+  // smoke test (scripts/try-gemini-36.ts) first, and any promotion into the
+  // chain is a separate, benchmarked decision. tryGemini() is model-agnostic,
+  // so no API-shape change is needed to use it.
+  GEMINI_FLASH_36: 'gemini-3.6-flash',
   QWEN: 'qwen-2.5-72b-instruct', // Placeholder for future Qwen integration
 };
 

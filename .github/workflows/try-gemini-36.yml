@@ -1,0 +1,36 @@
+name: Try gemini-3.6-flash
+
+# Live smoke test for the newly-GA gemini-3.6-flash model (2026-07-21), run in
+# CI with the repo's existing GEMINI_API_KEY secret — no key pasted anywhere,
+# and it can't run from the dev sandbox (no key there). Prints each probe's
+# response, latency, and finishReason; fails if the model errors, so a wrong
+# model ID or access problem surfaces loudly. Read-only trial: it does NOT
+# touch the production fallback chain. Manual only.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  smoke:
+    name: gemini-3.6-flash smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install
+        run: npm install
+
+      - name: Smoke-test gemini-3.6-flash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: npx tsx scripts/try-gemini-36.ts
