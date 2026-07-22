@@ -70,6 +70,11 @@ async function main() {
   const argv = process.argv.slice(2);
   const regexOnly = argv.includes('--regex-only');
   const jsonPath = argv.includes('--json') ? argv[argv.indexOf('--json') + 1] : undefined;
+  // Throttle between embedding calls. Without a Turso cache each corpus item is
+  // a live embed; firing all ~48 in a burst rate-limited the provider and
+  // degraded most of the run (Run 004). A small delay keeps it under per-minute
+  // limits. 0 disables (e.g. when a warm cache makes it moot).
+  const delayMs = argv.includes('--delay') ? Number(argv[argv.indexOf('--delay') + 1]) : 600;
 
   const nInj = INJECTION_CORPUS.filter((c) => c.label === 'injection').length;
   const nBen = INJECTION_CORPUS.filter((c) => c.label === 'benign').length;
@@ -87,6 +92,7 @@ async function main() {
       const s = await injectionSimilarity(extractFreeText(args));
       similarity = s.similarity; degraded = s.degraded;
       if (degraded) degradedCount++;
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
     }
     scored.push({ ...item, regexHit, similarity, degraded });
   }
