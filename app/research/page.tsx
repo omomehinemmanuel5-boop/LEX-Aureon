@@ -198,8 +198,8 @@ export default function ResearchPage() {
             note="The exact floor-constrained simplex projection returns xᵢ ≥ τ for every pillar, every step — so the governed state provably never leaves the safe set. Verified in the live governor and the offline simulator alike." />
           <StatusRow name="CBF simulator — numerical FPL-1 certificate" status="Certified (numerical)" tone="partial"
             note="The offline governed-vs-ungoverned simulator (below) certifies its governed arm as LYAPUNOV STABLE + FORWARD INVARIANT at the continuous-flow limit: Lyapunov descent ratio > 0.6, zero floor incursions, bounded V_z excursion < 0.25, across seeds. This is a seeded, finite-horizon NUMERICAL certificate — strong evidence for the flow, not a replacement for the analytical proof below." />
-          <StatusRow name="Multi-pillar global Lyapunov proof" status="Open" tone="open"
-            note="The analytical proof for the simultaneous multi-pillar violation regime is open (Open Problem 1). A non-expansive projection lemma provides the missing step-decrease bound in the v3 candidate, but the closed-form theorem is not yet complete. We never claim otherwise." />
+          <StatusRow name="Multi-pillar global Lyapunov proof" status="Advanced · open" tone="partial"
+            note="Substantially advanced 2026-07-21, not closed. (a) The idealized flow ẋ=−Π∇V_z is globally, multi-pillar Lyapunov-stable because V_z is convex on the floor-simplex (V̇_z=−‖Π∇V_z‖²≤0 to a unique minimizer). (b) The deployed governor's action on V_z is proven non-positive for all states including two-pillars-stressed, via Chebyshev's sum inequality — so multi-pillar is not a new structural obstruction. The sole residual is the quantitative governor-vs-drift margin, the same condition already discharged single-pillar. The analytical multi-pillar theorem is not complete, and we never claim otherwise." />
         </Section>
 
         {/* Live counterfactual panel */}

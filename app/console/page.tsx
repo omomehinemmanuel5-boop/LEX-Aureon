@@ -483,6 +483,13 @@ export default function Console() {
   const isHardRefusal = res ? isRefusal(res.governed_output) : false;
   const outputDiffers = !!res && res.governed_output !== anchoredText;
 
+  // 2026-07-21: both provider chains exhausted (all LLMs 429'd) — the shown
+  // text is a static fallback, not a real answer. Render an explicit
+  // rate-limited state instead of dressing up total failure as a governed
+  // response with a fake CRS/M readout (the CRS of a canned string is
+  // meaningless). See lib/sovereign_kernel.ts governed_source='unavailable'.
+  const providersExhausted = res?.governed_source === 'unavailable';
+
   // Three distinct output states:
   //   'rewritten' — the governor actively changed the output (intervention fired)
   //   'refused'   — the LLM itself generated a refusal without governor intervention
@@ -682,8 +689,30 @@ export default function Console() {
             </div>
           )}
 
+          {/* ── Providers exhausted (all LLMs rate-limited) ─────────────── */}
+          {res && !loading && providersExhausted && (
+            <div ref={resultsRef} className="rounded-lg border p-4 font-mono text-xs"
+              style={{ background: '#1a1405', borderColor: '#78591f' }} aria-live="polite">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-amber-400 text-sm">⚠</span>
+                <span className="text-amber-400 font-bold text-sm">NO RESPONSE GENERATED · language providers rate-limited</span>
+              </div>
+              <p className="text-amber-200/70 leading-relaxed">
+                Every language provider was temporarily exhausted (HTTP 429) this turn, so no model
+                produced an answer. This is a capacity limit on the free-tier LLM quota, not a governance
+                decision — the constitutional state below is not shown because there is no real output to
+                measure. Please try again in a minute.
+              </p>
+              <button onClick={() => run()} type="button"
+                className="mt-3 px-3 py-1.5 rounded text-xs font-bold font-mono transition-all active:scale-95"
+                style={{ background: '#c9a84c', color: '#0a0a14' }}>
+                ↻ retry
+              </button>
+            </div>
+          )}
+
           {/* ── Results ─────────────────────────────────── */}
-          {res && !loading && (
+          {res && !loading && !providersExhausted && (
             <div ref={resultsRef} className="space-y-4">
 
               {/* Governor status */}
