@@ -207,7 +207,15 @@ export async function POST(req: Request) {
         let sovereigntyDriftDetected = false;
         let sovereigntyRaw: number | null = null;
         let detectionDegraded = false;
-        if (promptEmbedding.length && promptEmbedProvider) {
+        // When the language providers are fully exhausted, result.governed_output
+        // is a static "unavailable" fallback, not a real model answer. Embedding
+        // it to measure self-referential sovereignty would (a) be meaningless —
+        // there is no generated response to check — and (b) spend an embedding
+        // provider call at the exact moment quota is scarcest. Skip it and mark
+        // detection honestly degraded. (No effect on normal or raw_fallback turns.)
+        if (result.governed_source === 'unavailable') {
+          detectionDegraded = true;
+        } else if (promptEmbedding.length && promptEmbedProvider) {
           try {
             const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
               embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
