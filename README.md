@@ -341,6 +341,7 @@ Stated plainly, in the same spirit as the rest of this document.
 | Audit receipts (text) | `lib/kernel_bridge.ts` | `writeKernelReceipt()` — SHA-256 `input_hash`/`output_hash`/`receipt_hash` |
 | CBF-QP stability simulator | `lib/cbf_simulation.ts`, `api/python/cbf_service.py` | `simulateCbf()`/`simulate_cbf()` — Lyapunov candidate corrected to the published `V_z` certificate 2026-07-19 in both engines; see *Mathematics* |
 | **Tool-call governance** | `lib/agents/tool_interceptor.ts`, `lib/agents/tool_crs.ts` | `interceptToolCall()`, `measureToolCRS()` — kernel-informed thresholds, semantic injection detection, slow-drip lock |
+| Agentic-governance harness | `scripts/agentdojo-real/` | Executes tool calls against a stateful env; dual-axis (utility + security) counterfactual through `interceptToolCall`. Minimal faithful suite, not the official 27-task AgentDojo — see Run 005 |
 | **Self-reflection** | `lib/self_reflection.ts` | `runSelfReflection()` — real aggregate stats over `tool_receipts`, not a narrative generator |
 | **Design journal** | `lib/design_journal.ts` | `logDecision()`, `narrateOrigin()` — self-evidence, not self-awareness; never invents a reason that wasn't logged |
 | Canonical stats | `app/api/stats/route.ts` | real-vs-eval receipt filtering, edge-cached |
@@ -475,7 +476,7 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 **Next — broaden and harden**
 - [ ] Swap in the official fine-tuned HarmBench/JailbreakBench classifiers (the kappa-check system now makes two-judge agreement reportable once they're wired in)
 - [ ] Run the kappa check on a full production JSONL and establish a κ baseline per benchmark before treating results as fully citable
-- [ ] Build or adopt a real AgentDojo tool-execution harness (replace the text-only proxy)
+- [ ] Build or adopt a real AgentDojo tool-execution harness (replace the text-only proxy). **Started 2026-07-22** (`scripts/agentdojo-real/`, `research/empirical-results.md` Run 005): a faithful *minimal* harness that executes tool calls against a stateful environment and scores BOTH axes (utility + security) with `interceptToolCall` as the gate — a real dual-axis counterfactual, unlike the single-axis text proxy. First result: the **deterministic** invariants block 3/3 seeded breaches (credential read, destructive SQL, external exfil) with 0 utility loss; the **semantic** scope-creep task is prod-only (needs embeddings) and stays the open question. Remaining: grow toward the official 27-task suite and score the semantic layer against the deployed stack.
 - [ ] Add a capability benchmark (MMLU or similar) to demonstrate no "capability tax"
 - [ ] Consolidate the redundant benchmark workflows into one canonical path
 - [ ] Add auth / rate limit to the public govern endpoint
