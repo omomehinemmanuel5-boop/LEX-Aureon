@@ -232,8 +232,23 @@ function cosineSimilarity(a: number[], b: number[]): number {
 // first real computation (embedText hashes on model+text), so this is not
 // six fresh API calls on every check — only ever once per archetype, ever,
 // across the whole deployment's lifetime, unless the cache is pruned.
+//
+// fix (2026-07-22): ALSO memoize in-process. The Turso cache is not available
+// everywhere the semantic layer runs — notably the offline injection-eval
+// harness (no Turso creds), where without an in-memory memo every scored item
+// re-embedded all 6 archetypes: 48 items → ~288 archetype embeds in a burst,
+// which rate-limited the provider mid-run and degraded 33/48 items (all benign
+// among them → a meaningless "100% precision" from an empty negative set; see
+// research/empirical-results.md Run 004). The memo caches the vectors for the
+// process lifetime (archetypes are constant), cutting that to 6 total, so the
+// eval spends quota only on the genuinely-distinct corpus texts. Only a fully
+// successful batch is cached — a partial failure leaves it null to retry.
+let _archetypeVecs: number[][] | null = null;
 async function embedArchetypes(): Promise<number[][]> {
-  return Promise.all(INJECTION_ARCHETYPES.map(a => embedText(a)));
+  if (_archetypeVecs) return _archetypeVecs;
+  const vecs = await Promise.all(INJECTION_ARCHETYPES.map(a => embedText(a)));
+  _archetypeVecs = vecs;
+  return vecs;
 }
 
 interface SemanticInjectionResult {
