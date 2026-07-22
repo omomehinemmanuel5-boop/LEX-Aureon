@@ -306,11 +306,15 @@ const MEDIUM_RISK_TOOLS = new Set([
 // cases); semanticInjectionCheck only runs when the regex pass found
 // nothing, as the paraphrase-tolerant second opinion, and only on the
 // extracted free-text fields (see file header, second-pass fix).
-async function scanArguments(args: Record<string, unknown>): Promise<{
-  injection: boolean;
-  blocked_pattern: string | null;
-  semantic_similarity?: number;
-}> {
+/**
+ * Deterministic scan = the two fast passes (injection regex, then the hardcoded
+ * BLOCKED invariants). Pure, synchronous, network-free — NO embeddings, NO DB.
+ * Returns the blocking result or null if nothing deterministic fired (in which
+ * case the caller runs the semantic pass). Exported so a side-effect-free
+ * surface — e.g. the landing-page agentic counterfactual route — can show the
+ * real invariants firing without writing a receipt or spending embed quota.
+ */
+export function deterministicScan(args: Record<string, unknown>): { injection: boolean; blocked_pattern: string } | null {
   const content = JSON.stringify(args).toLowerCase();
   const full = JSON.stringify(args);
 
@@ -329,6 +333,18 @@ async function scanArguments(args: Record<string, unknown>): Promise<{
       }
     }
   }
+  return null;
+}
+
+async function scanArguments(args: Record<string, unknown>): Promise<{
+  injection: boolean;
+  blocked_pattern: string | null;
+  semantic_similarity?: number;
+}> {
+  // Fast passes first (injection regex, then hardcoded BLOCKED invariants) —
+  // returns immediately on any hit, unchanged latency for the common cases.
+  const det = deterministicScan(args);
+  if (det) return det;
 
   // Second pass: semantic, paraphrase-tolerant injection check — free text
   // fields ONLY, not the raw JSON blob (see file header, second-pass fix).
