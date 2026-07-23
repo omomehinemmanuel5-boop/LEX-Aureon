@@ -435,6 +435,8 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 
 ## Roadmap
 
+> Historical roadmap entries are preserved for auditability. When an older claim is superseded, rely on the later dated entry and the current research pages as the live status.
+
 **Done — measurement coherence + audit**
 - [x] Report one coherent constitutional vector; unify `decideRefusal()` across streamed and non-streamed routes
 - [x] Persist the SHA-256 receipt on every governance receipt row; fix the client-shown ID to be the canonical, persisted one

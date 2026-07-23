@@ -51,3 +51,9 @@ local.db
 # scratch / patch files
 _patch_sr_block.txt
 .gitignore-scratch
+# workspace dependencies / generated SDK artifacts
+**/node_modules/
+sdk/typescript/dist/
+
+# generated root type artifacts
+/types/

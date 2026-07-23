@@ -113,7 +113,7 @@ export class ArtifactSigner {
     this.keyManager = new KeyManager(keyDir);
   }
 
-  public signArtifact(runId: string, metrics: any): SignedArtifact {
+  public signArtifact(runId: string, metrics: Record<string, unknown>): SignedArtifact {
     const artifactData = JSON.stringify({ runId, metrics });
     const artifactHash = createHash('sha256').update(artifactData).digest('hex');
 
