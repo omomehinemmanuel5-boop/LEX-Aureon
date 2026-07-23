@@ -873,7 +873,7 @@ export default function Console() {
                         <div className="rounded-lg p-3 font-mono text-xs" style={{ background: '#0a0800', border: '1px solid #c9a84c25' }}>
                           <div className="text-slate-400 mb-1">{'// Vaulturex law invoked'}</div>
                           <div className="font-bold" style={{ color: '#c9a84c' }}>[{stream.law.book}] {stream.law.name}</div>
-                          <div className="text-slate-300 mt-1">{(stream.law as any).governor_use}</div>
+                          <div className="text-slate-300 mt-1">{(stream.law as { governor_use?: string }).governor_use}</div>
                         </div>
                       )}
 

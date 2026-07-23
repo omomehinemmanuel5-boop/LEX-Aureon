@@ -1,130 +1,13 @@
 /**
  * POST /api/lex/govern
- * SovereignKernel governance cycle — F(x,z) sync + G(x,z) async governor.
+ * Canonical non-streamed governance endpoint.
  *
- * wire: loadKernelZ() threads session-adaptive z into runCycle().
+ * Live contract: validate input, load session state + session-adaptive z, build
+ * memory/threat context, run SovereignKernel, persist the receipt/calibration
+ * signals, and return one coherent CRS vector.
  *
- * ARCHITECTURAL UNIFICATION (2026-07-07):
- *
- *   Move C — one-engine constitutional measurement. The Python detail engine
- *   (bag-of-words TF cosine masquerading as CCP/IEC/ADV; retired for the same
- *   reason we retired `toxicity`/`truth_score`) is no longer called from the
- *   live path. `weakest_pillar` / `governance_pressure` / `corrections` are
- *   computed from the TS-native governorState() on the SAME reported CRS —
- *   coherent with C/R/S/M by construction, no possibility of two engines
- *   drifting. The one Python-unique capability (`simulate_cbf` + FPL1
- *   classification) was ported to lib/cbf_simulation.ts; it's a system-
- *   property proof, not per-turn measurement, so it runs offline.
- *
- *   Move A — the refusal rule is now a single pure function
- *   (lib/refusal_decision.ts) that composes every enforcement signal + every
- *   measurement-only signal into ONE decision object. Previously refusal was
- *   an inline `sovereignty_drift || keyword_attack` expression with two other
- *   signals wired in as status flags or logged for calibration but not
- *   actually contributing. Now: single call, single audit surface, one place
- *   to change if the policy changes.
- *
- *   Move D — healthBand is imported from lib/health_band.ts, the sole source
- *   of the τ_stretch=0.25 / τ_soft=0.15 / τ_hard=0.08 thresholds. The
- *   offline Python simulator (api/python/govern.py `_health_band`) mirrors
- *   the thresholds by hand — a comment there names lib/health_band.ts as the
- *   source, so future edits touch one file first.
- *
- *   Move B — DB persistence for the capitulation-judge calibration signal
- *   (lib/capitulation_calibration.ts). The judge stays measurement-only (it
- *   does NOT trigger refusal — see decideRefusal), but every firing on a
- *   real user turn now writes a paired row (judge verdict + enforced
- *   decision + S_self) to capitulation_calibration. Move B moves to a
- *   real decision when the table has enough rows to answer the questions
- *   in the module's decision-analysis SQL block — see that file for the
- *   exact queries.
- *
- * COHERENCE (2026-06-30, preserved): the reported constitutional state is
- * ONE vector — the TypeScript kernel's governed state — and M and health
- * band are both derived from THAT vector.
- *
- * DETECTION (2026-07-01, preserved): the paper (§4.3/§6.2) specifies
- * self-referential sovereignty — S_self = cosine(output_embedding,
- * constitutional_centroid) — as the early-warning signal for identity /
- * sovereignty drift. Both the raw cosine and the boolean are surfaced.
- *
- * FAIL-LOUD (2026-07-01, preserved): when embeddings (or the centroid) are
- * unavailable, `detection_degraded: true` is surfaced and logged. The
- * keyword classifier remains active in that state (embedding-independent).
- *
- * EVAL FAST-PATH (2026-07-03, preserved): synthetic benchmark traffic
- * (isEvalSession) skips the capitulation judge — one fewer network round
- * trip per prompt during heavy runs. Does not affect what benchmarks
- * measure (the judge is measurement-only).
- *
- * MULTI-PROVIDER EMBEDDINGS, PINNED PER REQUEST (2026-07-04, preserved).
- *
- * PROVIDER-EXHAUSTION PROVENANCE SURFACED (2026-07-08): governed_source,
- * raw_provider, governed_provider were already computed by
- * lib/sovereign_kernel.ts's runCycle() (2026-07-08 provider-exhaustion fix —
- * see that file's header) but not included in this route's response JSON.
- * scripts/lexbench/runner.ts needs them to exclude true double-provider-
- * failure turns (governed_source: 'unavailable') from benchmark scoring,
- * rather than counting a no-content turn as a real refusal or over-refusal.
- *
- * INPUT-SIDE THREAT SIGNAL (2026-07-12): direct query of lex_memory across
- * ~37,000 logged turns found avg M statistically flat across every benchmark
- * (0.2575-0.2768), with AdvBench (explicit harmful requests) reading HIGHER
- * than benign XSTest — the constitutional state had no channel by which
- * actual prompt threat content could move it; transduce() only ever read
- * length/word-count/punctuation, and detectSemanticAttack's narrow keyword
- * patterns essentially never fire on realistic AdvBench/HarmBench/
- * JailbreakBench phrasing (confirmed: intervention=0 across ~17,000 turns on
- * those three benchmarks). Now computes cosine similarity between the
- * already-resolved prompt embedding and a held-out harm reference centroid
- * (lib/lex_memory.ts's getHarmReferenceCentroid — built from the first half
- * of advbench/harmbench/jailbreakbench.jsonl, so evaluation against the
- * untouched second half is not circular), pinned to the same embed provider
- * per the existing CORRECTNESS CONSTRAINT (mixing embedding spaces produces
- * a meaningless cosine value), and passes it into kernel.runCycle() as
- * threatSignal. Defaults to 0 (no additional pressure) when the embedding or
- * centroid is unavailable this turn — same honest-default convention as
- * detection_degraded elsewhere in this route.
- *
- * fix (2026-07-18) — CONTRASTIVE RECALIBRATION: live probe testing found the
- * raw absolute cosine similarity above essentially non-discriminating —
- * benign prompts (including plain factual questions with no adversarial
- * content whatsoever) scored 0.79-0.82, genuinely harmful prompts scored
- * 0.90-0.91: a real but narrow ~0.10-0.12 gap against a shared 0.78-0.91
- * floor, consistent with known anisotropy in sentence-embedding spaces for
- * short, syntactically similar text. threatSignal is now computed as
- * harm-centroid similarity MINUS benign-centroid similarity (see
- * lib/lex_memory.ts getBenignReferenceCentroid /
- * lib/benign_reference_prompts.ts), netting out the register-level
- * similarity both corpora share so the remaining signal reflects content,
- * not sentence shape. Falls back to the pre-fix absolute-value behavior if
- * the benign centroid is unavailable this turn (degraded, not blocked) —
- * same honest-default convention as detection_degraded. NOT statistically
- * validated at scale — verified only against the specific probe set that
- * surfaced the original problem (see lib/lex_memory.ts header for the
- * numbers). The downstream weight constants in lib/sovereign_kernel.ts that
- * consume threatSignal were calibrated against the OLD compressed range and
- * may need re-tuning now that typical values should be smaller — flagged as
- * follow-up, not assumed resolved by this pass alone.
- *
- * IDENTITY MODE (2026-07-18): accepts an optional identity_mode field
- * ('full' | 'minimal' | 'dynamic' | 'none') in the request body, threaded to
- * kernel.runCycle() so lib/sovereign_kernel.ts's callLLM() knows which
- * self-knowledge block (if any) to prepend to the governed system prompt.
- * Defaults to 'full' when absent or not one of the four valid values —
- * matching every prior request exactly, including all existing production
- * traffic and the current lexbench runner, neither of which sends this
- * field. Exists to let a controlled A/B/C/D caller isolate whether
- * LEX_IDENTITY's self-knowledge/safety-framing itself moves benchmark
- * outcomes, independent of the governance mechanism (see
- * lib/lex_identity.ts header for the full rationale — including the
- * 2026-07-18 probe that FALSIFIED the original over-refusal hypothesis, and
- * the self-referential vocabulary collision it surfaced instead, fixed in
- * lib/sovereign_kernel.ts's detectSemanticAttackEmbedding). 'dynamic' pairs
- * invariant self-knowledge with a live, per-turn state line computed from
- * the kernel's actual C/R/S/M rather than narrated — see
- * lib/sovereign_kernel.ts's buildLiveStateLine(). The mode actually used is
- * surfaced back on the response (identity_mode) for audit.
+ * Keep executable route comments concise; place long historical rationale in
+ * docs/architecture/govern-route-history.md.
  */
 
 import { publicError } from '@/lib/safe_error';
