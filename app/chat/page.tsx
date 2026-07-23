@@ -4,7 +4,6 @@ import {
   useState, useEffect, useRef, useCallback, useMemo, memo,
 } from 'react';
 import Link from 'next/link';
-import { Libre_Caslon_Display } from 'next/font/google';
 import { useLexStream } from '@/lib/use_lex_stream';
 import { flushPendingLead } from '@/lib/lead_retry';
 import { buildSessionArc, type ChatTurn } from '@/lib/chat_store';
@@ -23,14 +22,15 @@ import type { GovernanceResponse } from '@/types/governance-types';
 /* ─────────────────────────────────────────────────────────────────────
    TYPE — "sovereign workspace" pass (2026-07-11)
 
-   Caslon is the actual typeface of American founding documents — chosen
-   because this product's own framing is explicitly "constitutional," not
+   Uses the platform serif stack for build determinism; Caslon remains the
+   design reference because it is the typeface of American founding documents —
+   chosen because this product's own framing is explicitly "constitutional," not
    as a generic serif pick. Used sparingly: wordmark, mode titles, section
    eyebrows only. Everything else keeps the existing monospace stack —
    already the correct choice for reading numeric constitutional state at
    a glance, not something to replace.
 ───────────────────────────────────────────────────────────────────── */
-const caslon = Libre_Caslon_Display({ weight: '400', subsets: ['latin'], display: 'swap' });
+const caslon = { className: 'font-serif' };
 
 /* ─────────────────────────────────────────────────────────────────────
    DESIGN TOKENS
@@ -727,7 +727,7 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
 
       {tab === 'terminal' && (
         <div ref={termRef} className="p-4 text-[12px] leading-relaxed space-y-1" style={{ minHeight: '40vh' }}>
-          {terminalLog.length === 0 && <p style={{ color: G.textSub }}>// ready</p>}
+          {terminalLog.length === 0 && <p style={{ color: G.textSub }}>{'// ready'}</p>}
           {terminalLog.map((line, i) => (
             <p key={i} style={{
               color: line.startsWith('>>') ? G.gold : line.startsWith('✓') ? G.R
