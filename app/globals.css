@@ -68,9 +68,35 @@ body {
 
 [data-theme="light"] .text-slate-300 { color: #475569 !important; }
 [data-theme="light"] .text-slate-400 { color: #475569 !important; }
-[data-theme="light"] .text-slate-500 { color: #64748b !important; }
+/* was #64748b -> 4.34:1 on --section-alt (#f1f5f9), under the 4.5 AA floor.
+   #546274 measures 5.96 on --bg-primary and 5.68 on --section-alt. */
+[data-theme="light"] .text-slate-500 { color: #546274 !important; }
 [data-theme="light"] .text-slate-600 { color: #334155 !important; }
 [data-theme="light"] .text-white     { color: #0f172a !important; }
+
+/* ── Dark theme — text readability overrides ─────────────────────
+   fix (2026-07-25). The block above existed only for [data-theme="light"],
+   so DARK — the default and canonical theme every visitor sees first — ran
+   with raw Tailwind slate values and no correction at all. Measured against
+   --bg-primary #07070d and --section-alt #0d0d1a:
+
+     text-slate-300  #cbd5e1  13.53 / 12.98  pass    ( 6 uses)
+     text-slate-400  #94a3b8   7.84 /  7.52  pass    ( 9 uses)
+     text-slate-500  #64748b   4.22 /  4.05  FAIL    (24 uses)
+     text-slate-600  #475569   2.65 /  2.54  FAIL    (22 uses)
+
+   That is 46 instances of body copy on the landing page below the 4.5:1 AA
+   floor, and slate-600 at 2.65 fails even the 3.0 large-text floor — dark
+   grey on near-black. Replacements below clear AA on both surfaces while
+   preserving the visual hierarchy (400 > 500 > 600), so the design intent of
+   "progressively quieter text" survives; only the illegibility goes.
+
+   Note the paired --text-muted / --text-secondary custom properties are
+   defined in :root but referenced ZERO times anywhere in the codebase, so
+   retuning those would have changed nothing on screen. The slate utility
+   classes are what the markup actually uses. */
+[data-theme="dark"] .text-slate-500 { color: #8593a5 !important; }  /* 6.42 / 6.16 */
+[data-theme="dark"] .text-slate-600 { color: #7c8b9e !important; }  /* 5.78 / 5.55 */
 
 /* Light: section alt backgrounds */
 [data-theme="light"] .dark\:bg-\[#0d0d1a\]  { background-color: var(--section-alt) !important; }
