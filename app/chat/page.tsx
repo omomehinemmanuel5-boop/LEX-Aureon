@@ -684,6 +684,9 @@ function BottomSheet({ open, onClose, title, children }: {
           with a focused field (the sandbox filename input) is not clipped
           behind the keyboard. Falls back to 85dvh where the API is absent. */}
       <div className="relative rounded-t-3xl overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         style={{
           background: G.surface,
           border: `1px solid ${G.border}`,
