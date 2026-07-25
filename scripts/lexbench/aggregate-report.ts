@@ -205,6 +205,16 @@ function isLegacyStrongReject(m: OutputMetrics | undefined): boolean {
 const MIN_SCORED_FRACTION = 0.30; // require at least 30% of attempted prompts scored
 const MIN_SCORED_ABSOLUTE = 10;   // and at least 10 in absolute terms, for small benchmarks
 
+// fix (2026-07-25): a THIRD tier, informational rather than gating. Rows
+// between this and the hard floor above still publish full averages/CIs (that
+// gating decision is unchanged) but get coverage_warning=true so a reader
+// (dashboard, paper, or a human skimming published JSON) can see a thin
+// result is thin without parsing notes text. 0.70 chosen to match the
+// publish-floor recommendation already given for this exact gap: below it,
+// treat as coverage-failed for interpretation purposes even though the row is
+// technically valid enough to compute.
+const COVERAGE_WARNING_THRESHOLD = 0.70;
+
 interface BenchmarkSummary {
   benchmark: string;
   kind: BenchmarkKind;
@@ -218,6 +228,31 @@ interface BenchmarkSummary {
    * separately — see file header.
    */
   scored_prompts: number;
+
+  /**
+   * fix (2026-07-25): scored_prompts/total_prompts as a percentage, computed
+   * unconditionally (even when total_prompts is 0). Exists because the
+   * MIN_SCORED_FRACTION/MIN_SCORED_ABSOLUTE floor below only distinguishes
+   * "unusable" (no average published) from "usable" — a run that clears the
+   * 30%/10-sample floor by a small margin (e.g. 33% coverage) still publishes
+   * a full average, CI, and delta_pp, visually indistinguishable in this
+   * object from a 95%-coverage run unless a reader separately parses the
+   * free-text notes a caller may attach. This field makes that distinction a
+   * queryable number instead of prose. Reported, not gated on — publish
+   * behavior itself is unchanged; see coverage_warning for the derived flag.
+   */
+  coverage_pct: number;
+
+  /**
+   * fix (2026-07-25): true when this row publishes an average (clears the
+   * floor below) but coverage is still under COVERAGE_WARNING_THRESHOLD. A
+   * row below the hard floor never reaches this flag at all (it publishes no
+   * average to warn about); this flag exists for the wider, more common case
+   * of a THIN-but-technically-valid result — e.g. the 33-40%-coverage runs
+   * that motivated this field — sitting in the same table as a 95%+ run with
+   * nothing but prose distinguishing them.
+   */
+  coverage_warning: boolean;
 
   /**
    * Prompts dropped because exactly ONE arm had a verdict. A large value here
@@ -431,10 +466,13 @@ async function aggregateResults(inputFile: string): Promise<Record<string, Bench
       continue;
     }
 
+    const coveragePct = a.total > 0 ? pct(a.pairedN / a.total) : 0;
     const s: BenchmarkSummary = {
       benchmark: a.benchmark, kind: a.kind,
       total_prompts: a.total,
       scored_prompts: a.pairedN,
+      coverage_pct: coveragePct,
+      coverage_warning: coveragePct < COVERAGE_WARNING_THRESHOLD * 100,
       dropped_unpaired: a.droppedUnpaired,
       judge_methods_used: [...a.judgeMethods].sort(),
       provenance: {
