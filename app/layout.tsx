@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import './globals.css';
@@ -28,13 +28,26 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport = {
+export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   // Pinch-zoom is allowed (up to 5x) for readability — important on mobile,
   // and required for accessibility. Do not disable user scaling.
   maximumScale: 5,
   userScalable: true,
+  // fix (2026-07-25) — VIRTUAL KEYBOARD PUSHED THE CHAT HEADER OFF-SCREEN.
+  // dvh/svh/lvh do not shrink when the virtual keyboard opens (only for
+  // dynamic UA chrome), so the chat shell's h-[100dvh] stayed full-height
+  // with the keyboard overlaying the composer, and the browser scrolled the
+  // visual viewport to chase the caret — carrying the sticky header out of
+  // view with it. resizes-content makes the LAYOUT viewport shrink too, so
+  // 100dvh resolves to the above-keyboard area instead.
+  //
+  // Android only. iOS Safari ignores interactive-widget and keeps
+  // resizes-visual semantics — iOS is handled by the visualViewport listener
+  // driving --lex-vvh in app/chat/page.tsx. Neither fix alone covers both
+  // platforms; both are required.
+  interactiveWidget: 'resizes-content',
   // Match the mobile browser chrome to the near-black theme.
   themeColor: '#07070d',
 };
