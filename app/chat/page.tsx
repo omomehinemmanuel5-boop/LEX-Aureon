@@ -111,6 +111,85 @@ function syntaxHL(code: string, lang: string): string {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+   KEYBOARD-AWARE VIEWPORT (2026-07-25)
+
+   The reported bug — "typing zooms out and I hardly see the text at the
+   top" — was NOT text-field auto-zoom on the composer (that was already
+   16px). It was the shell outliving its own height contract:
+
+     h-[100dvh] does not shrink when the virtual keyboard opens. Per the CSS
+     viewport spec, dvh/svh/lvh track dynamic UA chrome (the collapsing
+     address bar), not interactive widgets. So the shell stayed full-screen,
+     the keyboard covered the composer, and the browser scrolled the VISUAL
+     viewport to bring the caret into view — dragging the sticky header out
+     of sight. overflow:hidden + overscroll-behavior-y:contain then made it
+     unrecoverable by scrolling.
+
+   interactive-widget=resizes-content (app/layout.tsx) fixes this on Android
+   by shrinking the layout viewport. iOS Safari ignores it and keeps
+   resizes-visual semantics, so iOS needs the visual viewport measured
+   directly — which is what this hook does. window.visualViewport DOES
+   account for the keyboard on iOS.
+
+   Writes two custom properties on <html>:
+     --lex-vvh   visible height  -> shell height
+     --lex-vvtop visual offset   -> diagnostic / future compensation
+
+   Falls back to 100dvh when visualViewport is unavailable (SSR, older
+   browsers), so this is strictly additive — nothing regresses if the API
+   is missing.
+───────────────────────────────────────────────────────────────────── */
+function useKeyboardAwareViewport(): void {
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    if (!vv) return;
+
+    const apply = () => {
+      const root = document.documentElement;
+      root.style.setProperty('--lex-vvh', `${Math.round(vv.height)}px`);
+      root.style.setProperty('--lex-vvtop', `${Math.round(vv.offsetTop)}px`);
+      // Belt-and-braces: if iOS has already scrolled the document to chase
+      // the caret, pull it back. Safe because the document is overflow-locked
+      // below — there is nothing legitimate to scroll at the document level.
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    return () => {
+      vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+      const root = document.documentElement;
+      root.style.removeProperty('--lex-vvh');
+      root.style.removeProperty('--lex-vvtop');
+    };
+  }, []);
+}
+
+/* Route-scoped document scroll lock.
+
+   body is `min-h-screen flex flex-col` (app/layout.tsx) while this shell is
+   viewport-height — two competing height contexts. Once the keyboard shrank
+   the visible area the document itself became scrollable, and that document
+   scroll is the mechanism that actually carried the header away. Locked
+   while this route is mounted, restored exactly as found on unmount so no
+   other route inherits it. */
+function useDocumentScrollLock(): void {
+  useEffect(() => {
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    const prevOverscroll = body.style.overscrollBehavior;
+    body.style.overflow = 'hidden';
+    body.style.overscrollBehavior = 'none';
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.overscrollBehavior = prevOverscroll;
+    };
+  }, []);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
    THE SEAL — signature element (2026-07-11, revised same day)
 
    M = min(C,R,S) is the actual thesis of the product — the stability
@@ -601,8 +680,15 @@ function BottomSheet({ open, onClose, title, children }: {
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      {/* Sheet max height tracks the visual viewport too, so an open sheet
+          with a focused field (the sandbox filename input) is not clipped
+          behind the keyboard. Falls back to 85dvh where the API is absent. */}
       <div className="relative rounded-t-3xl overflow-hidden flex flex-col"
-        style={{ background: G.surface, border: `1px solid ${G.border}`, maxHeight: '85dvh' }}>
+        style={{
+          background: G.surface,
+          border: `1px solid ${G.border}`,
+          maxHeight: 'calc(var(--lex-vvh, 100dvh) * 0.85)',
+        }}>
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: G.border }} />
         </div>
@@ -662,10 +748,14 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
 
       {showNew && (
         <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: G.border }}>
+          {/* text-[16px], not text-[13px]: iOS force-zooms the page when a
+              field below 16px receives focus. This input was the one真 case
+              of genuine text-field auto-zoom on this page — the old
+              `textarea { font-size:16px }` rule did not cover <input>. */}
           <input value={newName} onChange={e => setNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submitNew(); }}
             placeholder="filename.ts" autoFocus
-            className="lex-focusable flex-1 bg-transparent text-[13px] focus:outline-none"
+            className="lex-focusable flex-1 bg-transparent text-[16px] focus:outline-none"
             style={{ color: G.gold, caretColor: G.gold }} />
           <button onClick={submitNew} className="lex-focusable text-[11px] px-3 py-1.5 rounded-xl min-h-[36px]"
             style={{ color: G.R, background: `${G.R}12`, border: `1px solid ${G.R}22` }}>create</button>
@@ -710,11 +800,16 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
                 <span className="text-[11px]" style={{ color: G.textSub }}>{activeFile.lang}</span>
                 <span className="text-[11px] ml-auto" style={{ color: G.textSub }}>{activeFile.content.split('\n').length}L</span>
               </div>
+              {/* .lex-code-editor: 16px on touch (zoom-safe), 13px only under
+                  (pointer: fine). Previously an inline fontSize:13 that the
+                  global `textarea { font-size:16px !important }` silently
+                  overrode — so this editor never actually rendered at 13px
+                  anywhere. Now it does, on pointer devices only. */}
               <textarea value={activeFile.content}
                 onChange={e => onUpdateFile(activeFile.id, e.target.value)}
-                className="lex-focusable flex-1 w-full resize-none focus:outline-none p-4 leading-relaxed"
+                className="lex-focusable lex-code-editor flex-1 w-full resize-none focus:outline-none p-4 leading-relaxed"
                 style={{ background: 'transparent', color: '#8fa0b4', caretColor: G.gold,
-                  fontSize: 13, fontFamily: 'inherit', minHeight: '45vh' }}
+                  fontFamily: 'inherit', minHeight: '45vh' }}
                 spellCheck={false} />
             </>
           ) : (
@@ -992,9 +1087,17 @@ export default function ChatConsole() {
   const [sheet, setSheet]               = useState<SheetView | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLElement | null>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
   const toast     = useToast();
   const { state: stream, run: runStream, cancel } = useLexStream();
+
+  // Mobile viewport correctness — see the hook definitions near the top of
+  // this file for the full diagnosis. Both are required: the CSS var drives
+  // the shell height (iOS), the scroll lock stops the document itself from
+  // scrolling the header away.
+  useKeyboardAwareViewport();
+  useDocumentScrollLock();
 
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'chat_console';
@@ -1025,7 +1128,19 @@ export default function ChatConsole() {
   useEffect(() => { localStorage.setItem('lex_api_calls', String(apiCalls)); }, [apiCalls]);
   useEffect(() => { localStorage.setItem('lex_sandbox_files', JSON.stringify(sandboxFiles)); }, [sandboxFiles]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [turns, stream.partialOutput]);
+  /* Autoscroll — fix (2026-07-25). Previously fired
+     scrollIntoView({behavior:'smooth'}) on EVERY streamed token, which
+     (a) competes with the browser's own keyboard-driven scrolling on iOS
+     and (b) yanked the view back down if the user had deliberately
+     scrolled up to re-read an earlier turn mid-stream. Now: only follow
+     when the user is already within 120px of the bottom, and use instant
+     positioning rather than animating once per token. */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) { bottomRef.current?.scrollIntoView({ block: 'end' }); return; }
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [turns, stream.partialOutput]);
 
   useEffect(() => {
     if (!stream.metrics) return;
@@ -1154,8 +1269,20 @@ export default function ChatConsole() {
         .lex-pulse  { animation: lex-breathe 2.4s ease-in-out infinite; }
         ::-webkit-scrollbar { display: none; }
         * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-        textarea { font-size: 16px !important; -webkit-user-select: text; user-select: text; }
-        input    { -webkit-user-select: text; user-select: text; }
+
+        /* fix (2026-07-25) — iOS force-zooms the page whenever a focused
+           field is under 16px. The old rule covered ONLY textarea, so the
+           sandbox filename <input> (13px) still triggered it. Covers all
+           three field types now. No !important: it must NOT override
+           .lex-code-editor below. */
+        textarea, input, select { font-size: 16px; }
+        textarea, input { -webkit-user-select: text; user-select: text; }
+
+        /* Code editor stays zoom-safe at 16px on touch and only tightens to
+           13px where auto-zoom does not exist. Previously an inline
+           fontSize:13 that the old `!important` rule silently overrode. */
+        .lex-code-editor { font-size: 16px; }
+        @media (pointer: fine) { .lex-code-editor { font-size: 13px; } }
 
         /* fix (2026-07-11) — production accessibility pass */
         @media (prefers-reduced-motion: reduce) {
@@ -1171,8 +1298,20 @@ export default function ChatConsole() {
       `}</style>
 
       <div
-        className="h-[100dvh] flex flex-col overflow-hidden select-none"
-        style={{ background: G.bg, fontFamily: "'SF Mono','JetBrains Mono',ui-monospace,monospace", color: G.text, overscrollBehaviorY: 'contain' }}
+        className="flex flex-col overflow-hidden select-none"
+        style={{
+          // fix (2026-07-25) — was h-[100dvh]. dvh does not shrink for the
+          // virtual keyboard, so the composer ended up behind it and the
+          // browser scrolled the header out of view chasing the caret.
+          // --lex-vvh is the live visual-viewport height (set by
+          // useKeyboardAwareViewport); 100dvh remains the fallback for
+          // SSR and browsers without the visualViewport API.
+          height: 'var(--lex-vvh, 100dvh)',
+          background: G.bg,
+          fontFamily: "'SF Mono','JetBrains Mono',ui-monospace,monospace",
+          color: G.text,
+          overscrollBehaviorY: 'contain',
+        }}
       >
 
         {/* ══════════════════════ HEADER — explicitly static ══════════════════════
@@ -1223,7 +1362,7 @@ export default function ChatConsole() {
         </header>
 
         {/* ══════════════════════════ MAIN ══════════════════════════ */}
-        <main className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <main ref={scrollRef} className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
 
           {selfTestResult && (
             <SelfTestBanner result={selfTestResult} onClose={() => setSelfTestResult(null)} />
