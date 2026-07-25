@@ -545,7 +545,10 @@ function GovernancePanel({ turn, tab, onClose }: {
 ───────────────────────────────────────────────────────────────────── */
 function StatusChips({ turn, live }: { turn: ChatTurn; live: boolean }) {
   const hcfg = HEALTH[turn.health_band ?? 'OPTIMAL'] ?? HEALTH.OPTIMAL;
-  if (live) return <span className="text-[10px] font-mono lex-pulse" style={{ color: G.gold }}>● streaming</span>;
+  if (live) return (
+    <span className="text-[10px] font-mono lex-pulse" style={{ color: G.gold }}
+      role="status" aria-live="polite">● streaming</span>
+  );
 
   const chips: { label: string; color: string; bg: string }[] = [];
   if (turn.health_band && turn.health_band !== 'OPTIMAL')
