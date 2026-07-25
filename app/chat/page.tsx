@@ -1468,6 +1468,7 @@ export default function ChatConsole() {
               </button>
             ) : (
               <button onClick={() => sendMessage()} disabled={!input.trim() || apiCalls >= MAX_CALLS}
+                aria-label="Send message"
                 className="lex-focusable flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-95 transition-all disabled:opacity-20"
                 style={{
                   background: input.trim() ? `linear-gradient(135deg,${G.gold},${G.goldL})` : G.surface,
