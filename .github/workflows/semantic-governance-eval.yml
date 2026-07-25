@@ -1,0 +1,73 @@
+name: Semantic Governance Eval
+
+# Runs the two evals whose SEMANTIC layer needs a reachable embedding provider,
+# which local/sandbox runs can't reach:
+#   1. scripts/tool-governance/injection-eval.ts — the tool-call injection
+#      threshold sweep (precision/recall vs the labeled corpus), Run 004.
+#   2. scripts/agentdojo-real/run.ts — the dual-axis harness, which scores the
+#      SEMANTIC scope-creep task once an embedding key is present, Run 005.
+#
+# Manual only (workflow_dispatch). It uses the repo's existing GEMINI/JINA/
+# MISTRAL secrets so no key is ever pasted anywhere. It deliberately does NOT
+# provide TURSO creds: the harness's interceptToolCall writes a tool_receipt on
+# every decision, and we do NOT want simulated calls polluting the real
+# tool_receipts table — without Turso those writes fail open (harness behavior
+# is unchanged; only the receipt persistence is skipped). Results are printed to
+# the job log and uploaded as artifacts; nothing is published to any live
+# surface.
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: semantic-governance-eval
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  eval:
+    name: injection sweep + agentic harness (semantic)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install
+        run: npm install
+
+      - name: Injection threshold sweep (Run 004)
+        # Only an embedding key is needed — no Turso (the embedding cache fails
+        # open without it). Prints the full sweep + separation + hard subset.
+        env:
+          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
+          JINA_API_KEY:    ${{ secrets.JINA_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          mkdir -p data/eval
+          npx tsx scripts/tool-governance/injection-eval.ts --json data/eval/injection-eval.jsonl | tee data/eval/injection-eval.txt
+
+      - name: Agentic harness incl. semantic task (Run 005)
+        # NO Turso on purpose — see workflow header. Embedding key present, so
+        # the semantic scope-creep task is scored instead of prod-only.
+        env:
+          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
+          JINA_API_KEY:    ${{ secrets.JINA_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          npx tsx scripts/agentdojo-real/run.ts --json data/eval/agentdojo-real.jsonl | tee data/eval/agentdojo-real.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-governance-eval
+          path: data/eval/
+          retention-days: 30

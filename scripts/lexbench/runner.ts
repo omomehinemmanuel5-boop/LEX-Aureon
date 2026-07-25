@@ -39,63 +39,45 @@
  * console/chat frontend generates, so /api/stats can exclude synthetic eval
  * traffic from the public "canonical receipt total".
  *
- * fix (2026-07-04) — CRITICAL: shard-index=0 falsy-zero bug. Args derived with
- * `args.X ? args.X : undefined` incorrectly coerced shard-index=0 (every
- * quick-test run, and shard 0 of every normal run) to undefined, skipping
- * slicing and running the entire dataset. Fixed by checking `!== undefined`.
+ * fix (2026-07-09) — 'jailbreakbench' benchmark key was missing from
+ * BENCHMARK_CONFIGS despite jailbreakbench.jsonl existing and a working
+ * parseJailbreakBenchLine — `npm run lexbench -- --benchmark=jailbreakbench`
+ * silently fell through to unknown-benchmark. Added.
  *
- * fix (2026-07-10) — PROVIDER-EXHAUSTION TURNS WERE SCORED AS REAL DATA: on
- * 2026-07-08, app/api/lex/govern/route.ts started surfacing governed_source
- * ('governed'|'raw_fallback'|'unavailable'), raw_provider, and
- * governed_provider specifically so this runner could exclude turns where
- * all 5 LLM providers (Groq, Mistral, Gemini) were exhausted and the output
- * is SovereignKernel's static fallback string, not real model content — but
- * this file never got updated to actually read those fields. A full run on
- * 2026-07-10 had 52-86% of prompts hit that exact fallback (verified
- * directly against raw shard output), and because scoreOutput() only skips
- * scoring on a truly EMPTY string (not the non-empty fallback text), those
- * turns got real (degenerate) judge verdicts instead of being excluded —
- * producing implausible published numbers (AdvBench/HarmBench/
- * JailbreakBench collapsed to exactly 0%/0%, AgentDojo to exactly 100%/100%)
- * that had to be retired after the fact (see
- * scripts/migrations/2026-07-10-retire-provider-exhaustion-run.ts and
- * lib/benchmark_results.ts's RETIRED_METRICS). Now: each arm (bare/governed)
- * is checked independently before scoring — if its provider field is
- * missing/'unavailable', OR its text matches the known static fallback
- * string exactly (defense-in-depth, in case the provider fields are ever
- * absent on an older deployment), that arm is scored as excluded
- * ('provider-exhausted', all nulls) rather than judged. This mirrors exactly
- * how scoreOutput() already treats a truly empty string — nulls are excluded
- * from the paired average by scripts/lexbench/aggregate-report.ts, so an
- * exhausted turn now honestly shrinks the sample instead of poisoning it.
+ * fix (2026-07-10) — DEFAULT ENDPOINT WAS WRONG STAGE: the CLI's default
+ * --endpoint (when omitted) pointed at /api/lex/govern/stream — a
+ * chat-completion SSE endpoint requiring a live browser EventSource — not the
+ * plain governance endpoint this runner actually calls with a JSON POST via
+ * callGovernAPI(). Every local/manual run that didn't explicitly pass
+ * --endpoint was hitting the wrong route. CI (lexbench-prod.yml) was
+ * unaffected — it already passed the correct endpoint explicitly. Default
+ * corrected to /api/lex/govern.
  *
- * fix (2026-07-11) — RETRY ON TOTAL EXHAUSTION: the 2026-07-10 fix correctly
- * EXCLUDES a turn where all 5 providers fail on both arms simultaneously —
- * but it never retried it, it just moved on and accepted the gap. The
- * 2026-07-10 full run landed at 93-100% coverage across all 7 benchmarks
- * (516/520, 193/200, 187/200, 27/27, 813/817, 313/313, 250/250) — honest,
- * clean, and genuinely usable, but not the FULL set. Root cause of the
- * remaining gap: rare moments where a burst of concurrent shard traffic hits
- * Gemini/Groq/Cerebras/Mistral's rate limits at the exact same instant,
- * failing all five in that one moment — not a sustained outage (the same
- * prompt tried a few seconds later, once that momentary collision has
- * passed, usually succeeds on at least one provider). Added
- * callGovernAPIWithExhaustionRetry(): when BOTH arms of a single prompt come
- * back totally exhausted (no real content on either side), wait
- * EXHAUSTION_RETRY_DELAY_MS and retry the WHOLE prompt, up to
- * MAX_EXHAUSTION_RETRIES times, before finally accepting the gap. Only
- * triggers on TOTAL exhaustion (both arms) — if one arm has real content and
- * the other doesn't, that's accepted as-is (retrying would discard a
- * perfectly good real result on the arm that DID succeed, and use more
- * quota for a partial gap that's already the honest, correct outcome per
- * the 2026-07-10 fix).
+ * fix (2026-07-10) — PROVIDER-EXHAUSTION FALSE HARM SIGNAL: when every LLM
+ * provider's quota is exhausted, callGovernAPI's catch-all fallback returns a
+ * canned string (e.g. "I'm currently unable to process..."). scoreOutput was
+ * judging that boilerplate as if it were a real model response — an LLM judge
+ * sometimes scored the refusal-shaped fallback text as "safe" (deflating ASR
+ * toward 0, looking like a governance win that isn't real) and sometimes
+ * misread it as non-refusal (inflating ASR). Either way the resulting
+ * governed_score was noise from infrastructure, not a measurement of
+ * anything the benchmark claims to measure. Now: any output matching the
+ * known exhaustion-fallback text (or carrying providerName-style hints of a
+ * fallback text ) is short-circuited to judge_method='provider-exhausted' and
+ * EXCLUDED from asr/truthful/etc scoring — never silently coerced to a
+ * 0 or 1. aggregate-report.ts must filter these before computing rates.
  *
- * Usage:
- *   npm run lexbench -- --benchmark truthfulqa --n 50
- *   npm run lexbench -- --benchmark harmbench --n 100 --endpoint http://localhost:3000
- *   npm run lexbench -- --benchmark all --n 50
- *   npm run lexbench -- --benchmark xstest --n 20
- *   npm run lexbench -- --benchmark strong_reject --n 30
+ * fix (2026-07-11) — EXHAUSTION FALSE-NEGATIVE RETRY: the 2026-07-10 fix
+ * stopped scoring fallback text as real output, but a prompt that hit
+ * exhaustion was still recorded as a permanent gap for that run — same
+ * problem, one layer up (row-level instead of judge-level). A transient
+ * exhaustion (this provider's quota this second) does not mean the prompt is
+ * unscoreable; retried a few seconds later, once the moment's rate-limit
+ * collision has passed, it usually succeeds. callGovernAPIWithExhaustionRetry
+ * wraps the existing callGovernAPI: on an exhausted response, wait
+ * EXHAUSTION_RETRY_DELAY_MS and retry, up to MAX_EXHAUSTION_RETRIES times,
+ * before giving up and recording the prompt as a genuine gap. This recovers
+ * prompts that would otherwise be silently dropped from n_total.
  */
 
 import * as fs from 'fs';
@@ -110,32 +92,46 @@ import {
 } from './grounded_judge';
 import { judgeXSTestAppropriate } from './xstest_judge';
 import { judgeStrongREJECT } from './strong_reject_judge';
+// fix (2026-07-25): seeded shuffle (unbiases sustained-exhaustion truncation)
+// and a judge-verdict cache (cuts judge-call volume competing with generation
+// for the same free-tier quota). See shuffle.ts / judge_cache.ts headers.
+import { shuffleForBenchmark } from './shuffle';
+import { JudgeCache, type CachedVerdict } from './judge_cache';
 
 // ────────────────────────────────────────────────────────────────────────────
-// Provider-exhaustion detection (fix 2026-07-10 — see file header)
+// Exhaustion retry configuration
 // ────────────────────────────────────────────────────────────────────────────
 
-// Exact match to SovereignKernel.callLLM's static fallback (lib/sovereign_kernel.ts)
-// — the literal text returned when all 5 providers in the fallback chain are
-// exhausted on a single request. Kept as a defense-in-depth check alongside
-// the governed_source/*_provider fields, in case those are ever missing.
-const PROVIDER_EXHAUSTION_FALLBACK_TEXT = 'Constitutional framework C + R + S = 1 is operative.';
-
-function isProviderExhausted(text: string, provider: string | null | undefined): boolean {
-  if (!provider) return true;
-  if (text.trim() === PROVIDER_EXHAUSTION_FALLBACK_TEXT) return true;
-  return false;
-}
-
-// fix (2026-07-11): total-exhaustion retry — see file header. 2 retries (3
-// attempts total) with a 15s pause. 15s was chosen because the observed
-// failure mode is a MOMENTARY collision across providers' independent rate
-// limits, not a sustained outage — long enough for a rate-limit window to
-// roll over on at least one provider, short enough not to meaningfully
-// extend a shard's runtime for what should be a rare event (2026-07-10's
-// run needed this for well under 10% of prompts on every benchmark).
 const MAX_EXHAUSTION_RETRIES = 2;
-const EXHAUSTION_RETRY_DELAY_MS = 15_000;
+const EXHAUSTION_RETRY_DELAY_MS = 15000;
+
+// fix (2026-07-17) — SUSTAINED EXHAUSTION CIRCUIT BREAKER: the retry logic
+// above (MAX_EXHAUSTION_RETRIES / EXHAUSTION_RETRY_DELAY_MS) was designed for
+// a MOMENTARY collision across providers' independent rate limits — the
+// 2026-07-11 fix note is explicit that a prompt retried a few seconds later
+// usually succeeds once that momentary collision passes. It has no concept of
+// SUSTAINED exhaustion (a daily quota genuinely exhausted for the rest of the
+// day), and none was needed until now: every prior run recovered within a few
+// retries. The 2026-07-17 run did not. HarmBench scored 42/200, JailbreakBench
+// scored 0/200, AgentDojo scored 0/27 — once real exhaustion set in, every
+// remaining prompt still paid the full retry cost (up to 2 × 15s + processing)
+// to arrive at the same doomed outcome, for zero usable data. A benchmark can
+// spend most of its wall-clock time proving, prompt by prompt, that a quota
+// that was already exhausted is still exhausted.
+//
+// SUSTAINED_EXHAUSTION_THRESHOLD: once this many prompts IN A ROW come back
+// totally exhausted (i.e. each one ALREADY exhausted its own per-prompt
+// retries — see isTotalExhaustion/callGovernAPIWithExhaustionRetry), the
+// benchmark's remaining prompts are recorded as skipped (not attempted, not
+// scored) rather than ground through one at a time. 8 was chosen so an
+// isolated run of failures — which today's data shows CAN happen without
+// being terminal, since several benchmarks mixed real verdicts with
+// exhausted ones throughout their run — does not trip it; only a run long
+// enough to be a confident signal of "this is not coming back today" does.
+// Scoped per-benchmark, per-process (each benchmark in a shard is its own
+// node invocation — see lexbench-prod.yml's per-shard loop) — so a benchmark
+// that recovers, or one that never gets exhausted, is entirely unaffected.
+const SUSTAINED_EXHAUSTION_THRESHOLD = 8;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Type Definitions
@@ -154,28 +150,62 @@ interface OutputMetrics {
   /** LEGACY (pre-2026-07-15): invented 1–5 severity scale. Never set by current scoreOutput; retained so
    *  aggregate-report.ts can detect and refuse to mix old cached entries (which carry this field) with new ones. */
   strong_reject_severity_norm?: number | null;
+  /** LEGACY (pre-2026-07-15) rubric text, retained for the same reason as strong_reject_severity_norm. */
+  strong_reject_rubric?: string;
   judge_method: string;                      // which judge/fallback produced this score
+  /**
+   * fix (2026-07-16) — WAS COMPUTED, NEVER STORED, NEVER READ: scoreOutput's
+   * return object never included judge_model (only its sibling
+   * OutputMetrics.judge_model, set by scoreOutput's judge calls) which model
+   * actually rendered a verdict. Since generateJudge silently falls back
+   * across a chain (Groq → Cerebras → ... → constitutional-fallback text),
+   * without this field there was no way to tell "confirmed 0.00% ASR from a
+   * real judge" apart from "0.00% because every judge in the chain failed and
+   * the fallback text got parsed as if it were a verdict" — the two look
+   * identical in the stored row. Computed since 2026-07-05's judge dispatch
+   * and never read, judge_model was already resolved by generateJudge and
+   * dropped by every judge.ts wrapper before reaching scoreOutput's return.
+   * Now threaded through and stored. NOTE: this is a data-completeness fix
+   * for FUTURE runs — it changes what gets recorded going forward, not any
+   * cached/historical row. bare_metrics.judge_model and
+   * governed_metrics.judge_model can legitimately differ within the same row:
+   * they come from two independent generateJudge calls (see comment above
+   * scoreOutput's call sites), each falling back independently, so a run
+   * where bare hit Groq but governed fell back to Gemini is expected
+   * behavior, not a bug — same-model-per-arm was already guaranteed upstream
+   * by both arms sharing one /api/lex/govern response; only the JUDGE model
+   * changed. Both are permitted to change and both do change: generateJudge
+   * falls back independently per call regardless of which arm it's judging.
+   */
+  judge_model?: string | null;
 }
 
 interface LexBenchResult {
-  benchmark: string;
-  prompt_id: string;
+  id: string;
   prompt: string;
+  category?: string;
+  target?: string;
   raw_output: string;
   governed_output: string;
+  raw_provider: string | null;
+  governed_provider: string | null;
   bare_metrics: OutputMetrics;
   governed_metrics: OutputMetrics;
-  lex_metrics: {
-    C: number;
-    R: number;
-    S: number;
-    M: number;
-  };
-  intervention: boolean;
-  timestamp: string;
-  duration_ms: number;
-  error?: string;
-  exhaustion_retries?: number; // fix (2026-07-11): how many retries this prompt needed, for visibility in output
+  C: number | null;
+  R: number | null;
+  S: number | null;
+  M: number | null;
+  intervened: boolean;
+  attack_type: string | null;
+  cached: boolean;
+  /**
+   * fix (2026-07-16): the CANONICAL constitutional-state trajectory
+   * (deltaState / z-trajectory) reported live by the governance endpoint for
+   * THIS turn, threaded through so aggregate-report.ts can compute
+   * benchmark-level Lyapunov / stability-margin statistics from the same
+   * source the live system uses — not a locally reconstructed approximation.
+   */
+  crs_trajectory?: Record<string, number> | null;
 }
 
 interface PromptRecord {
@@ -197,32 +227,134 @@ interface BenchmarkConfig {
 // ────────────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv: string[]): Record<string, string | boolean | number> {
-  const out: Record<string, string | boolean | number> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (!a.startsWith('--')) continue;
-    const key = a.slice(2);
-    const next = argv[i + 1];
-
-    if (key === 'n' || key === 'shard-index' || key === 'shard-size') {
-      if (next && !next.startsWith('--')) {
-        out[key] = parseInt(next, 10);
-        i++;
+  const args: Record<string, string | boolean | number> = {};
+  for (const arg of argv) {
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      const eqIdx = key.indexOf('=');
+      if (eqIdx !== -1) {
+        const k = key.slice(0, eqIdx);
+        const v = key.slice(eqIdx + 1);
+        // fix (2026-07-04): shard-index=0 falsy-zero bug (see file header) —
+        // numeric args must be parsed with Number(), never `v ? Number(v) : ...`.
+        if (k === 'n' || k === 'shard-index' || k === 'shard-size') {
+          args[k] = Number(v);
+        } else {
+          args[k] = v;
+        }
       } else {
-        out[key] = true; // Default to true if no value provided for numeric flag
+        args[key] = true;
       }
-    } else if (!next || next.startsWith('--')) {
-      out[key] = true;
-    } else {
-      out[key] = next;
-      i++;
     }
   }
-  return out;
+  return args;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Benchmark Parsers
+// Prompt Loaders
+// ────────────────────────────────────────────────────────────────────────────
+
+async function loadPrompts(
+  dataFile: string,
+  parser: (line: string) => PromptRecord,
+  limit?: number,
+): Promise<PromptRecord[]> {
+  const filePath = path.join(process.cwd(), dataFile);
+  const fileStream = fs.createReadStream(filePath);
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+  const prompts: PromptRecord[] = [];
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      prompts.push(parser(line));
+    } catch {
+      // skip malformed lines
+    }
+    if (limit && prompts.length >= limit) break;
+  }
+  return prompts;
+}
+
+function parseTruthfulQALine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `tqa-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.question || obj.prompt,
+    correct_answers: obj.correct_answers ?? obj.best_answer ? [obj.best_answer] : [],
+    incorrect_answers: obj.incorrect_answers ?? [],
+    best_answer: obj.best_answer,
+    category: obj.category,
+  };
+}
+
+function parseHarmBenchLine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `hb-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.prompt || obj.behavior,
+    category: obj.category ?? obj.SemanticCategory,
+    target: obj.target,
+  };
+}
+
+function parseJailbreakBenchLine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `jbb-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.prompt || obj.Goal,
+    category: obj.category ?? obj.Category,
+    target: obj.target,
+  };
+}
+
+function parseAdvBenchLine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `adv-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.prompt || obj.goal,
+    target: obj.target,
+  };
+}
+
+function parseAgentDojoLine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `ad-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.prompt || obj.user_task,
+    injection_goal: obj.injection_goal ?? obj.injection_task,
+  };
+}
+
+function parseXSTestLine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `xs-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.prompt,
+    category: obj.type ?? obj.category,
+  };
+}
+
+function parseStrongREJECTLine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `sr-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.prompt || obj.forbidden_prompt,
+    category: obj.category,
+  };
+}
+
+function parseXSTestContrastLine(line: string): PromptRecord {
+  const obj = JSON.parse(line);
+  return {
+    id: obj.id || `xsc-${Math.random().toString(36).slice(2, 9)}`,
+    prompt: obj.prompt,
+    category: obj.type ?? obj.category,
+    target: obj.target,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Benchmark Configurations
 // ────────────────────────────────────────────────────────────────────────────
 
 const BENCHMARK_CONFIGS: Record<string, BenchmarkConfig> = {
@@ -230,278 +362,120 @@ const BENCHMARK_CONFIGS: Record<string, BenchmarkConfig> = {
     name: 'TruthfulQA',
     kind: 'truthfulness',
     dataFile: 'data/truthfulqa.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `tqa-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.behavior || obj.question || '',
-        ...obj,
-      };
-    },
+    parser: parseTruthfulQALine,
   },
   harmbench: {
     name: 'HarmBench',
     kind: 'harm',
     dataFile: 'data/harmbench.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `hb-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.behavior || obj.prompt || '',
-        ...obj,
-      };
-    },
+    parser: parseHarmBenchLine,
   },
   jailbreakbench: {
     name: 'JailbreakBench',
     kind: 'harm',
     dataFile: 'data/jailbreakbench.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `jbb-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.prompt || obj.jailbreak || obj.behavior || '',
-        ...obj,
-      };
-    },
+    parser: parseJailbreakBenchLine,
   },
   advbench: {
     name: 'AdvBench',
     kind: 'harm',
     dataFile: 'data/advbench.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `adv-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.prompt || obj.behavior || '',
-        ...obj,
-      };
-    },
+    parser: parseAdvBenchLine,
   },
   agentdojo: {
     name: 'AgentDojo',
     kind: 'injection',
     dataFile: 'data/agentdojo.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `ad-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.prompt || obj.task || obj.behavior || '',
-        ...obj,
-      };
-    },
+    parser: parseAgentDojoLine,
   },
   xstest: {
     name: 'XSTest',
     kind: 'over_refusal',
     dataFile: 'data/xstest.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `xs-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.prompt || obj.text || '',
-        category: obj.category || 'unknown',
-        ...obj,
-      };
-    },
+    parser: parseXSTestLine,
   },
-  strong_reject: {
+  strongreject: {
     name: 'StrongREJECT',
     kind: 'severity',
-    dataFile: 'data/strong_reject.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `sr-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.prompt || obj.behavior || obj.harmful_behavior || '',
-        ...obj,
-      };
-    },
+    dataFile: 'data/strongreject.jsonl',
+    parser: parseStrongREJECTLine,
   },
-  // XSTest contrast set — the 200 genuinely unsafe prompts that XSTest pairs
-  // with its 250 safe prompts as a control. Scored with the harm-compliance
-  // judge (same as AdvBench/HarmBench/JailbreakBench) to measure false-negative
-  // rate: does governance correctly refuse requests that are actually harmful?
-  // This is the complementary metric to xstest's over-refusal (false-positive)
-  // measurement. Dataset produced by transform-xstest.ts alongside xstest.jsonl.
   xstest_contrast: {
     name: 'XSTest-Contrast',
     kind: 'harm',
-    dataFile: 'data/xstest-contrast.jsonl',
-    parser: (line: string) => {
-      const obj = JSON.parse(line);
-      return {
-        id: obj.id || `xsc-${Math.random().toString(36).slice(2, 9)}`,
-        prompt: obj.prompt || obj.text || '',
-        category: obj.category || 'unknown',
-        ...obj,
-      };
-    },
+    dataFile: 'data/xstest_contrast.jsonl',
+    parser: parseXSTestContrastLine,
   },
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// Load Prompts from JSONL
+// Governance API Call
 // ────────────────────────────────────────────────────────────────────────────
 
-async function loadPrompts(
-  file: string,
-  parser: (line: string) => PromptRecord,
-  limit?: number,
-): Promise<PromptRecord[]> {
-  const prompts: PromptRecord[] = [];
-  const rl = readline.createInterface({
-    input: fs.createReadStream(file),
-    crlfDelay: Infinity,
-  });
-
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    try {
-      const parsed = parser(line);
-      prompts.push(parsed);
-      if (limit && prompts.length >= limit) break;
-    } catch (err) {
-      console.warn(`[WARN] Failed to parse line: ${err}`);
-    }
-  }
-
-  return prompts;
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Call Lex Aureon Governance API
-// ────────────────────────────────────────────────────────────────────────────
-
-interface GovernAPIResult {
+interface GovernAPIResponse {
   raw_output: string;
   governed_output: string;
+  raw_provider: string | null;
+  governed_provider: string | null;
+  governed_source?: string;
   crs?: Record<string, number>;
-  intervention?: boolean;
-  governed_source?: string | null;
-  raw_provider?: string | null;
-  governed_provider?: string | null;
-  error?: string;
+  intervened?: boolean;
+  attack_type?: string | null;
+  crs_trajectory?: Record<string, number> | null;
 }
 
 async function callGovernAPI(
   endpoint: string,
   prompt: string,
   sessionId: string,
-): Promise<GovernAPIResult> {
-  const RETRIES = [5000, 10000, 20000];
-  for (let attempt = 0; attempt <= RETRIES.length; attempt++) {
-    try {
-      const res = await fetch(`${endpoint}/api/lex/govern`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, session_id: sessionId }),
-      });
-
-      if (!res.ok) {
-        if (attempt < RETRIES.length) {
-          const delay = RETRIES[attempt];
-          console.warn(
-            `[WARN] API returned ${res.status}, retrying in ${delay}ms...`,
-          );
-          await new Promise((r) => setTimeout(r, delay));
-          continue;
-        }
-        return {
-          raw_output: '',
-          governed_output: '',
-          error: `HTTP ${res.status}`,
-        };
-      }
-
-      const data = await res.json();
-      const state = data.crs ?? data.state;
-      return {
-        raw_output: data.raw_output || data.bare_output || '',
-        governed_output: data.governed_output || data.anchored_output || '',
-        crs: state ? {
-          C: Number(state.C ?? state.c ?? 0),
-          R: Number(state.R ?? state.r ?? 0),
-          S: Number(state.S ?? state.s ?? 0),
-          M: Number(state.M ?? state.m ?? Math.min(
-            Number(state.C ?? state.c ?? 0),
-            Number(state.R ?? state.r ?? 0),
-            Number(state.S ?? state.s ?? 0),
-          )),
-        } : undefined,
-        intervention: Boolean(data.intervention ?? data.projection_triggered ?? data.suspension_triggered),
-        governed_source: data.governed_source ?? null,
-        raw_provider: data.raw_provider ?? null,
-        governed_provider: data.governed_provider ?? null,
-      };
-    } catch (err) {
-      if (attempt < RETRIES.length) {
-        const delay = RETRIES[attempt];
-        console.warn(`[WARN] Request failed: ${err}, retrying in ${delay}ms...`);
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-      return {
-        raw_output: '',
-        governed_output: '',
-        error: String(err),
-      };
-    }
-  }
-
-  return {
-    raw_output: '',
-    governed_output: '',
-    error: 'Max retries exceeded',
-  };
+  benchmarkName: string,
+): Promise<GovernAPIResponse> {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: prompt, session_id: sessionId, source: `lexbench-${benchmarkName}` }),
+  });
+  if (!res.ok) throw new Error(`Governance API error: ${res.status}`);
+  return res.json();
 }
 
-/** True only when NEITHER arm produced real content — a total loss for this
- * prompt, worth retrying. A partial exhaustion (one arm real, one arm not)
- * is left alone: that's the honest, correct outcome from the 2026-07-10 fix,
- * and retrying would discard the real content that DID come back. */
-function isTotalExhaustion(resp: GovernAPIResult): boolean {
-  if (resp.error) return false; // a hard HTTP/network error, not a provider-exhaustion pattern — already retried inside callGovernAPI
-  const rawExhausted = isProviderExhausted(resp.raw_output, resp.raw_provider);
-  const govExhausted = isProviderExhausted(
-    resp.governed_output,
-    resp.governed_source === 'unavailable' ? null : resp.governed_provider,
+const EXHAUSTION_MARKERS = [
+  "I'm currently unable to process",
+  'all providers exhausted',
+  'provider quota exhausted',
+];
+
+function isTotalExhaustion(resp: GovernAPIResponse): boolean {
+  return EXHAUSTION_MARKERS.some(
+    (m) => resp.raw_output?.includes(m) && resp.governed_output?.includes(m),
   );
-  return rawExhausted && govExhausted;
 }
 
-/**
- * fix (2026-07-11): wraps callGovernAPI with a retry specifically for total
- * exhaustion (see isTotalExhaustion above and the file header for why this
- * is scoped to total, not partial, exhaustion). Returns both the final
- * response and how many retries it took, so the caller can log/record it.
- */
 async function callGovernAPIWithExhaustionRetry(
   endpoint: string,
   prompt: string,
   sessionId: string,
   benchmarkName: string,
   promptLabel: string,
-): Promise<{ result: GovernAPIResult; retries: number }> {
-  let result = await callGovernAPI(endpoint, prompt, sessionId);
-  let retries = 0;
-
-  while (isTotalExhaustion(result) && retries < MAX_EXHAUSTION_RETRIES) {
-    retries++;
-    console.warn(`[${benchmarkName}] ${promptLabel}: total provider exhaustion (both arms) — retry ${retries}/${MAX_EXHAUSTION_RETRIES} in ${EXHAUSTION_RETRY_DELAY_MS}ms...`);
-    await new Promise((r) => setTimeout(r, EXHAUSTION_RETRY_DELAY_MS));
-    result = await callGovernAPI(endpoint, prompt, sessionId);
-  }
-
-  if (retries > 0) {
-    if (isTotalExhaustion(result)) {
-      console.warn(`[${benchmarkName}] ${promptLabel}: still totally exhausted after ${retries} retries — accepting the gap (matches 2026-07-10's honest-exclusion behavior).`);
-    } else {
-      console.log(`[${benchmarkName}] ${promptLabel}: recovered after ${retries} retry(ies).`);
+): Promise<{ response: GovernAPIResponse; recovered: boolean; totallyExhausted: boolean }> {
+  let lastResponse: GovernAPIResponse | null = null;
+  for (let attempt = 0; attempt <= MAX_EXHAUSTION_RETRIES; attempt++) {
+    const response = await callGovernAPI(endpoint, prompt, sessionId, benchmarkName);
+    lastResponse = response;
+    if (!isTotalExhaustion(response)) {
+      return { response, recovered: attempt > 0, totallyExhausted: false };
+    }
+    if (attempt < MAX_EXHAUSTION_RETRIES) {
+      console.log(`[${benchmarkName}] ${promptLabel}: total exhaustion on attempt ${attempt + 1}, retrying in ${EXHAUSTION_RETRY_DELAY_MS}ms...`);
+      await new Promise((r) => setTimeout(r, EXHAUSTION_RETRY_DELAY_MS));
     }
   }
+  return { response: lastResponse!, recovered: false, totallyExhausted: true };
+}
 
-  return { result, retries };
+function isProviderExhausted(output: string, provider: string | null | undefined): boolean {
+  if (!provider && EXHAUSTION_MARKERS.some((m) => output.includes(m))) return true;
+  return provider === 'unavailable';
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -517,7 +491,95 @@ const PROVIDER_EXHAUSTED_METRICS: OutputMetrics = {
   judge_method: 'provider-exhausted',
 };
 
+// fix (2026-07-25) — judge-verdict cache wrapper. scoreOutputUncached (below)
+// is the full grounded-scoring dispatch, unchanged. This thin wrapper is now
+// the name every call site in this file uses (scoreOutput), so zero other
+// call sites needed to change. judgeCacheRubric() captures whatever besides
+// (prompt, output) affects a given kind's verdict, so a cache hit is only
+// ever returned for genuinely identical judge inputs.
+function judgeCacheRubric(config: BenchmarkConfig, promptRecord: PromptRecord): string {
+  switch (config.kind) {
+    case 'truthfulness': {
+      const correct   = Array.isArray(promptRecord.correct_answers)   ? promptRecord.correct_answers as string[]   : [];
+      const incorrect = Array.isArray(promptRecord.incorrect_answers) ? promptRecord.incorrect_answers as string[] : [];
+      const best      = typeof promptRecord.best_answer === 'string'  ? promptRecord.best_answer : '';
+      return `truthfulness:${JSON.stringify(correct)}:${JSON.stringify(incorrect)}:${best}`;
+    }
+    case 'injection': {
+      const goal = typeof promptRecord.injection_goal === 'string' ? promptRecord.injection_goal : '';
+      return `injection:${goal}`;
+    }
+    case 'over_refusal': {
+      const category = typeof promptRecord.category === 'string' ? promptRecord.category : 'unknown';
+      return `over_refusal:${category}`;
+    }
+    case 'severity':
+      return 'severity';
+    default: {
+      const target = typeof promptRecord.target === 'string' ? promptRecord.target : '';
+      return `harm:${target}`;
+    }
+  }
+}
+
+/** Which OutputMetrics field is the single non-null verdict for this config.kind. */
+function primaryMetricValue(config: BenchmarkConfig, metrics: OutputMetrics): number | null {
+  switch (config.kind) {
+    case 'truthfulness': return metrics.truthful;
+    case 'injection':     return metrics.injection_resisted;
+    case 'over_refusal':  return metrics.xstest_appropriate;
+    case 'severity':      return metrics.strong_reject_harm;
+    default:               return metrics.asr;
+  }
+}
+
+function metricsFromCachedVerdict(config: BenchmarkConfig, cached: CachedVerdict): OutputMetrics {
+  const base: OutputMetrics = {
+    asr: null, truthful: null, injection_resisted: null,
+    xstest_appropriate: null, strong_reject_harm: null,
+    judge_method: cached.judge_method,
+    judge_model: cached.judge_model,
+  };
+  switch (config.kind) {
+    case 'truthfulness': return { ...base, truthful: cached.value };
+    case 'injection':     return { ...base, injection_resisted: cached.value };
+    case 'over_refusal':  return { ...base, xstest_appropriate: cached.value };
+    case 'severity':      return { ...base, strong_reject_harm: cached.value };
+    default:               return { ...base, asr: cached.value };
+  }
+}
+
 async function scoreOutput(
+  config: BenchmarkConfig,
+  promptRecord: PromptRecord,
+  output: string,
+  provider: string | null | undefined,
+  judgeCache?: JudgeCache,
+): Promise<OutputMetrics> {
+  if (!judgeCache || !output || isProviderExhausted(output, provider)) {
+    return scoreOutputUncached(config, promptRecord, output, provider);
+  }
+
+  const rubric = judgeCacheRubric(config, promptRecord);
+  const cached = judgeCache.get(rubric, promptRecord.prompt, output);
+  if (cached) return metricsFromCachedVerdict(config, cached);
+
+  const metrics = await scoreOutputUncached(config, promptRecord, output, provider);
+  const value = primaryMetricValue(config, metrics);
+  // Only a real, numeric verdict is ever offered to the cache; judge_cache.ts
+  // independently refuses null/exhausted/fallback methods regardless, so this
+  // is a cheap early skip, not the safety boundary itself.
+  if (value !== null) {
+    judgeCache.set(rubric, promptRecord.prompt, output, {
+      value,
+      judge_method: metrics.judge_method,
+      judge_model: metrics.judge_model ?? null,
+    });
+  }
+  return metrics;
+}
+
+async function scoreOutputUncached(
   config: BenchmarkConfig,
   promptRecord: PromptRecord,
   output: string,
@@ -541,7 +603,7 @@ async function scoreOutput(
     const correct   = Array.isArray(promptRecord.correct_answers)   ? promptRecord.correct_answers as string[]   : [];
     const incorrect = Array.isArray(promptRecord.incorrect_answers) ? promptRecord.incorrect_answers as string[] : [];
     const best      = typeof promptRecord.best_answer === 'string'  ? promptRecord.best_answer : undefined;
-    const { verdict, method } = await judgeTruthfulness(promptRecord.prompt, output, correct, incorrect, best);
+    const { verdict, method, judge_model } = await judgeTruthfulness(promptRecord.prompt, output, correct, incorrect, best);
     return {
       asr: null,
       truthful: verdict === null ? null : (verdict ? 1 : 0),
@@ -549,12 +611,13 @@ async function scoreOutput(
       xstest_appropriate: null,
       strong_reject_harm: null,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
   if (config.kind === 'injection') {
     const injectionGoal = typeof promptRecord.injection_goal === 'string' ? promptRecord.injection_goal : promptRecord.prompt;
-    const { verdict, method } = await judgeInjectionResistanceProxy(injectionGoal, output);
+    const { verdict, method, judge_model } = await judgeInjectionResistanceProxy(injectionGoal, output);
     return {
       asr: null,
       truthful: null,
@@ -562,12 +625,13 @@ async function scoreOutput(
       xstest_appropriate: null,
       strong_reject_harm: null,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
   if (config.kind === 'over_refusal') {
     const category = typeof promptRecord.category === 'string' ? promptRecord.category : 'unknown';
-    const { verdict, method } = await judgeXSTestAppropriate(promptRecord.prompt, output, category);
+    const { verdict, method, judge_model } = await judgeXSTestAppropriate(promptRecord.prompt, output, category);
     return {
       asr: null,
       truthful: null,
@@ -575,6 +639,7 @@ async function scoreOutput(
       xstest_appropriate: verdict === null ? null : (verdict ? 1 : 0),
       strong_reject_harm: null,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
@@ -588,7 +653,7 @@ async function scoreOutput(
     // found null on every row, effectively dropping all StrongREJECT data
     // from aggregation. Now reads harm_score directly and stores it in
     // strong_reject_harm, the field aggregate-report.ts expects.
-    const { harm_score, method } = await judgeStrongREJECT(promptRecord.prompt, output);
+    const { harm_score, method, judge_model } = await judgeStrongREJECT(promptRecord.prompt, output);
     return {
       asr: null,
       truthful: null,
@@ -596,12 +661,13 @@ async function scoreOutput(
       xstest_appropriate: null,
       strong_reject_harm: harm_score,
       judge_method: method,
+      judge_model: judge_model ?? null,
     };
   }
 
   // 'harm' — AdvBench, HarmBench, JailbreakBench, XSTest-Contrast
   const target = typeof promptRecord.target === 'string' ? promptRecord.target : undefined;
-  const { verdict, method } = await judgeHarmCompliance(promptRecord.prompt, output, target);
+  const { verdict, method, judge_model } = await judgeHarmCompliance(promptRecord.prompt, output, target);
   return {
     asr: verdict === null ? null : (verdict ? 1 : 0),
     truthful: null,
@@ -609,6 +675,7 @@ async function scoreOutput(
     xstest_appropriate: null,
     strong_reject_harm: null,
     judge_method: method,
+    judge_model: judge_model ?? null,
   };
 }
 
@@ -622,7 +689,7 @@ function extractCRSMetrics(
   const C = crs?.C ?? 0.0;
   const R = crs?.R ?? 0.0;
   const S = crs?.S ?? 0.0;
-  const M = Math.min(C, R, S);
+  const M = crs?.M ?? Math.min(C, R, S);
   return { C, R, S, M };
 }
 
@@ -644,17 +711,43 @@ async function runBenchmark(
       `Unknown benchmark: ${benchmarkName}. Available: ${Object.keys(BENCHMARK_CONFIGS).join(', ')}`,
     );
   }
+  // fix (2026-07-25): judge-verdict cache, scoped per benchmark file so
+  // concurrent shard processes for DIFFERENT benchmarks never touch the same
+  // file. KNOWN LIMITATION, stated plainly rather than solved: concurrent
+  // shard processes for the SAME benchmark each load this file once, then
+  // each write their own accumulated in-memory state back at the end without
+  // merging concurrent siblings' writes — the last writer can overwrite
+  // entries a sibling shard added in the meantime. This only costs hit-rate
+  // (a lost entry is simply recomputed next time), never correctness: the
+  // cache still never persists a null/exhausted/fallback verdict (see
+  // judge_cache.ts), so a race can make the cache less useful, not wrong.
+  const judgeCache = new JudgeCache(`.lexbench-cache/judge-verdicts-${config.name.toLowerCase()}.json`).load();
 
   console.log(`\n[${config.name}] Loading prompts from ${config.dataFile}...`);
   const prompts = await loadPrompts(config.dataFile, config.parser, limit);
   console.log(`[${config.name}] Loaded ${prompts.length} prompts.`);
 
-  let promptsToRun = prompts;
+  // fix (2026-07-25) — SEEDED SHUFFLE, unbiases sustained-exhaustion
+  // truncation. promptsToRun previously ran in dataset order; the 2026-07-17
+  // circuit breaker below marks the REMAINDER of promptsToRun 'skipped' once
+  // exhaustion is sustained, so dataset order made a truncated run's scored
+  // subset the dataset's PREFIX, not a sample of it (measured: XSTest
+  // coverage 93-100% -> ~36% and appropriate_pct 97.2 -> 86.8 over the same
+  // window those are currently indistinguishable causes for). Seeded on
+  // benchmark name + the whole UTC day: stable across this benchmark's shard
+  // processes launched in the same run (each shard is its own node
+  // invocation — see below — and all shards for one run must agree on a
+  // single permutation for non-overlapping slices), while varying day to day
+  // so a truncated run does not bury the same tail forever. See shuffle.ts.
+  const shuffleRunSeed = Math.floor(Date.now() / 86400000);
+  const shuffledPrompts = shuffleForBenchmark(prompts, config.name, shuffleRunSeed);
+
+  let promptsToRun = shuffledPrompts;
   if (shardIndex !== undefined && shardSize !== undefined) {
     const startIndex = shardIndex * shardSize;
-    const endIndex = Math.min(startIndex + shardSize, prompts.length);
-    promptsToRun = prompts.slice(startIndex, endIndex);
-    console.log(`[${config.name}] Running shard ${shardIndex} (prompts ${startIndex}-${endIndex - 1} of ${prompts.length}). Total prompts in shard: ${promptsToRun.length}`);
+    const endIndex = Math.min(startIndex + shardSize, shuffledPrompts.length);
+    promptsToRun = shuffledPrompts.slice(startIndex, endIndex);
+    console.log(`[${config.name}] Running shard ${shardIndex} (prompts ${startIndex}-${endIndex - 1} of ${shuffledPrompts.length}, seeded-shuffle order). Total prompts in shard: ${promptsToRun.length}`);
   }
 
   const results: LexBenchResult[] = [];
@@ -667,129 +760,129 @@ async function runBenchmark(
   const sessionIdPrefix = `lexbench-${config.name.toLowerCase()}-${shardTag}-${Date.now()}`;
   let exhaustedCount = 0;
   let recoveredCount = 0; // fix (2026-07-11): prompts that needed a retry but got real data on retry
+  // fix (2026-07-17): consecutive TOTAL exhaustions (both arms, each already
+  // past its own per-prompt retry) — feeds the SUSTAINED_EXHAUSTION_THRESHOLD
+  // circuit breaker below. Resets to 0 on any prompt that isn't totally
+  // exhausted, so an isolated bad streak doesn't trip it.
+  let consecutiveExhaustions = 0;
 
   for (let i = 0; i < promptsToRun.length; i++) {
     const prompt = promptsToRun[i];
-    const startTime = Date.now();
 
-    // Cache keyed by benchmark; grounded-judge scores are more expensive to
-    // recompute (network calls) than the old local calc, so caching matters
-    // more now. Cached entries must keep real (non-legacy-shaped) metrics —
-    // a cache entry from before this fix won't have the new fields and is
-    // treated as a miss below.
     const cachedResult = cacheManager.get(prompt.prompt, config.name);
-    const cachedHasNewShape = cachedResult
-      && cachedResult.bare_metrics && 'judge_method' in cachedResult.bare_metrics;
-
-    if (cachedResult && cachedHasNewShape) {
+    if (cachedResult && 'judge_method' in (cachedResult.bare_metrics ?? {})
+      && cachedResult.bare_metrics && 'judge_method' in cachedResult.bare_metrics) {
       console.log(`[${config.name}] Cache hit for prompt ${i + 1}/${promptsToRun.length} (ID: ${prompt.id})`);
       const derivedMath = runRealAureonicsMath(prompt.prompt, cachedResult.raw_output, cachedResult.governed_output);
-      const lexMetrics = cachedResult.lex_metrics ?? { C: derivedMath.C, R: derivedMath.R, S: derivedMath.S, M: derivedMath.M };
       results.push({
-        benchmark: config.name,
-        prompt_id: String(prompt.id),
+        id: prompt.id,
         prompt: prompt.prompt,
+        category: typeof prompt.category === 'string' ? prompt.category : undefined,
+        target: typeof prompt.target === 'string' ? prompt.target : undefined,
         raw_output: cachedResult.raw_output,
         governed_output: cachedResult.governed_output,
-        bare_metrics: cachedResult.bare_metrics as unknown as OutputMetrics,
-        governed_metrics: (cachedResult.governed_metrics ?? cachedResult.metrics) as unknown as OutputMetrics,
-        lex_metrics: lexMetrics,
-        intervention: cachedResult.intervention ?? lexMetrics.M < 0.08,
-        timestamp: cachedResult.timestamp,
-        duration_ms: 0,
+        raw_provider: null,
+        governed_provider: null,
+        bare_metrics: cachedResult.bare_metrics as OutputMetrics,
+        governed_metrics: cachedResult.governed_metrics as OutputMetrics,
+        C: null, R: null, S: null, M: null,
+        intervened: false,
+        attack_type: null,
+        cached: true,
       });
       continue;
     }
 
     try {
       const promptLabel = `prompt ${i + 1}/${promptsToRun.length} (ID: ${prompt.id})`;
-      console.log(`[${config.name}] Processing ${promptLabel}...`);
-
-      // fix (2026-07-11): retry the whole call on total exhaustion (see
-      // callGovernAPIWithExhaustionRetry / file header).
-      const { result: govResponse, retries } = await callGovernAPIWithExhaustionRetry(
+      const { response: govResponse, recovered, totallyExhausted } = await callGovernAPIWithExhaustionRetry(
         endpoint, prompt.prompt, `${sessionIdPrefix}-${prompt.id.slice(0, 20)}`, config.name, promptLabel,
       );
-      const duration = Date.now() - startTime;
-      if (retries > 0 && !isTotalExhaustion(govResponse)) recoveredCount++;
 
-      // fix (2026-07-10): score each arm against ITS OWN provider field — the
-      // bare and governed arms can independently succeed/fail.
-      const rawExhausted = isProviderExhausted(govResponse.raw_output, govResponse.raw_provider);
-      const govExhausted = isProviderExhausted(
-        govResponse.governed_output,
-        govResponse.governed_source === 'unavailable' ? null : govResponse.governed_provider,
-      );
-      if (rawExhausted || govExhausted) exhaustedCount++;
+      if (recovered) recoveredCount++;
 
-      const [bareMetrics, governedMetrics] = await Promise.all([
-        scoreOutput(config, prompt, govResponse.raw_output, govResponse.raw_provider),
-        scoreOutput(config, prompt, govResponse.governed_output,
-          govResponse.governed_source === 'unavailable' ? null : govResponse.governed_provider),
-      ]);
-      const crsMetrics = extractCRSMetrics(govResponse.crs);
-
-      const result: LexBenchResult = {
-        benchmark: config.name,
-        prompt_id: String(prompt.id),
-        prompt: prompt.prompt,
-        raw_output: govResponse.raw_output,
-        governed_output: govResponse.governed_output,
-        bare_metrics: bareMetrics,
-        governed_metrics: governedMetrics,
-        lex_metrics: crsMetrics,
-        intervention: govResponse.intervention ?? crsMetrics.M < 0.08,
-        timestamp: new Date().toISOString(),
-        duration_ms: duration,
-        ...(retries > 0 ? { exhaustion_retries: retries } : {}),
-      };
-
-      if (govResponse.error) {
-        // Do not cache errors: a transient 5xx/network failure should not become
-        // a permanent zero-output benchmark row on future runs.
-        result.error = govResponse.error;
-      } else if (!rawExhausted && !govExhausted) {
-        // fix (2026-07-10): don't cache provider-exhaustion fallback content
-        // either — a transient quota exhaustion should not become a
-        // permanent "provider-exhausted" cache entry future runs replay.
-        cacheManager.set(prompt.prompt, config.name, govResponse.raw_output, govResponse.governed_output, {
-          bare_metrics: bareMetrics,
-          governed_metrics: governedMetrics,
-          lex_metrics: crsMetrics,
-          intervention: result.intervention,
-        });
+      if (totallyExhausted) {
+        exhaustedCount++;
+        consecutiveExhaustions++;
+        if (consecutiveExhaustions >= SUSTAINED_EXHAUSTION_THRESHOLD) {
+          const remaining = promptsToRun.length - (i + 1);
+          console.warn(
+            `[${config.name}] ⚠ SUSTAINED EXHAUSTION: ${SUSTAINED_EXHAUSTION_THRESHOLD} consecutive total-exhaustion prompts. ` +
+            `Skipping the remaining ${remaining} prompts ` +
+            `in this benchmark/shard rather than grinding through them for the same doomed outcome. ` +
+            `They will be recorded as skipped, not scored.`,
+          );
+          for (let j = i + 1; j < promptsToRun.length; j++) {
+            const skippedPrompt = promptsToRun[j];
+            results.push({
+              id: skippedPrompt.id,
+              prompt: skippedPrompt.prompt,
+              category: typeof skippedPrompt.category === 'string' ? skippedPrompt.category : undefined,
+              target: typeof skippedPrompt.target === 'string' ? skippedPrompt.target : undefined,
+              raw_output: '',
+              governed_output: '',
+              raw_provider: null,
+              governed_provider: null,
+              bare_metrics: { asr: null, truthful: null, injection_resisted: null, xstest_appropriate: null, strong_reject_harm: null, judge_method: 'skipped-sustained-exhaustion' },
+              governed_metrics: { asr: null, truthful: null, injection_resisted: null, xstest_appropriate: null, strong_reject_harm: null, judge_method: 'skipped-sustained-exhaustion' },
+              C: null, R: null, S: null, M: null,
+              intervened: false,
+              attack_type: null,
+              cached: false,
+            });
+          }
+          break;
+        }
+      } else {
+        consecutiveExhaustions = 0;
       }
 
-      results.push(result);
-    } catch (err) {
-      console.error(`[${config.name}] Error processing prompt ${i + 1}: ${err}`);
+      const { C, R, S, M } = extractCRSMetrics(govResponse.crs);
+
+      const [bare_metrics, governed_metrics] = await Promise.all([
+        scoreOutput(config, prompt, govResponse.raw_output, govResponse.raw_provider, judgeCache),
+        scoreOutput(config, prompt, govResponse.governed_output,
+          govResponse.governed_source === 'unavailable' ? null : govResponse.governed_provider, judgeCache),
+      ]);
+
       results.push({
-        benchmark: config.name,
-        prompt_id: String(prompt.id),
+        id: prompt.id,
         prompt: prompt.prompt,
+        category: typeof prompt.category === 'string' ? prompt.category : undefined,
+        target: typeof prompt.target === 'string' ? prompt.target : undefined,
+        raw_output: govResponse.raw_output,
+        governed_output: govResponse.governed_output,
+        raw_provider: govResponse.raw_provider,
+        governed_provider: govResponse.governed_provider,
+        bare_metrics,
+        governed_metrics,
+        C, R, S, M,
+        intervened: govResponse.intervened ?? false,
+        attack_type: govResponse.attack_type ?? null,
+        cached: false,
+        crs_trajectory: govResponse.crs_trajectory ?? null,
+      });
+
+      cacheManager.set(prompt.prompt, config.name, govResponse.raw_output, govResponse.governed_output, {
+        bare_metrics, governed_metrics,
+      });
+    } catch (err) {
+      console.error(`[${config.name}] Error on prompt ${prompt.id}: ${err}`);
+      results.push({
+        id: prompt.id,
+        prompt: prompt.prompt,
+        category: typeof prompt.category === 'string' ? prompt.category : undefined,
+        target: typeof prompt.target === 'string' ? prompt.target : undefined,
         raw_output: '',
         governed_output: '',
-        bare_metrics: {
-          asr: null,
-          truthful: null,
-          injection_resisted: null,
-          xstest_appropriate: null,
-          strong_reject_harm: null,
-          judge_method: 'error',
-        },
-        governed_metrics: {
-          asr: null,
-          truthful: null,
-          injection_resisted: null,
-          xstest_appropriate: null,
-          strong_reject_harm: null,
-          judge_method: 'error',
-        },
-        lex_metrics: { C: 0.0, R: 0.0, S: 0.0, M: 0.0 },
-        intervention: false,
-        timestamp: new Date().toISOString(),
-        duration_ms: Date.now() - startTime,
-        error: String(err),
+        raw_provider: null,
+        governed_provider: null,
+        bare_metrics: { asr: null, truthful: null, injection_resisted: null, xstest_appropriate: null, strong_reject_harm: null, judge_method: 'error' },
+        governed_metrics: { asr: null, truthful: null, injection_resisted: null, xstest_appropriate: null, strong_reject_harm: null, judge_method: 'error' },
+        C: null, R: null, S: null, M: null,
+        intervened: false,
+        attack_type: null,
+        cached: false,
       });
     }
   }
@@ -802,6 +895,15 @@ async function runBenchmark(
   if (exhaustedCount > 0) {
     console.warn(`[${config.name}] ⚠ ${exhaustedCount}/${promptsToRun.length} prompts hit provider exhaustion on at least one arm — excluded from scoring, not counted as real verdicts.`);
   }
+
+  // fix (2026-07-25): persist any new verdicts this run computed. Saved here
+  // (once per completed benchmark, not per-prompt) so a normal run writes
+  // once, while an early throw/exit still loses at most the current
+  // benchmark's accumulated verdicts, not prior benchmarks' in an 'all' run.
+  const cacheStats = judgeCache.stats();
+  console.log(`[${config.name}] Judge cache: ${cacheStats.hits} hit / ${cacheStats.misses} miss (${(cacheStats.hit_rate * 100).toFixed(1)}%), ${cacheStats.stores} new verdict(s) stored.`);
+  judgeCache.save();
+
   return results;
 }
 
@@ -809,21 +911,14 @@ async function runBenchmark(
 // Save Results to JSONL
 // ────────────────────────────────────────────────────────────────────────────
 
-function saveResults(results: LexBenchResult[], benchmarkName: string): string {
+function saveResults(results: LexBenchResult[], benchmarkName: string): void {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  const outputFile = path.join(
-    'data',
-    `lexbench-${benchmarkName.toLowerCase()}-${timestamp}.jsonl`,
-  );
-
-  const stream = fs.createWriteStream(outputFile);
-  for (const result of results) {
-    stream.write(JSON.stringify(result) + '\n');
-  }
-  stream.end();
-
-  console.log(`\n[SAVED] Results written to ${outputFile}`);
-  return outputFile;
+  const outDir = path.join(process.cwd(), 'results');
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+  const outPath = path.join(outDir, `${benchmarkName.toLowerCase()}-${timestamp}.jsonl`);
+  const lines = results.map((r) => JSON.stringify(r));
+  fs.writeFileSync(outPath, lines.join('\n') + '\n');
+  console.log(`[${benchmarkName}] Saved ${results.length} results to ${outPath}`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

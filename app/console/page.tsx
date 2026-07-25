@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { flushPendingLead } from '@/lib/lead_retry';
 import SignalPillBar from '@/components/SignalPillBar';
 import UpgradeModal from '@/components/UpgradeModal';
 import DynamicSimplex from '@/components/DynamicSimplex';
@@ -31,7 +32,7 @@ function MTimeline({ history }: { history: Array<{ M: number; health: string; de
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       {/* "Session M" — these are historical per-turn values, not the current M */}
-      <span className="text-xs font-mono text-slate-700 mr-1">Session M:</span>
+      <span className="text-xs font-mono text-slate-400 mr-1">Session M:</span>
       {history.map((h, i) => {
         const cfg = HEALTH_CFG[h.health] ?? HEALTH_CFG.OPTIMAL;
         return (
@@ -63,7 +64,7 @@ function LyapunovSparkline({ history }: { history: Array<{ V: number; deltaV: nu
   return (
     <div className="rounded-lg p-3" style={{ background: '#020408', border: '1px solid #1a2040' }}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-mono text-slate-600">{'// Lyapunov V(t)'}</span>
+        <span className="text-xs font-mono text-slate-400">{'// Lyapunov V(t)'}</span>
         <span className="text-xs font-mono" style={{ color: trending ? '#10b981' : '#ef4444' }}>
           {trending ? '↓ converging' : '↑ diverging'}
         </span>
@@ -76,7 +77,7 @@ function LyapunovSparkline({ history }: { history: Array<{ V: number; deltaV: nu
           return <circle key={i} cx={x} cy={y} r="2" fill={trending ? '#10b981' : '#ef4444'} />;
         })}
       </svg>
-      <div className="flex justify-between mt-1 text-xs font-mono text-slate-700">
+      <div className="flex justify-between mt-1 text-xs font-mono text-slate-400">
         <span>V={vals[0].toFixed(4)}</span>
         <span>V={vals[vals.length - 1].toFixed(4)}</span>
       </div>
@@ -96,7 +97,7 @@ function CRSVisualization({ state }: { state?: { C: number; R: number; S: number
   const s_pct = (S / total) * 100;
   return (
     <div className="rounded p-3 space-y-2" style={{ background: '#020408', border: '1px solid #1a2040' }}>
-      <div className="text-xs font-mono text-slate-600 mb-2">{'// Constitutional State (C+R+S=1) · kernel CRS'}</div>
+      <div className="text-xs font-mono text-slate-400 mb-2">{'// Constitutional State (C+R+S=1) · kernel CRS'}</div>
       <div className="flex gap-1 h-6 rounded overflow-hidden border" style={{ borderColor: '#1a2040' }}>
         <div className="flex items-center justify-center text-xs font-bold text-white" style={{ width: `${c_pct}%`, background: '#3b82f6', minWidth: '20px' }}>
           {c_pct > 15 && `C ${C.toFixed(2)}`}
@@ -108,7 +109,7 @@ function CRSVisualization({ state }: { state?: { C: number; R: number; S: number
           {s_pct > 15 && `S ${S.toFixed(2)}`}
         </div>
       </div>
-      <div className="flex justify-between text-xs font-mono text-slate-600 mt-1">
+      <div className="flex justify-between text-xs font-mono text-slate-400 mt-1">
         <span>Continuity: {C.toFixed(4)}</span>
         <span>Reciprocity: {R.toFixed(4)}</span>
         <span>Sovereignty: {S.toFixed(4)}</span>
@@ -134,25 +135,25 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
   return (
     <div className="rounded-lg p-3 sm:p-4 font-mono text-xs space-y-2 sm:space-y-3"
       style={{ background: '#020408', border: '1px solid #1a2040' }}>
-      <div className="text-slate-600 mb-1">{'// System State Overview'}</div>
+      <div className="text-slate-400 mb-1">{'// System State Overview'}</div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {[
           { label: 'θ', value: theta.toFixed(3), sub: `eff ${effTheta.toFixed(3)}`, color: '#c9a84c' },
           { label: 'Temp', value: temp.toFixed(2), sub: hcfg.label, color: hcfg.color },
-          { label: 'atk_p', value: atkP.toFixed(3), sub: atkP > 0.1 ? 'elevated' : 'clear', color: atkP > 0.1 ? '#f97316' : '#334155' },
+          { label: 'atk_p', value: atkP.toFixed(3), sub: atkP > 0.1 ? 'elevated' : 'clear', color: atkP > 0.1 ? '#f97316' : '#7e8ba0' },
         ].map(({ label, value, sub, color }) => (
           <div key={label} className="rounded p-2 text-center" style={{ background: '#0a0d18', border: '1px solid #1a2040' }}>
             <div className="font-black text-base leading-none" style={{ color }}>{value}</div>
-            <div className="text-slate-700 mt-0.5" style={{ fontSize: 9 }}>{sub}</div>
-            <div className="text-slate-600 uppercase tracking-wider" style={{ fontSize: 9 }}>{label}</div>
+            <div className="text-slate-400 mt-0.5" style={{ fontSize: 9 }}>{sub}</div>
+            <div className="text-slate-400 uppercase tracking-wider" style={{ fontSize: 9 }}>{label}</div>
           </div>
         ))}
       </div>
 
       <div className="flex items-center gap-3">
         <div className="flex-1 flex items-center gap-2">
-          <span className="text-slate-600">δV:</span>
+          <span className="text-slate-400">δV:</span>
           <span style={{ color: dV < 0 ? '#10b981' : '#ef4444' }}>
             {dV > 0 ? '+' : ''}{dV.toFixed(5)}
           </span>
@@ -161,7 +162,7 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-slate-600">stab:</span>
+          <span className="text-slate-400">stab:</span>
           <span style={{ color: stabRatio > 0.6 ? '#10b981' : '#f59e0b' }}>
             {(stabRatio * 100).toFixed(0)}%
           </span>
@@ -170,7 +171,7 @@ function KernelMetricsPanel({ kernel }: { kernel: Record<string, unknown> }) {
 
       {(metrics.c_measured !== undefined) && (
         <div className="flex gap-2 flex-wrap">
-          <span className="text-slate-600">Research Metrics:</span>
+          <span className="text-slate-400">Research Metrics:</span>
           {[
             { l: 'CCP', v: metrics.c_measured, color: '#3b82f6' },
             { l: 'IEC', v: metrics.r_measured, color: '#10b981' },
@@ -213,7 +214,7 @@ function TermProgressBar({ value, max = 1, color = '#22c55e', label }: { value: 
 /* ── Terminal timestamp ─────────────────────────────────────── */
 function TS() {
   return (
-    <span className="text-slate-600 font-mono text-xs select-none mr-2">
+    <span className="text-slate-400 font-mono text-xs select-none mr-2">
       [{new Date().toISOString().slice(11, 19)}]
     </span>
   );
@@ -228,6 +229,9 @@ export default function Console() {
   const [pulse, setPulse] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
   const [totalRuns, setTotalRuns] = useState<number | null>(null);
+  // 2026-07-20: true when /api/stats can't be reached — the counter's green
+  // "live" dot previously glowed unconditionally, even with the stats API down.
+  const [statsDown, setStatsDown] = useState(false);
   const [outputLines, setOutputLines] = useState<{ ts: string; text: string; color: string }[]>([]);
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'console';
@@ -251,8 +255,14 @@ export default function Console() {
   const error = stream.error;
   const res = stream.complete as GovernanceResponse | null;
 
+  // Retry any lead a previous visit failed to deliver (see lib/lead_retry.ts).
+  useEffect(() => { void flushPendingLead(); }, []);
+
   useEffect(() => {
-    fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
+    fetch('/api/stats')
+      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(d => { if (typeof d.runs === 'number') { setTotalRuns(d.runs); setStatsDown(false); } else { setStatsDown(true); } })
+      .catch(() => setStatsDown(true));
   }, []);
 
   useEffect(() => {
@@ -281,7 +291,11 @@ export default function Console() {
   const run = useCallback(async (promptOverride?: string) => {
     const p = (promptOverride ?? prompt).trim();
     if (apiCalls >= MAX_CALLS) { setShowUpgrade(true); return; }
-    if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 0) {
+    // 2026-07-20: gate moved from BEFORE the first run to before the second —
+    // the live demo is the best sales asset; let a visitor see one real
+    // governed result before asking for their email. They still get the
+    // same 10 free runs total after activating.
+    if (typeof window !== 'undefined' && !localStorage.getItem('lex_email_captured') && apiCalls === 1) {
       setShowEmail(true); return;
     }
     if (!p) return;
@@ -290,7 +304,10 @@ export default function Console() {
     addLine('> Starting safety analysis...', '#c9a84c');
     await runStream(p, sessionId);
     setTimeout(() => {
-      fetch('/api/stats').then(r => r.json()).then(d => setTotalRuns(d.runs)).catch(() => {});
+      fetch('/api/stats')
+        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+        .then(d => { if (typeof d.runs === 'number') { setTotalRuns(d.runs); setStatsDown(false); } else { setStatsDown(true); } })
+        .catch(() => setStatsDown(true));
     }, 1500);
   }, [apiCalls, prompt, runStream, sessionId, addLine]);
 
@@ -466,6 +483,13 @@ export default function Console() {
   const isHardRefusal = res ? isRefusal(res.governed_output) : false;
   const outputDiffers = !!res && res.governed_output !== anchoredText;
 
+  // 2026-07-21: both provider chains exhausted (all LLMs 429'd) — the shown
+  // text is a static fallback, not a real answer. Render an explicit
+  // rate-limited state instead of dressing up total failure as a governed
+  // response with a fake CRS/M readout (the CRS of a canned string is
+  // meaningless). See lib/sovereign_kernel.ts governed_source='unavailable'.
+  const providersExhausted = res?.governed_source === 'unavailable';
+
   // Three distinct output states:
   //   'rewritten' — the governor actively changed the output (intervention fired)
   //   'refused'   — the LLM itself generated a refusal without governor intervention
@@ -507,14 +531,14 @@ export default function Console() {
           </span>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/" className="text-xs font-mono text-slate-600 hover:text-slate-400 transition-colors">
+          <Link href="/" className="text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors">
             ← home
           </Link>
           <div className="flex items-center gap-2">
             <div className="hidden sm:block">
               <TermProgressBar value={apiCalls} max={MAX_CALLS} color={pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#22c55e'} label={`${apiCalls}/${MAX_CALLS}`} />
             </div>
-            <span className="sm:hidden text-xs font-mono text-slate-500">{apiCalls}/{MAX_CALLS}</span>
+            <span className="sm:hidden text-xs font-mono text-slate-300">{apiCalls}/{MAX_CALLS}</span>
           </div>
           <button
             onClick={() => setShowUpgrade(true)}
@@ -532,13 +556,13 @@ export default function Console() {
           {/* ── Global Runs Counter ─────────────────────── */}
           <div className="rounded-lg border px-4 py-3 flex items-center justify-between" style={{ background: '#070b14', borderColor: '#1a2040' }}>
             <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
-              <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#64748b' }}>Total governed runs</span>
+              <span className="w-2 h-2 rounded-full" style={statsDown ? { background: '#64748b' } : { background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+              <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#94a3b8' }}>Total governed runs</span>
             </div>
             {totalRuns !== null ? (
               <CountUp value={totalRuns} className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }} />
             ) : (
-              <span className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#64748b' }} aria-label="Loading total runs">———</span>
+              <span className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#94a3b8' }} aria-label={statsDown ? 'Total runs unavailable' : 'Loading total runs'}>{statsDown ? 'offline' : '———'}</span>
             )}
           </div>
 
@@ -546,8 +570,8 @@ export default function Console() {
           <div className="rounded-lg border p-4" style={{ background: '#070b14', borderColor: '#1a2040' }}>
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xs font-mono" style={{ color: '#c9a84c' }}>root@lex-praxis:~$</span>
-              <span className="text-xs font-mono text-slate-500">governance --prompt</span>
-              <span className="ml-auto text-xs font-mono text-slate-700">{MAX_CALLS - apiCalls} runs left</span>
+              <span className="text-xs font-mono text-slate-300">governance --prompt</span>
+              <span className="ml-auto text-xs font-mono text-slate-400">{MAX_CALLS - apiCalls} runs left</span>
             </div>
             <div className="relative">
               <textarea
@@ -568,7 +592,7 @@ export default function Console() {
             <SignalPillBar prompt={prompt} />
             {!res && !loading && (
               <div className="flex items-center gap-1.5 mt-3 -mx-1 px-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }} aria-label="Example prompts">
-                <span className="flex-shrink-0 text-xs font-mono mr-1" style={{ color: '#475569' }}>try ↦</span>
+                <span className="flex-shrink-0 text-xs font-mono mr-1" style={{ color: '#94a3b8' }}>try ↦</span>
                 {EXAMPLE_PROMPTS.map((ex) => {
                   const palette = {
                     identity:   { bg: '#07162b15', border: '#1e3a5f', color: '#60a5fa' },
@@ -588,12 +612,12 @@ export default function Console() {
               </div>
             )}
             <div className="flex items-center justify-between mt-3">
-              <span className="text-xs font-mono text-slate-700">{prompt.length}/5000</span>
+              <span className="text-xs font-mono text-slate-400">{prompt.length}/5000</span>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-700 hidden sm:block">⌘+Enter to run</span>
+                <span className="text-xs font-mono text-slate-400 hidden sm:block">⌘+Enter to run</span>
                 <button onClick={() => run()} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
                   className="px-5 py-2 rounded text-xs font-bold font-mono transition-all active:scale-95 disabled:opacity-30"
-                  style={{ background: prompt.trim() && !loading && apiCalls < MAX_CALLS ? 'linear-gradient(90deg, #c9a84c, #e8c96d)' : '#1a2040', color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#475569' }}>
+                  style={{ background: prompt.trim() && !loading && apiCalls < MAX_CALLS ? 'linear-gradient(90deg, #c9a84c, #e8c96d)' : '#1a2040', color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#94a3b8' }}>
                   {loading ? (<span className="flex items-center gap-2"><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />executing...</span>)
                     : apiCalls >= MAX_CALLS ? 'limit reached' : '⚡ run governance'}
                 </button>
@@ -606,16 +630,16 @@ export default function Console() {
             <div className="rounded-lg border p-4 font-mono text-xs space-y-1 max-h-48 overflow-y-auto"
               style={{ background: '#040609', borderColor: '#1a2040' }}
               role="log" aria-live="polite" aria-atomic="false" aria-label="Governance pipeline log">
-              <div className="text-slate-700 mb-2">{'// system output'}</div>
+              <div className="text-slate-400 mb-2">{'// system output'}</div>
               {outputLines.map((line, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  <span className="text-slate-700 flex-shrink-0">[{line.ts}]</span>
+                  <span className="text-slate-400 flex-shrink-0">[{line.ts}]</span>
                   <span style={{ color: line.color }}>{line.text}</span>
                 </div>
               ))}
               {loading && (
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-700">[{new Date().toISOString().slice(11, 19)}]</span>
+                  <span className="text-slate-400">[{new Date().toISOString().slice(11, 19)}]</span>
                   <span style={{ color: '#c9a84c' }}>{'> '}<span style={{ animation: 'term-blink 0.8s step-end infinite', display: 'inline-block', background: '#c9a84c', width: 6, height: 12, verticalAlign: 'middle' }} /></span>
                 </div>
               )}
@@ -660,13 +684,35 @@ export default function Console() {
                 <p className="text-xs text-green-400">
                   {stream.stage === 'pre_eval' ? 'Pre-evaluating constitutional risk...' : 'Initiating constitutional governance pipeline...'}
                 </p>
-                <p className="text-xs text-slate-600 mt-1">extracting CRS · checking M · evaluating velocity</p>
+                <p className="text-xs text-slate-400 mt-1">extracting CRS · checking M · evaluating velocity</p>
               </div>
             </div>
           )}
 
+          {/* ── Providers exhausted (all LLMs rate-limited) ─────────────── */}
+          {res && !loading && providersExhausted && (
+            <div ref={resultsRef} className="rounded-lg border p-4 font-mono text-xs"
+              style={{ background: '#1a1405', borderColor: '#78591f' }} aria-live="polite">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-amber-400 text-sm">⚠</span>
+                <span className="text-amber-400 font-bold text-sm">NO RESPONSE GENERATED · language providers rate-limited</span>
+              </div>
+              <p className="text-amber-200/70 leading-relaxed">
+                Every language provider was temporarily exhausted (HTTP 429) this turn, so no model
+                produced an answer. This is a capacity limit on the free-tier LLM quota, not a governance
+                decision — the constitutional state below is not shown because there is no real output to
+                measure. Please try again in a minute.
+              </p>
+              <button onClick={() => run()} type="button"
+                className="mt-3 px-3 py-1.5 rounded text-xs font-bold font-mono transition-all active:scale-95"
+                style={{ background: '#c9a84c', color: '#0a0a14' }}>
+                ↻ retry
+              </button>
+            </div>
+          )}
+
           {/* ── Results ─────────────────────────────────── */}
-          {res && !loading && (
+          {res && !loading && !providersExhausted && (
             <div ref={resultsRef} className="space-y-4">
 
               {/* Governor status */}
@@ -682,7 +728,7 @@ export default function Console() {
                 <div className="rounded-lg border p-3 font-mono text-xs flex items-center gap-2" style={{ background: '#050f0a', borderColor: '#14532d' }}>
                   <span className="text-green-400">✓</span>
                   <span className="text-green-400">GOVERNOR PASSED · constitutional bounds maintained</span>
-                  <span className="ml-auto text-slate-600">M = {((m?.m ?? 0) * 100).toFixed(1)}%</span>
+                  <span className="ml-auto text-slate-400">M = {((m?.m ?? 0) * 100).toFixed(1)}%</span>
                 </div>
               )}
 
@@ -694,7 +740,7 @@ export default function Console() {
               {/* M score terminal bar — CRS extraction metrics (current turn) */}
               {m && (
                 <div className="rounded-lg border p-4 font-mono text-xs space-y-2" style={{ background: '#040609', borderColor: '#1a2040' }}>
-                  <div className="text-slate-500 mb-3">{'// CRS extraction · M score (current turn)'}</div>
+                  <div className="text-slate-300 mb-3">{'// CRS extraction · M score (current turn)'}</div>
                   {[
                     { key: 'C', val: m.c, label: 'Continuity',  color: '#3b82f6' },
                     { key: 'R', val: m.r, label: 'Reciprocity', color: '#10b981' },
@@ -722,7 +768,7 @@ export default function Console() {
                   {tabs.map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-mono transition-all"
-                      style={{ color: tab === t.id ? '#c9a84c' : '#475569', background: tab === t.id ? '#0f1929' : 'transparent', borderBottom: tab === t.id ? '1px solid #c9a84c' : '1px solid transparent' }}>
+                      style={{ color: tab === t.id ? '#c9a84c' : '#94a3b8', background: tab === t.id ? '#0f1929' : 'transparent', borderBottom: tab === t.id ? '1px solid #c9a84c' : '1px solid transparent' }}>
                       {t.icon} {t.label}
                     </button>
                   ))}
@@ -786,10 +832,10 @@ export default function Console() {
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <TS />
-                        <span className="text-xs font-mono text-slate-500">{'// bare LLM output · no constitutional anchor'}</span>
+                        <span className="text-xs font-mono text-slate-300">{'// bare LLM output · no constitutional anchor'}</span>
                       </div>
                       <div className="rounded p-4 max-h-64 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap"
-                        style={{ background: '#020408', border: '1px solid #1a2040', color: '#64748b', fontFamily: 'inherit' }}>
+                        style={{ background: '#020408', border: '1px solid #1a2040', color: '#94a3b8', fontFamily: 'inherit' }}>
                         {res.raw_output || '[empty — governor refused the prompt; no bare generation made]'}
                       </div>
                     </div>
@@ -803,7 +849,7 @@ export default function Console() {
                       {stream.governor && (
                         <div className="rounded-lg p-4 font-mono text-xs space-y-2" style={{ background: '#020408', border: '1px solid #1a2040' }}>
                           <div className="flex items-center justify-between">
-                            <span className="text-slate-600">{'// Governor — Section 11 replicator dynamics'}</span>
+                            <span className="text-slate-400">{'// Governor — Section 11 replicator dynamics'}</span>
                             <span style={{ color: stream.governor.decision === 'INTERVENE' ? '#ef4444' : '#22c55e' }}>{stream.governor.decision}</span>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
@@ -814,20 +860,20 @@ export default function Console() {
                               { k: 'Lyapunov', v: stream.governor.lyapunov_stable ? '✓ stable' : '⚠ breach', color: stream.governor.lyapunov_stable ? '#22c55e' : '#ef4444' },
                             ].map(({ k, v, color }) => (
                               <div key={k} className="flex gap-2">
-                                <span className="text-slate-600 w-16">{k}:</span>
+                                <span className="text-slate-400 w-16">{k}:</span>
                                 <span style={{ color }}>{v}</span>
                               </div>
                             ))}
                           </div>
-                          {stream.governor.reason && <div className="text-slate-700 text-xs">{stream.governor.reason}</div>}
+                          {stream.governor.reason && <div className="text-slate-400 text-xs">{stream.governor.reason}</div>}
                         </div>
                       )}
 
                       {stream.law && (
                         <div className="rounded-lg p-3 font-mono text-xs" style={{ background: '#0a0800', border: '1px solid #c9a84c25' }}>
-                          <div className="text-slate-600 mb-1">{'// Vaulturex law invoked'}</div>
+                          <div className="text-slate-400 mb-1">{'// Vaulturex law invoked'}</div>
                           <div className="font-bold" style={{ color: '#c9a84c' }}>[{stream.law.book}] {stream.law.name}</div>
-                          <div className="text-slate-500 mt-1">{(stream.law as any).governor_use}</div>
+                          <div className="text-slate-300 mt-1">{(stream.law as { governor_use?: string }).governor_use}</div>
                         </div>
                       )}
 
@@ -835,14 +881,14 @@ export default function Console() {
                         <div className="rounded-lg p-3 font-mono text-xs"
                           style={{ background: stream.selfReferential.sovereignty_violated ? '#1a0505' : '#020408', border: `1px solid ${stream.selfReferential.sovereignty_violated ? '#ef444430' : '#1a2040'}` }}>
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-slate-600">{'// Self-referential CRS'}</span>
+                            <span className="text-slate-400">{'// Self-referential CRS'}</span>
                             <span style={{ color: stream.selfReferential.sovereignty_violated ? '#ef4444' : '#22c55e' }}>
                               {stream.selfReferential.sovereignty_violated ? 'Identity drift detected' : 'Identity confirmed'}
                             </span>
                           </div>
                           <div className="flex gap-4 text-xs">
-                            <span className="text-slate-600">S_raw: <span style={{ color: (stream.selfReferential.sovereignty_raw ?? 0) < 0.15 ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.sovereignty_raw?.toFixed(3)}</span></span>
-                            <span className="text-slate-600">Adjustment Applied: <span style={{ color: stream.selfReferential.fired ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.fired ? 'Yes' : 'No'}</span></span>
+                            <span className="text-slate-400">S_raw: <span style={{ color: (stream.selfReferential.sovereignty_raw ?? 0) < 0.15 ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.sovereignty_raw?.toFixed(3)}</span></span>
+                            <span className="text-slate-400">Adjustment Applied: <span style={{ color: stream.selfReferential.fired ? '#ef4444' : '#22c55e' }}>{stream.selfReferential.fired ? 'Yes' : 'No'}</span></span>
                           </div>
                         </div>
                       )}
@@ -855,7 +901,7 @@ export default function Console() {
                         const z = res.z_traj!;
                         return (
                           <div className="rounded p-4 font-mono text-xs space-y-1" style={{ background: '#020408', border: '1px solid #1a2040' }}>
-                            <div className="text-slate-600 mb-2">{'// z_traj state vector'}</div>
+                            <div className="text-slate-400 mb-2">{'// z_traj state vector'}</div>
                             {[
                               { key: 'velocity', val: z.velocity.toFixed(3), color: z.velocity < 0.1 ? '#22c55e' : z.velocity < 0.3 ? '#f59e0b' : '#ef4444' },
                               { key: 'n_stable', val: String(z.n_stable), color: z.n_stable >= 3 ? '#22c55e' : z.n_stable >= 1 ? '#f59e0b' : '#ef4444' },
@@ -863,7 +909,7 @@ export default function Console() {
                               { key: 'σ_viol', val: z.sigma_viol.toFixed(3), color: z.sigma_viol < 0.1 ? '#22c55e' : z.sigma_viol < 0.25 ? '#f59e0b' : '#ef4444' },
                             ].map(({ key, val, color }) => (
                               <div key={key} className="flex items-center gap-2">
-                                <span className="text-slate-600">{'>'}</span>
+                                <span className="text-slate-400">{'>'}</span>
                                 <span className="text-slate-400 w-20">{key}:</span>
                                 <span className="font-bold" style={{ color }}>{val}</span>
                               </div>
@@ -879,7 +925,7 @@ export default function Console() {
 
                       {res.triggers && (
                         <div className="rounded p-3 font-mono text-xs" style={{ background: '#020408', border: '1px solid #1a2040' }}>
-                          <div className="text-slate-600 mb-2">{'// trigger analysis'}</div>
+                          <div className="text-slate-400 mb-2">{'// trigger analysis'}</div>
                           <div className="flex flex-wrap gap-1.5">
                             {res.triggers.collapse && <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#1a0505', color: '#f87171', border: '1px solid #7f1d1d' }}>M_collapse</span>}
                             {res.triggers.velocity && <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#1c1005', color: '#fb923c', border: '1px solid #7c2d12' }}>‖dx/dt‖&gt;δ</span>}
@@ -899,7 +945,7 @@ export default function Console() {
                   {tab === 'audit' && (
                     <div className="font-mono text-xs space-y-3">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-slate-500">{'// governance audit trail'}</span>
+                        <span className="text-slate-300">{'// governance audit trail'}</span>
                         <div className="flex gap-2">
                           {/* Share link — uses receipt_id (kernel field) with audit_id as fallback */}
                           {receiptId && (
@@ -919,7 +965,7 @@ export default function Console() {
                               a.click(); URL.revokeObjectURL(url);
                             }}
                             className="px-2.5 py-1 rounded text-xs font-mono transition-all hover:opacity-80"
-                            style={{ background: '#1a2040', color: '#64748b', border: '1px solid #1a2040' }}>
+                            style={{ background: '#1a2040', color: '#94a3b8', border: '1px solid #1a2040' }}>
                             export ↓
                           </button>
                         </div>
@@ -927,7 +973,7 @@ export default function Console() {
                       {[
                         // receipt_id: kernel sends this as receipt_id; audit_id is an alias fallback.
                         { label: 'receipt_id', value: receiptId ?? 'N/A', color: '#c9a84c', href: receiptId ? `/audit/${receiptId}` : undefined },
-                        { label: 'version',    value: String(kx?.version ?? 'PRAXIS'), color: '#64748b', href: undefined },
+                        { label: 'version',    value: String(kx?.version ?? 'PRAXIS'), color: '#94a3b8', href: undefined },
                         { label: 'health_band', value: healthBand, color: kHcfg.color, href: undefined },
                         { label: 'M',          value: String(Number(kx?.M ?? m?.m ?? 0).toFixed(4)), color: kHcfg.color, href: undefined },
                         // Timestamp: prefer kernel-provided res.timestamp, fall back to responseTs
@@ -935,12 +981,12 @@ export default function Console() {
                         { label: 'timestamp',  value: new Date(res.timestamp ?? responseTs).toISOString(), color: '#94a3b8', href: undefined },
                         { label: 'governor',   value: projTriggered ? 'CBF PROJECTION' : intervened ? 'INTERVENED' : 'PASSED', color: projTriggered ? '#ef4444' : intervened ? '#f59e0b' : '#22c55e', href: undefined },
                         { label: 'pre_eval',   value: stream.preEval?.label ?? 'N/A', color: stream.preEval?.label === 'HIGH' ? '#ef4444' : '#22c55e', href: undefined },
-                        { label: 'law',        value: stream.law ? `${stream.law.book} — ${stream.law.name}` : 'none', color: stream.law ? '#c9a84c' : '#334155', href: undefined },
+                        { label: 'law',        value: stream.law ? `${stream.law.book} — ${stream.law.name}` : 'none', color: stream.law ? '#c9a84c' : '#7e8ba0', href: undefined },
                       ].map(({ label, value, color, href }) => (
                         <div key={label} className="rounded p-3" style={{ background: '#020408', border: '1px solid #1a2040' }}>
                           <div className="flex items-center gap-2">
-                            <span className="text-slate-600">{'>'}</span>
-                            <span className="text-slate-500 w-24">{label}:</span>
+                            <span className="text-slate-400">{'>'}</span>
+                            <span className="text-slate-300 w-24">{label}:</span>
                             {href ? (
                               <a href={href} target="_blank" rel="noopener noreferrer"
                                 className="break-all underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color }}>
@@ -953,7 +999,7 @@ export default function Console() {
                         </div>
                       ))}
                       <div className="rounded p-3 max-h-40 overflow-y-auto" style={{ background: '#020408', border: '1px solid #1a2040' }}>
-                        <div className="text-slate-600 mb-1">{'>'} metrics:</div>
+                        <div className="text-slate-400 mb-1">{'>'} metrics:</div>
                         <pre className="text-xs" style={{ color: '#22c55e' }}>
                           {JSON.stringify({ c: m?.c, r: m?.r, s: m?.s, m: m?.m, intervention: intervened }, null, 2)}
                         </pre>
@@ -965,7 +1011,7 @@ export default function Console() {
 
               {/* Quick re-run */}
               <div className="flex items-center gap-2 p-3 rounded font-mono text-xs" style={{ background: '#040609', border: '1px solid #1a2040' }}>
-                <span className="text-slate-600 flex-1">{'>'} run complete — edit prompt or re-run</span>
+                <span className="text-slate-400 flex-1">{'>'} run complete — edit prompt or re-run</span>
                 <button onClick={() => run()} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
                   className="px-3 py-1 rounded text-xs font-mono transition-all disabled:opacity-30"
                   style={{ background: '#c9a84c15', color: '#c9a84c', border: '1px solid #c9a84c30' }}>
@@ -986,7 +1032,7 @@ export default function Console() {
               {tabs.map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)}
                   className="flex-1 py-2.5 rounded text-xs font-mono transition-all"
-                  style={{ background: tab === t.id ? '#c9a84c' : '#0a0d18', color: tab === t.id ? '#07070d' : '#475569', border: `1px solid ${tab === t.id ? '#c9a84c' : '#1a2040'}` }}>
+                  style={{ background: tab === t.id ? '#c9a84c' : '#0a0d18', color: tab === t.id ? '#07070d' : '#94a3b8', border: `1px solid ${tab === t.id ? '#c9a84c' : '#1a2040'}` }}>
                   {t.icon}
                 </button>
               ))}
@@ -994,7 +1040,7 @@ export default function Console() {
           )}
           <button onClick={() => run()} disabled={!prompt.trim() || loading || apiCalls >= MAX_CALLS}
             className={`${res ? 'flex-shrink-0 px-5' : 'w-full'} py-3 rounded text-xs font-bold font-mono transition-all active:scale-95 disabled:opacity-30`}
-            style={{ background: prompt.trim() && !loading && apiCalls < MAX_CALLS ? 'linear-gradient(90deg, #c9a84c, #e8c96d)' : '#0a0d18', color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#475569', border: '1px solid #1a2040' }}>
+            style={{ background: prompt.trim() && !loading && apiCalls < MAX_CALLS ? 'linear-gradient(90deg, #c9a84c, #e8c96d)' : '#0a0d18', color: prompt.trim() && !loading && apiCalls < MAX_CALLS ? '#07070d' : '#94a3b8', border: '1px solid #1a2040' }}>
             {loading ? '...' : apiCalls >= MAX_CALLS ? 'upgrade ↗' : res ? '↺ re-run' : '⚡ run governance'}
           </button>
         </div>

@@ -55,6 +55,9 @@ export interface StrongRejectVerdict {
   /** The three raw axes, surfaced for auditability — never inferred or defaulted. */
   rubric: StrongRejectRubric | null;
   method: string;
+  /** feat (2026-07-16): which model served this verdict — see grounded_judge.ts's
+   * JudgeVerdict for why per-row judge identity is recorded. */
+  judge_model?: string | null;
 }
 
 /**
@@ -104,18 +107,19 @@ ${STRONG_REJECT_RUBRIC}`;
     // it must never be parsed as one. Checked explicitly rather than relying
     // on 'RESIST' happening to be unparseable by the rubric parser.
     if (result.provider === 'static') {
-      return { harm_score: null, rubric: null, method: 'unavailable' };
+      return { harm_score: null, rubric: null, method: 'unavailable', judge_model: result.model };
     }
 
     const rubric = parseStrongRejectRubric(result.text);
     if (!rubric) {
-      return { harm_score: null, rubric: null, method: 'unparseable' };
+      return { harm_score: null, rubric: null, method: 'unparseable', judge_model: result.model };
     }
 
     return {
       harm_score: strongRejectHarmScore(rubric),
       rubric,
       method: 'strong-reject-official-formula-genpurpose-judge',
+      judge_model: result.model,
     };
   } catch {
     return { harm_score: null, rubric: null, method: 'unavailable' };

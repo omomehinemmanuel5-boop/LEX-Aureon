@@ -1,0 +1,187 @@
+name: LexBench Recovery — Aggregate & Publish From Prior Run
+
+# Recovers a LexBench workflow run whose shards completed but whose
+# aggregate/publish step failed. Downloads the specified prior run's shard
+# artifacts, re-runs the CURRENT (main-HEAD) aggregate-report.ts and
+# publish-results.ts against them, and posts to the live leaderboard.
+#
+# Why this exists: GitHub Actions' "Re-run failed jobs" checks out the
+# original commit SHA the workflow was dispatched at, NOT current main.
+# When aggregate/publish fails due to a bug that has since been fixed on
+# main, re-running the failed job replays the same bug and fails
+# identically. This workflow uses actions/checkout@v4 on main (default), so
+# it always runs the current-HEAD aggregate/publish against a prior run's
+# shard data.
+#
+# It also permanently removes the "wait 6 more hours of provider quota to
+# re-run" trap: any future failed aggregate/publish is one workflow_dispatch
+# away from recovery, no shard re-execution needed.
+#
+# USAGE:
+#   Actions → "LexBench Recovery — Aggregate & Publish From Prior Run" → Run
+#   workflow → enter the numeric run ID of the failed run (the digits at the
+#   end of its URL) → Run. That's it. Works for a failed lexbench-prod.yml
+#   run OR a failed lexbench-extended.yml run — no need to specify which.
+#
+# INITIAL CONTEXT (2026-07-17): the two workflows dispatched on 2026-07-17
+# had all shards succeed but the aggregate-and-report job crashed at
+# "Publish results to live leaderboard" (1s) because a below-coverage-floor
+# diagnostic in aggregate-report.ts leaked to stdout, corrupting the
+# summary.json the publisher read. Fixed on main in commit a3732beb7c
+# ("stop the below-coverage-floor diagnostic leaking into summary.json").
+# This workflow lets those runs' shards publish under the fix without a
+# fresh 6-hour re-execution.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Numeric run ID of the failed workflow run (the digits at the end of its URL)'
+        required: true
+        type: string
+
+# Shares the same live-API mutex as the main workflows: no point running
+# publish concurrently with a live suite.
+concurrency:
+  group: lexbench-live-api-provider-quota
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  # Same rationale as the main workflows: post to the canonical www host
+  # directly so the 307 apex→www redirect never strips the Authorization
+  # header. See lexbench-prod.yml env block for the full incident note.
+  SITE_URL: https://www.lexaureon.com
+
+# fix (2026-07-17): the default GITHUB_TOKEN's scopes depend on the repo's
+# "Workflow permissions" setting (Settings → Actions → General). Many repos
+# default to the restrictive "Read repository contents permission" option,
+# which grants contents:read but NOT actions:read. `gh run download` needs
+# actions:read to list and fetch another run's artifacts — without this
+# block it silently gets a token that can check out the repo but cannot see
+# any workflow run's artifacts, and the download step fails. Declared
+# explicitly here rather than relying on the repo-level default, so this
+# workflow works regardless of what that setting is.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # Same fail-fast auth precheck as the main workflows. Runs in under a
+  # second; if BENCH_SECRET is wrong the recovery is aborted before we
+  # touch the artifacts at all. Verified directly against
+  # app/api/benchmarks/publish/route.ts's GET handler (2026-07-05 precheck
+  # addition) — GET with the same Authorization header returns 200 {ok:true}
+  # or 401/503 with a safe diagnostic reason, in under a second.
+  precheck-auth:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify BENCH_SECRET authorizes a publish
+        run: |
+          HTTP_CODE=$(curl -sS -L -o /tmp/precheck.json -w "%{http_code}" \
+            ${{ env.SITE_URL }}/api/benchmarks/publish \
+            -H "Authorization: Bearer ${{ secrets.BENCH_SECRET }}")
+          echo "HTTP status: $HTTP_CODE"
+          cat /tmp/precheck.json
+          echo ""
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::BENCH_SECRET precheck FAILED (HTTP $HTTP_CODE). Recovery aborted."
+            exit 1
+          fi
+          echo "BENCH_SECRET precheck passed — proceeding with recovery."
+
+  recover:
+    needs: precheck-auth
+    runs-on: ubuntu-latest
+    steps:
+      # Checks out main by default — so aggregate/publish run at CURRENT
+      # HEAD. This is the whole point: replaying a prior run's shards
+      # against the current, fixed aggregator.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      # gh is pre-installed on ubuntu-latest and auto-authenticates for the
+      # current repository via GITHUB_TOKEN — enough scope to list and
+      # download this repo's own Actions artifacts. No PAT required.
+      #
+      # fix (2026-07-17): NO --pattern filter. The two source workflows wrap
+      # their per-shard result files in DIFFERENTLY NAMED artifacts —
+      # lexbench-prod.yml uploads "lexbench-shard-results-N", but
+      # lexbench-extended.yml uploads "extended-benchmark-shard-N". A single
+      # hardcoded --pattern can only ever match one of the two workflows, so
+      # this recovery workflow would silently find 0 artifacts (and fail)
+      # every time it was pointed at an extended run. Downloading everything
+      # for the run and filtering by FILE name in the next step is what
+      # actually distinguishes real result shards from everything else in
+      # the run's artifacts (input datasets, final-report JSON, etc.) —
+      # runner.ts's saveResults() always writes result files as
+      # data/lexbench-<benchmark>-<timestamp>.jsonl regardless of which
+      # artifact name wraps them, so filtering on that filename prefix in
+      # the Aggregate step below is both correct and workflow-agnostic.
+      - name: Download all artifacts from run ${{ inputs.run_id }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p results
+          echo "Downloading all artifacts from run ${{ inputs.run_id }} ..."
+          gh run download ${{ inputs.run_id }} \
+            --repo ${{ github.repository }} \
+            --dir results/
+          echo ""
+          echo "Artifacts downloaded:"
+          find results/ -maxdepth 1 -mindepth 1 -type d | sort
+          echo ""
+          echo "Result-shard files discovered (data/lexbench-*.jsonl, any artifact):"
+          find results/ -type f -name "lexbench-*.jsonl" | sort
+          COUNT=$(find results/ -type f -name "lexbench-*.jsonl" | wc -l)
+          echo "Total result-shard files: $COUNT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::No result-shard files (lexbench-*.jsonl) found anywhere in run ${{ inputs.run_id }}'s artifacts. Either the run ID is wrong, the artifacts have expired (~90 days), or every shard in that run failed before producing output."
+            exit 1
+          fi
+
+      - name: Aggregate results
+        run: |
+          find results/ -name "lexbench-*.jsonl" -print0 | xargs -0 cat > all_results.jsonl 2>/dev/null || true
+          LINES=$(wc -l < all_results.jsonl 2>/dev/null || echo 0)
+          echo "Total result rows across all shards: $LINES"
+          if [ "$LINES" -eq 0 ]; then
+            echo "::error::No result rows found in artifacts from run ${{ inputs.run_id }} (every shard file is empty)."
+            exit 1
+          fi
+          # Aggregate stdout goes to summary.json. Diagnostics go to stderr
+          # (fixed 2026-07-17 in a3732beb7c). If summary.json ever contains
+          # a non-JSON first line again, THAT is the same bug back — file
+          # an issue and revert.
+          npx tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary.json
+          echo ""
+          echo "Summary sanity check (must parse as JSON):"
+          node -e "JSON.parse(require('fs').readFileSync('summary.json','utf-8')); console.log('  ✓ summary.json is valid JSON')"
+          echo ""
+          echo "Summary contents:"
+          cat summary.json
+
+      - name: Publish to live leaderboard
+        run: |
+          if [ ! -f summary.json ]; then
+            echo "::error::No summary.json — aggregate step must have failed silently."
+            exit 1
+          fi
+          npx tsx scripts/lexbench/publish-results.ts summary.json
+        env:
+          BENCH_SECRET:         ${{ secrets.BENCH_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+
+      - name: Upload recovered summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexbench-recovery-summary-${{ inputs.run_id }}
+          path: summary.json
+          if-no-files-found: warn

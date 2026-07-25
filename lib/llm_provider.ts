@@ -59,13 +59,54 @@
  * rate/quota failures (timeouts, 5xx, malformed responses) do NOT trigger a
  * cooldown, since those are more likely transient/request-specific rather
  * than an account-level exhaustion that will repeat identically on the next
- * call. Cooldown state is per-serverless-instance (module-level Map, not
- * persisted) — it self-heals on cold start and does not need a TTL sweep
- * beyond the per-entry expiry check at lookup time. This does not change
- * correctness (a real recovery within the cooldown window just means one
- * skipped attempt that would have failed anyway); it only removes the
- * repeated cost of asking a provider a question whose answer is already
- * known for the next few minutes.
+ * call.
+ *
+ * fix (2026-07-19) — COOLDOWN WAS PER-INSTANCE, NOT PER-DEPLOYMENT: the
+ * 2026-07-12 cooldown above was a plain in-memory Map, scoped to ONE Vercel
+ * serverless instance. Diagnosed directly from a real benchmark run's
+ * provenance data: a sharded run triggers MANY concurrent instances, each
+ * with its OWN fresh, empty cooldown state — so instance A discovering
+ * Gemini is 429'ing never became visible to instance B, which re-discovered
+ * the identical exhaustion from scratch on its own next call, paying the
+ * full round-trip cost again. Under a benchmark run's actual concurrency
+ * pattern (the exact scenario this mechanism was built for), it was
+ * structurally incapable of working. Cooldown state now lives in
+ * lib/provider_cooldown.ts, backed by a shared Turso table with a bounded
+ * local sync interval — see that file's header for the full design and
+ * why it doesn't just move the problem to hammering Turso instead. This
+ * part of the 2026-07-19 work is UNAFFECTED by the revert below — it's
+ * still live and still correct.
+ *
+ * fix (2026-07-19, second pass) / REVERTED 2026-07-20 — GENERATEGOVERNED
+ * ROTATION ACROSS BASE MODELS WAS A REAL SAFETY REGRESSION, NOT JUST A
+ * QUOTA OPTIMIZATION: this function was changed to rotate which of
+ * {Gemini-lite, Cerebras, (briefly) Groq-primary} led the chain, to spread
+ * load off Gemini. That was a mistake, caught directly by comparing a real
+ * post-change benchmark run against the documented historical baseline:
+ * JailbreakBench governed ASR had been consistently 4-8.5% across every
+ * real run in the preceding week (07-14 through 07-16); the first run after
+ * this rotation landed measured 13.04% governed ASR — 2-3x every historical
+ * value, with bare-arm ASR also elevated. The mechanism: callLLMRaw (the
+ * "bare" baseline arm) calls this SAME function (see
+ * lib/sovereign_kernel.ts) — so rotating the underlying model rotated which
+ * base model produced BOTH the bare baseline AND the governed response,
+ * for every turn. Every historical baseline number was produced by Gemini
+ * specifically, every time; Cerebras's gpt-oss-120b and Groq's models are
+ * plausibly less resistant to this dataset's specific jailbreak techniques
+ * than Gemini is, independent of the constitutional system prompt wrapped
+ * around them. This is not proven with a fully controlled per-provider
+ * comparison — it's strong circumstantial evidence from a real regression
+ * that appeared exactly when the rotation was introduced — but the stakes
+ * (a safety metric, not a convenience metric) mean the burden of proof
+ * belongs to the change, not the status quo. REVERTED: generateGoverned is
+ * now deterministic Gemini-lite-first again, exactly matching the
+ * configuration that produced every historical baseline number. The
+ * quota-distribution goal is still served by lib/lex_memory.ts's embedding
+ * provider rotation (Gemini/Jina) and lib/provider_cooldown.ts's shared
+ * cross-instance cooldown — neither of those touches which model generates
+ * content, so neither carries this risk. Generation-side load distribution,
+ * if revisited, needs a controlled per-provider ASR comparison FIRST, not
+ * shipped and checked afterward.
  *
  * Fallback chain (in order, generateWithFallback — the general default):
  *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
@@ -83,6 +124,9 @@
  *   7. Gemini   gemini-2.5-flash         — higher capability fallback
  *   8. Static constitutional response    — deterministic, no LLM
  */
+
+import { isOnCooldown, markCooldown } from './provider_cooldown';
+import { env } from './env';
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -181,6 +225,15 @@ export const MODELS = {
   MISTRAL: 'open-mistral-7b',
   GEMINI_LITE: 'gemini-3.1-flash-lite',
   GEMINI_FULL: 'gemini-2.5-flash',
+  // gemini-3.6-flash — GA 2026-07-21 (generativelanguage v1beta; 1M ctx, 64k
+  // out, thinking + tools). NOT yet wired into the production fallback chain:
+  // it is a PAID-tier model ($1.50/$7.50 per M tokens vs the flash-lite free
+  // tier), and swapping a base model is the exact class of change the file
+  // header flags as a past safety regression — so it is trialed via a live
+  // smoke test (scripts/try-gemini-36.ts) first, and any promotion into the
+  // chain is a separate, benchmarked decision. tryGemini() is model-agnostic,
+  // so no API-shape change is needed to use it.
+  GEMINI_FLASH_36: 'gemini-3.6-flash',
   QWEN: 'qwen-2.5-72b-instruct', // Placeholder for future Qwen integration
 };
 
@@ -192,21 +245,10 @@ function logProviderFailure(provider: string, reason: string): void {
   console.warn(`[llm_provider] ${provider} failed: ${reason}`);
 }
 
-// ── Rate/quota cooldown cache (2026-07-12) — see file header ──────────────────
-// Keyed by "provider:model" so e.g. Gemini lite and Gemini full (separate
-// quota buckets on Google's side, confirmed by them failing independently in
-// the diagnosing run) don't share a cooldown incorrectly.
+// ── Rate/quota cooldown (2026-07-12, made cross-instance 2026-07-19) ──────────
+// See lib/provider_cooldown.ts for the shared implementation and why it
+// replaced the plain in-memory Map that used to live here.
 const COOLDOWN_MS = 3 * 60 * 1000; // 3 min — short enough to recover promptly if quota resets mid-run, long enough to skip the bulk of a burst of same-cause 429s
-const _cooldownUntil = new Map<string, number>();
-
-function cooldownKey(provider: string, model: string): string {
-  return `${provider}:${model}`;
-}
-
-function isOnCooldown(provider: string, model: string): boolean {
-  const until = _cooldownUntil.get(cooldownKey(provider, model));
-  return until !== undefined && Date.now() < until;
-}
 
 // Only rate-limit/quota signals (429, 402, 403) mark a cooldown. Other
 // failures (timeouts, 5xx, malformed/empty responses) are more likely
@@ -214,15 +256,20 @@ function isOnCooldown(provider: string, model: string): boolean {
 // reproduce identically on the very next call — see file header.
 function markCooldownIfRateLimited(provider: string, model: string, status: number | null): void {
   if (status === 429 || status === 402 || status === 403) {
-    _cooldownUntil.set(cooldownKey(provider, model), Date.now() + COOLDOWN_MS);
-    logProviderFailure(provider, `entering ${COOLDOWN_MS / 1000}s cooldown for model=${model} after HTTP ${status}`);
+    markCooldown(provider, model, COOLDOWN_MS, `HTTP ${status}`);
+    logProviderFailure(provider, `entering ${COOLDOWN_MS / 1000}s cross-instance cooldown for model=${model} after HTTP ${status}`);
   }
 }
 
 // ── Provider implementations ─────────────────────────────────────────────────
 
 async function tryGroq(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (isOnCooldown('groq', model)) return null; // no request sent — known-dead until cooldown expires
+  if (await isOnCooldown('groq', model)) return null; // no request sent — known-dead until cooldown expires
+  // NOTE: GROQ_API_KEY is REQUIRED in lib/env.ts (app refuses to start without
+  // it), so env.GROQ_API_KEY throws rather than returning undefined if unset —
+  // wrong semantics for this fallback chain, which must degrade gracefully to
+  // the next provider instead of throwing mid-chain. Reads process.env directly
+  // for that reason; see lib/env.ts's REQUIRED set for the enforcement point.
   const key = process.env.GROQ_API_KEY;
   if (!key) { logProviderFailure('groq', 'GROQ_API_KEY not set'); return null; }
   try {
@@ -259,8 +306,8 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
 // base URL) so each provider's own quirks/rate-limit handling can diverge
 // later without entangling the two.
 async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (isOnCooldown('cerebras', model)) return null;
-  const key = process.env.CEREBRAS_API_KEY;
+  if (await isOnCooldown('cerebras', model)) return null;
+  const key = env.CEREBRAS_API_KEY;
   if (!key) { logProviderFailure('cerebras', 'CEREBRAS_API_KEY not set'); return null; }
   try {
     const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
@@ -287,8 +334,8 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
 }
 
 async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
-  if (isOnCooldown('mistral', MODELS.MISTRAL)) return null;
-  const key = process.env.MISTRAL_API_KEY;
+  if (await isOnCooldown('mistral', MODELS.MISTRAL)) return null;
+  const key = env.MISTRAL_API_KEY;
   if (!key) { logProviderFailure('mistral', 'MISTRAL_API_KEY not set'); return null; }
   try {
     const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -314,8 +361,8 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
 }
 
 async function tryGemini(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (isOnCooldown('gemini', model)) return null;
-  const key = process.env.GEMINI_API_KEY;
+  if (await isOnCooldown('gemini', model)) return null;
+  const key = env.GEMINI_API_KEY;
   if (!key) { logProviderFailure('gemini', 'GEMINI_API_KEY not set'); return null; }
   try {
     // Convert to Gemini format
@@ -412,8 +459,17 @@ export async function generateSingle(
 // ── Purpose-specific generators — each uses optimal provider for its role ──
 
 /**
- * Governed arm generation — Gemini primary (1,000 RPM free tier).
- * Rate-limit-proof for benchmarks. Falls back to Cerebras/Groq if Gemini fails.
+ * Governed arm generation — Gemini-lite primary, deterministic (REVERTED
+ * 2026-07-20 — see file header). Serves BOTH the raw and governed arms of
+ * every turn (see lib/sovereign_kernel.ts's callLLMRaw), which is exactly
+ * why this needs to be deterministic: rotating the underlying model here
+ * rotates which model produces BOTH the bare baseline and the governed
+ * response, and a real benchmark run showed that moved a safety metric
+ * (JailbreakBench ASR) 2-3x worse than every historical value the moment
+ * rotation was introduced. Quota distribution for generation specifically
+ * is not attempted here anymore — see lib/lex_memory.ts (embedding
+ * rotation) and lib/provider_cooldown.ts (shared cooldown) for the parts
+ * of the 2026-07-19 distribution work that are safe and still active.
  *
  * Role: produce the constitutionally governed response every turn.
  */
@@ -479,6 +535,10 @@ export async function generateRewrite(
  *
  * fix (2026-07-10): added Cerebras's gpt-oss-120b as a same-class-size,
  * independent-quota fallback before dropping to smaller/different models.
+ *
+ * Never rotated — verdict-provider consistency across a scored benchmark
+ * run has real value, and (2026-07-20) generateGoverned no longer competes
+ * with it for Groq's quota either — see that function's docstring.
  *
  * Role: score model outputs against benchmark rubrics (harm-compliance,
  * truthfulness, injection-resistance, over-refusal, refusal-severity) and,

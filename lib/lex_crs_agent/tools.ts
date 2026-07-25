@@ -1,7 +1,7 @@
 /**
  * Lex CRS Agent — Tool Implementations
  *
- * 15 canonical tools giving the agent live access to the Lexaureon system.
+ * 20 canonical tools giving the agent live access to the Lexaureon system.
  * Unified, coherent, no redundant logging.
  *
  * READ TOOLS:  read_file, list_directory, search_code, get_build_status,
@@ -15,6 +15,18 @@
  * SELF-REFLECTION TOOLS: self_reflect
  *
  * DESIGN JOURNAL TOOLS: log_decision, narrate_origin
+ *
+ * GITHUB ACTIONS TOOLS (2026-07-19): get_workflow_run, get_workflow_log,
+ *              dispatch_workflow, get_workflow_artifact,
+ *              check_github_token_scope — see each function's own header
+ *              comment for why it exists. Built the night a live benchmark
+ *              run's actual outcome was undiagnosable from outside this
+ *              server: get_build_status (repo-wide, no workflow filter) and
+ *              unauthenticated curl (60 req/hr shared pool, 403 on log
+ *              content regardless of rate limit) were both real, hard
+ *              dead ends. These use the SAME GITHUB_TOKEN write_file
+ *              already relies on — no new secret, 5,000 req/hr instead of
+ *              60, and real log/artifact access instead of none.
  *
  * MULTI-REPO:  read_file, write_file, list_directory, search_code all accept
  *              an optional `repo` parameter. Defaults to the frontend repo.
@@ -217,6 +229,199 @@ export async function get_build_status(): Promise<string> {
   return (data.workflow_runs ?? []).map(r =>
     `${r.conclusion === 'success' ? '✓' : r.conclusion === 'failure' ? '✗' : '⏳'} ${r.status} ${r.conclusion ?? ''} | ${r.head_commit.message.slice(0, 60)}`
   ).join('\n');
+}
+
+// ── get_workflow_run ───────────────────────────────────────────────────────────
+// fix (2026-07-19): get_build_status() above is hardcoded to the 3 MOST
+// RECENT runs across the ENTIRE repo, with no workflow filter — so on any
+// night with active commits, ci.yml (which fires on every push) crowds out
+// manually-dispatched workflows like lexbench-prod.yml or lexbench-
+// recovery.yml from ever appearing. Root cause of a real multi-hour
+// diagnostic gap: no tool existed to check a SPECIFIC workflow's runs, or a
+// SPECIFIC run's job/step status, so every check had to go through
+// unauthenticated curl from outside this server (60 req/hr per IP, shared
+// across whatever else hits that pool — exhausted repeatedly in one night).
+// This tool uses the SAME already-configured GITHUB_TOKEN as read_file/
+// write_file (ghFetch, defined above) — properly authenticated, 5,000
+// req/hr, no new secret required.
+//
+// With no run_id: lists recent runs for the given workflow file (filterable
+// by name, unlike get_build_status). With a run_id: shows that run's
+// job/step-level status — exactly what "is it actually still running, and
+// which step failed" requires, without leaving this server.
+export async function get_workflow_run({
+  workflow,
+  run_id,
+  repo = FRONTEND_REPO,
+}: { workflow?: string; run_id?: number; repo?: string }): Promise<string> {
+  if (run_id) {
+    const res = await ghFetch(`/repos/${repo}/actions/runs/${run_id}/jobs`);
+    if (!res.ok) return `Error: ${res.status} — could not fetch jobs for run ${run_id}`;
+    const data = await res.json() as {
+      jobs?: Array<{
+        id: number; name: string; status: string; conclusion: string | null;
+        started_at: string | null; completed_at: string | null;
+        steps?: Array<{ number: number; name: string; status: string; conclusion: string | null }>;
+      }>;
+    };
+    if (!data.jobs?.length) return `No jobs found for run ${run_id}.`;
+    return data.jobs.map(j => {
+      const icon = j.conclusion === 'success' ? '✓' : j.conclusion === 'failure' ? '✗' : j.status === 'in_progress' ? '⏳' : '·';
+      const steps = (j.steps ?? []).map(s =>
+        `    ${s.conclusion === 'success' ? '✓' : s.conclusion === 'failure' ? '✗' : s.status === 'in_progress' ? '⏳' : '·'} [${s.number}] ${s.name} (job_id=${j.id})`
+      ).join('\n');
+      return `${icon} ${j.name} | ${j.status} ${j.conclusion ?? ''}\n${steps}`;
+    }).join('\n\n');
+  }
+
+  if (!workflow) return 'Error: provide either workflow (filename, e.g. "lexbench-recovery.yml") or run_id.';
+  const res = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/runs?per_page=5`);
+  if (!res.ok) return `Error: ${res.status} — could not fetch runs for workflow ${workflow}`;
+  const data = await res.json() as {
+    workflow_runs?: Array<{
+      id: number; status: string; conclusion: string | null;
+      event: string; created_at: string; html_url: string;
+    }>;
+  };
+  if (!data.workflow_runs?.length) return `No runs found for workflow ${workflow}.`;
+  return data.workflow_runs.map(r =>
+    `${r.conclusion === 'success' ? '✓' : r.conclusion === 'failure' ? '✗' : r.status === 'in_progress' ? '⏳' : '·'} run_id=${r.id} | ${r.status} ${r.conclusion ?? ''} | ${r.event} | ${r.created_at}\n   ${r.html_url}`
+  ).join('\n');
+}
+
+// ── get_workflow_log ───────────────────────────────────────────────────────────
+// The piece that was FULLY blocked all night: unauthenticated calls to
+// GitHub's job-logs endpoint return 403 ("Must have admin rights to
+// Repository") regardless of the repo being public — log content requires
+// real auth, unlike run/job status metadata. With GITHUB_TOKEN (already
+// configured, already used by write_file) this works normally, since the
+// token's owner has actual admin rights on their own repo.
+//
+// Returns raw step log text. Logs can be large — this truncates to the last
+// maxChars characters by default (where the actual result/error usually is,
+// e.g. "Published successfully: ..." or the last diagnostic before a
+// failure), not the first, since the beginning of a long job log is almost
+// always npm install noise.
+export async function get_workflow_log({
+  job_id,
+  repo = FRONTEND_REPO,
+  maxChars = 8000,
+}: { job_id: number; repo?: string; maxChars?: number }): Promise<string> {
+  const res = await ghFetch(`/repos/${repo}/actions/jobs/${job_id}/logs`);
+  if (!res.ok) return `Error: ${res.status} — could not fetch logs for job ${job_id}. If this is a 403, GITHUB_TOKEN may lack the "actions:read" scope (or, for a classic PAT, the "repo" scope, which includes it).`;
+  const text = await res.text();
+  if (text.length <= maxChars) return text;
+  return `[...truncated ${text.length - maxChars} earlier characters...]\n\n${text.slice(-maxChars)}`;
+}
+
+// ── dispatch_workflow (2026-07-19) ─────────────────────────────────────────────
+// Every single trigger the night of 2026-07-18 (prod, extended twice,
+// recovery three times) needed a manual tap on a phone, because no dispatch
+// capability existed at all — the single most-repeated friction of that
+// whole session. This closes it.
+//
+// DELIBERATELY NOT wired through write_file_governed's interceptToolCall()
+// gate: that gate scores TEXT/FILE-WRITE risk (injection patterns, credential
+// access, destructive commands) — none of which describes what makes this
+// tool consequential. What makes it consequential is that it spends real
+// provider quota and wall-clock time, which is a judgment call about
+// TIMING and NECESSITY, not a constitutional-safety question the existing
+// governor is built to answer. That judgment stays with whoever is calling
+// this tool — confirm intent before calling it, the same as any other
+// action that spends money or sends something irreversible, rather than
+// treating "the tool exists" as standing authorization to use it.
+//
+// GitHub's dispatch endpoint is fire-and-forget: a successful call returns
+// 204 No Content with NO run ID in the response (a real, documented API
+// quirk, not an oversight here) — the new run has to be located by asking
+// again a moment later. This tool does that one short, bounded poll itself
+// (2s, once) so a single call is usually enough; if the run hasn't
+// registered yet, it tells the caller to check get_workflow_run(workflow)
+// shortly after rather than hanging on a longer poll loop that could run
+// into this serverless function's own execution time limit.
+export async function dispatch_workflow({
+  workflow,
+  ref = 'main',
+  inputs,
+  repo = FRONTEND_REPO,
+}: { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }): Promise<string> {
+  const res = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
+    method: 'POST',
+    body: JSON.stringify({ ref, inputs: inputs ?? {} }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return `Error: ${res.status} — dispatch failed for ${workflow}. ${body.slice(0, 300)}`;
+  }
+
+  // Short, single, bounded poll — see header note on why this isn't a loop.
+  await new Promise(r => setTimeout(r, 2000));
+  const check = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1&event=workflow_dispatch`);
+  if (check.ok) {
+    const data = await check.json() as { workflow_runs?: Array<{ id: number; status: string; created_at: string; html_url: string }> };
+    const latest = data.workflow_runs?.[0];
+    if (latest) {
+      return `✓ Dispatched ${workflow} (ref=${ref}${inputs ? `, inputs=${JSON.stringify(inputs)}` : ''}).\nrun_id=${latest.id} | ${latest.status} | ${latest.created_at}\n${latest.html_url}\n(Use get_workflow_run({ run_id: ${latest.id} }) to check job/step progress.)`;
+    }
+  }
+  return `✓ Dispatch request accepted for ${workflow} (ref=${ref}) — GitHub returns no run ID synchronously. Check get_workflow_run({ workflow: "${workflow}" }) in a few seconds to find the new run.`;
+}
+
+// ── get_workflow_artifact (2026-07-19) ─────────────────────────────────────────
+// Lists artifact METADATA (name, id, size, expiry) for a run — deliberately
+// NOT content extraction. GitHub Actions artifacts are ZIP archives; parsing
+// one server-side needs a real zip-decoding dependency (adm-zip, yauzl, or
+// similar), and none exists in this project yet. Adding one untested,
+// under time pressure, into an already-large shared tools file was a worse
+// trade than shipping the metadata-only version now: this alone would have
+// caught the 2026-07-17 upload that silently produced five 0-byte zip
+// entries (source size 0 KB is visible directly here) — the specific
+// failure that cost real diagnostic time before it was found by hand. Full
+// content extraction is a real, separate follow-up if it's ever worth the
+// dependency.
+export async function get_workflow_artifact({
+  run_id,
+  repo = FRONTEND_REPO,
+}: { run_id: number; repo?: string }): Promise<string> {
+  const res = await ghFetch(`/repos/${repo}/actions/runs/${run_id}/artifacts?per_page=30`);
+  if (!res.ok) return `Error: ${res.status} — could not list artifacts for run ${run_id}`;
+  const data = await res.json() as {
+    artifacts?: Array<{
+      id: number; name: string; size_in_bytes: number; expired: boolean; created_at: string;
+    }>;
+  };
+  if (!data.artifacts?.length) return `No artifacts found for run ${run_id}.`;
+  return data.artifacts.map(a =>
+    `${a.expired ? '⌛ expired' : '✓'} id=${a.id} | ${a.name} | ${(a.size_in_bytes / 1024).toFixed(1)} KB${a.size_in_bytes === 0 ? '  ⚠ ZERO BYTES — likely an empty/failed artifact' : ''} | created ${a.created_at}`
+  ).join('\n');
+}
+
+// ── check_github_token_scope (2026-07-19) ──────────────────────────────────────
+// A one-call diagnostic to stop discovering GITHUB_TOKEN's actual permission
+// scope by trial and error in a live debugging session. Reports the
+// AUTHENTICATED rate limit (confirms the token is being sent and accepted —
+// 5,000/hr vs the 60/hr unauthenticated ceiling that blocked most of the
+// direct-curl debugging on 2026-07-18) and, for a classic PAT, the exact
+// granted scopes via the X-OAuth-Scopes response header. Fine-grained PATs
+// don't expose a scope list the same way — noted explicitly rather than
+// silently showing nothing.
+export async function check_github_token_scope(): Promise<string> {
+  const res = await ghFetch('/rate_limit');
+  if (!res.ok) return `Error: ${res.status} — GITHUB_TOKEN appears invalid or unset.`;
+  const scopes = res.headers.get('x-oauth-scopes');
+  const data = await res.json() as { rate?: { limit: number; remaining: number; reset: number } };
+  const rate = data.rate;
+  const lines = [
+    rate
+      ? `✓ Authenticated. Rate limit: ${rate.remaining}/${rate.limit} remaining (resets ${new Date(rate.reset * 1000).toISOString()}).`
+      : '✓ Authenticated, but rate info was not in the expected shape.',
+    scopes
+      ? `Scopes (classic PAT): ${scopes || '(none — token may be read-only via fine-grained permissions instead)'}`
+      : 'No X-OAuth-Scopes header returned — this is normal for a fine-grained PAT (scopes are set at creation and not exposed via this header) or a GitHub App token.',
+    '',
+    'If get_workflow_log has been returning 403: the token needs "actions:read" (fine-grained) or the "repo" scope (classic, which includes actions:read). Regenerate at GitHub → Settings → Developer settings → Personal access tokens.',
+  ];
+  return lines.join('\n');
 }
 
 // ── get_constitutional_state ──────────────────────────────────────────────────
@@ -445,6 +650,11 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   write_file:               (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
   write_file_governed:      (a) => write_file_governed(a as { path: string; content: string; message: string; repo?: string; session_id?: string; task_context?: string }),
   get_build_status:         ()  => get_build_status(),
+  get_workflow_run:         (a) => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }),
+  get_workflow_log:         (a) => get_workflow_log(a as { job_id: number; repo?: string; maxChars?: number }),
+  dispatch_workflow:        (a) => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }),
+  get_workflow_artifact:    (a) => get_workflow_artifact(a as { run_id: number; repo?: string }),
+  check_github_token_scope: ()  => check_github_token_scope(),
   get_constitutional_state: ()  => get_constitutional_state(),
   query_database:           (a) => query_database(a as { sql: string }),
   run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string }),
@@ -502,6 +712,62 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'get_build_status',
     description: 'Get the latest GitHub Actions build status.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_workflow_run',
+    description: 'Check a specific GitHub Actions workflow (by filename, e.g. "lexbench-recovery.yml") for its recent runs, or a specific run_id for job/step-level status. Unlike get_build_status (repo-wide, last 3 runs only), this filters by workflow and goes down to step granularity — use this for anything beyond "did the last push pass CI".',
+    parameters: {
+      type: 'object',
+      properties: {
+        workflow: { type: 'string', description: 'Workflow filename, e.g. "lexbench-prod.yml", "lexbench-recovery.yml". Lists its 5 most recent runs.' },
+        run_id: { type: 'number', description: 'A specific run ID (from a prior get_workflow_run call, or the digits at the end of a run URL). Returns job/step status for that run instead of a run list.' },
+        ...REPO_PARAM,
+      },
+    },
+  },
+  {
+    name: 'get_workflow_log',
+    description: 'Get the raw console log text for a specific job (job_id from get_workflow_run\'s run_id lookup). Use this to read what a step actually printed — e.g. whether "Publish to live leaderboard" published real rows or hit "nothing to publish". Returns the LAST maxChars characters by default (where the real result usually is), since the start of a log is almost always npm install noise.',
+    parameters: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'number', description: 'Job ID from get_workflow_run(run_id=...)\'s output.' },
+        maxChars: { type: 'number', description: 'How many characters to return from the end of the log. Default 8000.' },
+        ...REPO_PARAM,
+      },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'dispatch_workflow',
+    description: 'Trigger a GitHub Actions workflow_dispatch run — e.g. LexBench Production, LexBench Recovery. Spends real provider quota and wall-clock time for benchmark workflows; confirm intent with the user before calling this rather than treating its existence as standing authorization. Returns the new run\'s ID and URL when found (GitHub does not return a run ID synchronously, so this does one short bounded poll after dispatching).',
+    parameters: {
+      type: 'object',
+      properties: {
+        workflow: { type: 'string', description: 'Workflow filename, e.g. "lexbench-prod.yml", "lexbench-recovery.yml".' },
+        ref: { type: 'string', description: 'Branch to run on. Defaults to "main".' },
+        inputs: { type: 'object', description: 'Key-value inputs matching the workflow\'s own workflow_dispatch.inputs schema, e.g. { "run_id": "29626879866" } for lexbench-recovery.yml, or { "limit": "5" } for a quick-test dispatch of lexbench-prod.yml.' },
+        ...REPO_PARAM,
+      },
+      required: ['workflow'],
+    },
+  },
+  {
+    name: 'get_workflow_artifact',
+    description: 'List artifact metadata (name, size, expiry) for a workflow run — e.g. to check whether shard result artifacts actually contain data before trusting a downstream aggregate step. Metadata only, not content extraction (artifacts are ZIP archives; no zip-parsing dependency exists in this project yet). A 0-byte artifact is flagged explicitly.',
+    parameters: {
+      type: 'object',
+      properties: {
+        run_id: { type: 'number', description: 'The workflow run ID (from get_workflow_run).' },
+        ...REPO_PARAM,
+      },
+      required: ['run_id'],
+    },
+  },
+  {
+    name: 'check_github_token_scope',
+    description: 'Diagnostic: confirms GITHUB_TOKEN is authenticated (shows the real 5,000/hr rate limit vs the 60/hr unauthenticated ceiling) and, for a classic PAT, its granted scopes. Run this first if get_workflow_log or dispatch_workflow return unexpected 403s.',
     parameters: { type: 'object', properties: {} },
   },
   {

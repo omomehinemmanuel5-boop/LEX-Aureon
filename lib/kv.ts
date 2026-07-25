@@ -6,6 +6,7 @@
  */
 
 import { getClient } from './db';
+import { projectCRSToConstitutionalSimplex } from './constitution';
 
 interface KvCRSState {
   C: number; R: number; S: number;
@@ -188,23 +189,7 @@ export interface LawImpact {
 export type GovernorMode = 'suppress' | 'nudge' | 'correction' | 'recovery';
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
-// CBF-safe Euclidean projection: guarantees each pillar ≥ TAU_FLOOR and C+R+S=1
-function projectToSimplex(c: number, r: number, s: number): CRS {
-  const floor = TAU_FLOOR;
-  const vals = [c, r, s];
-  let v = vals.map(x => Math.max(x - floor, 0));
-  const target = 1.0 - 3 * floor;
-  const u = [...v].sort((a, b) => b - a);
-  let cssv = 0, rho = 0;
-  for (let j = 0; j < 3; j++) {
-    cssv += u[j];
-    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
-  }
-  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
-  v = v.map(x => Math.max(x - theta, 0) + floor);
-  const total = v.reduce((a, b) => a + b, 0);
-  return { c: v[0] / total, r: v[1] / total, s: v[2] / total };
-}
+const projectToSimplex = projectCRSToConstitutionalSimplex;
 
 // ── computeAttackSignal ───────────────────────────────────────────────────────
 // A(t) = γ · Σ_{law ∈ events_t} sev(law) · dir(law)

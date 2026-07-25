@@ -25,6 +25,7 @@
 
 import { KernelState } from './sovereign_kernel';
 import { TAU, calculateGovernorG } from './aureonics_core';
+import { embedTextWithProvider, embedTextResolved, cosineSimilarity } from './lex_memory';
 
 // ── Signal reliability threshold ρ_min ─────────────────────────────────────
 // Derived from IEC framework (paper §5.2):
@@ -66,6 +67,46 @@ export function computeIEC(
   const rho = iec; // ρ(t) = IEC — signal reliability = exchange stability
 
   return { iec, rho, variance };
+}
+
+// ── Semantic reliability (2026-07-20) — the preferred ρ(t) signal ────────────
+// The entropy-variance proxy above (computeIEC) is weak: Shannon entropy of
+// short search snippets is noisy, and the entropy ratio H(O_t)/H(I_t) can
+// exceed 1, spuriously clamping ρ to 0. "Do these sources actually agree?"
+// is a semantic question, so measure it semantically: embed each result and
+// take the mean pairwise cosine similarity. High agreement → high ρ →
+// reliable signal → correction allowed. This reuses the same embedding infra
+// the rest of the kernel uses (lib/lex_memory.ts). Returns null when it
+// can't run (fewer than 2 results, or embeddings unavailable) so the caller
+// falls back to the entropy method rather than treating "couldn't measure"
+// as "unreliable".
+export async function computeSemanticReliability(
+  results: SearchResult[],
+): Promise<{ rho: number; mean_similarity: number } | null> {
+  if (results.length < 2) return null;
+  try {
+    // Pin one provider for all results so the cosines sit in one embedding
+    // space (same discipline as the self-referential measurement).
+    const { vector: first, provider } = await embedTextResolved(results[0].content);
+    const vectors: number[][] = [first];
+    for (let i = 1; i < results.length; i++) {
+      vectors.push(await embedTextWithProvider(results[i].content, provider));
+    }
+    let sum = 0, pairs = 0;
+    for (let i = 0; i < vectors.length; i++) {
+      for (let j = i + 1; j < vectors.length; j++) {
+        sum += cosineSimilarity(vectors[i], vectors[j]);
+        pairs++;
+      }
+    }
+    if (!pairs) return null;
+    const mean = sum / pairs;
+    // Cosine ∈ [-1,1]; clamp to [0,1] — negative/near-zero agreement is
+    // simply "unreliable", same floor as the entropy method.
+    return { rho: Math.max(0, Math.min(1, mean)), mean_similarity: mean };
+  } catch {
+    return null; // embeddings down — caller falls back to entropy variance
+  }
 }
 
 // ── Shannon entropy of a string ─────────────────────────────────────────────
@@ -192,8 +233,13 @@ export async function runGovernorSensing(
   const promptEntropy = shannonEntropy(prompt);
   const M = Math.min(state.C, state.R, state.S);
 
-  // Compute IEC → ρ(t)
-  const { rho, iec, variance } = computeIEC(results, promptEntropy);
+  // ρ(t): prefer the semantic-agreement signal; fall back to the entropy
+  // variance proxy when embeddings can't run (fewer than 2 results, or
+  // provider down). iec mirrors rho for the receipt/detail fields.
+  const semantic = await computeSemanticReliability(results);
+  const entropyIEC = computeIEC(results, promptEntropy);
+  const rho = semantic ? semantic.rho : entropyIEC.rho;
+  const iec = semantic ? semantic.rho : entropyIEC.iec;
 
   // Build z(t) = (δ(t), ρ(t), U(t), T(t))
   const context: GovernorContext = {
@@ -203,7 +249,7 @@ export async function runGovernorSensing(
     T:     computeTension(state),
   };
 
-  void iec; void variance; // logged by caller if needed
+  void iec; // carried in correction.iec via applyGovernorCorrection below
 
   // Apply G(x,z) — only if IEC filter passes
   const correction = applyGovernorCorrection(state, context, results);

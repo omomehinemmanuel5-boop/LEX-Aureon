@@ -171,14 +171,36 @@ Always use updateZTraj() from kv.ts which runs the full proven update.
 
 ## DATABASE TABLES
 
-z_traj           constitutional trajectory (never delete)
-                 Columns: z_c, z_r, z_s (Banach z-weights, added 2026-06-28)
-praxis_receipts  immutable audit receipts (never delete)
-                 Columns: slow_drip now sourced from sigma_viol accumulator (2026-06-29)
-governor_log     governor interventions
-law_impact       law impact scores
-reset_tokens     password reset tokens
-leads            captured leads
+(Audited against lib/db.ts + app/api/leads/route.ts on 2026-07-20 — this list
+was previously stale and missing most of the schema below.)
+
+z_traj             constitutional trajectory (never delete) — owner: lib/kv.ts
+                   Columns: z_c, z_r, z_s (Banach z-weights, added 2026-06-28)
+praxis_receipts    immutable audit receipts (never delete) — owner: lib/kv.ts
+                   Columns: slow_drip now sourced from sigma_viol accumulator (2026-06-29)
+                   Columns: signing_key_version added 2026-07-20 ('v1' | 'v1-fallback' |
+                   'unsigned') — makes fallback-signed/unsigned rows queryable
+governor_log       governor interventions — owner: lib/kv.ts
+law_impact         law impact scores — owner: lib/kv.ts
+sessions           session state (rate limiting, replaced @vercel/kv) — owner: lib/kv.ts
+audit_log          general audit trail — owner: lib/kv.ts
+run_stats          run counters (e.g. total_runs) — owner: lib/kv.ts
+benchmark_results  LexBench run results — owner: lib/benchmark_results.ts
+clause_bank        constitutional clause bank — owner: lib/agents/clause_bank.ts
+vaulturex_rules    Vaulturex Sovereign Codex (50 laws) — owner: lib/db.ts / lex_crs_agent tools
+tool_sessions      agent tool-call sessions — owner: lib/agents/tool_interceptor.ts
+tool_receipts      agent tool-call audit receipts — owner: lib/agents/tool_interceptor.ts
+sovereign_laws     law definitions — owner: lib/db.ts / lex_crs_agent tools
+provider_cooldowns cross-instance LLM/embedding provider cooldown state
+                   (added 2026-07-19) — owner: lib/provider_cooldown.ts
+pending_corrections async governor's turn-lag G(x,z) correction, handed from
+                   turn t to turn t+1 across instances (added 2026-07-20;
+                   apply-once via DELETE...RETURNING) — owner: lib/pending_corrections.ts
+leads              captured leads — owner: app/api/leads/route.ts (NOT lib/kv.ts —
+                   schema/migrations live in the route file itself)
+
+reset_tokens no longer exists in the schema (the entry above referencing it was
+stale — password reset does not use a dedicated table as of this audit).
 
 ---
 
@@ -227,12 +249,27 @@ Required (app refuses to start without these):
   CRON_SECRET
   NEXT_PUBLIC_SITE_URL
 
-Optional:
+Optional (declared in lib/env.ts's EnvShape — access via `env.X`):
   Claude_api_key                  (exposed as env.ANTHROPIC_API_KEY)
   NEXT_PUBLIC_PRO_CHECKOUT_URL    (Stripe link)
   LOG_DRAIN_URL · LOG_DRAIN_TOKEN (remote log intake)
+  GEMINI_API_KEY · MISTRAL_API_KEY · CEREBRAS_API_KEY (lib/llm_provider.ts fallback chain)
+  GITHUB_TOKEN · VERCEL_TOKEN     (lex_crs_agent MCP tools)
+  BENCH_SECRET                    (LexBench publish auth)
+  SERPER_API_KEY                  (lib/governor_search.ts)
+  RESEND_API_KEY                  (lib/notify.ts — key delivery + ops alerts)
+  OPS_ALERT_EMAIL                 (ops alert recipient; defaults to owner email)
+  AUDITOR_SECRET                  (receipt HMAC signing — lib/kernel_bridge.ts
+                                   auditorSigningKey(). PRODUCTION REFUSES to sign
+                                   without it as of 2026-07-20: receipts persist
+                                   marked signing_key_version='unsigned' + ops alert.
+                                   MUST be set in Vercel for signed receipts.)
 
-Never hardcode. Always use `env` from `lib/env.ts`.
+Never hardcode. Always use `env` from `lib/env.ts` for anything in the first
+list above. Exception: GROQ_API_KEY inside lib/llm_provider.ts's fallback-chain
+functions reads process.env directly and on purpose — it's declared REQUIRED
+in lib/env.ts, so `env.GROQ_API_KEY` throws if unset, which breaks that code's
+graceful degrade-to-next-provider behavior. See the comment at that call site.
 
 ---
 
@@ -244,7 +281,14 @@ Never hardcode. Always use `env` from `lib/env.ts`.
 4. C+R+S=1 must ALWAYS be preserved
 5. Audit receipts IMMUTABLE — never delete
 6. No console.log in production
-7. All Turso queries in lib/kv.ts ONLY
+7. Turso schema/migrations centralized in lib/db.ts; lib/kv.ts owns core
+   z_traj/session read-write logic. Feature-specific modules (lib/lex_memory.ts,
+   lib/provider_cooldown.ts, lib/benchmark_results.ts, lib/rate_limit.ts,
+   lib/api_keys.ts, app/api/leads/route.ts, etc.) may query Turso directly for
+   their OWN tables only — never reach into another module's tables from
+   outside it. (Historically stated as "lib/kv.ts ONLY"; that stopped matching
+   reality as the codebase grew — see DATABASE TABLES below for the real
+   table-to-owner map.)
 8. All governor logic in lib/praxis.ts ONLY
 9. Security over convenience always
 10. Update AGENTS.md changelog after every change
@@ -389,6 +433,33 @@ npm run build          verify TypeScript
 [2026-06-29] SYSTEM: kernel_bridge.ts — loadKernelZ() exported; reads z_c/z_r/z_s from z_traj; passes sessionZ into runCycle
 [2026-06-29] SYSTEM: govern/route.ts, kernel/route.ts, govern/stream/route.ts, kernel/stream/route.ts — all 4 callers load sessionZ concurrently and pass to runCycle
 [2026-06-29] RESEARCH: lyapunov_V and delta_V in all receipts now certify V_z(x, z_session) — the actual §11 adaptive barrier — not the uniform fallback
+[2026-06-21..07-17] AUTOMATION: LexBench hardening — sustained-exhaustion circuit breaker, cross-run recovery workflow, per-provider failure logging, AgentDojo shard reordering, --auto-reference-model on judge-agreement.ts (see LEXBENCH_README.md for full detail; not itemized per-commit here)
+[2026-07-08] FIX: generateJudge primary switched llama-3.1-8b-instant -> llama-3.3-70b-versatile (8B produced too many unparseable verdicts)
+[2026-07-10] SYSTEM: lib/llm_provider.ts — Cerebras (gpt-oss-120b) added as 4th independent-quota LLM provider; per-provider failure logging added to every tryX() function
+[2026-07-12] FIX: lib/llm_provider.ts — in-memory 429/402/403 cooldown cache added so a dead provider isn't re-tried on every subsequent call
+[2026-07-13/14] FIX: lib/llm_provider.ts — per-model max_tokens caps (llama-3.1-8b-instant, gpt-oss-120b) to stop 413 TPM-ceiling errors; gpt-oss-120b reasoning_effort tuned to 'medium'
+[2026-07-18] FIX: threatSignal recomputed as a contrast (harm-sim minus benign-sim) via new getBenignReferenceCentroid/BENIGN_REFERENCE_PROMPTS; suppresses semantic_classifier false-positives on benign self-referential questions
+[2026-07-18] SYSTEM: identity_mode — added 'dynamic' (live-computed, LEX_IDENTITY_STABLE_CORE) and LEX_IDENTITY_MINIMAL variants, threaded through callLLM/runCycle and the govern endpoint's request body
+[2026-07-18] FIX: api/python/cbf_service.py's lyapunov_candidate corrected from an unpublished quadratic to the actual §11 log-barrier V_z certificate (lib/aureonics_core.ts's lyapunovBarrierZ()); max_deviation now measures excursion from V(0)
+[2026-07-18] ops: lexbench-prod.yml daily cron and lexbench-extended.yml weekly cron both disabled — free-tier provider quota exhaustion; manual/PR-triggered runs unaffected; re-enable once quota is paid for
+[2026-07-18] DESIGN: GET /api/cbf-simulation + CbfInvariancePanel wired into the landing page's TechnicalFoundationSection — governed-vs-ungoverned CBF trajectory visualization; copy states the real fpl1_classification="NOT PROVEN" finding rather than overclaiming
+[2026-07-19] FIX: lib/cbf_simulation.ts (the TS port actually wired into /api/cbf-simulation) given the same Lyapunov-candidate correction as the Python file a day earlier
+[2026-07-19] SYSTEM: lib/provider_cooldown.ts — Turso-backed provider_cooldowns table; cooldown state made cross-instance (the 2026-07-12 in-memory cache was per-Vercel-instance and structurally couldn't work under real benchmark concurrency)
+[2026-07-19] feat: embedding provider load distributed across Gemini/Jina instead of always-Gemini-first (lib/lex_memory.ts); embedding providers given the same cross-instance cooldown as LLM providers
+[2026-07-19/20] feat+revert: generateGoverned briefly rotated across Gemini/Cerebras/Groq to distribute load, then REVERTED to deterministic Gemini-lite-first after a real benchmark run showed JailbreakBench governed ASR jump to 13.04% (vs. 4-8.5% historical) — rotating the model that produces callLLMRaw's baseline arm also rotated the governed arm's base model. Root-caused and reverted same day; see lib/llm_provider.ts's file-header comment for the full analysis. The embedding-rotation and cross-instance-cooldown work above is unaffected and stays live.
+[2026-07-20] FIX: cross-file consistency pass (agent-driven review) — routed lib/llm_provider.ts's Gemini/Mistral/Cerebras key reads through lib/env.ts (CEREBRAS_API_KEY added to EnvShape; GROQ_API_KEY deliberately left as raw process.env — it's REQUIRED in env.ts, which would throw instead of degrading gracefully mid-fallback-chain); fixed two lingering raw process.env.NEXT_PUBLIC_SITE_URL reads (app/api/lex/validate, app/api/cron/synthetic) that bypassed the fix already applied to app/api/lex/run; corrected this file's stale DEPLOYMENT RULES #7, DATABASE TABLES, and CURRENT STATUS entries against the real lib/db.ts schema and lib/llm_provider.ts provider chain
+[2026-07-20] FIX: degraded-detection caution — keyword floor now covers canonical instruction-override/rules-lifted probes (sovereign_kernel.ts detectSemanticAttack); decideRefusal enforces at a LOWER threshold (0.5 vs 0.7) when detection_degraded, so a blind embedding detector makes the surviving keyword detector more willing to act, not silently less. Root cause: 2026-07-20 12:03 UTC, both synthetic attack probes scored "clean" during a Jina cooldown. 11 new vitest tests pin the probes + thresholds
+[2026-07-20] SYSTEM: lib/notify.ts sendOpsAlert() — throttled (15min/topic) ops email via Resend + always log-drain; wired into receipt-write failure, receipt-signing failure, and synthetic canary failure so guarantee violations reach Emmanuel instead of dying in a 503
+[2026-07-20] FIX: writeKernelReceipt restructured — z_traj/receipt/governor_log fail independently (2026-07-14 incident: one Turso read failure aborted all receipt writes for 3.5h); receipt insert retries once; on final failure returns '' so routes respond receipt_persisted=false instead of handing out a receipt id that was never persisted
+[2026-07-20] FIX: receipt signing hardened — production refuses the public hardcoded fallback key (auditorSigningKey() throws; receipt persists marked 'unsigned' + ops alert); signing_key_version now a persisted queryable column; auditor.ts + /api/lex/verify share the same key resolution; AUDITOR_SECRET/RESEND_API_KEY/OPS_ALERT_EMAIL/SERPER_API_KEY added to lib/env.ts EnvShape
+[2026-07-20] FIX: public endpoints no longer leak raw internal errors (lib/safe_error.ts publicError) — during the 2026-07-14 incident the console UI showed users LibsqlError text with the DB hostname and plan-quota state; govern, govern/stream, kernel, laws, agent now return a generic message and log the detail server-side
+[2026-07-20] SYSTEM: CSP connect-src tightened to 'self' (api.groq.com/api.jina.ai were browser-allowed but only ever called server-side; api.lexaureon.com is offline); /api/health now reports cerebras alongside the other providers
+[2026-07-20] DESIGN: honest degraded states — HeroTicker shows UNAVAILABLE/OFFLINE after 2 failed polls instead of eternal SYNCING…; LiveStatsBar Governor cell shows OFFLINE when no backing API is reachable; console run counter dot goes gray + 'offline' when /api/stats is down
+[2026-07-20] BUSINESS: console/chat email gate moved from before run 1 to before run 2 — a visitor sees one real governed result before being asked for an email; same 10 free runs total
+[2026-07-21] RESEARCH: FPL-1 classification resolved from NOT PROVEN to LYAPUNOV STABLE + FORWARD INVARIANT (simulator only; TAU_FLOOR untouched). (B) governed arm now uses the deployed floor-respecting Duchi projection instead of naive x/Σx → invariance holds by construction; ungoverned keeps naive projection so counterfactual still collapses. (A) /api/cbf-simulation certifies the classification at the continuous-flow limit (dt=0.1) while the panel chart stays dt=1.0. Both honest, no threshold weakened — a reproducible dt sweep (scripts/cbf/fpl1-dt-sweep.ts) showed the residual failure was a naive-projection bug + a dt=1.0 discretization artifact. Numerical certificate only; Open Problem 1 (analytical multi-pillar proof) stays open. README + research/empirical-results.md Run 002 updated.
+[2026-07-21] DESIGN: app/research/page.tsx rebuilt as a detailed, honest research page — full math framework, frozen constants, formal-stability status (proven/certified/open), live CbfInvariancePanel, open problems, P1–P12 predictions, benchmark evidence, PRAXIS pipeline + taxonomy, reproducibility. Fixed overclaims: 'peer-reviewed' → 'open-access preprint (Zenodo)', M<τ=0.08 → correct frozen constants. NOTE (unresolved): v1 DOI is inconsistent in-repo — frontend uses zenodo.18944242 (31×), AGENTS.md/audit pages use .18944243 (4×), v2 .20183807 only in AGENTS.md; needs Emmanuel to confirm canonical DOIs.
+[2026-07-23] FIX: Reverted overbroad repo-hygiene changes from the previous agent pass while retaining the generated-artifact ignores and build-deterministic chat serif fallback; restored govern-route historical context, local projection implementations, and prior CI/package behavior so future improvements can be made in smaller reviewed slices.
+[2026-07-20] FIX: async governor sensing was a near-total no-op in production — the turn-lag correction was handed between turns through a per-instance in-memory Map (same bug class as the provider-cooldown Map), so turn t+1 on a different Vercel instance always saw an empty store and dropped it; and the background sensing (incl. an 8s Serper call) ran as bare fire-and-forget that serverless freezes on response. Now: cross-instance Turso store (lib/pending_corrections.ts, apply-once via DELETE...RETURNING) + next/server after() so the work actually completes. Also: (a) egress gate — adversarial/high-threat prompts are never sent to Google (isSafeToSearch); (b) reliability signal rho(t) upgraded from noisy entropy-variance to semantic agreement (mean pairwise cosine of result embeddings, entropy fallback); (c) real basin_shift/rho now carried into the receipt instead of hardcoded 'collaborative'/1.0; (d) compute/consume/reject logged for observability; (e) corrected governor_search header's false 'Groq web browsing fallback' claim. 104 tests (5 new).
 
 ---
 
@@ -396,7 +467,10 @@ npm run build          verify TypeScript
 
 System:     LIVE at lexaureon.com — real backend, zero demo, zero silent failures
 Counter:    18,641+ audit receipts in Turso
-Governor:   PRAXIS v1.0 — Groq + Jina + Turso, all hard-required
+Governor:   PRAXIS v1.0 — Turso hard-required. LLM generation runs a
+            multi-provider fallback chain (Groq/Cerebras/Mistral/Gemini —
+            see lib/llm_provider.ts); only GROQ_API_KEY and JINA_API_KEY
+            are hard-required env vars, the rest degrade gracefully if unset
 z-weights:  Session-adaptive z_c/z_r/z_s live in z_traj, flowing into V_z receipts
 Lyapunov:   V_z(x, z_session) certified on every governed turn since 2026-06-29
 Open Probs: Problem 3 CLOSED. Problem 2 CLOSED. Problem 1 single-pillar CLOSED, multi-pillar OPEN.
@@ -444,7 +518,10 @@ to reflect real system state.
 
 ## CONTACT FOR DECISIONS
 
-Emmanuel King — omomehinemmanuel5@gmail.com
+Emmanuel King — omomehinemmanuel5@gmail.com (owner / decisions / ops alerts)
+Public-facing contact on the website: lexaureon@gmail.com (enterprise
+inquiries, email-capture footer). Both are Emmanuel's; the split is
+deliberate — do not "fix" one to match the other.
 Do not make major changes without confirming
 intent with Emmanuel first.
 

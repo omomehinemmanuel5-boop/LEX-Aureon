@@ -1,95 +1,16 @@
 /**
  * POST /api/lex/govern
- * SovereignKernel governance cycle — F(x,z) sync + G(x,z) async governor.
+ * Canonical non-streamed governance endpoint.
  *
- * wire: loadKernelZ() threads session-adaptive z into runCycle().
+ * Live contract: validate input, load session state + session-adaptive z, build
+ * memory/threat context, run SovereignKernel, persist the receipt/calibration
+ * signals, and return one coherent CRS vector.
  *
- * ARCHITECTURAL UNIFICATION (2026-07-07):
- *
- *   Move C — one-engine constitutional measurement. The Python detail engine
- *   (bag-of-words TF cosine masquerading as CCP/IEC/ADV; retired for the same
- *   reason we retired `toxicity`/`truth_score`) is no longer called from the
- *   live path. `weakest_pillar` / `governance_pressure` / `corrections` are
- *   computed from the TS-native governorState() on the SAME reported CRS —
- *   coherent with C/R/S/M by construction, no possibility of two engines
- *   drifting. The one Python-unique capability (`simulate_cbf` + FPL1
- *   classification) was ported to lib/cbf_simulation.ts; it's a system-
- *   property proof, not per-turn measurement, so it runs offline.
- *
- *   Move A — the refusal rule is now a single pure function
- *   (lib/refusal_decision.ts) that composes every enforcement signal + every
- *   measurement-only signal into ONE decision object. Previously refusal was
- *   an inline `sovereignty_drift || keyword_attack` expression with two other
- *   signals wired in as status flags or logged for calibration but not
- *   actually contributing. Now: single call, single audit surface, one place
- *   to change if the policy changes.
- *
- *   Move D — healthBand is imported from lib/health_band.ts, the sole source
- *   of the τ_stretch=0.25 / τ_soft=0.15 / τ_hard=0.08 thresholds. The
- *   offline Python simulator (api/python/govern.py `_health_band`) mirrors
- *   the thresholds by hand — a comment there names lib/health_band.ts as the
- *   source, so future edits touch one file first.
- *
- *   Move B — DB persistence for the capitulation-judge calibration signal
- *   (lib/capitulation_calibration.ts). The judge stays measurement-only (it
- *   does NOT trigger refusal — see decideRefusal), but every firing on a
- *   real user turn now writes a paired row (judge verdict + enforced
- *   decision + S_self) to capitulation_calibration. Move B moves to a
- *   real decision when the table has enough rows to answer the questions
- *   in the module's decision-analysis SQL block — see that file for the
- *   exact queries.
- *
- * COHERENCE (2026-06-30, preserved): the reported constitutional state is
- * ONE vector — the TypeScript kernel's governed state — and M and health
- * band are both derived from THAT vector.
- *
- * DETECTION (2026-07-01, preserved): the paper (§4.3/§6.2) specifies
- * self-referential sovereignty — S_self = cosine(output_embedding,
- * constitutional_centroid) — as the early-warning signal for identity /
- * sovereignty drift. Both the raw cosine and the boolean are surfaced.
- *
- * FAIL-LOUD (2026-07-01, preserved): when embeddings (or the centroid) are
- * unavailable, `detection_degraded: true` is surfaced and logged. The
- * keyword classifier remains active in that state (embedding-independent).
- *
- * EVAL FAST-PATH (2026-07-03, preserved): synthetic benchmark traffic
- * (isEvalSession) skips the capitulation judge — one fewer network round
- * trip per prompt during heavy runs. Does not affect what benchmarks
- * measure (the judge is measurement-only).
- *
- * MULTI-PROVIDER EMBEDDINGS, PINNED PER REQUEST (2026-07-04, preserved).
- *
- * PROVIDER-EXHAUSTION PROVENANCE SURFACED (2026-07-08): governed_source,
- * raw_provider, governed_provider were already computed by
- * lib/sovereign_kernel.ts's runCycle() (2026-07-08 provider-exhaustion fix —
- * see that file's header) but not included in this route's response JSON.
- * scripts/lexbench/runner.ts needs them to exclude true double-provider-
- * failure turns (governed_source: 'unavailable') from benchmark scoring,
- * rather than counting a no-content turn as a real refusal or over-refusal.
- *
- * INPUT-SIDE THREAT SIGNAL (2026-07-12): direct query of lex_memory across
- * ~37,000 logged turns found avg M statistically flat across every benchmark
- * (0.2575-0.2768), with AdvBench (explicit harmful requests) reading HIGHER
- * than benign XSTest — the constitutional state had no channel by which
- * actual prompt threat content could move it; transduce() only ever read
- * length/word-count/punctuation, and detectSemanticAttack's narrow keyword
- * patterns essentially never fire on realistic AdvBench/HarmBench/
- * JailbreakBench phrasing (confirmed: intervention=0 across ~17,000 turns on
- * those three benchmarks). Now computes cosine similarity between the
- * already-resolved prompt embedding and a held-out harm reference centroid
- * (lib/lex_memory.ts's getHarmReferenceCentroid — built from the first half
- * of advbench/harmbench/jailbreakbench.jsonl, so evaluation against the
- * untouched second half is not circular), pinned to the same embed provider
- * per the existing CORRECTNESS CONSTRAINT (mixing embedding spaces produces
- * a meaningless cosine value), and passes it into kernel.runCycle() as
- * threatSignal. Defaults to 0 (no additional pressure) when the embedding or
- * centroid is unavailable this turn — same honest-default convention as
- * detection_degraded elsewhere in this route. NOT YET VALIDATED against
- * published benchmark numbers — see the shard-rerun validation plan
- * (does avg M finally separate adversarial from benign benchmarks; does
- * XSTest regress) before this feeds anything published.
+ * Keep executable route comments concise; place long historical rationale in
+ * docs/architecture/govern-route-history.md.
  */
 
+import { publicError } from '@/lib/safe_error';
 import { NextResponse } from 'next/server';
 import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
@@ -98,7 +19,7 @@ import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
-  getHarmReferenceCentroid, cosineSimilarity,
+  getHarmReferenceCentroid, getBenignReferenceCentroid, cosineSimilarity,
   type EmbedProvider,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
@@ -109,6 +30,7 @@ import { judgeCapitulation } from '@/lib/capitulation_judge';
 import { decideRefusal } from '@/lib/refusal_decision';
 import { healthBand } from '@/lib/health_band';
 import { persistCapitulationCalibration } from '@/lib/capitulation_calibration';
+import type { IdentityMode } from '@/lib/sovereign_kernel';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -125,8 +47,15 @@ function isEvalSession(sid: string): boolean {
   return /^(lexbench-|synthetic_|bench-|jbb_|adv_|hb_)/.test(sid);
 }
 
+const VALID_IDENTITY_MODES: IdentityMode[] = ['full', 'minimal', 'dynamic', 'none'];
+function resolveIdentityMode(raw: unknown): IdentityMode {
+  return typeof raw === 'string' && (VALID_IDENTITY_MODES as string[]).includes(raw)
+    ? raw as IdentityMode
+    : 'full';
+}
+
 export async function POST(req: Request) {
-  let body: { prompt?: string; session_id?: string; turn?: number };
+  let body: { prompt?: string; session_id?: string; turn?: number; identity_mode?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
@@ -134,6 +63,8 @@ export async function POST(req: Request) {
   if (!prompt?.trim())     return NextResponse.json({ error: 'prompt required' },     { status: 400 });
   if (!session_id?.trim()) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   if (prompt.length > MAX_PROMPT_CHARS) return NextResponse.json({ error: `prompt too long (max ${MAX_PROMPT_CHARS} chars)` }, { status: 400 });
+
+  const identityMode = resolveIdentityMode(body.identity_mode);
 
   await ensureDB();
 
@@ -161,31 +92,40 @@ export async function POST(req: Request) {
     memoryPromise,
   ]);
 
-  // ── Input-side threat signal (2026-07-12) — see file header ───────────────
-  // Reuses the prompt embedding already resolved above (no second embed
-  // call). Pinned to the SAME provider that resolved the prompt embedding —
-  // mixing embedding spaces would produce a meaningless cosine value (see
-  // this file's long-standing CORRECTNESS CONSTRAINT, mirrored from
-  // lib/lex_memory.ts). Defaults to 0 (no additional pressure) when the
-  // embedding or centroid is unavailable this turn.
+  // ── Input-side threat signal (2026-07-12, contrastive fix 2026-07-18) ─────
+  // See file header. Reuses the prompt embedding already resolved above (no
+  // second embed call). Both centroids pinned to the SAME provider that
+  // resolved the prompt embedding — mixing embedding spaces would produce a
+  // meaningless cosine value (see this file's long-standing CORRECTNESS
+  // CONSTRAINT, mirrored from lib/lex_memory.ts). threatSignal is
+  // harm-similarity MINUS benign-similarity, clamped to [0,1]; falls back to
+  // the pre-fix absolute harm-similarity if the benign centroid is
+  // unavailable this turn (degraded, not blocked). Defaults to 0 when the
+  // embedding or the harm centroid itself is unavailable — same honest-
+  // default convention as detection_degraded elsewhere in this route.
   let threatSignal = 0;
   if (promptEmbedding.length && promptEmbedProvider) {
     try {
-      const harmCentroid = await getHarmReferenceCentroid(promptEmbedProvider);
+      const [harmCentroid, benignCentroid] = await Promise.all([
+        getHarmReferenceCentroid(promptEmbedProvider),
+        getBenignReferenceCentroid(promptEmbedProvider),
+      ]);
       if (harmCentroid) {
-        threatSignal = Math.max(0, Math.min(1, cosineSimilarity(promptEmbedding, harmCentroid)));
+        const harmSim   = cosineSimilarity(promptEmbedding, harmCentroid);
+        const benignSim = benignCentroid ? cosineSimilarity(promptEmbedding, benignCentroid) : 0;
+        threatSignal = Math.max(0, Math.min(1, harmSim - benignSim));
       }
     } catch (e) {
-      logger.warn('govern.threat_signal', 'harm reference centroid unavailable', errorFields(e));
+      logger.warn('govern.threat_signal', 'harm/benign reference centroid unavailable', errorFields(e));
     }
   }
 
   // ── TypeScript kernel cycle ───────────────────────────────────────────────
   const kernel = getCachedKernel(session_id, savedState);
-  const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, threatSignal);
+  const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, threatSignal, identityMode);
 
   if (result.status === 'Error') {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    return NextResponse.json({ error: publicError('govern.kernel', result.error) }, { status: 500 });
   }
 
   // ── Pre-governance ("before") state ───────────────────────────────────────
@@ -351,9 +291,13 @@ export async function POST(req: Request) {
     sovereignty_raw:       sovereigntyRaw,
     detection_degraded:    detectionDegraded,
     embed_provider:        promptEmbedProvider,
-    // Input-side threat signal (2026-07-12) — see file header. NOT YET
-    // VALIDATED; surfaced for audit alongside sovereignty_raw.
+    // Input-side threat signal (2026-07-12, contrastive fix 2026-07-18) — see
+    // file header. NOT statistically validated at scale; surfaced for audit
+    // alongside sovereignty_raw.
     prompt_threat_signal:  threatSignal,
+    // Identity mode (2026-07-18) — which self-knowledge block was actually
+    // used this turn. See file header.
+    identity_mode:         identityMode,
     // Refusal decision (Move A) — full evidence trail for the receipt
     refused:               decision.refused,
     refusal_reasons:       decision.reasons,
@@ -375,7 +319,10 @@ export async function POST(req: Request) {
     projection_triggered:  projectionTriggered,
     projection_magnitude:  result.projection_magnitude,
     z_weights:             result.receipt.z_weights,
-    receipt_id:            receiptId,
+    receipt_id:            receiptId || null,
+    // False when the audit receipt could not be persisted (e.g. DB quota
+    // exhaustion) — the response is then NOT audit-backed. See kernel_bridge.
+    receipt_persisted:     !!receiptId,
     memory_injected:       memoryContext.length > 0,
     invariance_violations: result.invariance_violations,
     metrics:               result.metrics ?? null,
@@ -387,8 +334,8 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     name:     'Lex Aureon SovereignKernel API',
-    version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal+CalibrationDB+ThreatSignal',
+    version:  'v2+AsyncGovernor+SingleEngine+UnifiedRefusal+CalibrationDB+ThreatSignal+IdentityMode',
     endpoint: '/api/lex/govern',
-    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + input-side threat signal (2026-07-12, held-out harm reference centroid) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B).',
+    governor: 'G(x,z) async sensing + self-referential sovereignty detection (paper §4.3/§6.2) + input-side threat signal (2026-07-12, held-out harm reference centroid, contrastive recalibration 2026-07-18) + capitulation judge (measurement-only, DB-persisted for Move B accumulate-then-decide). Single-engine constitutional measurement (Move C, 2026-07-07); refusal decision unified in lib/refusal_decision.ts (Move A); healthBand single-sourced in lib/health_band.ts (Move D); calibration accumulation in lib/capitulation_calibration.ts (Move B); optional identity_mode override (2026-07-18: full/minimal/dynamic/none) for governed-arm self-knowledge A/B/C/D testing.',
   });
 }

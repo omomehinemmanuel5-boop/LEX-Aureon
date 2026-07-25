@@ -31,6 +31,41 @@
  * that under the paper's dynamics, the CBF-filtered trajectory is
  * Lyapunov-stable and forward-invariant. It exists to be plotted, cited, and
  * classified — not to run per turn.
+ *
+ * fix (2026-07-19) — WRONG LYAPUNOV CANDIDATE, SAME BUG AS THE PYTHON
+ * ORIGINAL: lyapunovCandidate() here computed the simple quadratic
+ * V(x) = sum((x_i-1/3)^2), not the Aureonics §11 published certificate
+ * V_z(x) = -sum(z_i*log(x_i)) + (mu/2)*sum(max(0,tau-x_i)^2) that
+ * lib/aureonics_core.ts's lyapunovBarrierZ() actually implements — this file
+ * is a port of api/python/cbf_service.py, which had the identical bug, fixed
+ * there first (2026-07-18) and now ported here since THIS is the file
+ * actually wired into the live landing-page visualization
+ * (GET /api/cbf-simulation), not the Python original.
+ *
+ * Also fixes max_deviation to measure EXCURSION from V(0) rather than raw V
+ * — the log-barrier candidate has a nonzero floor even at the ideal centroid
+ * (-log(1/3) ≈ 1.10 for uniform z), so a raw-value threshold calibrated for
+ * the quadratic's 0-floor is meaningless once the candidate changes.
+ *
+ * VERIFIED, NOT ASSUMED CLOSED: ran the corrected simulation across 5 seeds
+ * (steps=150) before writing this fix. stability_ratio now clears the >0.6
+ * bar easily (0.92-0.97, this port's own Mulberry32 RNG realization).
+ * BUT excursion-based max_deviation still runs 0.29-0.40 against the
+ * existing 0.25 threshold, and invariance_violations is nonzero in 3 of 5
+ * seeds. fpl1_classification therefore still reads NOT PROVEN on every
+ * tested seed under current noise/gain parameters — the formula was
+ * genuinely wrong and is now correct, but that does not by itself close the
+ * F(x,z)-vs-V_z gap the README/website describe. Recalibrating thresholds or
+ * simulation parameters to actually close it is separate, deliberately
+ * unaddressed work — not guessed at here.
+ *
+ * fix (2026-07-19, second pass) — CI TYPECHECK FAILURE: the first version of
+ * lyapunovCandidate() used `([0,1,2] as const).reduce(...)`, which TypeScript
+ * narrows to a `0|1|2` literal tuple — the reduce accumulator's inferred type
+ * then also narrows to `0|1|2`, and a callback returning a plain `number`
+ * (the penalty sum) doesn't satisfy that overload (TS2769). Caught by CI
+ * (`npx tsc --noEmit`) on this exact commit, not assumed passing. Replaced
+ * with a plain for-loop — no behavior change, same computed value.
  */
 
 // ── Safety parameters (mirror api/python/cbf_service.py) ──────────────────
@@ -58,6 +93,10 @@ const MARGIN_SAFETY_CUTOFF   = 0.1;
 
 const NORMALIZATION_EPSILON  = 1e-12;
 const FLOAT_TOLERANCE        = 1e-9;
+
+// ── Lyapunov certificate parameters (2026-07-19 fix — see header) ─────────
+const MU_LYAPUNOV    = 2.0;   // Barrier penalty weight — matches lib/aureonics_core.ts's MU
+const LYAPUNOV_FLOOR  = 1e-9;  // Prevents log(0) — matches lib/aureonics_core.ts's FLOOR
 
 // ─────────────────────────────────────────────────────────────────────────
 // Deterministic RNG — Mulberry32, so the simulation is reproducible given
@@ -92,10 +131,35 @@ function gaussClip(rng: () => number, sigma: number, clip: number): number {
 // Dynamics — replicator + mass-conserving noise
 // ─────────────────────────────────────────────────────────────────────────
 
-function lyapunovCandidate(x: [number, number, number]): number {
+/**
+ * fix (2026-07-19) — see file header. Was the simple quadratic V(x) =
+ * sum((x_i-1/3)^2); now the published log-barrier V_z certificate, matching
+ * lib/aureonics_core.ts's lyapunovBarrierZ() exactly. z defaults to uniform
+ * (1/3,1/3,1/3) — this simulator has no session-specific z, matching the
+ * live kernel's own Z_RECOVERY fallback for exactly that case.
+ */
+function lyapunovCandidate(x: [number, number, number], z: [number, number, number] = [1/3, 1/3, 1/3]): number {
+  const barrier = -(z[0] * Math.log(Math.max(x[0], LYAPUNOV_FLOOR))
+                   + z[1] * Math.log(Math.max(x[1], LYAPUNOV_FLOOR))
+                   + z[2] * Math.log(Math.max(x[2], LYAPUNOV_FLOOR)));
+  let penaltySum = 0;
+  for (let i = 0; i < 3; i++) {
+    const v = Math.max(0, TAU_CBF - x[i]!);
+    penaltySum += v * v;
+  }
+  const penalty = (MU_LYAPUNOV / 2) * penaltySum;
+  return barrier + penalty;
+}
+
+/**
+ * The SUPERSEDED candidate this file used until 2026-07-19. Kept for
+ * reference/comparison only — no longer called by simulateCbf().
+ */
+function lyapunovQuadratic(x: [number, number, number]): number {
   const center = 1 / 3;
   return (x[0] - center) ** 2 + (x[1] - center) ** 2 + (x[2] - center) ** 2;
 }
+void lyapunovQuadratic; // referenced only for the record; suppress unused warning
 
 function replicator(x: [number, number, number], alpha: number): [number, number, number] {
   const a = 0.5;
@@ -244,6 +308,40 @@ function normalize(x: [number, number, number]): [number, number, number] {
   return [clamped[0] / total, clamped[1] / total, clamped[2] / total];
 }
 
+/**
+ * fix (2026-07-21, FPL-1 resolution B) — FLOOR-RESPECTING SIMPLEX PROJECTION.
+ * The governed arm was projecting its state with the naive x ↦ x/Σx above,
+ * which can push a pillar that was exactly at τ_CBF in the raw next state
+ * back BELOW τ_CBF (every component shrinks by 1/Σ when Σ > 1). That naive
+ * projection was the mechanical source of the FPL-1 invariance_violations —
+ * and it does NOT match the DEPLOYED governor, which uses the exact Euclidean
+ * (Duchi–Shalev-Shwartz–Singer) projection onto {Σx = 1, xᵢ ≥ τ} (see
+ * lib/aureonics_core.ts projectToSimplex, lib/praxis.ts, lib/kv.ts, and
+ * research/paper-updates.md §2). This ports that same projection so the
+ * offline proof simulator's governed arm is faithful to production. Because
+ * the projection returns xᵢ ≥ floor by construction, forward invariance of
+ * the τ_CBF floor holds structurally — the guarantee the CBF exists to make.
+ * Used ONLY for the governed arm; the ungoverned counterfactual keeps the
+ * naive normalize above so it still collapses through the floor.
+ */
+function projectToSimplexFloor(
+  x: [number, number, number],
+  floor: number,
+): [number, number, number] {
+  const y = [x[0] - floor, x[1] - floor, x[2] - floor];
+  const target = 1.0 - 3 * floor;
+  const u = [...y].sort((a, b) => b - a);
+  let cssv = 0, rho = 0;
+  for (let j = 0; j < 3; j++) {
+    cssv += u[j];
+    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
+  }
+  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
+  const xProj = y.map(v => Math.max(v - theta, 0) + floor);
+  const total = xProj[0] + xProj[1] + xProj[2];
+  return [xProj[0] / total, xProj[1] / total, xProj[2] / total];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Main simulation — returns the same shape the Python /api/python/simulate
 // endpoint returns, so any consumer can be pointed at either engine.
@@ -276,6 +374,11 @@ export interface CbfSimResult {
   stability_ratio: number;
   delta_v_positive_ratio: number;
   max_deviation: number;
+  // (2026-07-19) surfaced for audit — the raw peak V and V(0), so a reader
+  // can see why max_deviation (now excursion-based) differs from a naive
+  // "biggest V we ever saw" reading. Not part of the classification test.
+  lyapunov_v0: number;
+  lyapunov_max_raw: number;
   invariance_violations: number;
   fpl1_classification: string;
   source: 'typescript-cbf-simulation';
@@ -367,7 +470,16 @@ export function simulateCbf(opts: SimulateCbfOptions = {}): CbfSimResult {
       x[2] + dt * totalForce[2],
     ];
     const preProjBelowFloor = xNextRaw[0] < TAU_CBF || xNextRaw[1] < TAU_CBF || xNextRaw[2] < TAU_CBF;
-    const xNext = normalize(xNextRaw);
+    // FPL-1 resolution B (2026-07-21): the governed arm projects with the
+    // floor-respecting Duchi projection the DEPLOYED governor actually uses
+    // (see projectToSimplexFloor); the ungoverned counterfactual keeps the
+    // naive normalize so it still collapses through the floor. The invariance
+    // check below is unchanged — it now passes for the governed arm because
+    // the projection holds the floor by construction, not because the test
+    // was weakened.
+    const xNext = cbfEnabled
+      ? projectToSimplexFloor(xNextRaw, TAU_CBF)
+      : normalize(xNextRaw);
     if (preProjBelowFloor && (xNext[0] < TAU_CBF || xNext[1] < TAU_CBF || xNext[2] < TAU_CBF)) {
       invarianceViolations += 1;
     }
@@ -431,7 +543,16 @@ export function simulateCbf(opts: SimulateCbfOptions = {}): CbfSimResult {
   }
   const stabilityRatio     = (deltaVNegativeSteps + correctedPositiveSteps) / totalDeltaSteps;
   const destabilizingRatio = deltaVPositiveSteps / totalDeltaSteps;
-  const maxDeviation       = lyapunovValues.length ? Math.max(...lyapunovValues) : 0;
+
+  // fix (2026-07-19) — EXCURSION, NOT RAW VALUE: see file header. The
+  // log-barrier candidate has a nonzero floor even at the ideal centroid, so
+  // comparing its raw value against a threshold calibrated for the
+  // quadratic's 0-floor is meaningless. max_deviation (used in the
+  // classification test below, preserving the field name for continuity) is
+  // now the excursion from V(0).
+  const v0 = lyapunovValues[0] ?? 0;
+  const maxDeviationRaw = lyapunovValues.length ? Math.max(...lyapunovValues) : 0;
+  const maxDeviation    = lyapunovValues.length ? Math.max(...lyapunovValues.map(v => v - v0)) : 0;
 
   const classification =
     stabilityRatio > 0.6 && invarianceViolations === 0 && maxDeviation < 0.25
@@ -453,6 +574,8 @@ export function simulateCbf(opts: SimulateCbfOptions = {}): CbfSimResult {
     stability_ratio: +stabilityRatio.toFixed(6),
     delta_v_positive_ratio: +destabilizingRatio.toFixed(6),
     max_deviation: +maxDeviation.toFixed(8),
+    lyapunov_v0: +v0.toFixed(8),
+    lyapunov_max_raw: +maxDeviationRaw.toFixed(8),
     invariance_violations: invarianceViolations,
     fpl1_classification: classification,
     source: 'typescript-cbf-simulation',

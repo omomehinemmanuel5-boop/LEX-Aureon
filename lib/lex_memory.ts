@@ -70,11 +70,99 @@
  * reference set below is built from advbench.jsonl + jailbreakbench.jsonl
  * only (the two files that actually exist); the HarmBench data-file mystery
  * is a separate, not-yet-investigated question.
+ *
+ * feat (2026-07-16) — PERSISTENT CENTROID CACHE: _centroidCache and
+ * _harmCentroidCache are module-level in-memory Maps, so on Vercel serverless
+ * EVERY cold lambda instance recomputed both centroids from scratch: 360
+ * harm-reference embeds + 50 law embeds per instance (measured directly
+ * against the live centroid_cache table on 2026-07-16; the ~300 estimate
+ * this comment originally carried was off by ~20%). The per-text
+ * embedding_cache absorbs most Gemini calls when Turso reads succeed, but
+ * (a) that is still 410 Turso point reads PLUS 410 hit-counter UPDATE writes
+ * per cold start, and (b) getCachedEmbedding() returns null on ANY error —
+ * so during a Turso quota block every one of those lookups silently falls
+ * through to a live Gemini embed call. That coupling is how concurrent shard
+ * runs burned Gemini's 1,000/day quota in a handful of cold starts
+ * (diagnosed 2026-07-14 from live runtime logs; it then gutted the
+ * 2026-07-16 run's coverage — AdvBench 219/520 scored). The fix persists the
+ * COMPUTED centroid itself in Turso (centroid_cache, one row per
+ * kind×provider): a cold start now costs one Turso read per centroid.
+ * Invalidation is content-addressed, not TTL-based — each row stores a
+ * SHA-256 of the exact source texts, so a deploy that changes
+ * HARM_REFERENCE_PROMPTS or the laws forces a recompute. Provider-space
+ * correctness is preserved: rows are keyed by provider and carry the model
+ * name, so a Gemini-space centroid is never served into a Jina-space
+ * comparison.
+ *
+ * fix (2026-07-18) — CONTRASTIVE RECALIBRATION FOR THE HARM CENTROID: live
+ * probe testing found getHarmReferenceCentroid's raw cosine similarity
+ * essentially non-discriminating in production — benign prompts scored
+ * 0.79-0.82, genuinely harmful prompts scored 0.90-0.91, a ~0.10-0.12 gap
+ * against a shared 0.78-0.91 floor. Consistent with known anisotropy in
+ * sentence-embedding spaces: short, syntactically similar sentences (nearly
+ * every prompt in the harm corpus AND ordinary benign traffic share an
+ * imperative/question register) cluster in a narrow, uniformly-high cosine
+ * band regardless of semantic content. Added getBenignReferenceCentroid,
+ * mirroring getHarmReferenceCentroid exactly but sourced from
+ * lib/benign_reference_prompts.ts (ordinary prompts in the same surface
+ * registers). app/api/lex/govern/route.ts now computes threatSignal as
+ * harm-similarity MINUS benign-similarity (contrastive), not an absolute
+ * cosine value — see that file for the actual computation. This is a
+ * heuristic recalibration verified against the specific probe set that
+ * surfaced the problem, not a statistically validated fix; the downstream
+ * weight constants in sovereign_kernel.ts that consume threatSignal were
+ * calibrated against the OLD (compressed, ~0.78-0.91) range and may need
+ * re-tuning now that the typical range should be smaller and more spread
+ * out — flagged as follow-up, not assumed resolved by this pass alone.
+ *
+ * fix (2026-07-19) — EMBEDDINGS HAD NO COOLDOWN PROTECTION AT ALL: unlike
+ * lib/llm_provider.ts's generation calls (which have had a rate/quota
+ * cooldown since 2026-07-12), embedGemini/embedMistral/embedJina below had
+ * NO cooldown mechanism whatsoever — every single embed call, on every
+ * governed turn (prompt embedding, output embedding for self-referential
+ * detection, threat-signal comparison), unconditionally tried Gemini first
+ * regardless of how recently or how many times it had already 429'd this
+ * session. Diagnosed as a real, quantified contributor to a benchmark run's
+ * severe provider exhaustion (2026-07-19): Gemini is primary for BOTH
+ * generation (via lib/llm_provider.ts's generateGoverned, used by BOTH the
+ * raw and governed arms — see lib/sovereign_kernel.ts) AND embeddings, so an
+ * exhausted Gemini account was being re-probed from at least 3 call sites
+ * per turn with zero shared memory of the outcome between any of them. Now
+ * uses the same shared, cross-instance cooldown store as generation (see
+ * lib/provider_cooldown.ts) — a 429/402/403 discovered by embedGemini on one
+ * serverless instance is now visible to every other concurrent instance
+ * within lib/provider_cooldown.ts's sync interval, for both embedding AND
+ * generation call sites, instead of each layer and each instance
+ * rediscovering the same exhaustion independently.
+ *
+ * fix (2026-07-19, second pass) — GEMINI WAS ALWAYS TRIED FIRST, EVERY CALL:
+ * providerOrder() unconditionally put Gemini first whenever it was
+ * configured, meaning Gemini's free-tier budget was the ONLY one actually
+ * used under normal (non-failure) conditions — Mistral and Jina's entirely
+ * separate free-tier budgets sat idle unless Gemini had already failed.
+ * Since each provider is a genuinely independent account/company with its
+ * own quota, concentrating all default traffic on one of them wastes the
+ * other two's available capacity rather than using all three in parallel.
+ * providerOrder() now randomly alternates which of {Gemini, Jina} is tried
+ * first on each call — both are genuinely full-quality, native-dimension
+ * providers (no caveat attached to either in this file). Mistral stays
+ * fallback-only, not promoted into the rotation: its embedding is an
+ * explicit approximation (native 1024-dim truncated + re-normalized, not
+ * trained with a Matryoshka objective like Gemini's — see the "Provider-
+ * agnostic embeddings" section below), so treating it as sometimes-primary
+ * would trade quota savings for embedding quality on a meaningful fraction
+ * of calls. This does not touch the CORRECTNESS CONSTRAINT above — a single
+ * request's prompt/output/centroid embeddings are still pinned to whichever
+ * ONE provider that request resolved first; only the average distribution
+ * of which provider gets picked first, across many separate requests,
+ * changes.
  */
 
 import { getClient } from './db';
 import { env } from './env';
 import { HARM_REFERENCE_PROMPTS } from './harm_reference_prompts';
+import { BENIGN_REFERENCE_PROMPTS } from './benign_reference_prompts';
+import { isOnCooldown, markCooldown } from './provider_cooldown';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface LexMemoryEvent {
@@ -162,15 +250,99 @@ async function putCachedEmbedding(hash: string, embedding: number[]): Promise<vo
   }
 }
 
+// ── Persistent centroid cache (2026-07-16 — see file header feat note) ───────
+// One row per (kind, provider). kind ∈ 'constitutional' | 'harm_reference' |
+// 'benign_reference' (added 2026-07-18 — see that fix note).
+// source_hash = SHA-256 of the exact source texts the centroid was computed
+// from — content-addressed invalidation instead of TTL. All operations are
+// non-fatal: any failure falls through to the existing recompute path, which
+// itself degrades honestly (detection_degraded) exactly as before.
+
+type CentroidKind = 'constitutional' | 'harm_reference' | 'benign_reference';
+
+let _centroidTableEnsured = false;
+async function ensureCentroidTable(): Promise<void> {
+  if (_centroidTableEnsured) return;
+  try {
+    await getClient().execute(`
+      CREATE TABLE IF NOT EXISTS centroid_cache (
+        kind         TEXT    NOT NULL,
+        provider     TEXT    NOT NULL,
+        model        TEXT    NOT NULL,
+        source_hash  TEXT    NOT NULL,
+        embedding    TEXT    NOT NULL,
+        source_count INTEGER NOT NULL DEFAULT 0,
+        updated_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (kind, provider)
+      )
+    `);
+    _centroidTableEnsured = true;
+  } catch {
+    // Non-fatal — persistence failure never blocks centroid computation
+  }
+}
+
+async function getPersistedCentroid(
+  kind: CentroidKind,
+  provider: EmbedProvider,
+  expectedSourceHash: string,
+): Promise<number[] | null> {
+  try {
+    await ensureCentroidTable();
+    const r = await getClient().execute({
+      sql:  'SELECT embedding, model, source_hash FROM centroid_cache WHERE kind = ? AND provider = ?',
+      args: [kind, provider],
+    });
+    if (!r.rows.length) return null;
+    const row = r.rows[0];
+    // Content-addressed staleness check: source texts changed → recompute.
+    if (String(row.source_hash) !== expectedSourceHash) return null;
+    // Model swapped for this provider in code → the stored vector is in a
+    // different embedding space; refuse to serve it.
+    if (String(row.model) !== modelNameFor(provider)) return null;
+    const vec = JSON.parse(String(row.embedding)) as number[];
+    return Array.isArray(vec) && vec.length > 0 ? vec : null;
+  } catch {
+    return null;
+  }
+}
+
+async function putPersistedCentroid(
+  kind: CentroidKind,
+  provider: EmbedProvider,
+  sourceHash: string,
+  vec: number[],
+  sourceCount: number,
+): Promise<void> {
+  try {
+    await ensureCentroidTable();
+    await getClient().execute({
+      sql: `INSERT INTO centroid_cache (kind, provider, model, source_hash, embedding, source_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, unixepoch())
+            ON CONFLICT(kind, provider) DO UPDATE SET
+              model        = excluded.model,
+              source_hash  = excluded.source_hash,
+              embedding    = excluded.embedding,
+              source_count = excluded.source_count,
+              updated_at   = excluded.updated_at`,
+      args: [kind, provider, modelNameFor(provider), sourceHash, JSON.stringify(vec), sourceCount],
+    });
+  } catch {
+    // Non-fatal — cache store failure never blocks the main flow
+  }
+}
+
 // ── Provider-agnostic embeddings ───────────────────────────────────────────────
-// Three providers, tried in priority order with REAL runtime fallback:
-// Gemini (gemini-embedding-001, best quality/cost, but a hard 1,000/day free
-// quota) → Mistral (mistral-embed, key already configured for generation) →
-// Jina (jina-embeddings-v3). All vectors are EMBED_DIM-dimensional (Mistral's
-// native 1024-dim output is truncated + re-normalized — an approximation, since
-// mistral-embed was not trained with a Matryoshka objective like Gemini's; only
-// used as a last-resort fallback, never primary) and L2-normalized, so cosine
-// similarity and centroid averaging stay consistent WITHIN a resolved provider.
+// Three providers, with REAL runtime fallback: Gemini (gemini-embedding-001,
+// full quality, native truncatable dims, but a hard 1,000/day free quota) and
+// Jina (jina-embeddings-v3, also full quality, native dims) are ROTATED as the
+// first-tried provider (see 2026-07-19, second pass fix note above) — Mistral
+// (mistral-embed, key already configured for generation) stays a fallback-only
+// tier, since its embedding is an explicit approximation (native 1024-dim
+// truncated + re-normalized — mistral-embed was not trained with a Matryoshka
+// objective like Gemini's). All vectors are EMBED_DIM-dimensional and
+// L2-normalized, so cosine similarity and centroid averaging stay consistent
+// WITHIN a resolved provider.
 //
 // IMPORTANT — switching providers changes the embedding SPACE. Vectors from
 // different models are not comparable even at the same length. Two safeguards:
@@ -186,11 +358,34 @@ export const EMBED_DIM = 256;
 
 export type EmbedProvider = 'gemini' | 'mistral' | 'jina';
 
+// fix (2026-07-19) — cross-instance cooldown for embed calls, same duration
+// as generation's (lib/llm_provider.ts). See file header.
+const EMBED_COOLDOWN_MS = 3 * 60 * 1000;
+
+/**
+ * fix (2026-07-19, second pass) — see file header. Randomly alternates which
+ * of {gemini, jina} leads the chain on each call, instead of always starting
+ * with Gemini, so both providers' independent free-tier budgets get used
+ * under normal (non-failure) conditions rather than one sitting idle by
+ * default. Mistral is appended last regardless of the coin flip — see file
+ * header for why it stays fallback-only rather than joining the rotation.
+ */
 function providerOrder(): EmbedProvider[] {
-  const order: EmbedProvider[] = [];
-  if (env.GEMINI_API_KEY)  order.push('gemini');
-  if (env.MISTRAL_API_KEY) order.push('mistral');
-  if (env.JINA_API_KEY)    order.push('jina');
+  const hasGemini  = !!env.GEMINI_API_KEY;
+  const hasJina    = !!env.JINA_API_KEY;
+  const hasMistral = !!env.MISTRAL_API_KEY;
+
+  const primaryPool: EmbedProvider[] = [];
+  if (hasGemini) primaryPool.push('gemini');
+  if (hasJina)   primaryPool.push('jina');
+
+  let order: EmbedProvider[];
+  if (primaryPool.length === 2) {
+    order = Math.random() < 0.5 ? [primaryPool[0], primaryPool[1]] : [primaryPool[1], primaryPool[0]];
+  } else {
+    order = [...primaryPool];
+  }
+  if (hasMistral) order.push('mistral');
   return order;
 }
 
@@ -218,6 +413,10 @@ function l2normalize(v: number[]): number[] {
 }
 
 async function embedGemini(text: string): Promise<number[]> {
+  const model = 'gemini-embedding-001';
+  if (await isOnCooldown('gemini', model)) {
+    throw new Error(`Gemini embed on cooldown (recent 429/402/403)`);
+  }
   const key = env.GEMINI_API_KEY as string;
   const res = await fetch(
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent',
@@ -233,7 +432,13 @@ async function embedGemini(text: string): Promise<number[]> {
       signal: AbortSignal.timeout(10_000),
     },
   );
-  if (!res.ok) throw new Error(`Gemini embed ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429 || res.status === 402 || res.status === 403) {
+      markCooldown('gemini', model, EMBED_COOLDOWN_MS, `HTTP ${res.status}`);
+    }
+    throw new Error(`Gemini embed ${res.status}: ${body}`);
+  }
   const d = await res.json() as { embedding?: { values?: number[] } };
   const values = d.embedding?.values;
   if (!values?.length) throw new Error('Gemini embed: no values in response');
@@ -243,6 +448,10 @@ async function embedGemini(text: string): Promise<number[]> {
 }
 
 async function embedMistral(text: string): Promise<number[]> {
+  const model = 'mistral-embed';
+  if (await isOnCooldown('mistral', model)) {
+    throw new Error(`Mistral embed on cooldown (recent 429/402/403)`);
+  }
   const key = env.MISTRAL_API_KEY as string;
   const res = await fetch('https://api.mistral.ai/v1/embeddings', {
     method:  'POST',
@@ -250,7 +459,13 @@ async function embedMistral(text: string): Promise<number[]> {
     body: JSON.stringify({ model: 'mistral-embed', input: [text] }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) throw new Error(`Mistral embed ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429 || res.status === 402 || res.status === 403) {
+      markCooldown('mistral', model, EMBED_COOLDOWN_MS, `HTTP ${res.status}`);
+    }
+    throw new Error(`Mistral embed ${res.status}: ${body}`);
+  }
   const d = await res.json() as { data?: { embedding?: number[] }[] };
   const values = d.data?.[0]?.embedding;
   if (!values?.length) throw new Error('Mistral embed: no values in response');
@@ -262,6 +477,10 @@ async function embedMistral(text: string): Promise<number[]> {
 }
 
 async function embedJina(text: string): Promise<number[]> {
+  const model = 'jina-embeddings-v3';
+  if (await isOnCooldown('jina', model)) {
+    throw new Error(`Jina embed on cooldown (recent 429/402/403)`);
+  }
   const key = env.JINA_API_KEY as string;
   const res = await fetch('https://api.jina.ai/v1/embeddings', {
     method:  'POST',
@@ -274,7 +493,13 @@ async function embedJina(text: string): Promise<number[]> {
     }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) throw new Error(`Jina ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 429 || res.status === 402 || res.status === 403) {
+      markCooldown('jina', model, EMBED_COOLDOWN_MS, `HTTP ${res.status}`);
+    }
+    throw new Error(`Jina ${res.status}: ${body}`);
+  }
   const d = await res.json() as { data: { embedding: number[] }[] };
   return d.data[0].embedding; // Jina v3 returns normalized vectors
 }
@@ -553,12 +778,22 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
     try {
       const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
       const lawTexts = SOVEREIGN_LAWS.slice(0, 50).map(law => `${law.name}: ${law.text}`);
+      // Persistent layer (2026-07-16): one Turso read replaces re-embedding
+      // all 50 laws on every cold lambda instance / TTL expiry.
+      const sourceHash = await hashText(lawTexts.join('\n'));
+      const persisted = await getPersistedCentroid('constitutional', forceProvider, sourceHash);
+      if (persisted) {
+        _centroidCache.set(forceProvider, { vec: persisted, ts: now });
+        return persisted;
+      }
       // No fallback here by design — mixing this centroid's provider with a
       // different provider's output embedding would be an invalid comparison.
       const embeddings = await Promise.all(lawTexts.map(t => embedTextWithProvider(t, forceProvider)));
       const centroid = computeCentroidFor(embeddings);
       if (!centroid) return null;
       _centroidCache.set(forceProvider, { vec: centroid, ts: now });
+      putPersistedCentroid('constitutional', forceProvider, sourceHash, centroid, lawTexts.length)
+        .catch(() => undefined);
       return centroid;
     } catch (e) {
       console.error('getConstitutionalCentroid (forced provider) error:', e);
@@ -574,11 +809,25 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
   try {
     const { SOVEREIGN_LAWS } = await import('./sovereign_laws');
     const lawTexts = SOVEREIGN_LAWS.slice(0, 50).map(law => `${law.name}: ${law.text}`);
+    // Persistent layer (2026-07-16): callers on this branch accept any
+    // provider's centroid, so serve the first persisted hit in priority order.
+    const sourceHash = await hashText(lawTexts.join('\n'));
+    for (const p of providerOrder()) {
+      const persisted = await getPersistedCentroid('constitutional', p, sourceHash);
+      if (persisted) {
+        _centroidCache.set(p, { vec: persisted, ts: now });
+        return persisted;
+      }
+    }
     const embeddings = await embedTexts(lawTexts); // provider-consistent fallback chain
     const centroid = computeCentroidFor(embeddings);
     if (!centroid) return null;
     const resolvedProvider = _lastResolvedProvider ?? providerOrder()[0];
-    if (resolvedProvider) _centroidCache.set(resolvedProvider, { vec: centroid, ts: now });
+    if (resolvedProvider) {
+      _centroidCache.set(resolvedProvider, { vec: centroid, ts: now });
+      putPersistedCentroid('constitutional', resolvedProvider, sourceHash, centroid, lawTexts.length)
+        .catch(() => undefined);
+    }
     return centroid;
   } catch (e) {
     console.error('getConstitutionalCentroid error:', e);
@@ -624,7 +873,7 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
 }
 
 // ── Harm reference centroid (2026-07-12) — INPUT-SIDE threat signal ───────────
-// See file header (both feat and second-pass fix notes). Mirrors
+// See file header (feat, second-pass, and 2026-07-18 fix notes). Mirrors
 // getConstitutionalCentroid's provider-pinned caching pattern, but now sources
 // its prompts from the statically-imported HARM_REFERENCE_PROMPTS array
 // (lib/harm_reference_prompts.ts) rather than a runtime fs read — that file's
@@ -640,6 +889,15 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
   if (cached && (now - cached.ts) < HARM_CENTROID_TTL_MS) return cached.vec;
   try {
     if (!HARM_REFERENCE_PROMPTS.length) return null;
+    // Persistent layer (2026-07-16): one Turso read replaces re-embedding the
+    // full reference set (360 texts, measured — not the originally-estimated
+    // ~300) on every cold lambda instance.
+    const sourceHash = await hashText(HARM_REFERENCE_PROMPTS.join('\n'));
+    const persisted = await getPersistedCentroid('harm_reference', forceProvider, sourceHash);
+    if (persisted) {
+      _harmCentroidCache.set(forceProvider, { vec: persisted, ts: now });
+      return persisted;
+    }
     // No cross-provider fallback here by design, same reasoning as
     // getConstitutionalCentroid(forceProvider) — this centroid must be
     // compared against a prompt embedding from the SAME provider, or the
@@ -648,6 +906,8 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
     const centroid = computeCentroidFor(embeddings);
     if (!centroid) return null;
     _harmCentroidCache.set(forceProvider, { vec: centroid, ts: now });
+    putPersistedCentroid('harm_reference', forceProvider, sourceHash, centroid, HARM_REFERENCE_PROMPTS.length)
+      .catch(() => undefined);
     return centroid;
   } catch (e) {
     console.error('getHarmReferenceCentroid error:', e);
@@ -655,7 +915,63 @@ export async function getHarmReferenceCentroid(forceProvider: EmbedProvider): Pr
   }
 }
 
+// ── Benign reference centroid (2026-07-18) — CONTRASTIVE RECALIBRATION ────────
+// See file header 2026-07-18 fix note and lib/benign_reference_prompts.ts.
+// Identical structure to getHarmReferenceCentroid — same caching pattern, same
+// provider-pinning requirement (this centroid must be compared against a
+// prompt embedding from the SAME provider). Exists so the caller can compute
+// threatSignal as harm-similarity MINUS benign-similarity rather than an
+// absolute cosine value, netting out the register-level similarity that both
+// corpora share and that was swamping the actual content signal.
+const _benignCentroidCache = new Map<EmbedProvider, { vec: number[]; ts: number }>();
+const BENIGN_CENTROID_TTL_MS = 60 * 60 * 1000; // same rationale as HARM_CENTROID_TTL_MS — static per deploy
+
+export async function getBenignReferenceCentroid(forceProvider: EmbedProvider): Promise<number[] | null> {
+  const now = Date.now();
+  const cached = _benignCentroidCache.get(forceProvider);
+  if (cached && (now - cached.ts) < BENIGN_CENTROID_TTL_MS) return cached.vec;
+  try {
+    if (!BENIGN_REFERENCE_PROMPTS.length) return null;
+    const sourceHash = await hashText(BENIGN_REFERENCE_PROMPTS.join('\n'));
+    const persisted = await getPersistedCentroid('benign_reference', forceProvider, sourceHash);
+    if (persisted) {
+      _benignCentroidCache.set(forceProvider, { vec: persisted, ts: now });
+      return persisted;
+    }
+    const embeddings = await Promise.all(BENIGN_REFERENCE_PROMPTS.map(p => embedTextWithProvider(p, forceProvider)));
+    const centroid = computeCentroidFor(embeddings);
+    if (!centroid) return null;
+    _benignCentroidCache.set(forceProvider, { vec: centroid, ts: now });
+    putPersistedCentroid('benign_reference', forceProvider, sourceHash, centroid, BENIGN_REFERENCE_PROMPTS.length)
+      .catch(() => undefined);
+    return centroid;
+  } catch (e) {
+    console.error('getBenignReferenceCentroid error:', e);
+    return null;
+  }
+}
+
 export function invalidateCentroidCache(provider?: EmbedProvider): void {
-  if (provider) { _centroidCache.delete(provider); _harmCentroidCache.delete(provider); }
-  else { _centroidCache.clear(); _harmCentroidCache.clear(); }
+  if (provider) {
+    _centroidCache.delete(provider);
+    _harmCentroidCache.delete(provider);
+    _benignCentroidCache.delete(provider);
+  } else {
+    _centroidCache.clear();
+    _harmCentroidCache.clear();
+    _benignCentroidCache.clear();
+  }
+  // Also clear the persistent Turso layer (2026-07-16), best-effort — the
+  // content-addressed source_hash already protects against staleness, so
+  // this only matters for a deliberate manual invalidation.
+  try {
+    const db = getClient();
+    if (provider) {
+      db.execute({ sql: 'DELETE FROM centroid_cache WHERE provider = ?', args: [provider] }).catch(() => undefined);
+    } else {
+      db.execute('DELETE FROM centroid_cache').catch(() => undefined);
+    }
+  } catch {
+    // Non-fatal
+  }
 }

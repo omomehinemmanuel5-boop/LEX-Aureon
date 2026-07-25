@@ -16,6 +16,11 @@ function healthOf(m: number) {
 export default function HeroTicker() {
   const [M, setM] = useState<number | null>(null);
   const [flash, setFlash] = useState(false);
+  // 2026-07-20: consecutive fetch failures. During the 2026-07-14 Turso
+  // incident this ticker showed "SYNCING…" indefinitely — an eternal loading
+  // state is a lie when the backend is down. After 2 consecutive failures we
+  // say "UNAVAILABLE" instead; any success resets.
+  const [failures, setFailures] = useState(0);
 
   useEffect(() => {
     const fetchState = async () => {
@@ -34,15 +39,16 @@ export default function HeroTicker() {
         // faster than the cache TTL was never buying real freshness (same
         // reasoning already applied to LiveStatsBar on 2026-07-10).
         const r = await fetch('/api/live-state');
-        if (!r.ok) return;
+        if (!r.ok) { setFailures(f => f + 1); return; }
         const d = await r.json() as { state?: { M?: number | null } };
         const newM = d.state?.M ?? null;
-        if (newM === null) return;
+        if (newM === null) { setFailures(f => f + 1); return; }
+        setFailures(0);
         setM(newM);
         setFlash(true);
         setTimeout(() => setFlash(false), 400);
       } catch {
-        // silently keep existing value
+        setFailures(f => f + 1); // keep existing value, but stop claiming "syncing" forever
       }
     };
 
@@ -51,8 +57,11 @@ export default function HeroTicker() {
     return () => clearInterval(id);
   }, []);
 
+  const unavailable = M === null && failures >= 2;
   const { label: healthLabel, color: healthColor } =
-    M !== null ? healthOf(M) : { label: '…', color: GOLD };
+    M !== null ? healthOf(M)
+    : unavailable ? { label: 'OFFLINE', color: '#64748b' }
+    : { label: '…', color: GOLD };
 
   return (
     <div
@@ -67,7 +76,7 @@ export default function HeroTicker() {
       <span className="w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0" style={{ background: healthColor }} />
       <span className="text-slate-600 dark:text-slate-500">Canonical M-Score:</span>
       <span className="font-black" style={{ color: healthColor }}>
-        {M !== null ? `${(M * 100).toFixed(1)}%` : 'SYNCING…'}
+        {M !== null ? `${(M * 100).toFixed(1)}%` : unavailable ? 'UNAVAILABLE' : 'SYNCING…'}
       </span>
       <span className="text-slate-300 dark:text-slate-700">·</span>
       <span className="text-slate-600 dark:text-slate-500">

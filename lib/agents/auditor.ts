@@ -18,6 +18,7 @@
 import { AgentContext, AgentResult } from './types';
 import crypto from 'crypto';
 import { MODELS } from '../llm_provider';
+import { auditorSigningKey } from '../kernel_bridge';
 
 function sha256(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -75,7 +76,9 @@ export async function AuditorAgent(ctx: AgentContext): Promise<AgentResult> {
     const shortId     = receiptHash.slice(0, 8).toUpperCase();
     const audit_id    = `LEX-${shortId}`;
 
-    const signingKey = process.env.AUDITOR_SECRET || 'lex-aureon-sovereign-key-2026';
+    // 2026-07-20: shared key resolution — production refuses the public
+    // fallback key (throws); see lib/kernel_bridge.ts auditorSigningKey.
+    const signingKey = auditorSigningKey();
     const signature  = crypto
       .createHmac('sha256', signingKey)
       .update(receiptData)

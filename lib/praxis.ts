@@ -11,6 +11,7 @@ import {
   CRS, ZTraj, GovernorMode,
   TAU_FLOOR,
 } from './kv';
+import { projectCRSToConstitutionalSimplex } from './constitution';
 
 // ── Attack detection patterns ─────────────────────────────────────────────────
 
@@ -82,32 +83,7 @@ const STATIC_DELTA: Record<string, { dc: number; dr: number; ds: number }> = {
 };
 
 // ── Simplex helpers ───────────────────────────────────────────────────────────
-// CBF-safe Euclidean projection: guarantees each pillar ≥ TAU_FLOOR and C+R+S=1
-/**
- * Projects a given CRS (Continuity, Reciprocity, Sovereignty) vector onto the constitutional simplex.
- * This ensures that each pillar value is greater than or equal to TAU_FLOOR and their sum is 1.
- * Implements the Duchi–Shalev-Shwartz–Singer algorithm with an offset for CBF-safe Euclidean projection.
- * @param c - The Continuity value.
- * @param r - The Reciprocity value.
- * @param s - The Sovereignty value.
- * @returns The projected CRS vector.
- */
-function projectToSimplex(c: number, r: number, s: number): CRS {
-  const floor = TAU_FLOOR;
-  const vals = [c, r, s];
-  let v = vals.map(x => Math.max(x - floor, 0));
-  const target = 1.0 - 3 * floor;
-  const u = [...v].sort((a, b) => b - a);
-  let cssv = 0, rho = 0;
-  for (let j = 0; j < 3; j++) {
-    cssv += u[j];
-    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
-  }
-  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
-  v = v.map(x => Math.max(x - theta, 0) + floor);
-  const total = v.reduce((a, b) => a + b, 0);
-  return { c: v[0] / total, r: v[1] / total, s: v[2] / total };
-}
+const projectToSimplex = projectCRSToConstitutionalSimplex;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 

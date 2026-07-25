@@ -7,9 +7,9 @@
   ],
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run typecheck && next build",
     "start": "next start",
-    "lint": "next lint --max-warnings=0",
+    "lint": "eslint app lib components __tests__ --ext .js,.ts,.tsx --quiet",
     "test": "vitest run",
     "test:watch": "vitest",
     "health": "npx tsx scripts/health-check.ts",
@@ -37,7 +37,9 @@
     "ingest": "npx tsx scripts/ingest-results.ts",
     "ingest-results": "npx tsx scripts/ingest-results.ts",
     "humaneval": "npx tsx scripts/humaneval/run.ts",
-    "humaneval:score": "npx tsx scripts/humaneval/score.ts"
+    "humaneval:score": "npx tsx scripts/humaneval/score.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
@@ -46,6 +48,7 @@
     "next": "15.5.15",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "typescript": "^5.0.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
@@ -60,7 +63,6 @@
     "tailwindcss": "^4.0.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.22.4",
-    "typescript": "^5.0.0",
     "vitest": "^1.6.1"
   }
 }

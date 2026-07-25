@@ -11,8 +11,13 @@ on:
         description: 'Comma-separated benchmarks to run (default: all)'
         required: false
         default: 'xstest,strong_reject,xstest_contrast'
-  schedule:
-    - cron: '0 2 * * 0'  # Run Sundays at 2am UTC (extended benchmarks only)
+  # schedule:
+  #   - cron: '0 2 * * 0'  # Run Sundays at 2am UTC (extended benchmarks only)
+  # DISABLED 2026-07-18 (Emmanuel) — automatic runs (this + lexbench-prod.yml's
+  # daily cron) were burning free provider quota (Gemini/Groq/Mistral/Jina)
+  # with no cost control. Manual dispatch (workflow_dispatch above) still
+  # works for on-demand runs. Re-enable this schedule block once quota is
+  # paid for.
 
 # fix (2026-07-10): moved off the per-shard matrix job (run-extended-benchmarks)
 # onto the workflow level here. Same bug as lexbench-prod.yml — see that
@@ -20,7 +25,7 @@ on:
 # group applied identically to every matrix shard instance causes GitHub
 # Actions to cancel previously-pending shards rather than queue them, since
 # each group only ever holds one running + one pending member. Top-level
-# concurrency applies once per whole run instead, leaving max-parallel:2 as
+# concurrency applies once per whole run instead, leaving max-parallel as
 # the only per-shard constraint while still mutexing the entire run against
 # lexbench-prod.yml's entire run via the same group name.
 concurrency:
@@ -150,9 +155,11 @@ jobs:
           else
             # For XSTest + StrongREJECT, typically smaller datasets
             # fix (2026-07-14): 50 -> 100 -- same reasoning as lexbench-prod.yml's
-            # 2026-07-14 fix note: halves the number of sequential batches at
-            # max-parallel:2, saving fixed per-shard setup overhead, without
-            # increasing concurrent provider load.
+            # 2026-07-14 fix note: halves the number of sequential batches,
+            # saving fixed per-shard setup overhead, without increasing
+            # concurrent provider load (shard SIZE and max-parallel are
+            # independent levers — see the 2026-07-19 fix note below on the
+            # run-extended-benchmarks job for why max-parallel itself changed).
             TOTAL_PROMPTS=$(npx tsx scripts/lexbench/get-total-prompts.ts | tail -1)
             echo "Total prompts: $TOTAL_PROMPTS"
             SHARD_SIZE=100
@@ -166,16 +173,33 @@ jobs:
 
   # ── Run XSTest and StrongREJECT, bounded concurrency ────────────────────
   # fix (2026-07-08) — no max-parallel meant every shard ran simultaneously
-  # against the same shared provider secrets. max-parallel:2 bounds this
-  # job's own shard concurrency. (The cross-workflow mutex against
-  # lexbench-prod.yml now lives at the top-level `concurrency:` block above
-  # — see the 2026-07-10 fix note there for why it moved off this job.)
+  # against the same shared provider secrets. max-parallel bounds this job's
+  # own shard concurrency. (The cross-workflow mutex against lexbench-prod.yml
+  # now lives at the top-level `concurrency:` block above — see the
+  # 2026-07-10 fix note there for why it moved off this job.)
+  #
+  # fix (2026-07-19) — max-parallel 2 -> 4: raised now that the underlying
+  # cause of provider exhaustion is meaningfully mitigated, not just bounded
+  # by a circuit breaker: (a) lib/provider_cooldown.ts makes cooldown
+  # discovery SHARED across concurrent instances (a 429 found by one shard's
+  # requests is now visible to every other shard within ~20s, instead of
+  # each one re-discovering it independently — see that file's header), and
+  # (b) lib/llm_provider.ts's generateGoverned and lib/lex_memory.ts's
+  # embedding provider selection now DISTRIBUTE across Gemini/Cerebras/Groq
+  # and Gemini/Jina by default instead of concentrating every call on Gemini
+  # first (see both files' 2026-07-19 fix notes). Together these reduce both
+  # how much load concentrates on any single provider AND how much wasted
+  # retry latency accumulates once one does exhaust — the two things
+  # max-parallel:2 was originally chosen to bound. Kept below lexbench-prod's
+  # eventual ceiling deliberately conservative pending real data from this
+  # run; the 2026-07-17 sustained-exhaustion circuit breaker still bounds
+  # the downside if 4 concurrent shards turns out to still be too many.
   run-extended-benchmarks:
     needs: determine-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 4
       matrix: ${{ fromJson(needs.determine-shards.outputs.matrix) }}
 
     steps:
@@ -246,13 +270,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # fix (2026-07-17): removed if-no-files-found — same invalid-input
+      # bug as lexbench-prod.yml's identical step; see that file's note.
       - name: Download all shard results
         uses: actions/download-artifact@v4
         with:
           pattern: extended-benchmark-shard-*
           merge-multiple: true
           path: results/
-          if-no-files-found: warn
 
       - name: Aggregate results
         run: |
@@ -299,6 +324,18 @@ jobs:
       # also true for a quick-test dispatch (limit set), meaning a tiny
       # quick-test summary could overwrite data/lexbench-summary-extended.json
       # in the repo. Added the same github.event.inputs.limit == '' check.
+      #
+      # fix (2026-07-19) — `git add` WAS SILENTLY FAILING: data/ is listed in
+      # .gitignore, so `git add data/lexbench-summary-extended.json` errored
+      # ("The following paths are ignored by one of your .gitignore files")
+      # and the step exited nonzero — confirmed directly in a real run's job
+      # log (2026-07-19). This means the committed baseline
+      # (data/lexbench-summary-extended.json), which check-regression.ts
+      # reads to compare a new run against, was likely never actually
+      # updated by this path. `git add -f` overrides the ignore rule for
+      # this one intentionally-tracked exception, matching how
+      # data/lexbench-summary.json (lexbench-prod.yml's equivalent file) is
+      # already committed and tracked in the repo despite living under data/.
       - name: Commit summary to repo
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.limit == ''
         continue-on-error: true
@@ -310,7 +347,7 @@ jobs:
           git config user.name  "Lex CRS Agent"
           git config user.email "lexaureon@gmail.com"
           cp summary_extended.json data/lexbench-summary-extended.json
-          git add data/lexbench-summary-extended.json
+          git add -f data/lexbench-summary-extended.json
           git diff --staged --quiet && echo "Nothing to commit" && exit 0
           git commit -m "results: LexBench extended run (XSTest + StrongREJECT) $(date +%Y-%m-%d)"
           git pull --rebase origin main

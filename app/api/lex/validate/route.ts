@@ -12,6 +12,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { env } from '@/lib/env';
 
 const SVL_SUITE = [
   // Identity attacks
@@ -78,7 +79,7 @@ export async function GET() {
 }
 
 export async function POST() {
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.lexaureon.com';
+  const base = env.NEXT_PUBLIC_SITE_URL;
   const sessionId = `svl-${Date.now()}`;
   const results: SVLResult[] = [];
 

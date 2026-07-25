@@ -103,6 +103,7 @@ import {
   type EmbedProvider,
 } from '@/lib/lex_memory';
 import { preEval }            from '@/lib/praxis';
+import { publicError }        from '@/lib/safe_error';
 import { GovernorAgent }      from '@/lib/agents/governor';
 import { InterventionAgent }  from '@/lib/agents/intervention';
 import { NeithraAgent }       from '@/lib/agents/neithra';
@@ -182,7 +183,7 @@ export async function POST(req: Request) {
         emit('stage', { name: 'generating', description: 'Generator: dual LLM — raw (T=0.4) + governed (T=f(M))' });
         const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
 
-        if (result.status === 'Error') { emit('error', { error: result.error ?? 'Kernel error' }); controller.close(); return; }
+        if (result.status === 'Error') { emit('error', { error: publicError('govern.stream.kernel', result.error ?? 'Kernel error') }); controller.close(); return; }
 
         // ── Pre-governance ("before") state — raw kernel measurement prior to
         // the governor correction / CBF projection that yields the final state.
@@ -206,7 +207,15 @@ export async function POST(req: Request) {
         let sovereigntyDriftDetected = false;
         let sovereigntyRaw: number | null = null;
         let detectionDegraded = false;
-        if (promptEmbedding.length && promptEmbedProvider) {
+        // When the language providers are fully exhausted, result.governed_output
+        // is a static "unavailable" fallback, not a real model answer. Embedding
+        // it to measure self-referential sovereignty would (a) be meaningless —
+        // there is no generated response to check — and (b) spend an embedding
+        // provider call at the exact moment quota is scarcest. Skip it and mark
+        // detection honestly degraded. (No effect on normal or raw_fallback turns.)
+        if (result.governed_source === 'unavailable') {
+          detectionDegraded = true;
+        } else if (promptEmbedding.length && promptEmbedProvider) {
           try {
             const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
               embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
@@ -335,13 +344,16 @@ export async function POST(req: Request) {
         ]);
 
         // fix (2026-07-11): canonical, persisted id wins — see file header.
+        // fix (2026-07-20): receiptId is now '' when the receipt could not be
+        // persisted (see kernel_bridge) — surface that honestly instead of
+        // presenting the auditor's non-persisted id as if it were audit-backed.
         const auditId = receiptId || (auditorResult?.meta?.audit_id as string) || 'unknown';
-        emit('receipt', { audit_id: auditId, sha256_input: result.receipt.input_hash, sha256_output: (auditorResult?.meta?.output_hash as string) ?? '', brittleness: (auditorResult?.meta?.brittleness_B as number) ?? 0, vaulturex: vaul?.compliance_receipt ?? '' });
+        emit('receipt', { audit_id: auditId, persisted: !!receiptId, sha256_input: result.receipt.input_hash, sha256_output: (auditorResult?.meta?.output_hash as string) ?? '', brittleness: (auditorResult?.meta?.brittleness_B as number) ?? 0, vaulturex: vaul?.compliance_receipt ?? '' });
 
-        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: kernel.state.C, r_measured: kernel.state.R, s_measured: kernel.state.S }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: sovereigntyDriftDetected, detection_degraded: detectionDegraded, embed_provider: promptEmbedProvider, z_weights: result.receipt.z_weights, receipt_id: auditId, refused: decision.refused, refusal_reasons: decision.reasons, primary_refusal_reason: decision.primary, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents+SingleEngine' });
+        emit('complete', { governed_output: governedOutput, raw_output: result.raw_output, anchored_output: result.governed_output, state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S }, M: finalM, raw_state: { C: rawState.C, R: rawState.R, S: rawState.S }, m_before: mBefore, health_band: result.health_band, temperature: result.temperature, theta: result.theta, effective_theta: result.effective_theta, attack_pressure: kernel.attack_pressure, semantic_signal: kernelSignal, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, stability_ratio: result.stability_ratio, memory_injected: memoryContext.length > 0, metrics: { c_measured: kernel.state.C, r_measured: kernel.state.R, s_measured: kernel.state.S }, pre_eval: pre, governor: govResult?.meta ?? null, intervention: needsIntervention, law_invoked: invokedLaw, vaulturex: { compliant: vaul?.compliant ?? true, risk_level: vaul?.risk_level ?? 'LOW' }, self_referential_fired: sovereigntyDriftDetected, detection_degraded: detectionDegraded, embed_provider: promptEmbedProvider, z_weights: result.receipt.z_weights, receipt_id: auditId, refused: decision.refused, refusal_reasons: decision.reasons, primary_refusal_reason: decision.primary, governed_source: result.governed_source ?? null, raw_provider: result.raw_provider ?? null, governed_provider: result.governed_provider ?? null, version: 'SovereignKernel-v2+PRAXIS+SelfRef+AllAgents+SingleEngine' });
 
       } catch (e) {
-        emit('error', { error: String(e) });
+        emit('error', { error: publicError('govern.stream', e) });
       } finally {
         controller.close();
       }

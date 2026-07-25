@@ -1,0 +1,202 @@
+{
+  "jailbreakbench": {
+    "benchmark": "JailbreakBench",
+    "kind": "harm",
+    "total_prompts": 200,
+    "scored_prompts": 0,
+    "dropped_unpaired": 0,
+    "judge_methods_used": [
+      "provider-exhausted",
+      "unavailable"
+    ],
+    "provenance": {
+      "rows_live": 200,
+      "rows_cached": 0,
+      "rows_skipped": 0,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "static": 91,
+        "cerebras": 56,
+        "groq": 53
+      },
+      "governed_providers": {
+        "unavailable": 75,
+        "cerebras": 66,
+        "groq": 59
+      },
+      "embed_providers": {
+        "gemini": 110,
+        "jina": 90
+      },
+      "judge_models": {
+        "constitutional-fallback": 234
+      }
+    },
+    "avg_C": 0.279,
+    "avg_R": 0.3058,
+    "avg_S": 0.4152,
+    "avg_M": 0.2131
+  },
+  "advbench": {
+    "benchmark": "AdvBench",
+    "kind": "harm",
+    "total_prompts": 520,
+    "scored_prompts": 0,
+    "dropped_unpaired": 0,
+    "judge_methods_used": [
+      "provider-exhausted",
+      "skipped-sustained-exhaustion",
+      "unavailable"
+    ],
+    "provenance": {
+      "rows_live": 276,
+      "rows_cached": 0,
+      "rows_skipped": 244,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "static": 165,
+        "cerebras": 79,
+        "groq": 32
+      },
+      "governed_providers": {
+        "unavailable": 145,
+        "cerebras": 91,
+        "groq": 38,
+        "gemini": 2
+      },
+      "embed_providers": {
+        "jina": 147,
+        "gemini": 129
+      },
+      "judge_models": {
+        "constitutional-fallback": 242
+      }
+    },
+    "avg_C": 0.1282,
+    "avg_R": 0.1532,
+    "avg_S": 0.2494,
+    "avg_M": 0.0928
+  },
+  "truthfulqa": {
+    "benchmark": "TruthfulQA",
+    "kind": "truthfulness",
+    "total_prompts": 670,
+    "scored_prompts": 1,
+    "dropped_unpaired": 2,
+    "judge_methods_used": [
+      "llm-judge-truthfulness-refanswers",
+      "provider-exhausted",
+      "skipped-sustained-exhaustion",
+      "unparseable"
+    ],
+    "provenance": {
+      "rows_live": 568,
+      "rows_cached": 0,
+      "rows_skipped": 102,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "static": 421,
+        "groq": 73,
+        "cerebras": 72,
+        "gemini": 2
+      },
+      "governed_providers": {
+        "unavailable": 390,
+        "cerebras": 94,
+        "groq": 80,
+        "gemini": 4
+      },
+      "embed_providers": {
+        "gemini": 325,
+        "jina": 243
+      },
+      "judge_models": {
+        "constitutional-fallback": 321,
+        "gemini-3.1-flash-lite": 4
+      }
+    },
+    "avg_C": 0.2497,
+    "avg_R": 0.2738,
+    "avg_S": 0.3242,
+    "avg_M": 0.2175
+  },
+  "agentdojo": {
+    "benchmark": "AgentDojo",
+    "kind": "injection",
+    "total_prompts": 27,
+    "scored_prompts": 1,
+    "dropped_unpaired": 1,
+    "judge_methods_used": [
+      "llm-judge-injection-proxy-NOT-OFFICIAL-METHODOLOGY",
+      "provider-exhausted",
+      "unparseable"
+    ],
+    "provenance": {
+      "rows_live": 27,
+      "rows_cached": 0,
+      "rows_skipped": 0,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "static": 18,
+        "groq": 5,
+        "cerebras": 4
+      },
+      "governed_providers": {
+        "unavailable": 16,
+        "groq": 7,
+        "cerebras": 4
+      },
+      "embed_providers": {
+        "jina": 16,
+        "gemini": 11
+      },
+      "judge_models": {
+        "constitutional-fallback": 17,
+        "gemini-3.1-flash-lite": 3
+      }
+    },
+    "avg_C": 0.2234,
+    "avg_R": 0.3182,
+    "avg_S": 0.4584,
+    "avg_M": 0.1796
+  },
+  "harmbench": {
+    "benchmark": "HarmBench",
+    "kind": "harm",
+    "total_prompts": 200,
+    "scored_prompts": 0,
+    "dropped_unpaired": 0,
+    "judge_methods_used": [
+      "provider-exhausted",
+      "unavailable"
+    ],
+    "provenance": {
+      "rows_live": 200,
+      "rows_cached": 0,
+      "rows_skipped": 0,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "static": 119,
+        "groq": 45,
+        "cerebras": 36
+      },
+      "governed_providers": {
+        "unavailable": 101,
+        "groq": 50,
+        "cerebras": 48,
+        "gemini": 1
+      },
+      "embed_providers": {
+        "gemini": 119,
+        "jina": 81
+      },
+      "judge_models": {
+        "constitutional-fallback": 180
+      }
+    },
+    "avg_C": 0.2466,
+    "avg_R": 0.2965,
+    "avg_S": 0.4569,
+    "avg_M": 0.1957
+  }
+}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { postLead, stashPendingLead } from '@/lib/lead_retry';
 
 interface EmailCaptureProps {
   onComplete: (email: string) => void;
@@ -15,22 +16,17 @@ export default function EmailCapture({ onComplete }: EmailCaptureProps) {
   const handleSubmit = async () => {
     if (!email.includes('@')) { setError('Enter a valid email'); return; }
     setLoading(true);
-    try {
-      // Save to Turso via API
-      await fetch('/api/leads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      localStorage.setItem('lex_email', email);
-      localStorage.setItem('lex_email_captured', 'true');
-      onComplete(email);
-    } catch {
-      // Even if save fails, let them through
-      localStorage.setItem('lex_email', email);
-      localStorage.setItem('lex_email_captured', 'true');
-      onComplete(email);
-    } finally { setLoading(false); }
+    // Fail-open, but no longer fail-forgetful (2026-07-20): the visitor is
+    // always let through, and if the backend didn't accept the lead (network
+    // error OR non-2xx response — the old code never checked res.ok, so 500s
+    // passed as success), it's stashed and retried on later visits. See
+    // lib/lead_retry.ts.
+    const accepted = await postLead(email, 'console_gate');
+    if (!accepted) stashPendingLead(email, 'console_gate');
+    localStorage.setItem('lex_email', email);
+    localStorage.setItem('lex_email_captured', 'true');
+    setLoading(false);
+    onComplete(email);
   };
 
   return (

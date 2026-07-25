@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import AgenticGovernancePanel from '@/components/AgenticGovernancePanel';
 
 const G = {
   gold: '#c9a84c', goldL: '#e8c96d',
@@ -191,6 +192,9 @@ export default function EnterpriseSection() {
             Every call intercepted · SHA-256 audit receipt · Full audit trail
           </div>
         </div>
+
+        {/* Deterministic-layer counterfactual — the mechanism, shown honestly */}
+        <AgenticGovernancePanel />
 
         {/* CTA */}
         <div className="text-center">

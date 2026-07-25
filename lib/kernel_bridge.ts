@@ -45,6 +45,8 @@ import { KernelCycleResult, KernelState } from './sovereign_kernel';
 import { TAU, Z_RECOVERY } from './aureonics_core';
 import { updateZTraj, getZTraj, SIGMA_THRESHOLD } from './kv';
 import { logger, errorFields } from './logger';
+import { env } from './env';
+import { sendOpsAlert } from './notify';
 
 /** Load proven session z-weights from z_traj, or return Z_RECOVERY fallback. */
 export async function loadKernelZ(sessionId: string): Promise<[number, number, number]> {
@@ -82,6 +84,10 @@ async function ensureHashColumns(db: ReturnType<typeof getClient>): Promise<void
   // input, and M alone cannot be inverted back to (C,R,S) -- information is
   // lost. Without these columns, /api/audits/verify could never succeed even
   // on an untampered receipt.
+  // 2026-07-20: which key version signed this row ('v1' | 'v1-fallback' |
+  // 'unsigned') — previously only baked into the HMAC input, invisible to
+  // queries, so fallback-signed rows could not be identified after the fact.
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN signing_key_version TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN c_after REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN r_after REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN s_after REAL');
@@ -122,19 +128,32 @@ function computeReceiptHash(
  * signature.slice(0, 32), which weakens a 256-bit HMAC down to 128 bits of
  * output for no benefit) — full 64 hex char digest.
  *
- * Falls back to a default key with a loud warning if AUDITOR_SECRET is unset,
- * same fallback pattern as auditor.ts — but every signature produced under
- * the fallback key is marked in the receipt via a distinct key version, so a
- * verifier can't be fooled into treating a fallback-keyed signature as
- * produced under a real secret.
+ * Key policy (hardened 2026-07-20): the old behavior fell back to a
+ * hardcoded default key when AUDITOR_SECRET was unset — but this repo is
+ * public, so that fallback key is public, and any receipt signed with it is
+ * forgeable by anyone (1,804 production receipts were signed this way on
+ * 2026-07-14 before the secret was configured). Production now REFUSES to
+ * sign with the fallback: auditorSigningKey() throws, the receipt write
+ * fails loudly (receipt_persisted=false + ops alert) instead of producing a
+ * cryptographically worthless signature. Non-production keeps the fallback
+ * so local dev and CI work without secrets — marked v1-fallback, and
+ * SIGNING_KEY_VERSION is now PERSISTED on each receipt row so
+ * fallback-signed rows are queryable, not just baked invisibly into the HMAC.
  */
-const SIGNING_KEY_VERSION = process.env.AUDITOR_SECRET ? 'v1' : 'v1-fallback';
-function signingKey(): string {
-  if (!process.env.AUDITOR_SECRET) {
-    logger.warn('kernel_bridge.sign', 'AUDITOR_SECRET not set — signing with fallback key, receipts will be marked v1-fallback', {});
+export const SIGNING_KEY_VERSION = env.AUDITOR_SECRET ? 'v1' : 'v1-fallback';
+
+/** Shared by kernel receipts, lib/agents/auditor.ts, and /api/lex/verify —
+ *  single source of truth for signing-key resolution. */
+export function auditorSigningKey(): string {
+  const secret = env.AUDITOR_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUDITOR_SECRET is not configured — refusing to sign receipts with the public fallback key in production');
   }
-  return process.env.AUDITOR_SECRET || 'lex-aureon-sovereign-key-2026';
+  logger.warn('kernel_bridge.sign', 'AUDITOR_SECRET not set — signing with fallback key (non-production only), receipts marked v1-fallback', {});
+  return 'lex-aureon-sovereign-key-2026';
 }
+const signingKey = auditorSigningKey;
 
 export function computeReceiptSignature(fields: {
   receiptId: string;
@@ -198,11 +217,29 @@ export async function writeKernelReceipt(
   const outputHash  = r.output_hash ?? '';
   const receiptHash = computeReceiptHash(result.state, result.M, inputHash, outputHash);
   const createdAt   = new Date().toISOString();
-  const signature   = computeReceiptSignature({
-    receiptId, sessionId, state: result.state, M: result.M,
-    healthBand: result.health_band, inputHash, outputHash,
-    receiptHash, createdAt,
-  });
+  // Signing can refuse (production with AUDITOR_SECRET unset — see
+  // auditorSigningKey). The receipt is still persisted, explicitly marked
+  // 'unsigned', rather than either signing with a public key (forgeable) or
+  // failing the whole turn over a signing-config gap. Queryable via the
+  // signing_key_version column.
+  let signature = '';
+  let signingKeyVersion = SIGNING_KEY_VERSION;
+  try {
+    signature = computeReceiptSignature({
+      receiptId, sessionId, state: result.state, M: result.M,
+      healthBand: result.health_band, inputHash, outputHash,
+      receiptHash, createdAt,
+    });
+  } catch (e) {
+    signingKeyVersion = 'unsigned';
+    logger.error('kernel_bridge.sign', 'receipt signing unavailable — persisting unsigned receipt', errorFields(e));
+    void sendOpsAlert(
+      'receipt_signing_unavailable',
+      'Receipt signing unavailable — receipts are being persisted UNSIGNED',
+      `computeReceiptSignature threw for session=${sessionId} turn=${turn}: ${String(e).slice(0, 300)}\n` +
+      `Most likely cause: AUDITOR_SECRET unset in production. Set it in Vercel env vars.`,
+    );
+  }
 
   // ── governor_effort: max(async G correction, CBF projection) ─────────────
   // Async G(x,z) magnitude: non-zero on turns where sensing fired last turn
@@ -230,59 +267,98 @@ export async function writeKernelReceipt(
     lawEvents.push(result.receipt.active_law);
   }
 
-  try {
-    await ensureHashColumns(db);
+  // ── Restructured 2026-07-20 after the 2026-07-14 incident ────────────────
+  // Previously one try block wrapped z_traj update + receipt insert +
+  // governor log: when Turso's read quota was exhausted, updateZTraj's read
+  // threw FIRST and aborted the receipt insert that followed — 1,802 governed
+  // turns served with no receipt while this function still RETURNED the
+  // generated receiptId, handing users a receipt id that doesn't exist in the
+  // database. Now: each subsystem fails independently; the receipt insert
+  // (the core guarantee) gets one retry; and on final failure this returns ''
+  // so callers can mark the response receipt_persisted=false instead of
+  // presenting an unverifiable id as if it were audit-backed. Final failure
+  // also fires a throttled ops alert (see lib/notify.ts sendOpsAlert).
 
-    // ── Update z_traj (proven Banach rule) BEFORE receipt write ──────────────
+  try { await ensureHashColumns(db); } catch (e) {
+    logger.warn('kernel_bridge.write', 'ensureHashColumns failed (continuing)', errorFields(e));
+  }
+
+  // ── Update z_traj (proven Banach rule) BEFORE receipt write ──────────────
+  // Never retried: the z-update rule is stateful — re-applying it would
+  // double-step the trajectory.
+  try {
     const currentCRS = { c: result.state.C, r: result.state.R, s: result.state.S };
     const prevCRS    = { c: r.raw_state.C, r: r.raw_state.R, s: r.raw_state.S };
-
     await updateZTraj(sessionId, currentCRS, prevCRS, result.attack_pressure, lawEvents);
+  } catch (e) {
+    logger.error('kernel_bridge.write', 'z_traj update failed', errorFields(e));
+  }
 
-    // ── Slow-drip: OR(semantic, sigma_viol accumulator) ───────────────────────
-    const semanticSlowDrip = result.semantic_signal.attack_type === 'slow_drip' ? 1 : 0;
-    let accumulatorSlowDrip = 0;
+  // ── Slow-drip: OR(semantic, sigma_viol accumulator) ───────────────────────
+  const semanticSlowDrip = result.semantic_signal.attack_type === 'slow_drip' ? 1 : 0;
+  let accumulatorSlowDrip = 0;
+  try {
+    const zTraj = await getZTraj(sessionId);
+    if (zTraj && zTraj.sigma_viol > SIGMA_THRESHOLD) {
+      accumulatorSlowDrip = 1;
+      if (!lawEvents.includes('slow_drip')) lawEvents.push('slow_drip');
+    }
+  } catch { /* non-fatal */ }
+
+  const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
+
+  // ── Write receipt (SHA-256 proof + HMAC signature) — one retry ────────────
+  let receiptPersisted = false;
+  for (let attempt = 0; attempt < 2 && !receiptPersisted; attempt++) {
     try {
-      const zTraj = await getZTraj(sessionId);
-      if (zTraj && zTraj.sigma_viol > SIGMA_THRESHOLD) {
-        accumulatorSlowDrip = 1;
-        if (!lawEvents.includes('slow_drip')) lawEvents.push('slow_drip');
+      if (attempt > 0) await new Promise(res => setTimeout(res, 300));
+      await db.execute({
+        sql: `INSERT OR IGNORE INTO praxis_receipts
+                (receipt_id, session_id, turn, pre_eval_label,
+                 m_before, m_after, governor_mode, intervention,
+                 slow_drip, governor_effort, sigma_viol, crs_method,
+                 input_hash, output_hash, receipt_hash, signature,
+                 signing_key_version, c_after, r_after, s_after, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          receiptId, sessionId, turn, 'CLEAR',
+          mBefore,
+          result.M,
+          `kernel-${result.health_band.toLowerCase()}`,
+          result.receipt.safety_projection_triggered ? 1 : 0,
+          slowDrip,
+          governorEffort,
+          sigmaViol,
+          crsMethodTag,
+          inputHash,
+          outputHash,
+          receiptHash,
+          signature,
+          signingKeyVersion,
+          result.state.C,
+          result.state.R,
+          result.state.S,
+          createdAt,
+        ],
+      });
+      receiptPersisted = true;
+    } catch (e) {
+      logger.error('kernel_bridge.write', `receipt write failed (attempt ${attempt + 1}/2)`, errorFields(e));
+      if (attempt === 1) {
+        void sendOpsAlert(
+          'receipt_write_failed',
+          'Audit receipt write failing — governed turns are being served WITHOUT receipts',
+          `praxis_receipts insert failed twice for session=${sessionId} turn=${turn} at ${createdAt}.\n` +
+          `Error: ${String(e).slice(0, 300)}\n\n` +
+          `The response was returned with receipt_persisted=false. If this is a Turso quota ` +
+          `exhaustion (see 2026-07-14 incident), reads/writes stay blocked until quota resets or the plan is upgraded.`,
+        );
       }
-    } catch { /* non-fatal */ }
+    }
+  }
 
-    const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
-
-    // ── Write receipt (now including SHA-256 proof + HMAC signature) ───────────
-    await db.execute({
-      sql: `INSERT OR IGNORE INTO praxis_receipts
-              (receipt_id, session_id, turn, pre_eval_label,
-               m_before, m_after, governor_mode, intervention,
-               slow_drip, governor_effort, sigma_viol, crs_method,
-               input_hash, output_hash, receipt_hash, signature,
-               c_after, r_after, s_after, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        receiptId, sessionId, turn, 'CLEAR',
-        mBefore,
-        result.M,
-        `kernel-${result.health_band.toLowerCase()}`,
-        result.receipt.safety_projection_triggered ? 1 : 0,
-        slowDrip,
-        governorEffort,
-        sigmaViol,
-        crsMethodTag,
-        inputHash,
-        outputHash,
-        receiptHash,
-        signature,
-        result.state.C,
-        result.state.R,
-        result.state.S,
-        createdAt,
-      ],
-    });
-
-    // ── Governor log ──────────────────────────────────────────────────────────
+  // ── Governor log — best-effort, independent of the receipt ────────────────
+  try {
     const driftDir = result.delta_V < -0.001 ? 'converging'
       : result.delta_V > 0.001 ? 'diverging' : 'stable';
 
@@ -303,12 +379,11 @@ export async function writeKernelReceipt(
         new Date().toISOString(),
       ],
     });
-
   } catch (e) {
-    logger.error('kernel_bridge.write', 'receipt write failed', errorFields(e));
+    logger.error('kernel_bridge.write', 'governor_log write failed', errorFields(e));
   }
 
-  return receiptId;
+  return receiptPersisted ? receiptId : '';
 }
 
 export async function loadKernelState(sessionId: string): Promise<KernelState | null> {

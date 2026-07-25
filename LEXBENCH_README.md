@@ -1,6 +1,6 @@
 # LexBench: Benchmark Evaluation Pipeline
 
-> **Accurate as of 2026-07-16.** This document describes the pipeline as it actually runs — not a design proposal. Every component listed here is real and in use.
+> **Accurate as of 2026-07-18.** This document describes the pipeline as it actually runs — not a design proposal. Every component listed here is real and in use.
 
 ---
 
@@ -38,6 +38,10 @@ scripts/lexbench/publish-results.ts
 GET /api/benchmarks → lexaureon.com/benchmarks (60s edge-cached)
 ```
 
+**Recovery path (2026-07-17):** `lexbench-recovery.yml` re-runs aggregate+publish
+against a PRIOR run's already-uploaded shard artifacts, at CURRENT main HEAD —
+see the workflow section below for why this exists and when to use it.
+
 ---
 
 ## Benchmarks
@@ -74,6 +78,7 @@ GET /api/benchmarks → lexaureon.com/benchmarks (60s edge-cached)
 | `scripts/lexbench/publish-results.ts` | Reads summary JSON → builds rows → POST to publish endpoint. |
 | `scripts/lexbench/transform-xstest.ts` | Fetched XSTest parquet → `data/xstest.jsonl` (250 safe) + `data/xstest-contrast.jsonl` (200 unsafe). |
 | `scripts/lexbench/kappa-check.ts` | Samples N rows from a results JSONL, re-judges with a reference Groq model, computes Cohen's κ + 95% CI, writes report. |
+| `scripts/lexbench/judge-agreement.ts` | More capable sibling to `kappa-check.ts` (2026-07, wired up 2026-07-18): bootstrap κ CI, a `test-retest` self-agreement mode (judge stochasticity — not covered by `kappa-check.ts` at all), and — as of 2026-07-18 — `--auto-reference-model` to generate reference labels live via a Groq safety model instead of requiring a manual classifier run. Default reference model `openai/gpt-oss-safeguard-20b` (current; `llama-guard-3-8b`/`llama-guard-4-12b` are decommissioned/deprecated). |
 | `scripts/harmbench/fetch-dataset.ts` | Fetches the walledai/HarmBench dataset to `data/harmbench.jsonl` (not committed). |
 
 ---
@@ -86,7 +91,7 @@ Runs TruthfulQA, HarmBench, JailbreakBench, AdvBench, AgentDojo sharded against 
 
 - `precheck-auth` — verifies `BENCH_SECRET` before anything expensive starts
 - `determine-shards` — fetches HarmBench once, uploads it as a run artifact, computes shard matrix (shard-size: 200)
-- `run-lexbench` — matrix job, max-parallel:2; downloads the HarmBench artifact instead of re-fetching
+- `run-lexbench` — matrix job, max-parallel:3 (raised from 2 on 2026-07-18 — the wall-clock is fundamentally total-prompt-count × per-prompt latency ÷ max-parallel, and this was a deliberate, bounded increase, not a reversal of the reasoning that set it to 2 — see Fix History); downloads the HarmBench artifact instead of re-fetching
 - `aggregate-and-report` — collects all shard JSONLs, aggregates, publishes
 
 **Manual dispatch:** Actions → LexBench Production → Run workflow. Use `limit: 5` for a fast smoke test before a full run.
@@ -106,6 +111,16 @@ Samples a results JSONL from a previous run artifact and computes Cohen's κ bet
 - Whenever a published result looks implausible
 
 **Thresholds:** κ < 0 → workflow fails (systematic disagreement). κ < 0.40 → warning (fair agreement). κ < 0.60 → warning (moderate agreement). κ ≥ 0.60 → passes (substantial agreement — minimum bar for a credible benchmark judge).
+
+### `lexbench-recovery.yml` — Recovery From a Prior Run (manual dispatch only)
+
+Added 2026-07-17. Solves a specific GitHub Actions gotcha: **"Re-run failed jobs" checks out the SAME commit SHA the workflow was originally dispatched at, never current main.** If `aggregate-and-report` failed because of a bug that's since been fixed, re-running the failed job replays the exact same bug and fails identically — this happened twice in a row on 2026-07-17 before the pattern was recognized.
+
+This workflow takes a `run_id` input (the numeric ID from a prior failed run's URL), downloads that run's shard artifacts, and runs the CURRENT `aggregate-report.ts` + `publish-results.ts` against them — checked out at main HEAD, not the original run's SHA. No shard re-execution, no provider quota spent. Works against either `lexbench-prod.yml` or `lexbench-extended.yml` runs — it downloads every artifact from the run and filters by result-file name (`lexbench-*.jsonl`) rather than a hardcoded artifact-name pattern, since the two source workflows wrap their shard results in differently-named artifacts (`lexbench-shard-results-N` vs `extended-benchmark-shard-N`).
+
+**When to use it:** any time `aggregate-and-report` fails on a run whose shards completed. Actions → LexBench Recovery — Aggregate & Publish From Prior Run → Run workflow → paste the failed run's numeric ID.
+
+**What it can't do:** if the underlying shard data itself didn't clear the minimum-coverage gate (see below), recovery will correctly publish nothing — it replays the aggregation logic faithfully, it doesn't invent coverage that was never there. That's not a recovery failure; it's the gate doing its job.
 
 ---
 
@@ -130,6 +145,20 @@ Both `bare_ci95` and `governed_ci95` are computed and embedded in the `notes` fi
 ### Retry on total exhaustion
 
 When **both** arms of a prompt are exhausted simultaneously (a momentary burst hitting all 5 providers at once), the runner retries the entire prompt up to 2 times with a 15-second pause before accepting the gap. Single-arm exhaustion is accepted without retry (one good arm + one exhausted arm is the honest outcome).
+
+### Sustained-exhaustion circuit breaker (2026-07-17)
+
+The retry above is tuned for a MOMENTARY collision — a rate-limit window rolling over within seconds. It has no concept of a SUSTAINED outage (a daily provider quota genuinely exhausted for the rest of the day). The 2026-07-17 run hit exactly that: HarmBench scored 42/200, JailbreakBench 0/200, AgentDojo 0/27 — once real exhaustion set in, every remaining prompt still paid the full per-prompt retry cost to arrive at the same doomed outcome.
+
+`runner.ts` now tracks consecutive CONFIRMED total exhaustions (each already past its own retries). After 8 in a row, the rest of that benchmark's shard is recorded as `provenance.source: 'skipped'` — not attempted, not scored — rather than ground through one at a time. The counter resets on any non-exhausted prompt, so an isolated bad streak (which real runs do show, without being terminal) doesn't trip it. `total_prompts` still reflects the true dataset size; `rows_skipped` in the published notes' provenance segment reports how many were never attempted, distinct from `rows_live` (attempted) and `rows_cached` (replayed).
+
+### AgentDojo benchmark ordering (2026-07-17)
+
+`lexbench-prod.yml`'s `BENCHMARKS` list runs sequentially within one shard process, sharing one set of provider keys. AgentDojo — the smallest dataset (27 prompts) — was last in that list and had the worst coverage of any benchmark on both 2026-07-16 (4/27) and 2026-07-17 (0/27), while earlier benchmarks in the same run scored real verdicts. That's whichever benchmark runs last inheriting the most accumulated exhaustion — a structural bias unrelated to anything AgentDojo-specific. Reordered to run first.
+
+### max-parallel (2026-07-18)
+
+Raised from 2 to 3. Before changing it, the actual sharding math was checked rather than assumed: shard 0 uniquely absorbs one full 200-prompt slice of every benchmark ≤200 prompts (≈827 prompts), while the empty shards this leaves get backfilled almost instantly by GitHub Actions, so the other lane ends up carrying a similar total (≈937 prompts) — already close to a 50/50 split. There was no fixable load-imbalance bug hiding in the sharding logic. The ~3–4hr wall clock is fundamentally `total prompts × per-prompt latency ÷ max-parallel`, and the only real lever is `max-parallel` itself — the same lever that caused the original 2026-07-08 provider-exhaustion incident. This is a deliberate, bounded increase (+50%, not a doubling), made safer by the sustained-exhaustion circuit breaker above: if 3 concurrent shards do saturate shared quota, a shard now fails fast (minutes) instead of grinding for hours.
 
 ---
 
@@ -188,11 +217,11 @@ GROQ_API_KEY=... npx tsx scripts/lexbench/kappa-check.ts \
 | Limitation | Status |
 |:-----------|:-------|
 | AgentDojo: no tool-execution harness | Outstanding — proxy judge only |
-| HarmBench/JailbreakBench: LLM judge, not the official fine-tuned classifiers | Outstanding — kappa-check system is ready once classifiers are wired in |
+| HarmBench/JailbreakBench: LLM judge, not the official fine-tuned classifiers | Outstanding — `judge-agreement.ts --auto-reference-model` can now generate an independent-model comparison automatically (no manual classifier run needed); still not literally the HarmBench/JailbreakBench paper's own fine-tuned classifiers, and no baseline has been run at scale yet |
 | StrongREJECT: general-purpose LLM judge, not GPT-4o from the paper | Outstanding |
 | XSTest-Contrast: first run pending (benchmark added 2026-07-16) | Run via `lexbench-extended.yml` next Sunday |
-| TruthfulQA: −1.48pp negative delta (governed worse than bare) | Unresolved — likely category-specific hedging; worth a per-category breakdown |
 | Cross-paper comparison invalid | Different judges, different base models — this is a within-system delta only |
+| Leaderboard reflects 2026-07-16, not the current pipeline | Live rows are still the 2026-07-16 batch. The 2026-07-17 run's shards had genuinely low coverage (provider quota exhaustion, not a code bug — see Fix History) and correctly published nothing rather than a misleading partial average. Next clean run (post circuit-breaker + AgentDojo reorder + max-parallel:3) supersedes this automatically. |
 
 ---
 
@@ -213,6 +242,19 @@ GROQ_API_KEY=... npx tsx scripts/lexbench/kappa-check.ts \
 | 2026-07-16 | XSTest-Contrast benchmark added (`xstest_contrast`, harm judge, false-negative rate) |
 | 2026-07-16 | HarmBench cached across shards via GitHub Actions artifact (was re-fetched per shard) |
 | 2026-07-16 | Systematic kappa check added (`kappa-check.ts` + `kappa-check.yml`) |
+| 2026-07-16 | **Per-prompt sessions** — one session per prompt instead of per shard; a shared shard session let the governor warm up on early prompts and arrive primed at later ones, inflating measured governance effectiveness via z-trajectory bleed |
+| 2026-07-16 | **Persistent centroid cache** (`lib/lex_memory.ts` → Turso `centroid_cache`) — cold lambda instances recomputed the harm-reference (360 texts, measured — not the previously-estimated ~300) and constitutional (50 laws) centroids per instance; during a Turso quota block the per-text cache silently missed and every lookup fell through to a live Gemini embed, exhausting the 1,000/day quota under concurrent shards. Root cause of the 2026-07-16 run's coverage collapse (AdvBench 219/520 scored). Centroids now persist as one content-addressed row per kind×provider. |
+| 2026-07-16 | **Per-row measurement provenance** — every published row's notes now embed judge model, both arms' generation providers, embedding provider, and live/cache row counts, closing the gap that made HarmBench's unexplained bare-arm drift (12.8%→24.2%, 2026-07-14→16) uninterpretable: nothing previously recorded whether the judge chain or the generator had changed underneath a run. Resolves the "judge/generator identity not recorded" limitation formerly listed above. |
+| 2026-07-17 | **Stdout leak in the below-coverage-floor branch** — `aggregate-report.ts` used `console.log` (not `console.warn`) for one diagnostic; the workflow redirects this script's stdout straight into `summary.json`, so that single line corrupted the JSON and failed "Publish results to live leaderboard" in ~1s, on both `lexbench-prod.yml` and `lexbench-extended.yml`. First triggered when AgentDojo (4/27) became the first benchmark ever to land in the 0<n<10 coverage band. Fixed: that diagnostic now goes to stderr like every other one in the file. |
+| 2026-07-17 | **Recovery workflow added** (`lexbench-recovery.yml`) — re-runs aggregate+publish against a prior run's shard artifacts at current main HEAD, sidestepping GitHub Actions' "re-run failed jobs uses the original commit SHA" behavior. See *GitHub Actions Workflows* above. |
+| 2026-07-17 | **Sustained-exhaustion circuit breaker** — after 8 consecutive CONFIRMED total exhaustions (each already past its own per-prompt retry), the runner stops attempting the rest of that benchmark's shard and records the remainder as `provenance.source: 'skipped'`, rather than grinding through hundreds of prompts to reconfirm an already-exhausted quota. See *Data Quality Guarantees* above. |
+| 2026-07-17 | **AgentDojo reordered first** in `lexbench-prod.yml`'s sequential benchmark list — it had the worst coverage of any benchmark two runs in a row purely from running last and inheriting the most accumulated exhaustion. |
+| 2026-07-18 | **max-parallel raised 2 → 3.** Checked the actual sharding math before changing anything: shard 0 uniquely absorbs a full 200-prompt slice of every benchmark ≤200 prompts (≈827 prompts), but the empty shards this leaves (5–8) get backfilled almost instantly by GitHub Actions, so the other lane ends up carrying a similar total (≈937 prompts) — already close to a 50/50 split. There was no fixable load-imbalance bug hiding in the sharding logic; the ~3–4hr wall clock is fundamentally `total prompts × per-prompt latency ÷ max-parallel`. The only real lever is `max-parallel` itself — the same lever that caused the original 2026-07-08 provider-exhaustion incident — so this is a deliberate, bounded increase (+50%, not a doubling). The 2026-07-17 sustained-exhaustion circuit breaker changes the downside: if 3 concurrent shards do saturate shared quota, a shard now fails fast (minutes) instead of grinding through hundreds of doomed retries for hours. |
+| 2026-07-18 | **`judge-agreement.ts` gained `--auto-reference-model`** — generates reference labels automatically via a live Groq model (default `openai/gpt-oss-safeguard-20b`) instead of requiring a manual classifier run + hand-edited JSONL. The file already existed (built alongside `kappa-check.ts`, more capable — bootstrap κ CI, test-retest self-agreement) but was undocumented and unwired; the manual-labeling friction is almost certainly why its only prior use stopped at n=25 (the 2026-07-16 JailbreakBench κ=-0.087 result). Also corrects a stale claim: `llama-guard-3-8b` was decommissioned by Groq 2026-07-16, `llama-guard-4-12b` separately deprecated Feb 2026 — both replaced by `openai/gpt-oss-safeguard-20b` as the recommended reference model. |
+
+> **Provenance note on the 2026-07-16 05:02 UTC published batch:** that run executed on pre-fix code — none of the 2026-07-16 fixes above were in it. Verified directly: `lex_memory` shows 3 sessions for 520 AdvBench turns (per-shard sessions, not per-prompt), published notes carry no Wilson CIs, and no StrongREJECT/XSTest-Contrast rows exist. Its AdvBench figures additionally reflect a coverage collapse: bare ASR 1.83% is 4 successes over a 219-prompt denominator; the prior run's 0.77% was 4 successes over 519 — same absolute count. Treat the first run on or after this fix batch as the clean baseline.
+
+> **Provenance note on the 2026-07-17 run attempt:** both `lexbench-prod.yml` and `lexbench-extended.yml` were dispatched on 2026-07-17 and their shards ran to completion, but `aggregate-and-report` failed on both (the stdout-leak bug above). Recovering the prod run's shards under the fixed aggregator (`lexbench-recovery.yml`, run 29543121832) confirmed genuinely low coverage across the board — AdvBench 46/520, TruthfulQA 148/817, HarmBench 42/200, JailbreakBench 0/200, AgentDojo 0/27 — all below the minimum-coverage gate, so recovery correctly published nothing. `judge_methods_used` on the recovered summary shows real judge methods alongside `provider-exhausted`, confirming this was a provider-quota exhaustion accumulating over the day's cumulative usage (governance calls, judge calls, and this session's own interactive testing sharing the same keys), not a code defect. Nothing published on 2026-07-17; the leaderboard remains the 2026-07-16 batch until the next clean run.
 
 ---
 

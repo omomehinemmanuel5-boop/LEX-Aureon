@@ -9,6 +9,29 @@ non-expansivity of the Duchi simplex projection
 Priority: MEDIUM
 (Downgraded from HIGH after the non-expansive Π_S lemma —
 see research/paper-updates.md §2.)
+Numerical note (2026-07-20): the CBF simulator's FPL-1 classification
+reads NOT PROVEN at dt=1.0 purely as a discretization artifact — it
+passes on all seeds for dt ≤ 0.5 (invariance_violations = 0, excursion
+< 0.25, stability_ratio > 0.6). This is numerical evidence for the
+governed continuous flow, NOT a proof of the multi-pillar analytical
+result above. See research/empirical-results.md "Run 002" and
+scripts/cbf/fpl1-dt-sweep.ts.
+
+Progress (2026-07-21, see empirical-results.md "Run 003" +
+scripts/cbf/op1-lyapunov-check.ts) — two analytical results advance
+this, WITHOUT closing it:
+  (a) Idealized flow, multi-pillar CLOSED: V_z is convex on the
+      floor-simplex, so ẋ=−Π∇V_z gives V̇_z=−‖Π∇V_z‖²≤0 to the unique
+      global minimizer — all pillars, via convexity alone (no
+      comparison-system/LaSalle needed).
+  (b) Deployed governor descent term proven ≤0 multi-pillar via
+      Chebyshev's sum inequality: ⟨∇V_z,G⟩≤0 for all states (uniform z),
+      including two-pillars-stressed — so multi-pillar is NOT a new
+      structural/sign problem.
+  Residual (still open): the quantitative governor-vs-drift margin
+  |⟨∇V_z,G⟩| ≥ ⟨∇V_z,F⟩ in the multi-pillar region — same type as the
+  single-pillar k0/εₖ>3B/2 condition, not yet discharged in closed form.
+  Status remains PARTIAL, now with the gap sharply localized.
 
 ## Open Problem 2 — Nonlinear Pareto Frontier
 Status: Open
