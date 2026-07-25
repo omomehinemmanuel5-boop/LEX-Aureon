@@ -1280,7 +1280,7 @@ export default function ChatConsole() {
 
         /* Code editor stays zoom-safe at 16px on touch and only tightens to
            13px where auto-zoom does not exist. Previously an inline
-           fontSize:13 that the old `!important` rule silently overrode. */
+           fontSize:13 that the old !important rule silently overrode. */
         .lex-code-editor { font-size: 16px; }
         @media (pointer: fine) { .lex-code-editor { font-size: 13px; } }
 
