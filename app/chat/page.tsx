@@ -1460,6 +1460,7 @@ export default function ChatConsole() {
 
             {isStreaming ? (
               <button onClick={cancel}
+                aria-label="Stop generating"
                 className="lex-focusable flex-shrink-0 w-11 h-11 self-end rounded-xl flex items-center justify-center active:scale-90 transition-transform"
                 style={{ background: '#1e0808', border: '1px solid #4a1010', color: '#f87171' }}>
                 <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
