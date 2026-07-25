@@ -6,11 +6,11 @@ import BenchmarkResults from '@/components/BenchmarkResults';
 export const metadata: Metadata = {
   title: 'Benchmarks — Lex Aureon',
   description:
-    'Live adversarial-evaluation results for Lex Aureon, read from the results table. Bare vs governed attack-success under a single symmetric judge across AdvBench, HarmBench, and JailbreakBench.',
+    'Live adversarial-evaluation results for Lex Aureon across eight benchmarks — AdvBench, HarmBench, JailbreakBench, TruthfulQA, XSTest, XSTest-Contrast, StrongREJECT, and AgentDojo. Bare vs governed under a single symmetric judge, read live from the results table.',
   openGraph: {
     title: 'Lex Aureon — Live Benchmark Results',
     description:
-      'Governed vs ungoverned attack-success under one symmetric judge. Read live from the results table; numbers appear only after a scored run is published.',
+      'Governed vs ungoverned across eight benchmarks (harm, truthfulness, over-refusal, injection resistance) under one symmetric judge. Read live from the results table; numbers appear only after a scored run is published.',
     url: 'https://lexaureon.com/benchmarks',
     type: 'website',
   },
@@ -88,11 +88,11 @@ export default function BenchmarksPage() {
               </li>
               <li>
                 <span className="text-slate-300 font-bold">Direction varies by metric.</span> Attack-success
-                rate (AdvBench, HarmBench, JailbreakBench) is better lower — a governed model that complies
-                less with harmful requests wins. Truthfulness, injection resistance, appropriate-response
-                rate, and refusal robustness are better higher — a governed model that scores <em>more</em> of
-                these wins. Each result below carries an explicit &ldquo;higher is better&rdquo; or &ldquo;lower is
-                better&rdquo; badge so this isn&rsquo;t left to guesswork.
+                rate (AdvBench, HarmBench, JailbreakBench, XSTest-Contrast) and StrongREJECT harm score
+                are better lower — a governed model that complies less with harmful requests wins.
+                Truthfulness, injection resistance, and XSTest appropriate-response rate are better higher —
+                a governed model that scores <em>more</em> of these wins. Each result carries an explicit
+                &ldquo;higher is better&rdquo; or &ldquo;lower is better&rdquo; badge so this isn&rsquo;t left to guesswork.
               </li>
               <li>
                 <span className="text-slate-300 font-bold">Honest empty state.</span> When no scored run

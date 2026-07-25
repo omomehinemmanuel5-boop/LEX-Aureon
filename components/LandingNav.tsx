@@ -11,6 +11,7 @@ const G = {
 };
 
 const NAV_LINKS = [
+  ['Benchmarks', '/benchmarks'],
   ['Constitution', '/constitution'],
   ['Research', '/research'],
   ['API', '/api-docs'],
