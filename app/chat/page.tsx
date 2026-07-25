@@ -426,7 +426,7 @@ function GovernancePanel({ turn, tab, onClose }: {
         <span className="text-[11px] tracking-wide" style={{ color: G.textSub }}>
           {tab === 'raw' ? '// bare output' : tab === 'audit' ? '// canonical receipt' : '// state'}
         </span>
-        <button onClick={onClose} className="lex-focusable w-7 h-7 rounded-lg flex items-center justify-center"
+        <button onClick={onClose} aria-label="Close" className="lex-focusable w-7 h-7 rounded-lg flex items-center justify-center"
           style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
       </div>
 
@@ -1052,7 +1052,7 @@ function SelfTestBanner({ result, onClose }: { result: string; onClose: () => vo
       <div className="flex items-center justify-between px-4 py-3"
         style={{ borderBottom: `1px solid ${G.border}` }}>
         <span className="text-[10px] font-mono uppercase tracking-widest" style={{ color: G.R }}>⊕ Self-Test</span>
-        <button onClick={onClose} className="lex-focusable w-7 h-7 rounded-lg flex items-center justify-center"
+        <button onClick={onClose} aria-label="Close" className="lex-focusable w-7 h-7 rounded-lg flex items-center justify-center"
           style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
       </div>
       <pre className="p-4 whitespace-pre-wrap text-[12px] leading-relaxed font-mono max-h-40 overflow-y-auto"
