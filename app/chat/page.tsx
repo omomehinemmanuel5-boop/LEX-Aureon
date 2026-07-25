@@ -679,7 +679,7 @@ function BottomSheet({ open, onClose, title, children }: {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       {/* Sheet max height tracks the visual viewport too, so an open sheet
           with a focused field (the sandbox filename input) is not clipped
           behind the keyboard. Falls back to 85dvh where the API is absent. */}
