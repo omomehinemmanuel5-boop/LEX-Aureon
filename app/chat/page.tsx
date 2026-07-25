@@ -679,6 +679,53 @@ const MessageBubble = memo(function MessageBubble({
 function BottomSheet({ open, onClose, title, children }: {
   open: boolean; onClose: () => void; title: string; children: React.ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // fix (2026-07-25) — the sheet declared role=dialog + aria-modal but did not
+  // ENFORCE modality, which is the worse of the two failure modes: assistive
+  // tech was told focus was contained when it was not, so Tab walked silently
+  // out of the sheet and into the page behind it while the scrim still blocked
+  // every click. Keyboard and screen-reader users got stuck on controls they
+  // could reach but not activate. Escape also did nothing, despite the sheet
+  // being dismissible by every other means.
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const focusables = (): HTMLElement[] =>
+      Array.from(panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter(el => el.offsetParent !== null);
+
+    // Move focus into the sheet on open, otherwise focus stays behind the scrim
+    // and the first Tab appears to do nothing.
+    focusables()[0]?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last  = items[items.length - 1];
+      // Wrap at both ends. Without this the tab order escapes into the inert
+      // page rather than cycling within the dialog.
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      // Restore focus to whatever opened the sheet, so dismissing it does not
+      // dump the user back at the top of the document.
+      previouslyFocused?.focus?.();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
