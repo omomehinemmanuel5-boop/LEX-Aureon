@@ -148,6 +148,9 @@ import { judgeXSTestAppropriate } from './xstest_judge';
 import { judgeStrongREJECT } from './strong_reject_judge';
 // fix (2026-07-25): seeded prompt-order shuffle. See shuffle.ts header.
 import { shuffleForBenchmark } from './shuffle';
+// fix (2026-07-26): judge-verdict cache. Wired after run 30203713573 spent
+// 1h49m and scored 0/300 - generation survived, the JUDGE chain exhausted.
+import { JudgeCache, type CachedVerdict } from './judge_cache';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Provider-exhaustion detection (fix 2026-07-10 — see file header)
