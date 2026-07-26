@@ -699,7 +699,7 @@ const MessageBubble = memo(function MessageBubble({
         )}
       </div>
 
-      {openTab && !live && turn.governed_output && (
+      {openTab && openTab !== 'state' && !live && turn.governed_output && (
         <div className="ml-1 mt-2">
           <GovernancePanel turn={turn} tab={openTab} onClose={() => onOpenTab(null)} />
         </div>
