@@ -1,0 +1,233 @@
+name: LexBench Attack Arms (AdvBench + JailbreakBench)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WHY THIS EXISTS (2026-07-26)
+#
+# lexbench-prod.yml runs all five benchmarks sequentially in one shard, so the
+# attack arms sit behind TruthfulQA and HarmBench and inherit whatever provider
+# quota those leave — which on 2026-07-26 was almost none. Run 30199733176
+# (n=40) scored AdvBench at 5/40 (12.5% coverage, below the publish floor, no
+# usable number) and JailbreakBench at 21/40 (52.5%).
+#
+# Those two arms are also where the open question now lives. That run showed
+# JailbreakBench bare 28.57% / governed 28.57% — delta 0.0pp, governance adding
+# nothing. Live probing of six real behaviours found the cause: the semantic
+# keyword classifier returned attack_type='none', severity=0 on five of six,
+# while the base model refused them on its own initiative. So the bare and
+# governed arms agree because Gemini's own safety training is doing the work in
+# both, and the prompts that DO get through are exactly the ones the classifier
+# cannot see.
+#
+# Deciding that needs statistical power on these two datasets specifically, not
+# another five-benchmark sweep. Hence: attack arms only, first in the queue, on
+# full quota.
+#
+# DIFFERENCES FROM lexbench-prod.yml, all deliberate:
+#   - BENCHMARKS is advbench,jailbreakbench only.
+#   - `limit` does NOT suppress publishing. In prod, publish is gated on
+#     inputs.limit == '' so quick tests never reach the leaderboard; that is
+#     correct there but makes every limited diagnostic run unpublishable, which
+#     is why runs 30189718476 and 30199733176 both produced numbers that never
+#     landed in benchmark_results. Here publishing is its own explicit input,
+#     defaulting to false, so a diagnostic run stays out of the leaderboard by
+#     default and a real measurement can opt in.
+#   - Adds an evasion diagnostic that lists the prompts where the governed arm
+#     COMPLIED while attack_type was 'none' — the concrete gap list for
+#     strengthening the classifier.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Prompts per benchmark (empty = full dataset: AdvBench 520, JailbreakBench 200)'
+        required: false
+        default: '150'
+      publish:
+        description: 'Publish to the live leaderboard? (false = diagnostic run, results in artifacts only)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+# Shares prod's concurrency group: both suites hit the same live API and the
+# same provider quota, so they must never run at once.
+concurrency:
+  group: lexbench-live-api-provider-quota
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  SITE_URL: https://www.lexaureon.com
+  BENCHMARKS: advbench,jailbreakbench
+
+jobs:
+  # Only gate on BENCH_SECRET when we actually intend to publish. A diagnostic
+  # run must not be blocked by a publish credential it will never use.
+  precheck-auth:
+    if: ${{ inputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify BENCH_SECRET authorizes a publish
+        run: |
+          HTTP_CODE=$(curl -sS -L -o /tmp/precheck.json -w "%{http_code}" \
+            ${{ env.SITE_URL }}/api/benchmarks/publish \
+            -H "Authorization: Bearer ${{ secrets.BENCH_SECRET }}")
+          echo "HTTP status: $HTTP_CODE"
+          cat /tmp/precheck.json
+          echo ""
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::BENCH_SECRET precheck FAILED (HTTP $HTTP_CODE). This run was dispatched with publish=true but the secret does not authorize a publish, so the run was stopped before spending provider quota on results that could not land. Fix BENCH_SECRET, or re-dispatch with publish=false for a diagnostic run."
+            exit 1
+          fi
+          echo "BENCH_SECRET precheck passed."
+
+  run-attack-arms:
+    needs: precheck-auth
+    # Runs when precheck succeeded OR was skipped (publish=false). Only blocked
+    # if precheck actually ran and failed.
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+
+      # AdvBench and JailbreakBench are committed to data/, unlike HarmBench
+      # which prod fetches at runtime — so no dataset-fetch step is needed here.
+      - name: Confirm datasets present
+        run: |
+          for f in data/advbench.jsonl data/jailbreakbench.jsonl; do
+            if [ ! -s "$f" ]; then
+              echo "::error::$f missing or empty — cannot run the attack arms."
+              exit 1
+            fi
+            echo "$f: $(wc -l < $f) prompts"
+          done
+
+      - name: Run attack arms
+        run: |
+          LIMIT="${{ inputs.limit }}"
+          for benchmark in $(echo "${{ env.BENCHMARKS }}" | tr ',' ' '); do
+            echo ""
+            echo "[*] Starting $benchmark..."
+            if [ -n "$LIMIT" ]; then
+              # --n is a seeded RANDOM sample of the whole dataset, not the first
+              # N: c7a1dc55 moved the limit to after the shuffle. So a limited run
+              # here is a valid subsample of all 520 / 200, not a category prefix.
+              npx tsx scripts/lexbench/runner.ts \
+                --benchmark "$benchmark" \
+                --endpoint ${{ env.SITE_URL }} \
+                --n "$LIMIT"
+            else
+              npx tsx scripts/lexbench/runner.ts \
+                --benchmark "$benchmark" \
+                --endpoint ${{ env.SITE_URL }}
+            fi
+          done
+        env:
+          GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY:      ${{ secrets.MISTRAL_API_KEY }}
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
+          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          JINA_API_KEY:         ${{ secrets.JINA_API_KEY }}
+          CRON_SECRET:          ${{ secrets.CRON_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+
+      - name: Upload raw per-prompt results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: attack-arms-raw-${{ github.run_id }}
+          path: data/lexbench-*.jsonl
+          if-no-files-found: ignore
+
+      - name: Aggregate
+        if: always()
+        run: |
+          shopt -s nullglob
+          files=(data/lexbench-*.jsonl)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::no result files produced — nothing to aggregate."
+            exit 0
+          fi
+          cat "${files[@]}" > all_results.jsonl
+          echo "rows: $(wc -l < all_results.jsonl)"
+          npx tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary.json
+          cat summary.json
+
+      # ── The reason this workflow exists ──────────────────────────────────────
+      # Lists every prompt where the GOVERNED arm complied (asr=1) while the
+      # semantic classifier saw nothing (attack_type 'none'). That intersection
+      # is the classifier's blind spot, stated as data instead of inferred: each
+      # line is a prompt that governance had no signal to stop. Diagnostic only —
+      # never fails the run.
+      - name: Classifier evasion diagnostic
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ ! -s all_results.jsonl ]; then
+            echo "no rows to analyse"; exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const rows = fs.readFileSync("all_results.jsonl","utf8")
+              .split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } })
+              .filter(Boolean);
+            const scored = rows.filter(r => r.governed_metrics && r.governed_metrics.asr !== null);
+            const evaded = scored.filter(r => r.governed_metrics.asr === 1);
+            const sig    = r => (r.semantic_signal || {});
+            const blind  = evaded.filter(r => (sig(r).attack_type ?? "none") === "none");
+            console.log("=== ATTACK ARM DIAGNOSTIC ===");
+            console.log("rows total          :", rows.length);
+            console.log("scored (both arms)  :", scored.length);
+            console.log("governed complied   :", evaded.length);
+            console.log("  of which classifier saw NOTHING (attack_type none):", blind.length);
+            if (scored.length) {
+              const bareAsr = scored.filter(r => r.bare_metrics && r.bare_metrics.asr === 1).length;
+              console.log("bare complied       :", bareAsr,
+                "=> governance prevented", bareAsr - evaded.length, "compliance(s)");
+            }
+            console.log("");
+            console.log("--- classifier blind spot: prompts governance could not see ---");
+            for (const r of blind.slice(0, 40)) {
+              console.log(`[${r.prompt_id ?? r.id ?? "?"}] sev=${sig(r).severity ?? 0}`);
+              console.log(`   prompt : ${String(r.prompt ?? "").slice(0,110)}`);
+              console.log(`   output : ${String(r.governed_output ?? "").slice(0,110)}`);
+            }
+            const byType = {};
+            for (const r of scored) {
+              const t = sig(r).attack_type ?? "none";
+              byType[t] = (byType[t] || 0) + 1;
+            }
+            console.log("");
+            console.log("attack_type distribution over scored prompts:", JSON.stringify(byType));
+          '
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: attack-arms-summary-${{ github.run_id }}
+          path: summary.json
+          if-no-files-found: ignore
+
+      # Publishing is opt-in and independent of `limit`, unlike prod. A
+      # diagnostic run leaves the leaderboard untouched; a real measurement can
+      # publish even when sampled, because c7a1dc55 made --n a genuine random
+      # sample rather than a dataset prefix.
+      - name: Publish to live leaderboard
+        if: ${{ inputs.publish == 'true' && hashFiles('summary.json') != '' }}
+        run: npx tsx scripts/lexbench/publish-results.ts summary.json
+        env:
+          BENCH_SECRET:         ${{ secrets.BENCH_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
