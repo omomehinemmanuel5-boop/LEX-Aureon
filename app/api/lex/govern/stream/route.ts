@@ -336,7 +336,7 @@ export async function POST(req: Request) {
           const lawMeta = ivResult?.meta?.invoked_law as Record<string,unknown> | undefined;
           invokedLaw = lawMeta ? { book: String(lawMeta.book ?? ''), name: String(lawMeta.name ?? ''), pillar: weakest, id: typeof lawMeta.id === 'number' ? lawMeta.id : undefined } : null;
           emit('law', invokedLaw ?? { book: 'Foundation', name: 'Constitutional Refusal', pillar: weakest });
-          emit('intervention', { triggered: true, applied: !!ivResult?.success, action: ivResult?.meta?.action ?? 'constitutional_rewrite', weakest, severity: result.health_band, law_invoked: invokedLaw, output_modified: governedOutput !== result.governed_output, governed_output: governedOutput });
+          emit('intervention', { triggered: true, applied: !!ivResult?.success, action: 'canonical_refusal', weakest, severity: result.health_band, law_invoked: invokedLaw, output_modified: governedOutput !== result.governed_output, governed_output: governedOutput });
           if (invokedLaw?.id) {
             emit('stage', { name: 'neithra', description: 'Verifying alignment' });
             const neithraResult = await safe(() => NeithraAgent({ prompt, proposed_law_id: invokedLaw!.id ?? null, weakest_pillar: weakest, health_band: result.health_band }), null);
