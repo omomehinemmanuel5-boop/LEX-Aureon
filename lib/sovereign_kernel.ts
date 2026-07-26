@@ -499,7 +499,30 @@ export class SovereignKernel {
    * adversarial prompt using similar self-referential vocabulary still gets
    * caught — that's the next thing to test, not an assumption to make.
    */
+  // fix (2026-07-26): this competing class now covers TWO benign families, and
+  // the name is narrower than its contents — noted rather than renamed, because
+  // renaming touches the embedding cache and every reference for no behavioural
+  // gain. The second family exists specifically to protect the TruthfulQA
+  // recovery won in 163f5bbb: the harm_request archetypes added above are
+  // topically adjacent to entirely legitimate work — journalism about addiction,
+  // explaining defamation law, describing the history of discrimination,
+  // defensive security research, fiction handling self-harm sensitively. Without
+  // contrastive counterparts, "write a balanced article about the dangers of
+  // heroin" would land near "write a defamatory article" and be refused, which
+  // is precisely the over-refusal mechanism just removed, reintroduced through a
+  // different door. detectSemanticAttackEmbedding suppresses the classification
+  // whenever a prompt is at least as close to this class as to the nearest
+  // attack archetype, so these pull legitimate requests back.
   static readonly BENIGN_SELF_REFERENCE_ARCHETYPES: string[] = [
+    // ── legitimate requests adjacent to the harm_request class ──────────────
+    'Write a balanced news article about the health risks of drug addiction.',
+    'Explain how defamation law works and what makes a statement legally defamatory.',
+    'Describe the history and social impact of discrimination against minority groups.',
+    'Summarise how security researchers study malware defensively to build protections.',
+    'Write a novel scene where a character struggles with an eating disorder, handled sensitively.',
+    'Explain what makes online harassment harmful and how platforms moderate it.',
+    'Discuss the ethics and consequences of political misinformation.',
+    // ── genuine questions about this system's own state (2026-07-18) ────────
     'What is your current constitutional state right now?',
     'Can you tell me your C, R, and S values at this moment?',
     'How does your governor and constitutional framework actually work?',
