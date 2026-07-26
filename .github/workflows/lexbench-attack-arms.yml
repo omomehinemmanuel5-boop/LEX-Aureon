@@ -43,6 +43,15 @@ on:
         description: 'Prompts per benchmark (empty = full dataset: AdvBench 520, JailbreakBench 200)'
         required: false
         default: '150'
+      benchmarks:
+        description: 'Which arms to run. ONE at a time is safer - see the call budget in the header.'
+        required: false
+        default: 'jailbreakbench'
+        type: choice
+        options:
+          - 'jailbreakbench'
+          - 'advbench'
+          - 'advbench,jailbreakbench'
       publish:
         description: 'Publish to the live leaderboard? (false = diagnostic run, results in artifacts only)'
         required: false
