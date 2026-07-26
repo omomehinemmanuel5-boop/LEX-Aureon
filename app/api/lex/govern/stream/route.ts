@@ -98,6 +98,7 @@ import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
+  retrieveSessionHistory, buildSessionContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
   type EmbedProvider,
