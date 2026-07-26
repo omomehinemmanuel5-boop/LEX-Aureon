@@ -31,6 +31,10 @@ import { decideRefusal } from '@/lib/refusal_decision';
 import { healthBand } from '@/lib/health_band';
 import { persistCapitulationCalibration } from '@/lib/capitulation_calibration';
 import type { IdentityMode } from '@/lib/sovereign_kernel';
+// fix (2026-07-26): output-shaping agents, previously present ONLY in the
+// streaming route. See the canonicalisation block below for why.
+import { CelesteAgent } from '@/lib/agents/celeste';
+import { StyleAgent }   from '@/lib/agents/style_agent';
 
 let _dbReady = false;
 async function ensureDB() {
