@@ -17,6 +17,7 @@ import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_b
 import { incrementRuns } from '@/lib/db';
 import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
+  retrieveSessionHistory, buildSessionContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
   getHarmReferenceCentroid, getBenignReferenceCentroid, cosineSimilarity,
