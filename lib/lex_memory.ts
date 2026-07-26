@@ -676,7 +676,10 @@ export async function retrieveSimilar(
       try { embedding = JSON.parse(String(row.embedding)); } catch { /* skip */ }
       return {
         past_prompt:    String(row.prompt ?? ''),
-        past_outcome:   String(row.governed_response_hash ?? ''),
+        // fix (2026-07-26): the response TEXT when present, falling back to
+        // '' rather than the hash. Rows written before this column existed have
+        // NULL here and are correctly treated as "response not recoverable".
+        past_outcome:   String(row.governed_response ?? ''),
         state:          String(row.state_label ?? 'UNKNOWN'),
         M:              Number(row.M),
         adjusted_score: adjustedScore(promptEmbedding, {
