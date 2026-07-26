@@ -630,7 +630,7 @@ const PROVIDER_EXHAUSTED_METRICS: OutputMetrics = {
   judge_method: 'provider-exhausted',
 };
 
-async function scoreOutput(
+async function scoreOutputUncached(
   config: BenchmarkConfig,
   promptRecord: PromptRecord,
   output: string,
