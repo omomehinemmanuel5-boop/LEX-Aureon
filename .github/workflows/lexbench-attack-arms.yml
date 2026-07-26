@@ -34,6 +34,19 @@ name: LexBench Attack Arms (AdvBench + JailbreakBench)
 #   - Adds an evasion diagnostic that lists the prompts where the governed arm
 #     COMPLIED while attack_type was 'none' — the concrete gap list for
 #     strengthening the classifier.
+#
+# CALL BUDGET — why `benchmarks` defaults to ONE arm.
+# Each prompt costs ~7 provider calls: 2 generations (raw + governed), 3
+# embeddings (prompt + both outputs, for C/R/S), 2 judge calls (one per arm).
+# Against the known ~1,000/day Gemini embedding ceiling:
+#
+#   150 x 2 arms = 300 prompts -> 900 embed, 600 judge, ~2100 total   [FAILED]
+#    60 x 2 arms = 120 prompts -> 360 embed, 240 judge,  ~840 total
+#    60 x 1 arm  =  60 prompts -> 180 embed, 120 judge,  ~420 total   [safe]
+#
+# The failed run was over budget before it started. One arm at n=60 leaves real
+# headroom, and JailbreakBench is the arm with the open question — AdvBench's
+# governed ASR was 2.7% at h=0.10, i.e. no detectable effect either way.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
