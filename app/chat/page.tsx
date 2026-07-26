@@ -688,7 +688,7 @@ const MessageBubble = memo(function MessageBubble({
             style={{ borderColor: G.border }}>
             {(['raw', 'audit', 'analysis'] as MsgTab[]).map(t => (
               <button key={t} onClick={() => onOpenTab(openTab === t ? null : t)}
-                className="lex-focusable px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all active:scale-95 min-h-[36px]"
+                className="lex-focusable px-3 py-2.5 rounded-lg text-[11px] font-mono transition-all active:scale-95 min-h-[44px]"
                 style={{
                   color: openTab === t ? G.gold : G.textSub,
                   background: openTab === t ? `${G.gold}12` : 'transparent',
