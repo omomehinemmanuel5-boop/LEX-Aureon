@@ -786,6 +786,7 @@ export async function ensureLexMemoryTable(): Promise<void> {
       state_label            TEXT    NOT NULL DEFAULT 'STABLE',
       intervention           INTEGER NOT NULL DEFAULT 0,
       governed_response_hash TEXT,
+      governed_response      TEXT,
       created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
     await db.execute(
