@@ -630,6 +630,93 @@ const PROVIDER_EXHAUSTED_METRICS: OutputMetrics = {
   judge_method: 'provider-exhausted',
 };
 
+function primaryMetricValue(config: BenchmarkConfig, m: OutputMetrics): number | null {
+  switch (config.kind) {
+    case 'truthfulness': return m.truthful;
+    case 'injection':    return m.injection_resisted;
+    case 'over_refusal': return m.xstest_appropriate;
+    case 'severity':     return m.strong_reject_harm;
+    default:             return m.asr;
+  }
+}
+
+/** Everything besides (prompt, output) that changes what a verdict MEANS, so a
+ *  hit is only served for identical judge inputs. */
+function judgeCacheRubric(config: BenchmarkConfig, r: PromptRecord): string {
+  switch (config.kind) {
+    case 'truthfulness': {
+      const c = Array.isArray(r.correct_answers)   ? r.correct_answers   as string[] : [];
+      const i = Array.isArray(r.incorrect_answers) ? r.incorrect_answers as string[] : [];
+      const b = typeof r.best_answer === 'string'  ? r.best_answer : '';
+      return `truthfulness:${JSON.stringify(c)}:${JSON.stringify(i)}:${b}`;
+    }
+    case 'injection':
+      return `injection:${typeof r.injection_goal === 'string' ? r.injection_goal : ''}`;
+    case 'over_refusal':
+      return `over_refusal:${typeof r.category === 'string' ? r.category : 'unknown'}`;
+    case 'severity':
+      return 'severity';
+    default:
+      return `harm:${typeof r.target === 'string' ? r.target : ''}`;
+  }
+}
+
+function metricsFromCached(config: BenchmarkConfig, cached: CachedVerdict): OutputMetrics {
+  const base: OutputMetrics = {
+    asr: null, truthful: null, injection_resisted: null,
+    xstest_appropriate: null, strong_reject_harm: null,
+    judge_method: cached.judge_method, judge_model: cached.judge_model,
+  };
+  switch (config.kind) {
+    case 'truthfulness': return { ...base, truthful:           cached.value };
+    case 'injection':    return { ...base, injection_resisted: cached.value };
+    case 'over_refusal': return { ...base, xstest_appropriate: cached.value };
+    case 'severity':     return { ...base, strong_reject_harm: cached.value };
+    default:             return { ...base, asr:                cached.value };
+  }
+}
+
+/**
+ * fix (2026-07-26) - JUDGE-VERDICT CACHE WRAPPER. scoreOutputUncached below is
+ * the grounded-scoring dispatch, unchanged; this is now the name every call site
+ * uses, so no call site logic needed editing.
+ *
+ * WHY. Judging is ~2x generation call volume (both arms judged) and
+ * generateJudge's chain draws from the same free-tier pool the generator needs.
+ * Run 30203713573: 300 prompts, ~900 calls, 1h49m wall clock, rows_live 150 on
+ * both benchmarks - and scored_prompts 0 on both. AdvBench's judge_methods_used
+ * were ONLY ['provider-exhausted','unavailable']: not one real verdict.
+ * Generation won the race for quota; scoring got nothing.
+ *
+ * A verdict is a pure function of (rubric, prompt, output), so replaying one
+ * cannot degrade the bare-vs-governed comparison - unlike replaying a
+ * GENERATION, which would stop the run measuring current code. That asymmetry is
+ * why this cache is scoped to verdicts and structurally cannot hold a generation.
+ */
+async function scoreOutput(
+  config: BenchmarkConfig,
+  promptRecord: PromptRecord,
+  output: string,
+  provider: string | null | undefined,
+  judgeCache?: JudgeCache,
+): Promise<OutputMetrics> {
+  if (!judgeCache || !output || isProviderExhausted(output, provider)) {
+    return scoreOutputUncached(config, promptRecord, output, provider);
+  }
+  const rubric = judgeCacheRubric(config, promptRecord);
+  const hit = judgeCache.get(rubric, promptRecord.prompt, output);
+  if (hit) return metricsFromCached(config, hit);
+
+  const metrics = await scoreOutputUncached(config, promptRecord, output, provider);
+  const value = primaryMetricValue(config, metrics);
+  if (value !== null) {
+    judgeCache.set(rubric, promptRecord.prompt, output, {
+      value, judge_method: metrics.judge_method, judge_model: metrics.judge_model ?? null,
+    });
+  }
+  return metrics;
+}
+
 async function scoreOutputUncached(
   config: BenchmarkConfig,
   promptRecord: PromptRecord,
