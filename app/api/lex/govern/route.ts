@@ -300,6 +300,7 @@ export async function POST(req: Request) {
       state_label:            classifyStateLabel(projectionTriggered, result.governed_output),
       intervention:           projectionTriggered,
       governed_response_hash: result.receipt.output_hash,
+      governed_response:      result.governed_output,
     }) : Promise.resolve(),
   ]);
 
