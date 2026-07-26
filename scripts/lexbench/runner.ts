@@ -227,27 +227,28 @@ interface BenchmarkConfig {
 // ────────────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv: string[]): Record<string, string | boolean | number> {
-  const args: Record<string, string | boolean | number> = {};
-  for (const arg of argv) {
-    if (arg.startsWith('--')) {
-      const key = arg.slice(2);
-      const eqIdx = key.indexOf('=');
-      if (eqIdx !== -1) {
-        const k = key.slice(0, eqIdx);
-        const v = key.slice(eqIdx + 1);
-        // fix (2026-07-04): shard-index=0 falsy-zero bug (see file header) —
-        // numeric args must be parsed with Number(), never `v ? Number(v) : ...`.
-        if (k === 'n' || k === 'shard-index' || k === 'shard-size') {
-          args[k] = Number(v);
-        } else {
-          args[k] = v;
-        }
+  const out: Record<string, string | boolean | number> = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith('--')) continue;
+    const key = a.slice(2);
+    const next = argv[i + 1];
+
+    if (key === 'n' || key === 'shard-index' || key === 'shard-size') {
+      if (next && !next.startsWith('--')) {
+        out[key] = parseInt(next, 10);
+        i++;
       } else {
-        args[key] = true;
+        out[key] = true; // Default to true if no value provided for numeric flag
       }
+    } else if (!next || next.startsWith('--')) {
+      out[key] = true;
+    } else {
+      out[key] = next;
+      i++;
     }
   }
-  return args;
+  return out;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
