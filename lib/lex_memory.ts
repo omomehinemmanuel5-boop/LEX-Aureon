@@ -789,6 +789,22 @@ export async function ensureLexMemoryTable(): Promise<void> {
       governed_response      TEXT,
       created_at             TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
+    // fix (2026-07-26): additive migration for databases created before
+    // governed_response existed (the live table has 31,907 such rows). SQLite
+    // has no ADD COLUMN IF NOT EXISTS, so a duplicate-column error is the
+    // expected steady-state outcome and is swallowed deliberately; any other
+    // error is surfaced. Additive and nullable, so old rows stay valid and
+    // read back as "response not recoverable" rather than breaking.
+    try {
+      await db.execute(`ALTER TABLE lex_memory ADD COLUMN governed_response TEXT`);
+      console.log('lex_memory: added governed_response column');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/duplicate column|already exists/i.test(msg)) {
+        console.error('lex_memory: governed_response migration failed:', msg);
+      }
+    }
+
     await db.execute(
       `CREATE INDEX IF NOT EXISTS idx_lex_memory_session ON lex_memory(session_id)`
     );
