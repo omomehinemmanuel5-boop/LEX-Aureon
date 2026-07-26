@@ -788,7 +788,7 @@ function BottomSheet({ open, onClose, title, children }: {
           </span>
           <button onClick={onClose}
             aria-label="Close"
-            className="lex-focusable w-8 h-8 rounded-xl flex items-center justify-center text-[14px]"
+            className="lex-focusable w-11 h-11 -mr-2 rounded-xl flex items-center justify-center text-[14px]"
             style={{ color: G.textSub, background: G.surfaceHi }}>✕</button>
         </div>
         <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
