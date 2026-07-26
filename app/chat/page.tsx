@@ -847,7 +847,7 @@ function SandboxSheetContent({ files, activeFileId, terminalLog, onSelectFile, o
             placeholder="filename.ts" autoFocus
             className="lex-focusable flex-1 bg-transparent text-[16px] focus:outline-none"
             style={{ color: G.gold, caretColor: G.gold }} />
-          <button onClick={submitNew} className="lex-focusable text-[11px] px-3 py-1.5 rounded-xl min-h-[36px]"
+          <button onClick={submitNew} className="lex-focusable text-[11px] px-3 py-2.5 rounded-xl min-h-[44px]"
             style={{ color: G.R, background: `${G.R}12`, border: `1px solid ${G.R}22` }}>create</button>
         </div>
       )}
