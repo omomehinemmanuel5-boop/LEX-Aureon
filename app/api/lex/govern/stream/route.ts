@@ -396,7 +396,7 @@ export async function POST(req: Request) {
 
         const [receiptId] = await Promise.all([
           writeKernelReceipt(session_id, turn, { ...result, governed_output: governedOutput }),
-          promptEmbedding.length ? storeMemory({ session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined }) : Promise.resolve(),
+          promptEmbedding.length ? storeMemory({ session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined, governed_response: governedOutput }) : Promise.resolve(),
         ]);
 
         // fix (2026-07-11): canonical, persisted id wins — see file header.
