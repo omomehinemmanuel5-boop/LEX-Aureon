@@ -177,8 +177,13 @@ export async function POST(req: Request) {
 
         let memoryContext = '';
         if (promptEmbedding.length) {
-          const memories = await retrieveSimilar(promptEmbedding, 5);
-          memoryContext   = buildMemoryContext(memories);
+          const [sessionTurns, memories] = await Promise.all([
+            retrieveSessionHistory(session_id, 6),
+            retrieveSimilar(promptEmbedding, 5),
+          ]);
+          memoryContext = [buildSessionContext(sessionTurns), buildMemoryContext(memories)]
+            .filter(Boolean)
+            .join('\n\n');
           if (memoryContext) emit('stage', { name: 'memory_injected', description: `${memories.length} constitutional memories retrieved` });
         }
 
