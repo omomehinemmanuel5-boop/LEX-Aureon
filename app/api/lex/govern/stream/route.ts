@@ -117,6 +117,7 @@ import { computeZWeightsHeuristic } from '@/lib/aureonics_math';
 import { getZTraj }           from '@/lib/kv';
 import { MODELS } from '@/lib/llm_provider';
 import { decideRefusal } from '@/lib/refusal_decision';
+import { CANONICAL_REFUSAL } from '@/lib/refusals';
 
 function sse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
