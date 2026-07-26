@@ -649,6 +649,7 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
         event.state_label,
         event.intervention ? 1 : 0,
         event.governed_response_hash ?? null,
+        event.governed_response?.slice(0, 2000) ?? null,
         new Date().toISOString(),
       ],
     });
