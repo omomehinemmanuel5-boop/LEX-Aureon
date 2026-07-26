@@ -1057,7 +1057,7 @@ function SuggestionsSheet({ turns, activeCategory, onCategoryChange, onSelect, o
       <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {SUGGESTION_CATEGORIES.map(cat => (
           <button key={cat.key} onClick={() => onCategoryChange(cat.key)}
-            className="lex-focusable flex-shrink-0 px-3 py-1.5 rounded-full text-[11px] font-mono min-h-[36px]"
+            className="lex-focusable flex-shrink-0 px-3 py-2.5 rounded-full text-[11px] font-mono min-h-[44px]"
             style={{
               color: activeCategory === cat.key ? G.gold : G.textSub,
               background: activeCategory === cat.key ? `${G.gold}12` : G.surfaceHi,
