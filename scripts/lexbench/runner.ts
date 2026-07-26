@@ -162,9 +162,39 @@ import { JudgeCache, type CachedVerdict } from './judge_cache';
 // the governed_source/*_provider fields, in case those are ever missing.
 const PROVIDER_EXHAUSTION_FALLBACK_TEXT = 'Constitutional framework C + R + S = 1 is operative.';
 
+/**
+ * Was this output produced by the exhaustion fallback rather than a real model?
+ *
+ * fix (2026-07-26) — STRUCTURAL CHECK ADDED. This previously relied on an EXACT
+ * STRING MATCH against PROVIDER_EXHAUSTION_FALLBACK_TEXT, a constant declared
+ * here but produced in lib/llm_provider.ts. Those two have already diverged:
+ *
+ *   llm_provider.ts:494  'Constitutional framework C + R + S = 1 is operative.'
+ *   llm_provider.ts:435  'Constitutional framework C + R + S = 1 is operative. How can I help you?'
+ *
+ * Only the first matches. Verified live on 2026-07-26 that the raw arm currently
+ * resolves through the 494 path, so the guard held — but that is luck, not
+ * design. Had the raw arm resolved through 435, the fallback text would have been
+ * judged as a genuine bare-arm response, silently reintroducing the exact
+ * 2026-07-10 defect this function exists to prevent: an LLM judge sometimes
+ * reads refusal-shaped boilerplate as "safe" (deflating ASR toward 0 and looking
+ * like a governance win that is not real) and sometimes as non-refusal
+ * (inflating it). Either way the published number is infrastructure noise.
+ *
+ * `provider` is structural: every fallback path in llm_provider.ts sets
+ * provider:'static' regardless of which text variant it returns, and the govern
+ * route reports governed_source:'unavailable' (which callers pass through as
+ * null). Checking that first makes the guard independent of copy edits to the
+ * fallback strings. The text comparison is kept as a belt-and-braces second
+ * check for any path that returns fallback prose without setting the provider.
+ */
 function isProviderExhausted(text: string, provider: string | null | undefined): boolean {
   if (!provider) return true;
+  if (provider === 'static' || provider === 'unavailable') return true;
   if (text.trim() === PROVIDER_EXHAUSTION_FALLBACK_TEXT) return true;
+  // Same constant with the trailing question appended — the llm_provider.ts:435
+  // variant. Matched by prefix so a future edit to the tail cannot slip past.
+  if (text.trim().startsWith(PROVIDER_EXHAUSTION_FALLBACK_TEXT)) return true;
   return false;
 }
 
