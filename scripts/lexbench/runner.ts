@@ -850,6 +850,14 @@ async function runBenchmark(
     );
   }
 
+  // Per-benchmark cache file, loaded once. KNOWN LIMITATION: concurrent shards
+  // for the SAME benchmark can race (last writer wins, no merge) - costs
+  // hit-rate only, never correctness, since judge_cache.ts refuses to persist
+  // any null/exhausted/fallback verdict regardless.
+  const judgeCache = new JudgeCache(
+    `.lexbench-cache/judge-verdicts-${config.name.toLowerCase()}.json`,
+  ).load();
+
   console.log(`\n[${config.name}] Loading prompts from ${config.dataFile}...`);
   // fix (2026-07-26): load the FULL dataset, shuffle, THEN apply --n.
   // Previously `limit` was passed into loadPrompts, which breaks out of the
