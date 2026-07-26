@@ -1,0 +1,17 @@
+{
+  "//": "fix (2026-07-26): typechecks scripts/ — which tsconfig.json EXCLUDES.",
+  "//2": "That exclusion is why a whole-file rewrite of scripts/lexbench/runner.ts",
+  "//3": "shipped with functionally different code while `npm run typecheck` stayed",
+  "//4": "green: tsc never looked at the file. ci.yml runs lint + tsc --noEmit +",
+  "//5": "vitest, and none of the three reads scripts/, so 61 TypeScript files —",
+  "//6": "the entire benchmark harness that produces every published number — had",
+  "//7": "no static checking at all.",
+  "//8": "NOTE the explicit exclude below. Extending tsconfig.json INHERITS its",
+  "//9": "exclude: [node_modules, scripts], so overriding only `include` silently",
+  "//10": "type-checks nothing and reports a clean 0 errors. Verified the wrong way",
+  "//11": "first, which is exactly the trap this file exists to close.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["scripts/**/*.ts", "lib/**/*.ts"],
+  "exclude": ["node_modules"]
+}
