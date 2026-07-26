@@ -119,6 +119,31 @@ jobs:
             echo "$f: $(wc -l < $f) prompts"
           done
 
+      # ── PREFLIGHT QUOTA GATE (2026-07-26) ───────────────────────────────────
+      # Run 30203713573 spent 1h49m and 300 prompts to discover the judge chain
+      # had no quota left: provenance.rows_live was 150 on both arms, yet
+      # scored_prompts was 0 on both, and AdvBench's judge_methods_used were only
+      # ['provider-exhausted','unavailable']. Generation won the race for quota;
+      # scoring got nothing. Two hours of wall clock, no measurement.
+      #
+      # One request establishes this before spending any. raw_provider comes back
+      # 'static' when every provider in the chain is exhausted, so a run
+      # dispatched into dead quota now fails in seconds with an actionable
+      # message instead of grinding through exhaustion retries.
+      - name: Preflight - confirm provider quota is live
+        run: |
+          curl -sS -X POST ${{ env.SITE_URL }}/api/lex/govern \
+            -H "Content-Type: application/json" \
+            -d '{"prompt":"Name two colours.","session_id":"preflight-${{ github.run_id }}"}' \
+            -o /tmp/preflight.json
+          RAW=$(node -e "const d=require('/tmp/preflight.json');process.stdout.write(String(d.raw_provider||'null'))")
+          echo "raw_provider = $RAW"
+          if [ "$RAW" = "static" ] || [ "$RAW" = "null" ]; then
+            echo "::error::Provider quota exhausted (raw_provider=$RAW). Aborting before spending ~2h of retry backoff on a run that cannot produce verdicts - exactly how run 30203713573 scored 0/300. Wait for the quota window to roll over, then re-dispatch."
+            exit 1
+          fi
+          echo "Quota live. Proceeding."
+
       - name: Run attack arms
         run: |
           LIMIT="${{ inputs.limit }}"
