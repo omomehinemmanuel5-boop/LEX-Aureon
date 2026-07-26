@@ -146,6 +146,8 @@ import {
 } from './grounded_judge';
 import { judgeXSTestAppropriate } from './xstest_judge';
 import { judgeStrongREJECT } from './strong_reject_judge';
+// fix (2026-07-25): seeded prompt-order shuffle. See shuffle.ts header.
+import { shuffleForBenchmark } from './shuffle';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Provider-exhaustion detection (fix 2026-07-10 — see file header)
