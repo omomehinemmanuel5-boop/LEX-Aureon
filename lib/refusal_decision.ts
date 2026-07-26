@@ -131,8 +131,53 @@ export interface RefusalDecision {
 export function decideRefusal(inputs: RefusalInputs): RefusalDecision {
   const reasons: RefusalReason[] = [];
 
-  // Priority 1: paper §4.3/§6.2 mechanism.
-  if (inputs.sovereignty.drift_detected) reasons.push('sovereignty_drift');
+  // ── Priority 1: sovereignty drift — now requires CORROBORATION ──────────
+  // fix (2026-07-26). drift_detected alone used to refuse. It is computed in
+  // lib/self_referential_crs.ts:102 as
+  //
+  //     sovereignty_raw      = cosineSimilarity(outputEmb, constitutionalCentroid)
+  //     sovereignty_violated = sovereignty_raw < 0.15
+  //
+  // i.e. an output is "sovereignty violated" when it is SEMANTICALLY DISTANT
+  // FROM CONSTITUTIONAL VOCABULARY. That is a topic-distance measure, not a
+  // harm measure, and it cannot distinguish the two things that are both
+  // distant from constitutional language:
+  //
+  //   - harmful content            (distant -> refuse: correct)
+  //   - true factual answers       (distant -> refuse: destroys the answer)
+  //
+  // "Mount Everest, 8,848.86 m, Nepal/China border" has near-zero cosine
+  // similarity to text about continuity, reciprocity and sovereignty, so a
+  // fully correct answer scored as drift and was replaced with
+  // CANONICAL_REFUSAL. Measured on the 2026-07-26 production run (n=200,
+  // random sample of TruthfulQA's 817): governed truthfulness 68.5% against a
+  // bare arm of ~92.1% — delta -23.6pp, h=0.62, p=0.0002. The most
+  // statistically solid result in that run was governance making the system
+  // less truthful. Same run, same mechanism, opposite sign on attacks:
+  // HarmBench ASR 18.2% -> 6.8% (+11.4pp, p=0.0094), JailbreakBench
+  // 27.1% -> 15.3% (+11.8pp, p=0.0244).
+  //
+  // That symmetry IS the diagnosis: one detector firing on both populations
+  // forces a 1:1 trade of helpfulness for safety, which is why threshold
+  // tuning could never reach 0% ASR without gutting TruthfulQA. The -23.6pp
+  // was the price of the +11.4pp.
+  //
+  // Drift is therefore demoted from a PRIMARY trigger to a CORROBORATING one:
+  // it may confirm an attack the semantic classifier already suspects, but it
+  // can no longer refuse on its own. Concretely, drift + any non-'none'
+  // attack_type refuses even below the severity threshold (drift lowers the
+  // bar when there is real suspicion), while drift with attack_type 'none' —
+  // the benign-factual-answer case — no longer refuses at all.
+  //
+  // FALSIFIABLE PREDICTION for the next run: TruthfulQA governed should move
+  // from 68.5% toward the ~92% bare arm. HarmBench/JailbreakBench ASR may rise
+  // somewhat, since one detector was removed from the benign path. If ASR rises
+  // more than a few points, the semantic classifier is carrying less of the
+  // load than assumed and needs strengthening — that is a real result either
+  // way, and it is the measurement this change exists to enable.
+  const driftCorroborated =
+    inputs.sovereignty.drift_detected && inputs.semantic.attack_type !== 'none';
+  if (driftCorroborated) reasons.push('sovereignty_drift');
 
   // Priority 2: keyword classifier (retained as embedding-independent secondary).
   // When detection is degraded this is the only detector standing, so it
