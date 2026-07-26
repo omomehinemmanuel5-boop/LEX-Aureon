@@ -638,7 +638,40 @@ const MessageBubble = memo(function MessageBubble({
 
           <StatusChips turn={turn} live={live} />
 
+          {/* ── Constitutional state: compact by default (2026-07-26) ──────────
+              This block used to render the full four-row CRSDelta panel on
+              EVERY completed turn, unconditionally. On a phone that is roughly
+              ten lines of bars and numbers under a four-line answer — telemetry
+              occupying 2-3x the vertical space of the content it describes,
+              which is what made the surface read as a diagnostic console rather
+              than a conversation.
+
+              Nothing is removed. The full panel moved behind the 'state' tab,
+              joining raw/audit/analysis, so the disclosure model is uniform:
+              the conversation is primary, every measurement is one tap away.
+              What stays always-visible is the one number that carries the
+              governance signal — M, with its direction of travel — because a
+              reader glancing at a turn wants "did this stay stable", not four
+              simplex coordinates. */}
           {!live && turn.C != null && (
+            <button
+              onClick={() => onOpenTab(openTab === 'state' ? null : 'state')}
+              aria-label={openTab === 'state' ? 'Hide constitutional state detail' : 'Show constitutional state detail'}
+              aria-expanded={openTab === 'state'}
+              className="lex-focusable mt-2 flex items-center gap-2 rounded-lg px-2 py-1 text-[10px] font-mono min-h-[32px] active:scale-95 transition-transform"
+              style={{ color: G.textSub, background: 'transparent', border: `1px solid ${G.border}` }}>
+              <span style={{ color: G.gold }}>M {(turn.M ?? 0).toFixed(3)}</span>
+              {turn.mBefore != null && turn.M != null && (
+                <span style={{ color: turn.M >= turn.mBefore ? '#10b981' : '#ef4444' }}>
+                  {turn.M >= turn.mBefore ? '▲' : '▼'}
+                  {Math.abs(turn.M - turn.mBefore).toFixed(2)}
+                </span>
+              )}
+              <span aria-hidden="true">{openTab === 'state' ? '▾' : '▸'}</span>
+            </button>
+          )}
+
+          {openTab === 'state' && !live && turn.C != null && (
             turn.rawC != null ? (
               <CRSDelta
                 before={{ c: turn.rawC, r: turn.rawR ?? 0, s: turn.rawS ?? 0, m: turn.mBefore ?? Math.min(turn.rawC, turn.rawR ?? 0, turn.rawS ?? 0) }}
