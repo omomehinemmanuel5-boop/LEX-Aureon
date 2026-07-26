@@ -70,7 +70,9 @@ const MODES: { key: SandboxMode; label: string; icon: string; desc: string }[] =
 ];
 
 type SandboxMode = 'chat' | 'code' | 'research' | 'redteam';
-type MsgTab      = 'raw' | 'audit' | 'analysis';
+// 'state' added 2026-07-26: the C/R/S before->after panel is now a disclosure
+// like the others rather than always-on. See MessageBubble for the rationale.
+type MsgTab      = 'state' | 'raw' | 'audit' | 'analysis';
 type SheetView   = 'sandbox' | 'mode' | 'suggestions' | 'tools';
 
 interface SandboxFile {
