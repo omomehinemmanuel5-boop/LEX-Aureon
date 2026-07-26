@@ -68,7 +68,7 @@ concurrency:
 env:
   NODE_VERSION: '20'
   SITE_URL: https://www.lexaureon.com
-  BENCHMARKS: advbench,jailbreakbench
+  BENCHMARKS: ${{ inputs.benchmarks || 'jailbreakbench' }}
 
 jobs:
   # Only gate on BENCH_SECRET when we actually intend to publish. A diagnostic
