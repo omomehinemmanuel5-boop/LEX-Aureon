@@ -983,9 +983,9 @@ async function runBenchmark(
       if (rawExhausted || govExhausted) exhaustedCount++;
 
       const [bareMetrics, governedMetrics] = await Promise.all([
-        scoreOutput(config, prompt, govResponse.raw_output, govResponse.raw_provider),
+        scoreOutput(config, prompt, govResponse.raw_output, govResponse.raw_provider, judgeCache),
         scoreOutput(config, prompt, govResponse.governed_output,
-          govResponse.governed_source === 'unavailable' ? null : govResponse.governed_provider),
+          govResponse.governed_source === 'unavailable' ? null : govResponse.governed_provider, judgeCache),
       ]);
       const crsMetrics = extractCRSMetrics(govResponse.crs);
 
