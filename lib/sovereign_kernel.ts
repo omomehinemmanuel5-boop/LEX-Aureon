@@ -252,7 +252,7 @@ export interface KernelState {
 }
 
 export interface SemanticSignal {
-  attack_type: 'identity' | 'coercion' | 'exploitative' | 'sycophancy' | 'multi' | 'slow_drip' | 'none';
+  attack_type: 'identity' | 'coercion' | 'exploitative' | 'harm_request' | 'sycophancy' | 'multi' | 'slow_drip' | 'none';
   severity: number;
 }
 
