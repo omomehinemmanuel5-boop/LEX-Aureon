@@ -764,11 +764,24 @@ async function runBenchmark(
   const prompts = await loadPrompts(config.dataFile, config.parser, limit);
   console.log(`[${config.name}] Loaded ${prompts.length} prompts.`);
 
-  let promptsToRun = prompts;
+  // fix (2026-07-25) — SEEDED SHUFFLE. Prompts previously ran in dataset
+  // order, and the sustained-exhaustion circuit breaker marks the REMAINDER
+  // of promptsToRun 'skipped' once exhaustion is sustained, so a truncated
+  // run's scored subset was the dataset's PREFIX rather than a sample of it.
+  // Measured: coverage fell 93-100% -> ~36% after the breaker landed, and
+  // XSTest appropriate_pct moved 97.2 -> 86.8 over the same window, which
+  // prefix bias and a real regression explain equally well. Shuffling makes
+  // truncation an unbiased subsample so the coverage obtained is
+  // interpretable. Seeded on benchmark name + UTC day: every shard process in
+  // one run agrees on a single permutation (required, since shards take
+  // non-overlapping slices of it), while the order still varies day to day.
+  const shuffleRunSeed = Math.floor(Date.now() / 86400000);
+  const shuffled = shuffleForBenchmark(prompts, config.name, shuffleRunSeed);
+  let promptsToRun = shuffled;
   if (shardIndex !== undefined && shardSize !== undefined) {
     const startIndex = shardIndex * shardSize;
-    const endIndex = Math.min(startIndex + shardSize, prompts.length);
-    promptsToRun = prompts.slice(startIndex, endIndex);
+    const endIndex = Math.min(startIndex + shardSize, shuffled.length);
+    promptsToRun = shuffled.slice(startIndex, endIndex);
     console.log(`[${config.name}] Running shard ${shardIndex} (prompts ${startIndex}-${endIndex - 1} of ${prompts.length}). Total prompts in shard: ${promptsToRun.length}`);
   }
 
