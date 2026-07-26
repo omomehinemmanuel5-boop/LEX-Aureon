@@ -658,7 +658,7 @@ const MessageBubble = memo(function MessageBubble({
               onClick={() => onOpenTab(openTab === 'state' ? null : 'state')}
               aria-label={openTab === 'state' ? 'Hide constitutional state detail' : 'Show constitutional state detail'}
               aria-expanded={openTab === 'state'}
-              className="lex-focusable mt-2 flex items-center gap-2 rounded-lg px-2 py-1 text-[10px] font-mono min-h-[32px] active:scale-95 transition-transform"
+              className="lex-focusable mt-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-[10px] font-mono min-h-[44px] active:scale-95 transition-transform"
               style={{ color: G.textSub, background: 'transparent', border: `1px solid ${G.border}` }}>
               <span style={{ color: G.gold }}>M {(turn.M ?? 0).toFixed(3)}</span>
               {turn.mBefore != null && turn.M != null && (
