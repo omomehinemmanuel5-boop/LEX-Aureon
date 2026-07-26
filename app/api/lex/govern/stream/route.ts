@@ -290,7 +290,49 @@ export async function POST(req: Request) {
 
           emit('stage', { name: 'intervening', description: 'Applying principled correction' });
           const ivResult = await safe(() => InterventionAgent({ prompt, session_id, raw_output: result.governed_output, intervention_required: true, weakest_dimension: weakest, health_band: result.health_band, trigger_reason: triggerReason, crs_state: { C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, M: result.M }, lyapunov_V: result.lyapunov_V, delta_V: result.delta_V, cbf_triggered: result.receipt.safety_projection_triggered }), null);
-          if (ivResult?.success && ivResult.output) governedOutput = ivResult.output;
+          // ── UNIFICATION (2026-07-26) ─────────────────────────────────
+          // The refused output is now CANONICAL_REFUSAL — byte-identical to
+          // what /api/lex/govern emits at route.ts:189 for the same
+          // decideRefusal() verdict. InterventionAgent still RUNS below, but
+          // only for its law/clause selection telemetry; its rewritten text is
+          // deliberately discarded.
+          //
+          // WHY. decideRefusal() was unified across both routes (Move A,
+          // 2026-07-07) but the OUTPUT was not: this route alone called
+          // InterventionAgent, which substitutes a hardcoded string from
+          // CONSTITUTIONAL_RESPONSES[weakest][band] in lib/agents/intervention.ts.
+          // /api/lex/govern substitutes CANONICAL_REFUSAL instead. Same verdict,
+          // different text — so the chat and console (this route, via
+          // lib/use_lex_stream.ts) shipped behaviour that LexBench (the JSON
+          // route) has never once measured. Every published XSTest /
+          // StrongREJECT number describes a code path users do not hit.
+          //
+          // It was also actively harmful by the system's own metric. Live
+          // capture 2026-07-26: prompt "What's the highest mountain in the
+          // world?" produced a fully correct raw answer (Everest 8,848.86 m,
+          // plus the Mauna Kea and Chimborazo qualifications), which this line
+          // discarded in favour of CONSTITUTIONAL_RESPONSES.S.STRESSED — "I
+          // must exercise independent judgment...". That template references
+          // neither the question nor any sovereign position, so it measures
+          // C=0.13 / S=0.10 while R spikes to 0.77 on the bare "How can I help
+          // you today?" phrasing. M went 0.29 -> 0.10. A second turn: 0.27 ->
+          // 0.13. A third turn on the same topic that did NOT trigger
+          // substitution went 0.27 -> 0.30.
+          //
+          // So the correction fired because M was low and drove M lower —
+          // G(x,z) is specified as a term that DECREASES V_z, and this
+          // increased it. The templates are a worst-case point on the simplex,
+          // selected precisely when the state is already fragile.
+          //
+          // NOTE, explicitly: this commit unifies the two routes so the next
+          // benchmark is canonical. It does NOT fix the Lyapunov violation —
+          // CANONICAL_REFUSAL is also low-C/low-S text, so M will still fall on
+          // a refused turn. What changes is that chat, console, public API and
+          // LexBench now all measure the SAME behaviour, which is the
+          // precondition for fixing it and measuring that the fix worked.
+          // Replacing refusal with grounding injection is the next change and
+          // must be measured, not assumed.
+          governedOutput = CANONICAL_REFUSAL;
           const lawMeta = ivResult?.meta?.invoked_law as Record<string,unknown> | undefined;
           invokedLaw = lawMeta ? { book: String(lawMeta.book ?? ''), name: String(lawMeta.name ?? ''), pillar: weakest, id: typeof lawMeta.id === 'number' ? lawMeta.id : undefined } : null;
           emit('law', invokedLaw ?? { book: 'Foundation', name: 'Constitutional Refusal', pillar: weakest });
