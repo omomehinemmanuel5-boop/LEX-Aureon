@@ -364,6 +364,19 @@ export async function POST(req: Request) {
         if (styleResult?.success && styleResult.output) governedOutput = styleResult.output;
         emit('style_agent', { cleaned_length: styleResult?.meta?.cleaned_length ?? governedOutput.length, original_length: styleResult?.meta?.original_length ?? governedOutput.length });
 
+        // ── UNIFICATION BOUNDARY (2026-07-26) ────────────────────────────
+        // Re-assert CANONICAL_REFUSAL immediately before emission. CelesteAgent
+        // (line ~357) and StyleAgent (~363) both run on EVERY turn and both
+        // reassign governedOutput, and NEITHER exists in /api/lex/govern (0
+        // references there). Without this line a refused turn would emit
+        // StyleAgent(Celeste(CANONICAL_REFUSAL)) while the JSON route emits
+        // CANONICAL_REFUSAL — text the benchmark never sees, which is the exact
+        // divergence this unification exists to remove. Setting it earlier (at
+        // the intervention block) is still required so VaulturexAgent's
+        // compliance check reads the refusal rather than the raw output; this is
+        // the idempotent boundary guarantee on top of that.
+        if (needsIntervention) governedOutput = CANONICAL_REFUSAL;
+
         emit('token', governedOutput);
 
         emit('stage', { name: 'auditing', description: 'Creating audit record' });
