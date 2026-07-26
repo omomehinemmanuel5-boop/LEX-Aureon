@@ -637,8 +637,8 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
       sql: `INSERT INTO lex_memory
               (session_id, prompt, prompt_hash, embedding,
                M, C, R, S, health_band, state_label,
-               intervention, governed_response_hash, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               intervention, governed_response_hash, governed_response, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         event.session_id,
         event.prompt.slice(0, 2000),
