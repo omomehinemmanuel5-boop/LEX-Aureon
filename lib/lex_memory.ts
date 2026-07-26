@@ -667,7 +667,7 @@ export async function retrieveSimilar(
   try {
     const db  = getClient();
     const res = await db.execute({
-      sql:  `SELECT prompt, governed_response_hash, state_label, M, embedding, intervention
+      sql:  `SELECT prompt, governed_response_hash, governed_response, state_label, M, embedding, intervention
              FROM lex_memory ORDER BY created_at DESC LIMIT ?`,
       args: [limit],
     });
