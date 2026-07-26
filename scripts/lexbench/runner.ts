@@ -1115,6 +1115,10 @@ async function runBenchmark(
 
   cacheManager.saveCache();
   console.log(`[${config.name}] Cache stats: ${JSON.stringify(cacheManager.getStats())}`);
+
+  const jc = judgeCache.stats();
+  console.log(`[${config.name}] Judge cache: ${jc.hits} hit / ${jc.misses} miss (${(jc.hit_rate * 100).toFixed(1)}%), ${jc.stores} new verdict(s) stored.`);
+  judgeCache.save();
   if (recoveredCount > 0) {
     console.log(`[${config.name}] ✓ ${recoveredCount}/${promptsToRun.length} prompts recovered via exhaustion retry (would have been gaps before the 2026-07-11 fix).`);
   }
