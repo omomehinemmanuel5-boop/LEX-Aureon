@@ -178,6 +178,12 @@ export interface LexMemoryEvent {
   state_label:           'STABLE' | 'INTERVENED' | 'REFUSED' | 'UNSTABLE';
   intervention:          boolean;
   governed_response_hash?: string;
+  /** fix (2026-07-26): the governed response TEXT. The hash above proves
+   *  integrity but is one-way, so it can never be used to recall what was
+   *  said — which is why prior responses were unrecoverable and memory could
+   *  only ever inject telemetry. Both are kept: hash for tamper-evidence,
+   *  text for recall. */
+  governed_response?: string;
 }
 
 export interface MemoryContext {
