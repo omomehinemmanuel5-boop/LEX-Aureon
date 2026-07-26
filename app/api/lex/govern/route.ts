@@ -84,8 +84,18 @@ export async function POST(req: Request) {
       const resolved = await embedTextResolved(prompt);
       promptEmbedding      = resolved.vector;
       promptEmbedProvider  = resolved.provider;
-      const memories  = await retrieveSimilar(promptEmbedding, 5);
-      memoryContext   = buildMemoryContext(memories);
+      // fix (2026-07-26): session transcript FIRST, then loosely-similar
+      // episodes. Two different questions — "what have we already said in this
+      // conversation" (ordering, exact) and "what similar things happened
+      // before" (similarity, fuzzy) — so two retrievals. Run concurrently;
+      // neither blocks the other.
+      const [sessionTurns, memories] = await Promise.all([
+        retrieveSessionHistory(session_id, 6),
+        retrieveSimilar(promptEmbedding, 5),
+      ]);
+      memoryContext = [buildSessionContext(sessionTurns), buildMemoryContext(memories)]
+        .filter(Boolean)
+        .join('\n\n');
     } catch (e) {
       logger.warn('govern.memory', 'embed/retrieve failed', errorFields(e));
     }
