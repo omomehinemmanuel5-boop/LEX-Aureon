@@ -740,7 +740,14 @@ export function buildMemoryContext(memories: MemoryContext[]): string {
       .trim()
       .slice(0, MEMORY_EXCERPT_CHARS);
     const asked = excerpt ? `\n    asked: "${excerpt}${excerpt.length >= MEMORY_EXCERPT_CHARS ? '…' : ''}"` : '';
-    return `[Memory ${i + 1}] State: ${m.state} | M=${m.M.toFixed(3)} | Health: ${stability} | Similarity: ${m.adjusted_score.toFixed(3)}${asked}`;
+    const outExcerpt = (m.past_outcome ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, MEMORY_EXCERPT_CHARS);
+    const answered = outExcerpt
+      ? `\n    answered: "${outExcerpt}${outExcerpt.length >= MEMORY_EXCERPT_CHARS ? '…' : ''}"`
+      : '';
+    return `[Memory ${i + 1}] State: ${m.state} | M=${m.M.toFixed(3)} | Health: ${stability} | Similarity: ${m.adjusted_score.toFixed(3)}${asked}${answered}`;
   });
 
   return [
