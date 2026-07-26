@@ -759,8 +759,9 @@ export function buildMemoryContext(memories: MemoryContext[]): string {
     lines.join('\n'),
     '</untrusted_recall>',
     'Use this history for continuity — recognise a returning topic and build on it',
-    'rather than restarting. It records what was ASKED before, not what was',
-    'answered; do not claim to recall a previous answer you were not shown.',
+    'rather than restarting. Where an "answered:" line is present it is your own',
+    'prior response and may be relied on; where it is absent that response was not',
+    'recoverable, so do not claim to recall an answer you were not shown.',
   ].join('\n');
 }
 
