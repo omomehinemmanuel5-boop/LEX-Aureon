@@ -195,6 +195,48 @@ export async function POST(req: Request) {
     result.receipt.safety_projection_triggered = true;
   }
 
+  // ── OUTPUT CANONICALISATION (2026-07-26) ──────────────────────────────────
+  // CelesteAgent and StyleAgent run on EVERY turn in
+  // app/api/lex/govern/stream/route.ts (~357 and ~363) and both reassign the
+  // governed output. Until now they appeared 0 times in this route.
+  //
+  // That divergence meant chat and console (stream, via lib/use_lex_stream.ts)
+  // shipped StyleAgent(Celeste(output)) while LexBench — which calls THIS
+  // route — scored the unshaped `output`. The refusal text was unified on
+  // 2026-07-26 (c87ced8f..a4bde014), but only for REFUSED turns; every
+  // pass-through turn still diverged, which is precisely the population XSTest
+  // and TruthfulQA measure. So no published non-refusal number described what
+  // a user actually receives.
+  //
+  // This matters more, not less, after 163f5bbb demoted sovereignty drift from
+  // a primary refusal trigger: far fewer turns now refuse, so the pass-through
+  // path is the common case rather than the exception.
+  //
+  // Same agents, same order as the stream route (Celeste then Style), same
+  // best-effort semantics — a failure in either leaves the output untouched
+  // rather than failing the turn, matching `safe()` in the stream route.
+  try {
+    const celeste = await CelesteAgent(result.governed_output, '', 'api');
+    if (celeste?.rendered_output && celeste.rendered_output !== result.governed_output) {
+      result.governed_output = celeste.rendered_output;
+    }
+  } catch (e) {
+    logger.error('govern.celeste', 'CelesteAgent failed; leaving output unshaped', errorFields(e));
+  }
+
+  try {
+    const styleResult = await StyleAgent({ prompt, session_id, governed_output: result.governed_output });
+    if (styleResult?.success && styleResult.output) {
+      result.governed_output = styleResult.output;
+    }
+  } catch (e) {
+    logger.error('govern.style_agent', 'StyleAgent failed; leaving output unstyled', errorFields(e));
+  }
+
+  // Boundary guarantee, mirroring stream/route.ts: a refused turn must emit
+  // CANONICAL_REFUSAL byte-for-byte, not a Celeste/Style-reshaped variant of it.
+  if (decision.refused) result.governed_output = CANONICAL_REFUSAL;
+
   // Calibration: (a) durable DB row for accumulation-then-decide analysis
   // (Move B), (b) runtime log for quick visibility. Both fire only when the
   // judge returned a verdict, i.e. on real user turns (eval fast-path skips
