@@ -761,7 +761,28 @@ async function runBenchmark(
   }
 
   console.log(`\n[${config.name}] Loading prompts from ${config.dataFile}...`);
-  const prompts = await loadPrompts(config.dataFile, config.parser, limit);
+  // fix (2026-07-26): load the FULL dataset, shuffle, THEN apply --n.
+  // Previously `limit` was passed into loadPrompts, which breaks out of the
+  // read loop at the first N lines — so --n selected the dataset's PREFIX and
+  // the shuffle below only reordered that prefix among itself. The shuffle
+  // fixed TRUNCATION bias (circuit breaker cutting the tail) but not SELECTION
+  // bias (--n cutting everything past line N) — the same defect one step
+  // earlier. Concretely `--n 200` covered AgentDojo (27), HarmBench (200) and
+  // JailbreakBench (200) fully, but took only the first 200 of TruthfulQA's 817
+  // and AdvBench's 520; both are category-ordered, so those arms measured a few
+  // leading categories while reporting a clean n=200.
+  //
+  // `prompts` deliberately stays bound to the FINAL sampled set rather than
+  // being renamed, because downstream code (the shard log's ${prompts.length})
+  // reads it — and patch_file's gate gives parse diagnostics only, which would
+  // NOT have caught a dangling reference from a rename.
+  const loadedPrompts = await loadPrompts(config.dataFile, config.parser);
+  const loadSeed = Math.floor(Date.now() / 86400000);
+  const sampled = shuffleForBenchmark(loadedPrompts, config.name, loadSeed);
+  const prompts = limit ? sampled.slice(0, limit) : sampled;
+  if (limit && loadedPrompts.length > limit) {
+    console.log(`[${config.name}] --n ${limit}: seeded RANDOM sample of ${limit}/${loadedPrompts.length}, not the first ${limit}.`);
+  }
   console.log(`[${config.name}] Loaded ${prompts.length} prompts.`);
 
   // fix (2026-07-25) — SEEDED SHUFFLE. Prompts previously ran in dataset
@@ -775,8 +796,7 @@ async function runBenchmark(
   // interpretable. Seeded on benchmark name + UTC day: every shard process in
   // one run agrees on a single permutation (required, since shards take
   // non-overlapping slices of it), while the order still varies day to day.
-  const shuffleRunSeed = Math.floor(Date.now() / 86400000);
-  const shuffled = shuffleForBenchmark(prompts, config.name, shuffleRunSeed);
+  const shuffled = prompts; // already shuffled above, before --n was applied
   let promptsToRun = shuffled;
   if (shardIndex !== undefined && shardSize !== undefined) {
     const startIndex = shardIndex * shardSize;
