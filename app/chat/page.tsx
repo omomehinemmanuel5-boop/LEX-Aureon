@@ -787,7 +787,7 @@ function BottomSheet({ open, onClose, title, children }: {
         style={{
           background: G.surface,
           border: `1px solid ${G.border}`,
-          maxHeight: 'calc(var(--lex-vvh, 100dvh) * 0.85)',
+          maxHeight: 'calc((100dvh - var(--lex-kb, 0px)) * 0.85)',
         }}>
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: G.border }} />
