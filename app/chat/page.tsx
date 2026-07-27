@@ -1401,13 +1401,13 @@ export default function ChatConsole() {
       <div
         className="flex flex-col overflow-hidden select-none"
         style={{
-          // fix (2026-07-25) — was h-[100dvh]. dvh does not shrink for the
-          // virtual keyboard, so the composer ended up behind it and the
-          // browser scrolled the header out of view chasing the caret.
-          // --lex-vvh is the live visual-viewport height (set by
-          // useKeyboardAwareViewport); 100dvh remains the fallback for
-          // SSR and browsers without the visualViewport API.
-          height: 'var(--lex-vvh, 100dvh)',
+          // Shell = full dynamic viewport MINUS the measured keyboard inset.
+          // Deriving it this way (rather than assigning vv.height directly)
+          // means the height is stable under pinch-zoom and under address-bar
+          // collapse — only a real keyboard changes it. --lex-kb is 0px
+          // whenever there is no keyboard, on SSR, and on browsers without
+          // the visualViewport API, so this degrades to plain 100dvh.
+          height: 'calc(100dvh - var(--lex-kb, 0px))',
           background: G.bg,
           fontFamily: "'SF Mono','JetBrains Mono',ui-monospace,monospace",
           color: G.text,
