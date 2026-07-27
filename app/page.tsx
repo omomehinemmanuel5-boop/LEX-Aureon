@@ -229,7 +229,7 @@ async function Hero() {
 
         <p className="text-slate-300 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
           A mathematical constitutional control layer for language models and agentic pipelines.
-          Built on a simplex state space and a provably stable barrier — not guardrails,
+          Built on a simplex state space and an explicit log-barrier certificate — not guardrails,
           not filters. Drop-in API. Any LLM. Any agent framework.
         </p>
 
