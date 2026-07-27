@@ -414,7 +414,7 @@ function MessageContent({ text, onSaveBlock }: { text: string; onSaveBlock?: (b:
     <div className="space-y-1">
       {parts.map((p, i) =>
         p.type === 'text'
-          ? <p key={i} className="whitespace-pre-wrap leading-[1.75]" style={{ color: G.text, fontSize: 15 }}>{p.content}</p>
+          ? <p key={i} className="lex-prose whitespace-pre-wrap" style={{ color: G.prose }}>{p.content}</p>
           : <CodeViewer key={i} block={p.block!} onSave={onSaveBlock} />
       )}
     </div>
