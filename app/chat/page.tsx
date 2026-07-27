@@ -644,15 +644,15 @@ const MessageBubble = memo(function MessageBubble({
         }}>
         <div className="px-4 py-3.5">
           {live ? (
-            <p className="whitespace-pre-wrap leading-[1.75]" style={{ color: G.text, fontSize: 15 }}>
+            <p className="lex-prose whitespace-pre-wrap" style={{ color: G.prose }}>
               {partialOutput}
-              <span className="lex-cursor inline-block w-[2px] h-[15px] align-text-bottom ml-0.5 rounded-sm"
+              <span className="lex-cursor inline-block w-[2px] h-[17px] align-text-bottom ml-0.5 rounded-sm"
                 style={{ background: G.gold }} />
             </p>
           ) : text ? (
             <MessageContent text={text} onSaveBlock={onSaveBlock} />
           ) : turn.error ? (
-            <p style={{ color: '#ef4444', fontSize: 15 }}>{turn.error}</p>
+            <p className="lex-prose" style={{ color: '#ef4444' }}>{turn.error}</p>
           ) : null}
 
           <StatusChips turn={turn} live={live} />
