@@ -43,8 +43,16 @@ const G = {
   border:  '#1b1e2b',
   borderHi:'#262a3a',
   text:    '#8b8d97',
-  textSub: '#454858',
+  // was #454858 — measured 2.21:1 on --bg #07080d, a hard AA failure applied
+  // to almost every 9-11px label on the page. On a phone those labels were
+  // effectively invisible. #7c8194 measures 5.17:1 and keeps the hierarchy
+  // (textOn > prose > text > textSub) intact.
+  textSub: '#7c8194',
   textOn:  '#e6e4dc',
+  // Reading colour for message prose. #8b8d97 clears AA at 6.06:1 but at 16px
+  // on near-black it still reads as disabled text, which is a large part of
+  // why the conversation looked like log output rather than a reply. 14.3:1.
+  prose:   '#d7dae3',
   C: '#4f8ff0', R: '#34b876', S: '#e0a039',
 };
 
