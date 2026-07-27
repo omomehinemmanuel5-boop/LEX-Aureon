@@ -1387,6 +1387,30 @@ export default function ChatConsole() {
         textarea, input, select { font-size: 16px; }
         textarea, input { -webkit-user-select: text; user-select: text; }
 
+        /* MESSAGE PROSE (2026-07-27).
+           The whole surface inherited the monospace stack, including the body
+           of every reply. Monospace is the right call for numeric state — it
+           is the wrong call for paragraphs: ~15% wider per glyph, no optical
+           rhythm, and it is the single strongest cue that made this read as a
+           console rather than a conversation. Monospace is retained
+           everywhere it carries meaning (C/R/S values, receipt ids, code,
+           the terminal). Prose only moves to the UI sans stack. */
+        .lex-prose {
+          font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI',
+                       system-ui, sans-serif;
+          font-size: 16px;
+          line-height: 1.6;
+          letter-spacing: -0.004em;
+          /* Long unbroken tokens (urls, hashes) in a reply must not force the
+             whole column to scroll sideways on a 390px screen. */
+          overflow-wrap: anywhere;
+        }
+
+        /* Reading column. Without a max the conversation stretched the full
+           width of a laptop, which is what made the page look like a phone
+           app scaled up. 46rem is ~85 characters at 16px. */
+        .lex-col { width: 100%; max-width: 46rem; margin-inline: auto; }
+
         /* Code editor stays zoom-safe at 16px on touch and only tightens to
            13px where auto-zoom does not exist. Previously an inline
            fontSize:13 that the old !important rule silently overrode. */
