@@ -105,7 +105,7 @@ const JSON_LD = {
       applicationCategory: 'SecurityApplication',
       operatingSystem: 'Any (API/HTTP)',
       url: 'https://www.lexaureon.com',
-      description: 'Constitutional AI governance layer for LLMs and agentic systems. Simplex constitutional state (C+R+S=1), control-barrier-function safety projection, Lyapunov stability argument, and cryptographic SHA-256 audit receipts. Drop-in — no retraining or fine-tuning of the underlying model required.',
+      description: 'Constitutional AI governance layer for LLMs and agentic systems. Simplex constitutional state (C+R+S=1), control-barrier-function safety projection, an explicit Lyapunov barrier certificate, and cryptographic SHA-256 audit receipts. Drop-in — no retraining or fine-tuning of the underlying model required.',
       publisher: { '@id': 'https://www.lexaureon.com/#organization' },
       offers: {
         '@type': 'Offer',
