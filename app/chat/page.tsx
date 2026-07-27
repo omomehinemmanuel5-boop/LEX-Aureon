@@ -145,26 +145,37 @@ function useKeyboardAwareViewport(): void {
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
     if (!vv) return;
+    const root = document.documentElement;
 
     const apply = () => {
-      const root = document.documentElement;
-      root.style.setProperty('--lex-vvh', `${Math.round(vv.height)}px`);
-      root.style.setProperty('--lex-vvtop', `${Math.round(vv.offsetTop)}px`);
-      // Belt-and-braces: if iOS has already scrolled the document to chase
-      // the caret, pull it back. Safe because the document is overflow-locked
-      // below — there is nothing legitimate to scroll at the document level.
-      if (window.scrollY !== 0) window.scrollTo(0, 0);
+      // 1. PINCH-ZOOM GUARD. vv.height is reported in visual-viewport CSS px,
+      //    i.e. already divided by vv.scale. The previous version fed that
+      //    straight into the shell height, so the instant anything zoomed —
+      //    a deliberate pinch, or iOS auto-zoom on any control — the shell
+      //    height collapsed, the whole layout reflowed smaller, and the
+      //    reflow re-fired resize. THAT is the "it zooms out when I type"
+      //    report: not text-field auto-zoom (fonts were already 16px), a
+      //    scale -> relayout -> resize feedback loop. While the user is
+      //    zoomed we contribute nothing and let the browser pan normally.
+      if (vv.scale > 1.01) { root.style.setProperty('--lex-kb', '0px'); return; }
+
+      // 2. MEASURE THE KEYBOARD, NOT THE VIEWPORT. Publishing an inset keeps
+      //    100dvh authoritative for the shell, so ordinary address-bar
+      //    collapse no longer rewrites shell height mid-scroll. The old hook
+      //    overwrote height on every visualViewport SCROLL event, which fires
+      //    continuously while the address bar animates — a full relayout per
+      //    frame, and the second half of the visible jank.
+      const kb = Math.round(window.innerHeight - vv.height - vv.offsetTop);
+      // Sub-80px deltas are UA chrome, not a keyboard.
+      root.style.setProperty('--lex-kb', kb < 80 ? '0px' : `${kb}px`);
     };
 
     apply();
+    // resize only. scroll was the pathological listener — see (2).
     vv.addEventListener('resize', apply);
-    vv.addEventListener('scroll', apply);
     return () => {
       vv.removeEventListener('resize', apply);
-      vv.removeEventListener('scroll', apply);
-      const root = document.documentElement;
-      root.style.removeProperty('--lex-vvh');
-      root.style.removeProperty('--lex-vvtop');
+      root.style.removeProperty('--lex-kb');
     };
   }, []);
 }
