@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-    description: 'Drop-in constitutional governance layer for any LLM or agent. Provably stable barrier dynamics + cryptographic audit. Benchmarks being re-run under symmetric judging.',
+    description: 'Drop-in constitutional governance layer for any LLM or agent. Explicit log-barrier certificate + cryptographic audit. Benchmarks being re-run under symmetric judging.',
     images: ['/logo.png'],
   },
 };
