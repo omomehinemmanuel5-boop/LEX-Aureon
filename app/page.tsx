@@ -35,7 +35,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lexaureon.com'),
   title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-  description: 'A constitutional control layer for language models. CBF math, a provably stable Lyapunov barrier, and cryptographic SHA-256 audit receipts.',
+  description: 'A constitutional control layer for language models. CBF math, an explicit log-barrier Lyapunov certificate, and cryptographic SHA-256 audit receipts.',
   alternates: {
     canonical: 'https://www.lexaureon.com',
   },
@@ -94,7 +94,7 @@ const JSON_LD = {
       '@id': 'https://www.lexaureon.com/#website',
       url: 'https://www.lexaureon.com',
       name: 'Lex Aureon',
-      description: 'A constitutional control layer for language models. CBF math, a provably stable Lyapunov barrier, and cryptographic SHA-256 audit receipts.',
+      description: 'A constitutional control layer for language models. CBF math, an explicit log-barrier Lyapunov certificate, and cryptographic SHA-256 audit receipts.',
       publisher: { '@id': 'https://www.lexaureon.com/#organization' },
       inLanguage: 'en',
     },
