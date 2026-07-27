@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-    description: 'A constitutional governance layer for language models and agentic systems: simplex state, a provably stable Lyapunov barrier, and cryptographic audit receipts. Adversarial evaluation in progress under symmetric judging.',
+    description: 'A constitutional governance layer for language models and agentic systems: simplex state, an explicit log-barrier Lyapunov certificate, and cryptographic audit receipts. Adversarial evaluation in progress under symmetric judging.',
     images: [{ url: '/logo.png', width: 1080, height: 1080 }],
     url: 'https://www.lexaureon.com',
     type: 'website',
