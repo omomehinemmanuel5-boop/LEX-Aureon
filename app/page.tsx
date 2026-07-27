@@ -387,8 +387,8 @@ function TechnicalFoundationSection() {
           </div>
           <div className="flex items-end gap-2 h-24 mb-5">
             <div className="flex-1 flex flex-col items-center gap-1.5">
-              <div className="w-full rounded-t-md" style={{ height: '63%', background: `${G.R}b0` }} />
-              <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 font-bold">62.8%</span>
+              <div className="w-full rounded-t-md" style={{ height: '6%', background: `${G.R}b0` }} />
+              <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 font-bold">6.1%</span>
               <span className="text-[9px] font-mono text-slate-500">stable</span>
             </div>
             <div className="flex-1 flex flex-col items-center gap-1.5">
