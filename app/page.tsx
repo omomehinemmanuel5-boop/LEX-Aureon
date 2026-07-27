@@ -383,7 +383,7 @@ function TechnicalFoundationSection() {
         <div className="rounded-2xl border p-6 sm:p-8 bg-white dark:bg-black/30 border-slate-200 dark:border-white/10">
           <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
             <span className="text-xs uppercase tracking-widest font-bold text-slate-600 dark:text-slate-500 font-mono">Measured, not asserted</span>
-            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-600">~47,000 logged turns, real traffic</span>
+            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-600">34,329 logged turns · 99.4% adversarial benchmark</span>
           </div>
           <div className="flex items-end gap-2 h-24 mb-5">
             <div className="flex-1 flex flex-col items-center gap-1.5">
