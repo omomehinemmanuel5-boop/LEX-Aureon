@@ -328,14 +328,24 @@ function ComparisonSection() {
 /* ── Technical Foundation — for the control-theory literate ──────
    Added 2026-07-07 per direct request: a precise, honest CBF/Lyapunov
    section aimed at readers who'd recognize sloppy vs. correct use of this
-   terminology. The empirical 79.7% figure is REAL, queried directly from
-   governor_log.drift_dir (computed from ΔV_z on every governed turn across
-   ~47,000 logged turns) — not an estimate. Deliberately does NOT claim 100%:
-   a perfect number would be the actual red flag to this audience. The ~20.3%
-   "diverging" share is real too, and the copy is honest that its correlation
-   with attack-response turns is a plausible but not yet cleanly verified
-   hypothesis — see the chat history / commit log for how this number was
-   derived and what wasn't confirmed.
+   terminology.
+   fix (2026-07-27) — THE 79.7% FIGURE IS WITHDRAWN. This comment previously
+   asserted it was "REAL, queried directly from governor_log.drift_dir ...
+   across ~47,000 logged turns — not an estimate". It can no longer be
+   reproduced from that source. Querying governor_log.drift_dir today returns
+   diverging 22,654 / converging 9,582 / stable 2,093 over 34,329 rows, i.e.
+   ΔV_z ≤ 0 on 34.0%, not 79.7% — and no combination of those buckets yields
+   79.7%. The Turso instance was replaced on 2026-07-14 and prior rows are gone,
+   so the figure describes a database that no longer exists.
+   The accompanying hypothesis — that divergence concentrates in attack-response
+   turns — was also tested and does NOT hold: divergence is 71.4% on turns with
+   an intervention and 63.7% on turns without, so it is the majority behaviour in
+   both. The panel now states the measured 34.0%, labels the population honestly
+   (99.4% of rows are lexbench-% sessions; the chat_% pattern the frontend
+   generates matches ZERO rows, so "real traffic" was wrong), and names the
+   descent condition as an open problem alongside FPL-1's failure.
+   Any future edit to these numbers should re-query governor_log rather than
+   trusting this comment — that is precisely how the stale figure survived.
    fix (2026-07-13) — LIGHT-THEME CONTRAST: labels here used text-slate-500
    dark:text-slate-500 / text-slate-500 dark:text-slate-600 — slate-500 on
    white measures ~4.47:1, just under the 4.5:1 WCAG AA minimum at this font
