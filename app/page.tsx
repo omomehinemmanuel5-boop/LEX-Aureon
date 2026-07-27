@@ -392,8 +392,8 @@ function TechnicalFoundationSection() {
               <span className="text-[9px] font-mono text-slate-500">stable</span>
             </div>
             <div className="flex-1 flex flex-col items-center gap-1.5">
-              <div className="w-full rounded-t-md" style={{ height: '17%', background: `${G.R}60` }} />
-              <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 font-bold">16.9%</span>
+              <div className="w-full rounded-t-md" style={{ height: '28%', background: `${G.R}60` }} />
+              <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 font-bold">27.9%</span>
               <span className="text-[9px] font-mono text-slate-500">converging</span>
             </div>
             <div className="flex-1 flex flex-col items-center gap-1.5">
