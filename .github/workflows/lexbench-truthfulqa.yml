@@ -1,0 +1,253 @@
+name: LexBench TruthfulQA (guardrail arm)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WHY THIS EXISTS (2026-07-28)
+#
+# TruthfulQA is the guardrail metric for the attack-arm work in
+# lexbench-attack-arms.yml. Two runs there (30351295878, 30403712045) each
+# n=100 JailbreakBench showed governance significantly reducing ASR — the
+# second run: bare 30.95% -> governed 11.90%, delta 19.05pp, McNemar's
+# p=0.0269. Real, and the first significant JailbreakBench result of the
+# project. But BOTH runs also showed attack_type='none' on every single scored
+# prompt (44/44 and 49/49) — the harm_request archetype class added in
+# c65b09d9 fired ZERO times. Something else is suppressing compliance, and
+# whatever it is has not been checked against the one metric that would reveal
+# whether it costs truthfulness: refusal-substitution and sovereignty drift
+# both previously cost TruthfulQA -23.6pp (governed 68.5% vs bare ~92%) before
+# 163f5bbb fixed it, recovering to 94.1% at n=200. This workflow exists to
+# re-check that number is still holding, isolated from the attack arms so it
+# runs on its own quota and is never crowded out the way it was in prod.
+#
+# DIFFERENCES FROM lexbench-prod.yml, same rationale as lexbench-attack-arms.yml:
+#   - Single benchmark only: prod runs 5 sequentially and TruthfulQA is FIRST
+#     in that sequence, so historically it got full quota while later arms
+#     starved — the inverse problem attack-arms.yml solved by moving the attack
+#     arms out from behind it. Isolating this one too means it is never
+#     competing with anything and its own number is never in question because
+#     of budget.
+#   - `limit` does not suppress publishing (see attack-arms.yml's identical
+#     note): prod gates publish on inputs.limit == '', which made every
+#     limited diagnostic run unpublishable. Publishing is its own opt-in input
+#     here, default false.
+#   - Preflight quota gate, identical rationale and implementation to
+#     attack-arms.yml: fail in seconds on dead quota rather than grinding
+#     through retries to discover it 90+ minutes in.
+#   - Diagnostic step is REGRESSIONS, not evasion — the question this arm
+#     answers is different in kind. attack-arms.yml asks "what got through
+#     that governance should have caught". This asks "what did governance
+#     BREAK that the bare model got right" — prompts where bare_metrics.truthful
+#     was 1 and governed_metrics.truthful was 0. That list is the direct,
+#     per-prompt evidence for whatever mechanism (still unidentified) is
+#     trading truthfulness for safety, if one exists in this run.
+#
+# CALL BUDGET. Same ~7 calls/prompt as attack-arms.yml (2 generation, 3
+# embedding, 2 judge — TruthfulQA only judges one arm-type but every prompt
+# still needs both arms scored). Single benchmark, so no multi-arm multiplier:
+#
+#   200 prompts -> ~600 embed, ~400 judge, ~1400 total   [likely safe alone]
+#   100 prompts -> ~300 embed, ~200 judge,  ~700 total   [default, safe]
+#
+# Well under the ~1,000/day Gemini embedding ceiling at the default, with
+# headroom to also run an attack arm the same day if needed.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Prompts (empty = full dataset: 817). Seeded random sample, not a prefix.'
+        required: false
+        default: '100'
+      publish:
+        description: 'Publish to the live leaderboard? (false = diagnostic run, results in artifacts only)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+# Shares the same group as prod and attack-arms: all three hit the same live
+# API and the same provider quota, so none may run concurrently with another.
+concurrency:
+  group: lexbench-live-api-provider-quota
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  SITE_URL: https://www.lexaureon.com
+
+jobs:
+  precheck-auth:
+    if: ${{ inputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify BENCH_SECRET authorizes a publish
+        run: |
+          HTTP_CODE=$(curl -sS -L -o /tmp/precheck.json -w "%{http_code}" \
+            ${{ env.SITE_URL }}/api/benchmarks/publish \
+            -H "Authorization: Bearer ${{ secrets.BENCH_SECRET }}")
+          echo "HTTP status: $HTTP_CODE"
+          cat /tmp/precheck.json
+          echo ""
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::BENCH_SECRET precheck FAILED (HTTP $HTTP_CODE). Dispatched with publish=true but the secret does not authorize a publish, so this stopped before spending provider quota on results that could not land. Fix BENCH_SECRET, or re-dispatch with publish=false for a diagnostic run."
+            exit 1
+          fi
+          echo "BENCH_SECRET precheck passed."
+
+  run-truthfulqa:
+    needs: precheck-auth
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Confirm dataset present
+        run: |
+          if [ ! -s data/truthfulqa.jsonl ]; then
+            echo "::error::data/truthfulqa.jsonl missing or empty — cannot run."
+            exit 1
+          fi
+          echo "data/truthfulqa.jsonl: $(wc -l < data/truthfulqa.jsonl) prompts"
+
+      # Identical rationale to attack-arms.yml's preflight: one request settles
+      # whether quota is live before any is spent. See that file's comment for
+      # the run this was learned from (30203713573: 1h49m to discover the judge
+      # chain was already dead).
+      - name: Preflight - confirm provider quota is live
+        run: |
+          curl -sS -X POST ${{ env.SITE_URL }}/api/lex/govern \
+            -H "Content-Type: application/json" \
+            -d '{"prompt":"Name two colours.","session_id":"preflight-${{ github.run_id }}"}' \
+            -o /tmp/preflight.json
+          RAW=$(node -e "const d=require('/tmp/preflight.json');process.stdout.write(String(d.raw_provider||'null'))")
+          echo "raw_provider = $RAW"
+          if [ "$RAW" = "static" ] || [ "$RAW" = "null" ]; then
+            echo "::error::Provider quota exhausted (raw_provider=$RAW). Aborting before spending retry backoff on a run that cannot produce verdicts. Wait for the quota window to roll over, then re-dispatch."
+            exit 1
+          fi
+          echo "Quota live. Proceeding."
+
+      - name: Run TruthfulQA
+        run: |
+          LIMIT="${{ inputs.limit }}"
+          if [ -n "$LIMIT" ]; then
+            # --n is a seeded RANDOM sample of the full 817 (c7a1dc55 moved the
+            # limit to after the shuffle), not the first N — so a limited run is
+            # a valid subsample, not a prefix over-representing early categories.
+            npx tsx scripts/lexbench/runner.ts \
+              --benchmark truthfulqa \
+              --endpoint ${{ env.SITE_URL }} \
+              --n "$LIMIT"
+          else
+            npx tsx scripts/lexbench/runner.ts \
+              --benchmark truthfulqa \
+              --endpoint ${{ env.SITE_URL }}
+          fi
+        env:
+          GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY:      ${{ secrets.MISTRAL_API_KEY }}
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
+          ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
+          JINA_API_KEY:         ${{ secrets.JINA_API_KEY }}
+          CRON_SECRET:          ${{ secrets.CRON_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+
+      - name: Upload raw per-prompt results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: truthfulqa-raw-${{ github.run_id }}
+          path: data/lexbench-*.jsonl
+          if-no-files-found: ignore
+
+      - name: Aggregate
+        if: always()
+        run: |
+          shopt -s nullglob
+          files=(data/lexbench-*.jsonl)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::no result files produced — nothing to aggregate."
+            exit 0
+          fi
+          cat "${files[@]}" > all_results.jsonl
+          echo "rows: $(wc -l < all_results.jsonl)"
+          npx tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary.json
+          cat summary.json
+
+      # ── The reason this workflow exists ──────────────────────────────────────
+      # attack-arms.yml's diagnostic asks "what got through that governance
+      # should have caught" — evasion. This asks the opposite question:
+      # "what did governance BREAK that the bare model got right" — regression.
+      # A prompt where bare_metrics.truthful=1 and governed_metrics.truthful=0
+      # is a case where governance took a correct answer and made it wrong,
+      # which is exactly the -23.6pp mechanism from before 163f5bbb (refusal
+      # substituted for a correct factual answer). If that count is non-trivial
+      # here, the same failure mode is present again — from refusal-substitution,
+      # sovereignty drift, or something new — regardless of what the headline
+      # delta_pp shows. Diagnostic only, never fails the run.
+      - name: Truthfulness regression diagnostic
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ ! -s all_results.jsonl ]; then
+            echo "no rows to analyse"; exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const rows = fs.readFileSync("all_results.jsonl","utf8")
+              .split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } })
+              .filter(Boolean);
+            const scored = rows.filter(r =>
+              r.bare_metrics && r.governed_metrics &&
+              r.bare_metrics.truthful !== null && r.governed_metrics.truthful !== null);
+            const regressed = scored.filter(r => r.bare_metrics.truthful === 1 && r.governed_metrics.truthful === 0);
+            const improved  = scored.filter(r => r.bare_metrics.truthful === 0 && r.governed_metrics.truthful === 1);
+            console.log("=== TRUTHFULNESS REGRESSION DIAGNOSTIC ===");
+            console.log("rows total          :", rows.length);
+            console.log("scored (both arms)  :", scored.length);
+            console.log("bare truthful       :", scored.filter(r => r.bare_metrics.truthful === 1).length);
+            console.log("governed truthful   :", scored.filter(r => r.governed_metrics.truthful === 1).length);
+            console.log("REGRESSED (bare right, governed wrong):", regressed.length);
+            console.log("IMPROVED  (bare wrong, governed right):", improved.length);
+            console.log("");
+            console.log("--- regressions: governance broke a correct answer ---");
+            for (const r of regressed.slice(0, 40)) {
+              console.log(`[${r.prompt_id ?? r.id ?? "?"}]`);
+              console.log(`   prompt         : ${String(r.prompt ?? "").slice(0,110)}`);
+              console.log(`   bare (correct) : ${String(r.raw_output ?? "").slice(0,110)}`);
+              console.log(`   governed (wrong): ${String(r.governed_output ?? "").slice(0,110)}`);
+            }
+            const byMethod = {};
+            for (const r of regressed) {
+              const m = (r.governed_metrics && r.governed_metrics.judge_method) || "unknown";
+              byMethod[m] = (byMethod[m] || 0) + 1;
+            }
+            console.log("");
+            console.log("regression judge_method distribution:", JSON.stringify(byMethod));
+          '
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: truthfulqa-summary-${{ github.run_id }}
+          path: summary.json
+          if-no-files-found: ignore
+
+      - name: Publish to live leaderboard
+        if: ${{ inputs.publish == 'true' && hashFiles('summary.json') != '' }}
+        run: npx tsx scripts/lexbench/publish-results.ts summary.json
+        env:
+          BENCH_SECRET:         ${{ secrets.BENCH_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
