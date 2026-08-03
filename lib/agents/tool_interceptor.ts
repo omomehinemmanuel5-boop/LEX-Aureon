@@ -32,6 +32,41 @@ import { measureToolCRS } from './tool_crs';
 import { getClient } from '../db';
 import crypto from 'crypto';
 
+// ── Constitutional Tool-Call Cache ───────────────────────────────────────────
+// fix (2026-08-03): session-local cache for identical read-only tool calls.
+// Identical read_file / read_memory calls within the same session should not
+// re-run the full embedding + DB round-trip every time. The cache is keyed on
+// (session_id, tool_name, args_hash) and TTL-limited to avoid stale results.
+//
+// Only READ operations are cached — write operations (create_file, execute_sql,
+// etc.) must always go through the full interceptor since their effects are
+// not idempotent and the constitutional state must be re-measured.
+//
+// The cache is in-memory (per process). On Vercel's serverless it resets each
+// cold start, which is the correct behavior — it is an optimization, not a
+// correctness requirement.
+
+const READ_TOOLS = new Set(['read_file','read_directory','list_files','read_memory',
+  'search_memory','fetch_page','curl','http_get','get_file','cat','head','tail',
+  'grep','find','ls','dir','glob','read_json','parse_csv']);
+
+interface CacheEntry {
+  result:   string;
+  decision: ToolCallDecision;
+  ts:       number;
+}
+
+const _toolCache = new Map<string, CacheEntry>();
+const TOOL_CACHE_TTL_MS = 60_000; // 1 minute — long enough for agent loops, short enough to avoid staleness
+
+function cacheKey(session_id: string, toolName: string, args_hash: string): string {
+  return `${session_id}:${toolName}:${args_hash}`;
+}
+
+function isCacheableTool(toolName: string): boolean {
+  return READ_TOOLS.has(toolName);
+}
+
 // Constitutional constants — same as text governance
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _TAU_FLOOR    = 0.05;  // Reserved — matches kernel CBF floor
@@ -189,6 +224,37 @@ export async function runToolGoverned(
 ): Promise<string> {
   const sid = session_id ?? `lex-crs-agent-${new Date().toISOString().slice(0, 10)}`;
 
+  // Compute args hash for cache key
+  const args_hash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(args))
+    .digest('hex')
+    .slice(0, 32);
+
+  // ── Cache check for identical read-only calls ──────────────────────────────
+  if (isCacheableTool(toolName)) {
+    const key = cacheKey(sid, toolName, args_hash);
+    const cached = _toolCache.get(key);
+    if (cached && (Date.now() - cached.ts) < TOOL_CACHE_TTL_MS) {
+      // Cache hit — skip the full interceptor + execution
+      const report = [
+        `── Constitutional tool-call decision [${toolName}] — CACHED ──`,
+        `decision:    ${cached.decision.decision}`,
+        `approved:    ${cached.decision.approved}`,
+        `crs:         C=${cached.decision.crs.C.toFixed(3)} R=${cached.decision.crs.R.toFixed(3)} S=${cached.decision.crs.S.toFixed(3)} M=${cached.decision.crs.M.toFixed(3)}`,
+        `risk_level:  ${cached.decision.crs.risk_level}`,
+        `health_band: ${cached.decision.health_band}`,
+        `sigma_viol:  ${cached.decision.sigma_viol.toFixed(3)}`,
+        `receipt_id:  ${cached.decision.receipt_id}`,
+        `reason:      ${cached.decision.reason}`,
+        `cache_hit:   true`,
+        ``,
+      ];
+      report.push(cached.result);
+      return report.join('\n');
+    }
+  }
+
   const toolInput: ToolCallInput = {
     id:            crypto.randomUUID(),
     name:          toolName,
@@ -218,11 +284,24 @@ export async function runToolGoverned(
     return report.join('\n');
   }
 
+  let toolResult = '';
   try {
-    const result = await toolFn(args);
-    report.push(result);
+    toolResult = await toolFn(args);
+    report.push(toolResult);
   } catch (e) {
-    report.push(`Error executing ${toolName}: ${e instanceof Error ? e.message : String(e)}`);
+    const errMsg = `Error executing ${toolName}: ${e instanceof Error ? e.message : String(e)}`;
+    report.push(errMsg);
+    toolResult = errMsg;
+  }
+
+  // ── Cache the result for future identical calls ────────────────────────────
+  if (isCacheableTool(toolName)) {
+    const key = cacheKey(sid, toolName, args_hash);
+    _toolCache.set(key, {
+      result:   toolResult,
+      decision: decision,
+      ts:       Date.now(),
+    });
   }
 
   return report.join('\n');

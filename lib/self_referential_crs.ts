@@ -16,6 +16,23 @@
  *
  * No string patterns. No hardcoding.
  * The math catches it because the measurement is now faithful to the paper.
+ *
+ * fix (2026-08-03) — DIFFERENTIAL SOVEREIGNTY SCORING. Previously the
+ * full output embedding was compared against the constitutional centroid.
+ * A large, safe answer about a completely unrelated topic (e.g. "Fix the
+ * database schema" producing a 200-line SQL migration) scored near-zero
+ * similarity to constitutional vocabulary, causing false-positive sovereignty
+ * drift. Now: sovereignty is scored on the OUTPUT-INPUT DELTA — what the
+ * output ADDS relative to the input. Pure factual answers to factual questions
+ * have input and output in the same register, so the delta is small and
+ * benign. Attack outputs that introduce forbidden semantic content have a
+ * large, anomalous delta relative to the constitutional centroid.
+ *
+ * The delta is computed as:
+ *   delta_emb = (outputEmb - inputEmb) / ||outputEmb - inputEmb||
+ * This isolates the NEW information the model introduced, independent of
+ * the input register. The constitutional centroid comparison then measures
+ * whether the NEW information drifts from constitutional vocabulary.
  */
 
 export interface SelfReferentialCRS {
@@ -57,22 +74,50 @@ export function computeCentroid(embeddings: number[][]): number[] | null {
   return centroid;
 }
 
+/**
+ * Compute the normalized delta vector between two embeddings.
+ * Returns the direction of change (what the output added relative to input),
+ * normalized to unit length so magnitude doesn't distort the cosine.
+ */
+function computeDeltaVector(outputEmb: number[], inputEmb: number[]): number[] | null {
+  if (!outputEmb.length || !inputEmb.length) return null;
+  const dim = Math.min(outputEmb.length, inputEmb.length);
+  const delta: number[] = [];
+  let magnitude = 0;
+
+  for (let i = 0; i < dim; i++) {
+    const d = outputEmb[i] - inputEmb[i];
+    delta.push(d);
+    magnitude += d * d;
+  }
+
+  magnitude = Math.sqrt(magnitude);
+  if (magnitude < 1e-9) return null; // input ≈ output, no delta
+
+  // Normalize to unit vector
+  return delta.map(d => d / magnitude);
+}
+
 export function computeSelfReferentialCRS(
   outputEmb:              number[],
   inputEmb:               number[],
   constitutionalCentroid: number[] | null,
   sessionCentroid:        number[] | null,
 ): SelfReferentialCRS {
-  // ── S: Sovereignty ────────────────────────────────────────────────────────
-  // How aligned is this output with the constitutional identity?
-  // High alignment = sovereign output (output reflects constitutional self)
-  // Low alignment = sovereignty violated (output drifted from identity)
-  const sovereigntyRaw = constitutionalCentroid
-    ? cosineSimilarityVec(outputEmb, constitutionalCentroid)
-    : 0.5; // neutral fallback if no centroid yet
+  // ── S: Sovereignty — DIFFERENTIAL SCORING ──────────────────────────────────
+  // Compare the OUTPUT-INPUT delta against the constitutional centroid.
+  // This isolates whether the NEW information introduced by the output
+  // drifts from constitutional vocabulary, rather than penalizing the
+  // entire output for being topically distant.
+  const deltaEmb = computeDeltaVector(outputEmb, inputEmb);
+  const sovereigntyRaw = (constitutionalCentroid && deltaEmb)
+    ? cosineSimilarityVec(deltaEmb, constitutionalCentroid)
+    : 0.5; // neutral fallback if no centroid or no delta
 
   // ── C: Continuity ─────────────────────────────────────────────────────────
   // How consistent is this output with the session's prior responses?
+  // Continuity uses the full output (not the delta) — we want to know if the
+  // session's overall voice is consistent, not just the delta.
   const continuityRaw = sessionCentroid
     ? cosineSimilarityVec(outputEmb, sessionCentroid)
     : 0.5; // neutral if first turn

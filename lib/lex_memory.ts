@@ -170,6 +170,11 @@ export interface LexMemoryEvent {
   prompt:                string;
   prompt_hash:           string;
   embedding:             number[];
+  /** fix (2026-08-03): which embedding provider produced this vector.
+   *  Required so getSessionCentroid() can filter to a single embedding space,
+   *  preventing cross-provider pollution of the Continuity (C) signal. */
+  embedding_provider?:   EmbedProvider;
+  embedding_model?:      string;
   M:                     number;
   C:                     number;
   R:                     number;
@@ -636,14 +641,17 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
     await db.execute({
       sql: `INSERT INTO lex_memory
               (session_id, prompt, prompt_hash, embedding,
+               embedding_provider, embedding_model,
                M, C, R, S, health_band, state_label,
                intervention, governed_response_hash, governed_response, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         event.session_id,
         event.prompt.slice(0, 2000),
         event.prompt_hash,
         JSON.stringify(event.embedding),
+        event.embedding_provider ?? null,
+        event.embedding_model ?? null,
         event.M, event.C, event.R, event.S,
         event.health_band,
         event.state_label,
@@ -893,6 +901,21 @@ export async function ensureLexMemoryTable(): Promise<void> {
       }
     }
 
+    // fix (2026-08-03): additive migration for embedding_provider + embedding_model.
+    // Enables provider-aware getSessionCentroid() to avoid cross-provider
+    // embedding-space pollution in the Continuity (C) signal.
+    for (const col of ['embedding_provider TEXT', 'embedding_model TEXT']) {
+      try {
+        await db.execute(`ALTER TABLE lex_memory ADD COLUMN ${col}`);
+        console.log(`lex_memory: added ${col.split(' ')[0]} column`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/duplicate column|already exists/i.test(msg)) {
+          console.error(`lex_memory: ${col} migration failed:`, msg);
+        }
+      }
+    }
+
     await db.execute(
       `CREATE INDEX IF NOT EXISTS idx_lex_memory_session ON lex_memory(session_id)`
     );
@@ -998,21 +1021,43 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
   }
 }
 
-// KNOWN LIMITATION (pre-existing, not introduced by the multi-provider fallback
-// above): lex_memory rows do not record which provider embedded them, so a
-// session's historical embeddings may mix providers if the active provider
-// changed mid-session. This affects the Continuity (session-centroid) signal
-// only, not the primary Sovereignty (constitutional-centroid) signal, which is
-// kept provider-consistent per request. Fixing this fully requires persisting
-// the embedding model per lex_memory row — tracked as a future migration.
+/**
+ * Session centroid — averaged over the last N embeddings from a SINGLE
+ * provider, so the Continuity (C) signal is not polluted by cross-provider
+ * embedding-space mixing.
+ *
+ * fix (2026-08-03): previously this averaged the last 20 embeddings regardless
+ * of provider. If Gemini embedded turns 1-10 and Jina embedded turns 11-20,
+ * the centroid was a meaningless average across two incompatible vector spaces.
+ * Now: it discovers which provider is MOST RECENT for this session, then
+ * averages only that provider's embeddings.
+ *
+ * Behavior for pre-migration rows (embedding_provider is NULL): these are
+ * treated as a single "legacy" provider group, preserving backward compatibility
+ * with databases created before this migration.
+ */
 export async function getSessionCentroid(sessionId: string): Promise<number[] | null> {
   try {
     const db  = getClient();
+    // Step 1: find the most recent embedding_provider for this session
+    const provRes = await db.execute({
+      sql:  `SELECT embedding_provider FROM lex_memory
+             WHERE session_id = ? AND embedding IS NOT NULL
+             ORDER BY created_at DESC LIMIT 1`,
+      args: [sessionId],
+    });
+    const latestProvider = provRes.rows.length
+      ? String(provRes.rows[0].embedding_provider ?? 'legacy')
+      : 'legacy';
+
+    // Step 2: average only that provider's embeddings
     const res = await db.execute({
       sql:  `SELECT embedding FROM lex_memory
-             WHERE session_id = ? AND embedding IS NOT NULL
+             WHERE session_id = ?
+               AND embedding IS NOT NULL
+               AND COALESCE(embedding_provider, 'legacy') = ?
              ORDER BY created_at DESC LIMIT 20`,
-      args: [sessionId],
+      args: [sessionId, latestProvider],
     });
     const embeddings: number[][] = [];
     for (const row of res.rows) {

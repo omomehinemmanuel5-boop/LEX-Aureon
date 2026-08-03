@@ -51,8 +51,16 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, openSync, closeSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
+
+// fix (2026-08-03): RACE CONDITION in concurrent shard execution. When
+// multiple shards share a JudgeCache file (e.g. GitHub Actions running with
+// shard_count > 1), simultaneous save() calls can corrupt the file — one shard
+// reads while another is mid-rename. Fix: use an fs-level lockfile with a
+// small retry loop around save(). The lockfile is named ${path}.lock and is
+// acquired via fcntl-style file locking (O_EXCL on a temp file + rename for
+// portability, since Node's fs has no flock on all platforms).
 
 /**
  * Bump on ANY edit to a judge system prompt or verdict parser. Old entries then
@@ -167,19 +175,83 @@ export class JudgeCache {
     return true;
   }
 
-  /** Atomic write via temp file + rename, so a killed CI job cannot leave a truncated cache behind. */
+  /**
+   * Acquire an exclusive lock on the cache file.
+   * Uses a lockfile with retry — compatible across platforms without native flock.
+   * Returns true if the lock was acquired, false after max retries.
+   */
+  private acquireLock(maxRetries = 20, retryDelayMs = 100): boolean {
+    const lockPath = `${this.path}.lock`;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // O_EXCL | O_CREAT: atomically fail if the file already exists
+        const fd = openSync(lockPath, 'wx');
+        closeSync(fd);
+        return true;
+      } catch {
+        // EEXIST — another process holds the lock, retry
+        if (attempt < maxRetries - 1) {
+          // Busy-wait with short sleep to avoid tight spin
+          const start = Date.now();
+          while (Date.now() - start < retryDelayMs) { /* spin */ }
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Release the lockfile. */
+  private releaseLock(): void {
+    try {
+      rmSync(`${this.path}.lock`, { force: true });
+    } catch {
+      // Non-fatal — the next save() attempt will clean up
+    }
+  }
+
+  /** Atomic write via temp file + rename, so a killed CI job cannot leave a truncated cache behind.
+   *
+   * fix (2026-08-03): wrapped in a lockfile to prevent concurrent shard writes
+   * from corrupting the cache. A shard that cannot acquire the lock within ~2s
+   * falls back to a non-atomic write (best-effort) rather than losing its data.
+   */
   save(): void {
     if (!this.dirty) return;
+    const locked = this.acquireLock();
+    if (!locked) {
+      console.warn(`[judge-cache] could not acquire lock on ${this.path} after retries; saving non-atomically`);
+    }
     try {
+      // Merge with whatever is currently on disk — another shard may have
+      // written new entries while we were computing.
       const dir = dirname(this.path);
       if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
-      const payload: CacheFile = { rubric_version: RUBRIC_VERSION, entries: this.entries };
+
+      const merged: CacheFile = { rubric_version: RUBRIC_VERSION, entries: {} };
+
+      // Load existing disk state if present (another shard may have written)
+      if (existsSync(this.path)) {
+        try {
+          const onDisk = JSON.parse(readFileSync(this.path, 'utf8')) as CacheFile;
+          if (onDisk && onDisk.rubric_version === RUBRIC_VERSION && typeof onDisk.entries === 'object') {
+            merged.entries = onDisk.entries;
+          }
+        } catch {
+          // Corrupt on-disk file — start from our in-memory state only
+        }
+      }
+
+      // Our entries take precedence (they are the latest computation)
+      Object.assign(merged.entries, this.entries);
+
       const tmp = `${this.path}.tmp`;
-      writeFileSync(tmp, JSON.stringify(payload), 'utf8');
+      writeFileSync(tmp, JSON.stringify(merged), 'utf8');
       renameSync(tmp, this.path);
       this.dirty = false;
     } catch (err) {
       console.warn(`[judge-cache] could not write ${this.path}:`, err instanceof Error ? err.message : err);
+    } finally {
+      if (locked) this.releaseLock();
     }
   }
 
