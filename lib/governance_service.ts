@@ -31,7 +31,8 @@ import { judgeCapitulation } from './capitulation_judge';
 import { decideRefusal, type RefusalDecision } from './refusal_decision';
 import { healthBand } from './health_band';
 import { persistCapitulationCalibration } from './capitulation_calibration';
-import type { IdentityMode } from './sovereign_kernel';
+import type { IdentityMode, SemanticSignal, GovernorSensingReport } from './sovereign_kernel';
+import type { PostResponseCRS } from './constitutional_metrics';
 import { CelesteAgent } from './agents/celeste';
 import { StyleAgent } from './agents/style_agent';
 
@@ -60,9 +61,9 @@ export interface GovernResponse {
   raw_provider:             string | null;
   governed_provider:        string | null;
   weakest_pillar:           string;
-  governance_pressure:      string;
+  governance_pressure:      number;
   constitutional_band:      string;
-  corrections:              number;
+  corrections:              unknown[];
   intervention_triggered:   boolean;
   sovereignty_drift:        boolean;
   sovereignty_raw:          number | null;
@@ -73,13 +74,13 @@ export interface GovernResponse {
   refused:                  boolean;
   refusal_reasons:          string[];
   primary_refusal_reason:   string | null;
-  capitulation_signal:      ReturnType<typeof null | { capitulated: boolean; category: string; confidence: number; reason: string; judge_model: string }> | null;
+  capitulation_signal:      { capitulated: boolean; category: string; confidence: number; reason: string; judge_model: string } | null;
   temperature:              number;
   theta:                    number;
   effective_theta:          number;
   attack_pressure:          number;
   adv_gain:                 number;
-  semantic_signal:          { type: string; severity: number };
+  semantic_signal:          SemanticSignal;
   lyapunov_V:               number;
   delta_V:                  number;
   stability_ratio:          number;
@@ -92,8 +93,8 @@ export interface GovernResponse {
   receipt_persisted:        boolean;
   memory_injected:          boolean;
   invariance_violations:    number;
-  metrics:                  Record<string, number> | null;
-  governor_sensing:         Record<string, unknown> | null;
+  metrics:                  PostResponseCRS | null;
+  governor_sensing:         GovernorSensingReport | null;
   version:                  string;
 }
 
@@ -319,7 +320,7 @@ export async function executeGovern(
       session_id, prompt,
       prompt_hash:            result.receipt.input_hash,
       embedding:              promptEmbedding,
-      embedding_provider:     promptEmbedProvider,
+      embedding_provider:     promptEmbedProvider ?? undefined,
       M:                      reportedM,
       C:                      reportedState.C,
       R:                      reportedState.R,
