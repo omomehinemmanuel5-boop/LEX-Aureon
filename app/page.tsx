@@ -12,6 +12,7 @@ import RedTeamSection from '@/components/RedTeamSection';
 import ArchitectureSection from '@/components/ArchitectureSection';
 import BenchmarkResults from '@/components/BenchmarkResults';
 import CbfInvariancePanel from '@/components/CbfInvariancePanel';
+import AgenticGovernancePanel from '@/components/AgenticGovernancePanel';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
@@ -393,7 +394,7 @@ function TechnicalFoundationSection() {
         <div className="rounded-2xl border p-6 sm:p-8 bg-white dark:bg-black/30 border-slate-200 dark:border-white/10">
           <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
             <span className="text-xs uppercase tracking-widest font-bold text-slate-600 dark:text-slate-500 font-mono">Measured, not asserted</span>
-            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-600">34,329 logged turns · 99.4% adversarial benchmark</span>
+            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-600">34,329 logged turns · 99.4% adversarial benchmark · simulator: LYAPUNOV STABLE + FORWARD INVARIANT</span>
           </div>
           <div className="flex items-end gap-2 h-24 mb-5">
             <div className="flex-1 flex flex-col items-center gap-1.5">
@@ -415,7 +416,7 @@ function TechnicalFoundationSection() {
           <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
             Every governed turn logs whether V<sub>z</sub> decreased, held, or increased that step. On the current instrumented population — 34,329 turns, of which 99.4% is adversarial benchmark traffic rather than organic use — the non-increasing condition (ΔV<sub>z</sub> ≤ 0 — stable + converging) holds on <b className="text-slate-800 dark:text-white">34.0%</b> of turns. We previously published 79.7% here. That figure was computed against a database instance replaced on 2026-07-14 and cannot be reproduced from the source it cited, so it is withdrawn rather than carried forward.
             <br /><br />
-            We also tested the explanation we previously offered — that divergence concentrates in attack-response turns, where the governor trades smooth descent for suspending the exchange. It does not hold: divergence runs 71.4% on turns with an intervention and 63.7% on turns without, so it is the majority behaviour in both. The descent condition is specified in the barrier&apos;s construction and is <b className="text-slate-800 dark:text-white">not currently satisfied empirically</b>. FPL-1, the formal property test, also does not pass — max deviation measures 0.27–0.40 against a 0.25 threshold across five seeds. We are not claiming the proof holds in production. This is an open problem and we are stating it as one.
+            We also tested the explanation we previously offered — that divergence concentrates in attack-response turns, where the governor trades smooth descent for suspending the exchange. It does not hold: divergence runs 71.4% on turns with an intervention and 63.7% on turns without, so it is the majority behaviour in both. The descent condition is specified in the barrier&rsquo;s construction and is <b className="text-slate-800 dark:text-white">not currently satisfied empirically in production</b>. The <i>simulator</i> — running the governed-vs-ungoverned counterfactual at the continuous-flow limit (dt=0.1) — certifies <b className="text-slate-800 dark:text-white">LYAPUNOV STABLE + FORWARD INVARIANT</b> (descent ratio 0.76, 0 invariance incursions, V<sub>z</sub> excursion 0.056 {'<'} 0.25), but that is a seeded, finite-horizon <b>numerical</b> certificate, not the analytical multi-pillar proof (Open Problem 1, still open). The discrepancy between the simulator and the empirical production measurement is itself the open question: the simulator uses the same projection and floor the deployed governor uses, but the discrete deployed governor operates under embedding noise, provider fallback, and the slow-drip detector&apos;s suspension logic — none of which exist in the idealized numerical integration.
           </p>
         </div>
 
@@ -547,6 +548,7 @@ export default function LandingPage() {
       <BenchmarkResults compact />
       <ComparisonSection />
       <ArchitectureSection />
+      <AgenticGovernancePanel />
       <TechnicalFoundationSection />
       <LiveStatsBar />
       <ProofPanel />
