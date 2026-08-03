@@ -620,7 +620,10 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   get_recent_receipts:      (a) => runToolGoverned('get_recent_receipts', a, () => get_recent_receipts(a as { limit?: number }), a.session_id as string, a.task_context as string),
   get_vercel_logs:          (a) => runToolGoverned('get_vercel_logs', a, () => get_vercel_logs(a as { limit?: number }), a.session_id as string, a.task_context as string),
   run_self_test:            (a) => runToolGoverned('run_self_test', a, () => run_self_test(), a.session_id as string, a.task_context as string),
-  self_reflect:             (a) => runToolGoverned('self_reflect', a, () => runSelfReflection(), a.session_id as string, a.task_context as string),
+  self_reflect:             (a) => runToolGoverned('self_reflect', a, async () => {
+    const r = await runSelfReflection();
+    return r ? r.summary : 'No new receipts to reflect on since last run.';
+  }, a.session_id as string, a.task_context as string),
   log_decision:              (a) => runToolGoverned('log_decision', a, () => log_decision(a as { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }), a.session_id as string, a.task_context as string),
   narrate_origin:            (a) => runToolGoverned('narrate_origin', a, () => narrate_origin(a as { component?: string }), a.session_id as string, a.task_context as string),
 };
