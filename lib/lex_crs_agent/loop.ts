@@ -37,6 +37,7 @@
 import { callLLM, Message, ModelId } from './router';
 import { TOOL_REGISTRY } from './tools';
 import { patch_file } from './tools/patch_file';
+import { runToolGoverned } from '../agents/tool_interceptor';
 
 export interface AgentStep {
   type:    'thought' | 'tool_call' | 'tool_result' | 'answer';
@@ -137,7 +138,13 @@ const SYSTEM = [
  *  internal loop and the external MCP client expose the same capabilities. */
 const LOOP_TOOLS: Record<string, (a: Record<string, unknown>) => Promise<string>> = {
   ...(TOOL_REGISTRY as Record<string, (a: Record<string, unknown>) => Promise<string>>),
-  patch_file: (a) => patch_file(a as unknown as Parameters<typeof patch_file>[0]),
+  patch_file: (a) => runToolGoverned(
+    'patch_file',
+    a,
+    () => patch_file(a as unknown as Parameters<typeof patch_file>[0]),
+    a.session_id as string,
+    a.task_context as string
+  ),
 };
 
 export async function runAgentLoop(

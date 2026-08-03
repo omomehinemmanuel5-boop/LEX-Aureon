@@ -174,6 +174,60 @@ function toolHealthBand(sigma: number, locked: boolean): ToolCallDecision['healt
 }
 
 // ── Main interceptor ───────────────────────────────────────────────────────
+/**
+ * Universal wrapper for governed tool execution.
+ * 1. Intercepts the call (governance check).
+ * 2. If approved, executes the tool function.
+ * 3. Returns a unified report string.
+ */
+export async function runToolGoverned(
+  toolName: string,
+  args: Record<string, unknown>,
+  toolFn: (args: Record<string, unknown>) => Promise<string>,
+  session_id?: string,
+  task_context?: string,
+): Promise<string> {
+  const sid = session_id ?? `lex-crs-agent-${new Date().toISOString().slice(0, 10)}`;
+
+  const toolInput: ToolCallInput = {
+    id:            crypto.randomUUID(),
+    name:          toolName,
+    arguments:     args,
+    session_id:    sid,
+    task_context:  task_context ?? (args.message as string | undefined) ?? (args.query as string | undefined) ?? toolName,
+  };
+
+  const decision = await interceptToolCall(toolInput);
+
+  const report = [
+    `── Constitutional tool-call decision [${toolName}] ──`,
+    `decision:    ${decision.decision}`,
+    `approved:    ${decision.approved}`,
+    `crs:         C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
+    `risk_level:  ${decision.crs.risk_level}`,
+    `health_band: ${decision.health_band}`,
+    `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
+    `receipt_id:  ${decision.receipt_id}`,
+    `reason:      ${decision.reason}`,
+    ...(decision.warning ? [`warning:     ${decision.warning}`] : []),
+    ``,
+  ];
+
+  if (!decision.approved) {
+    report.push(`✗ TOOL BLOCKED — execution halted by constitutional proxy.`);
+    return report.join('\n');
+  }
+
+  try {
+    const result = await toolFn(args);
+    report.push(result);
+  } catch (e) {
+    report.push(`Error executing ${toolName}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  return report.join('\n');
+}
+
 export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDecision> {
   const t = Date.now();
 

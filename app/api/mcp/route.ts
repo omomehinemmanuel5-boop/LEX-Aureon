@@ -26,6 +26,7 @@
 import { NextResponse } from 'next/server';
 import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
+import { runToolGoverned } from '@/lib/agents/tool_interceptor';
 
 const SERVER_INFO = {
   name:    'lex-crs-agent',
@@ -43,7 +44,13 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
 const EXTENSION_DEFINITIONS = [PATCH_FILE_DEFINITION] as const;
 
 const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
-  patch_file: (args) => patch_file(args as unknown as Parameters<typeof patch_file>[0]),
+  patch_file: (args) => runToolGoverned(
+    'patch_file',
+    args,
+    () => patch_file(args as unknown as Parameters<typeof patch_file>[0]),
+    args.session_id as string,
+    args.task_context as string
+  ),
 };
 
 /** Single normalised list served to clients, main suite first. */

@@ -61,7 +61,7 @@
  */
 
 import { env } from '../env';
-import { interceptToolCall } from '../agents/tool_interceptor';
+import { interceptToolCall, runToolGoverned } from '../agents/tool_interceptor';
 import type { ToolCallInput } from '../agents/types';
 import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
@@ -158,63 +158,21 @@ async function commitToGitHub({
   return `✓ Committed: ${d.commit?.sha?.slice(0, 10)} — ${path} [${repo}]`;
 }
 
-// ── write_file (ungoverned — unchanged, kept as the tested fallback) ──────────
+// ── write_file (PURE) ─────────────────────────────────────────────────────────
+// Logic only. Governance is applied at the registry/dispatch level.
 export async function write_file({
   path,
   content,
   message,
   repo = FRONTEND_REPO,
-}: { path: string; content: string; message: string; repo?: string }): Promise<string> {
+}: {
+  path: string; content: string; message: string; repo?: string;
+}): Promise<string> {
   return commitToGitHub({ path, content, message, repo });
 }
 
-// ── write_file_governed (2026-07-11) ──────────────────────────────────────────
-export async function write_file_governed({
-  path,
-  content,
-  message,
-  repo = FRONTEND_REPO,
-  session_id,
-  task_context,
-}: {
-  path: string; content: string; message: string; repo?: string;
-  session_id?: string; task_context?: string;
-}): Promise<string> {
-  const sid = session_id ?? `lex-crs-agent-${new Date().toISOString().slice(0, 10)}`;
-
-  const toolInput: ToolCallInput = {
-    id:            crypto.randomUUID(),
-    name:          'write_file',
-    arguments:     { path, content, message, repo },
-    session_id:    sid,
-    task_context:  task_context ?? message,
-  };
-
-  const decision = await interceptToolCall(toolInput);
-
-  const report = [
-    `── Constitutional tool-call decision ──`,
-    `decision:    ${decision.decision}`,
-    `approved:    ${decision.approved}`,
-    `crs:         C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
-    `risk_level:  ${decision.crs.risk_level}`,
-    `health_band: ${decision.health_band}`,
-    `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
-    `receipt_id:  ${decision.receipt_id}`,
-    `reason:      ${decision.reason}`,
-    ...(decision.warning ? [`warning:     ${decision.warning}`] : []),
-    ``,
-  ];
-
-  if (!decision.approved) {
-    report.push(`✗ WRITE BLOCKED — no commit was made.`);
-    return report.join('\n');
-  }
-
-  const commitResult = await commitToGitHub({ path, content, message, repo });
-  report.push(commitResult);
-  return report.join('\n');
-}
+/** @deprecated Use write_file instead. */
+export const write_file_governed = write_file;
 
 // ── get_build_status ──────────────────────────────────────────────────────────
 export async function get_build_status(): Promise<string> {
@@ -642,28 +600,29 @@ export async function narrate_origin({ component }: { component?: string }): Pro
   } catch (e) { return `Error: ${String(e)}`; }
 }
 
-// ── Tool registry ─────────────────────────────────────────────────────────────
+// ── Tool registry (GOVERNED) ──────────────────────────────────────────────────
+// Every tool call in the main registry now passes through runToolGoverned().
 export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
-  read_file:                (a) => read_file(a as { path: string; repo?: string }),
-  list_directory:           (a) => list_directory(a as { path?: string; repo?: string }),
-  search_code:              (a) => search_code(a as { query: string; repo?: string }),
-  write_file:               (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
-  write_file_governed:      (a) => write_file_governed(a as { path: string; content: string; message: string; repo?: string; session_id?: string; task_context?: string }),
-  get_build_status:         ()  => get_build_status(),
-  get_workflow_run:         (a) => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }),
-  get_workflow_log:         (a) => get_workflow_log(a as { job_id: number; repo?: string; maxChars?: number }),
-  dispatch_workflow:        (a) => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }),
-  get_workflow_artifact:    (a) => get_workflow_artifact(a as { run_id: number; repo?: string }),
-  check_github_token_scope: ()  => check_github_token_scope(),
-  get_constitutional_state: ()  => get_constitutional_state(),
-  query_database:           (a) => query_database(a as { sql: string }),
-  run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string }),
-  get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
-  get_vercel_logs:          (a) => get_vercel_logs(a as { limit?: number }),
-  run_self_test:            ()  => run_self_test(),
-  self_reflect:             ()  => self_reflect(),
-  log_decision:              (a) => log_decision(a as { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }),
-  narrate_origin:            (a) => narrate_origin(a as { component?: string }),
+  read_file:                (a) => runToolGoverned('read_file', a, () => read_file(a as { path: string; repo?: string }), a.session_id as string, a.task_context as string),
+  list_directory:           (a) => runToolGoverned('list_directory', a, () => list_directory(a as { path?: string; repo?: string }), a.session_id as string, a.task_context as string),
+  search_code:              (a) => runToolGoverned('search_code', a, () => search_code(a as { query: string; repo?: string }), a.session_id as string, a.task_context as string),
+  write_file:               (a) => runToolGoverned('write_file', a, () => write_file(a as { path: string; content: string; message: string; repo?: string }), a.session_id as string, a.task_context as string),
+  write_file_governed:      (a) => runToolGoverned('write_file', a, () => write_file(a as { path: string; content: string; message: string; repo?: string }), a.session_id as string, a.task_context as string),
+  get_build_status:         (a) => runToolGoverned('get_build_status', a, () => get_build_status(), a.session_id as string, a.task_context as string),
+  get_workflow_run:         (a) => runToolGoverned('get_workflow_run', a, () => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }), a.session_id as string, a.task_context as string),
+  get_workflow_log:         (a) => runToolGoverned('get_workflow_log', a, () => get_workflow_log(a as { job_id: number; repo?: string; maxChars?: number }), a.session_id as string, a.task_context as string),
+  dispatch_workflow:        (a) => runToolGoverned('dispatch_workflow', a, () => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }), a.session_id as string, a.task_context as string),
+  get_workflow_artifact:    (a) => runToolGoverned('get_workflow_artifact', a, () => get_workflow_artifact(a as { run_id: number; repo?: string }), a.session_id as string, a.task_context as string),
+  check_github_token_scope: (a) => runToolGoverned('check_github_token_scope', a, () => check_github_token_scope(), a.session_id as string, a.task_context as string),
+  get_constitutional_state: (a) => runToolGoverned('get_constitutional_state', a, () => get_constitutional_state(), a.session_id as string, a.task_context as string),
+  query_database:           (a) => runToolGoverned('query_database', a, () => query_database(a as { sql: string }), a.session_id as string, a.task_context as string),
+  run_governance:           (a) => runToolGoverned('run_governance', a, () => run_governance(a as { prompt: string; session_id?: string }), a.session_id as string, a.task_context as string),
+  get_recent_receipts:      (a) => runToolGoverned('get_recent_receipts', a, () => get_recent_receipts(a as { limit?: number }), a.session_id as string, a.task_context as string),
+  get_vercel_logs:          (a) => runToolGoverned('get_vercel_logs', a, () => get_vercel_logs(a as { limit?: number }), a.session_id as string, a.task_context as string),
+  run_self_test:            (a) => runToolGoverned('run_self_test', a, () => run_self_test(), a.session_id as string, a.task_context as string),
+  self_reflect:             (a) => runToolGoverned('self_reflect', a, () => runSelfReflection(), a.session_id as string, a.task_context as string),
+  log_decision:              (a) => runToolGoverned('log_decision', a, () => log_decision(a as { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }), a.session_id as string, a.task_context as string),
+  narrate_origin:            (a) => runToolGoverned('narrate_origin', a, () => narrate_origin(a as { component?: string }), a.session_id as string, a.task_context as string),
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
@@ -692,18 +651,15 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'write_file',
-    description: 'Create or update a file and commit it to GitHub.',
-    parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string', description: 'Commit message' }, ...REPO_PARAM }, required: ['path', 'content', 'message'] },
-  },
-  {
-    name: 'write_file_governed',
-    description: 'EXPERIMENTAL (2026-07-11): identical to write_file, but the commit is first scored and gated by interceptToolCall() -- real constitutional tool-call governance (C/R/S measurement, injection detection, kernel-informed thresholds, cumulative slow-drip lock). Returns the full governance decision (risk level, CRS scores, receipt id) alongside the commit result, or a denial reason with no commit made if blocked. Use to test the tool-governance layer before it replaces write_file.',
+    description: 'Create or update a file and commit it to GitHub. ALL writes are now governed by the Lex Aureon constitutional proxy (C/R/S measurement, injection detection, slow-drip protection). Returns the governance decision alongside the commit result.',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string', description: 'Commit message' },
-        session_id: { type: 'string', description: 'Optional. Defaults to a per-day agent session id. Override with a fresh id to run isolated test sequences (e.g. probing the slow-drip lock) without affecting ongoing cumulative state.' },
-        task_context: { type: 'string', description: 'Optional. What task this call is in service of, for C/R measurement. Defaults to the commit message.' },
+        path: { type: 'string' },
+        content: { type: 'string' },
+        message: { type: 'string', description: 'Commit message' },
+        session_id: { type: 'string', description: 'Optional. Governance session ID.' },
+        task_context: { type: 'string', description: 'Optional. Context for risk measurement.' },
         ...REPO_PARAM,
       },
       required: ['path', 'content', 'message'],
