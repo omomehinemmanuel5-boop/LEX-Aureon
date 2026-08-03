@@ -372,7 +372,17 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
   let decision: ToolCallDecision['decision'];
   let warning: string | undefined;
 
-  if (crs.risk_level === 'HIGH') {
+  if (crs.risk_level === 'ULTRA_LOW') {
+    // ULTRA_LOW — zero sigma_viol impact, faster decay, increments n_stable
+    newState = {
+      ...session,
+      sigma_viol: Math.max(0, session.sigma_viol - 0.10), // faster decay
+      n_stable:   Math.min(N_MIN, session.n_stable + 1),
+      tool_calls: session.tool_calls + 1,
+    };
+    decision = 'APPROVED_ULTRA_LOW';
+
+  } else if (crs.risk_level === 'HIGH') {
     // HIGH approved (clean state) — sigma_viol rises, n_stable resets
     newState = {
       ...session,

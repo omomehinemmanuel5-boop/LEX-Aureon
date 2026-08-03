@@ -378,7 +378,7 @@ async function scanArguments(args: Record<string, unknown>): Promise<{
 
 // ── S: Sovereignty measurement ─────────────────────────────────────────────
 // Rule-based. No LLM. Fast.
-function measureS(tool: ToolCallInput): { score: number; risk: 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED' } {
+function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED' } {
   const name = tool.name.toLowerCase();
   const args = JSON.stringify(tool.arguments).toLowerCase();
 
@@ -428,9 +428,14 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'LOW' | 'MEDIUM' 
     // Check for credential reads
     const path = String(tool.arguments.path ?? tool.arguments.file ?? '').toLowerCase();
     const isCred = /\.env|\.ssh|\.key|\.pem|secret|credential/.test(path);
-    return isCred
-      ? { score: 0.05, risk: 'BLOCKED' }
-      : { score: 0.85, risk: 'LOW' };
+    if (isCred) return { score: 0.05, risk: 'BLOCKED' };
+    
+    // fix (2026-08-03): ULTRA_LOW risk for canonical read-only tools.
+    // This prevents "exploration" from consuming constitutional budget.
+    if (READ_ONLY_TOOLS.has(name)) {
+      return { score: 0.98, risk: 'ULTRA_LOW' };
+    }
+    return { score: 0.85, risk: 'LOW' };
   }
 
   return { score: 0.70, risk: 'LOW' };
@@ -492,6 +497,14 @@ function measureR(tool: ToolCallInput): number {
   return 0.60; // neutral
 }
 
+// ── Tool categorization ────────────────────────────────────────────────────
+const READ_ONLY_TOOLS = new Set([
+  'read_file', 'list_directory', 'search_code', 'get_build_status',
+  'get_workflow_run', 'get_workflow_log', 'get_workflow_artifact',
+  'check_github_token_scope', 'get_constitutional_state', 'get_recent_receipts',
+  'get_vercel_logs', 'run_self_test', 'self_reflect', 'narrate_origin'
+]);
+
 // ── Main: measure tool call CRS ────────────────────────────────────────────
 // fix (2026-07-11): now async — see scanArguments above.
 export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState & {
@@ -536,8 +549,8 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
   const M = Math.min(C, R, S);
 
   // Step 4: determine risk level from S measurement + M
-  let risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED' = s_risk;
-  if (s_risk !== 'BLOCKED') {
+  let risk_level: 'ULTRA_LOW' | 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED' = s_risk;
+  if (s_risk !== 'BLOCKED' && s_risk !== 'ULTRA_LOW') {
     if (M < 0.08) risk_level = 'HIGH';
     else if (M < 0.15) risk_level = 'MEDIUM';
     else if (s_risk === 'LOW') risk_level = 'LOW';

@@ -116,13 +116,13 @@ export interface ToolCRSState {
   R:          number;   // intent Reciprocity — does this match the user's actual intent?
   S:          number;   // scope Sovereignty — is this within authorized scope?
   M:          number;   // min(C, R, S) — stability margin
-  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED';
+  risk_level: 'ULTRA_LOW' | 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED';
 }
 
 /** The interceptor's final verdict on a proposed tool call. */
 export interface ToolCallDecision {
   approved:     boolean;
-  decision:     'APPROVED' | 'APPROVED_HIGH' | 'APPROVED_MEDIUM' |
+  decision:     'APPROVED_ULTRA_LOW' | 'APPROVED' | 'APPROVED_HIGH' | 'APPROVED_MEDIUM' |
                 'DENIED_BLOCKED' | 'DENIED_LOCKED' | 'DENIED_INJECTION';
   reason:       string;
   crs:          ToolCRSState;
