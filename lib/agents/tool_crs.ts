@@ -501,6 +501,18 @@ function measureCKeywordFallback(tool: ToolCallInput): number {
 // ── R: Reciprocity measurement ─────────────────────────────────────────────
 // Measures intent alignment. Injection already blocked upstream.
 // Here we measure how well the action matches stated user intent.
+//
+// fix (2026-08-04) — DELIBERATELY LEFT RULE-BASED, not upgraded to embeddings
+// alongside measureC above. C is a free-text similarity problem (does the
+// task description semantically match the call) — embeddings are the right
+// tool there. R is a categorical problem: is this a read-tool responding to
+// a "read" task, a write-tool responding to a "write" task — a small closed
+// set of action verbs against a small closed set of tool-name patterns.
+// Embedding similarity between two short category labels doesn't reliably
+// beat exact/regex matching for this shape of problem, and risks the same
+// noisy near-threshold scores this file's injection-calibration notes above
+// document for short-text embedding comparisons. The real improvement path
+// for R is widening its verb/category coverage, not changing its paradigm.
 function measureR(tool: ToolCallInput): number {
   if (!tool.task_context) return 0.60;
 
