@@ -561,7 +561,7 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
 
   // Step 2: measure each pillar
   const { score: S_raw, risk: s_risk } = measureS(tool);
-  const C_raw = measureC(tool);
+  const C_raw = await measureC(tool);
   const R_raw = measureR(tool);
 
   // Step 3: normalize to simplex with CBF floor
