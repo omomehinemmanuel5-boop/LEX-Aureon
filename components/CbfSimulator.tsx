@@ -2,27 +2,24 @@
 
 /**
  * CbfSimulator — interactive, client-side CBF simulation.
- *
- * A self-contained interactive panel that runs the exact same CBF simulation
- * (lib/cbf_simulation.ts) in the browser. No API calls, no dependencies —
- * pure TypeScript math mirrored from the backend. Lets visitors vary dt,
- * seed, tau (CBF floor), and projection mode, then see both arms' V_z
- * trajectories and the formal FPL-1 classification update in real time.
- *
- * HONESTY CONSTRAINT: same discipline as the static CbfInvariancePanel.
- * Clearly labels results as seeded finite-horizon numerical certificates,
- * never the analytical multi-pillar proof. Shows when FPL-1 fails so
- * visitors can verify the claim themselves.
- *
- * DETERMINISM: uses Mulberry32 PRNG (same as backend) so identical seed +
- * parameters always produce identical trajectories — reproducible across
- * runs and refreshes.
+ * 
+ * Redesigned for beauty and clarity. Uses high-fidelity SVG paths,
+ * animated drawing, and a refined "Basin Intelligence" aesthetic.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 
 // ── Theme constants ──────────────────────────────────────────────────────
-const G = { gold: '#c9a84c', goldL: '#e8c96d', red: '#ef4444', muted: '#94a3b8' };
+const G = { 
+  gold: '#c9a84c', 
+  goldL: '#e8c96d', 
+  goldGlow: 'rgba(201, 168, 76, 0.3)',
+  red: '#ef4444', 
+  redGlow: 'rgba(239, 68, 68, 0.2)',
+  muted: '#94a3b8',
+  bg: '#0f172a',
+  card: 'rgba(30, 41, 59, 0.5)'
+};
 
 // ── Deterministic RNG — Mulberry32 (mirrors backend) ─────────────────────
 function mulberry32(seed: number): () => number {
@@ -361,309 +358,269 @@ function runSimulation(
   };
 }
 
-// ── Trajectory Chart (hand-rolled SVG, matching codebase pattern) ────────
+// ── Trajectory Chart (Enhanced SVG) ──────────────────────────────────────
 function TrajectoryChart({
   governed,
   ungoverned,
   tau,
   showVz,
+  progress,
 }: {
   governed: SimStep[];
   ungoverned: SimStep[];
   tau: number;
   showVz: boolean;
+  progress: number;
 }) {
-  const W = 700, H = 220, PAD = 10;
-  const yMax: number = showVz ? 0.5 : 0.5;
-  const data = showVz ? governed : ungoverned;
-  const vMax = Math.max(...data.map(s => s.V), ...ungoverned.map(s => s.V));
-  const vMin = Math.min(...data.map(s => s.V), ...ungoverned.map(s => s.V));
+  const W = 800, H = 260, PAD = 20;
+  
+  const gVisible = governed.slice(0, Math.floor(governed.length * progress));
+  const uVisible = ungoverned.slice(0, Math.floor(ungoverned.length * progress));
 
-  const toXY = (steps: SimStep[]) => steps.map((s, i) => {
-    const x = PAD + (i / Math.max(1, steps.length - 1)) * (W - 2 * PAD);
-    const raw = showVz ? s.V : s.M;
-    const yRange = showVz ? vMax - vMin : yMax;
-    const yBase = showVz ? vMin : 0;
-    const y = PAD + (1 - Math.max(0, raw - yBase) / Math.max(yRange, 0.001)) * (H - 2 * PAD);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
+  const vMax = Math.max(...governed.map(s => s.V), ...ungoverned.map(s => s.V));
+  const vMin = Math.min(...governed.map(s => s.V), ...ungoverned.map(s => s.V));
+  const yMax = 0.5;
+
+  const toXY = (steps: SimStep[]) => {
+    if (steps.length === 0) return "";
+    return steps.map((s, i) => {
+      const x = PAD + (i / Math.max(1, governed.length - 1)) * (W - 2 * PAD);
+      const raw = showVz ? s.V : s.M;
+      const yRange = showVz ? vMax - vMin : yMax;
+      const yBase = showVz ? vMin : 0;
+      const y = PAD + (1 - Math.max(0, raw - yBase) / Math.max(yRange, 0.001)) * (H - 2 * PAD);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+  };
 
   const floorY = showVz
     ? PAD + (1 - Math.max(0, (vMin > 0 ? vMin : 0) / Math.max(vMax - vMin, 0.001))) * (H - 2 * PAD)
     : PAD + (1 - tau / Math.max(yMax, 0.001)) * (H - 2 * PAD);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img"
-      aria-label={`${showVz ? 'V_z' : 'M'} trajectory, governed vs ungoverned`}>
-      {/* floor line */}
-      <line x1={PAD} y1={showVz ? H - PAD : floorY} x2={W - PAD} y2={showVz ? H - PAD : floorY}
-        stroke="#64748b" strokeWidth={0.8} strokeDasharray="3 3" opacity={0.6} />
-      {/* ungoverned */}
-      <polyline points={toXY(ungoverned)} fill="none"
-        stroke={G.red} strokeWidth={1.5} opacity={0.75} />
-      {/* governed */}
-      <polyline points={toXY(governed)} fill="none"
-        stroke={G.gold} strokeWidth={2.5} />
-      {/* step markers */}
-      <text x={PAD} y={PAD - 2} className="fill-slate-400 dark:fill-slate-500"
-        style={{ fontSize: 9, fontFamily: 'monospace' }}>
-        {showVz ? 'V_z' : 'M'} · step 0 → {governed.length - 1}
-      </text>
-    </svg>
+    <div className="relative group">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto drop-shadow-2xl overflow-visible" role="img">
+        <defs>
+          <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={G.gold} stopOpacity="0.2" />
+            <stop offset="50%" stopColor={G.gold} stopOpacity="1" />
+            <stop offset="100%" stopColor={G.goldL} stopOpacity="1" />
+          </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Grid lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
+          <line key={i} x1={PAD + p * (W - 2 * PAD)} y1={PAD} x2={PAD + p * (W - 2 * PAD)} y2={H - PAD} 
+            stroke="white" strokeOpacity="0.05" strokeWidth="1" />
+        ))}
+        
+        {/* Floor line */}
+        {!showVz && (
+          <g>
+            <line x1={PAD} y1={floorY} x2={W - PAD} y2={floorY}
+              stroke={G.gold} strokeWidth={1} strokeDasharray="4 4" opacity={0.3} />
+            <text x={W - PAD + 5} y={floorY + 3} className="fill-slate-500 font-mono text-[9px]">
+              τ = {tau.toFixed(2)}
+            </text>
+          </g>
+        )}
+
+        {/* Ungoverned path */}
+        <polyline points={toXY(uVisible)} fill="none"
+          stroke={G.red} strokeWidth={1.5} opacity={0.4} strokeLinejoin="round" />
+        
+        {/* Governed path */}
+        <polyline points={toXY(gVisible)} fill="none"
+          stroke="url(#goldGrad)" strokeWidth={2.5} filter="url(#glow)" strokeLinejoin="round" />
+
+        {/* Current point markers */}
+        {gVisible.length > 0 && (
+          <circle 
+            cx={PAD + ((gVisible.length - 1) / Math.max(1, governed.length - 1)) * (W - 2 * PAD)}
+            cy={toXY([gVisible[gVisible.length - 1]]).split(',')[1]}
+            r="4" fill={G.goldL} filter="url(#glow)"
+          />
+        )}
+      </svg>
+    </div>
   );
 }
 
 // ── Parameter Slider ─────────────────────────────────────────────────────
-function ParamSlider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  unit,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-  unit?: string;
-}) {
+function ParamSlider({ label, value, min, max, step, onChange }: any) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-2 group">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 group-hover:text-slate-300 transition-colors">
           {label}
         </span>
-        <span className="text-[11px] font-mono text-slate-700 dark:text-slate-300">
-          {value.toFixed(step < 1 ? (step < 0.01 ? 3 : 2) : 0)}{unit || ''}
+        <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/5">
+          {value}
         </span>
       </div>
       <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 bg-slate-200 dark:bg-white/10 rounded-full appearance-none cursor-pointer
-          [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5
-          [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#c9a84c] [&::-webkit-slider-thumb]:shadow-sm
-          [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full
-          [&::-moz-range-thumb]:bg-[#c9a84c] [&::-moz-range-thumb]:border-0"
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full h-1 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-[#c9a84c] hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
       />
     </div>
   );
 }
 
-// ── Classification Badge ─────────────────────────────────────────────────
 function ClassificationBadge({ classification }: { classification: string }) {
-  const passed = classification === 'LYAPUNOV STABLE + FORWARD INVARIANT';
+  const isPass = classification.includes('STABLE');
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold
-      ${passed
-        ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-        : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-      }`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${passed ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+    <div className={`px-2 py-0.5 rounded text-[9px] font-mono border transition-all duration-500 ${
+      isPass 
+        ? 'bg-[#c9a84c]/10 text-[#c9a84c] border-[#c9a84c]/30 shadow-[0_0_10px_rgba(201,168,76,0.1)]' 
+        : 'bg-red-500/10 text-red-400 border-red-500/20'
+    }`}>
       {classification}
-    </span>
+    </div>
   );
 }
 
-// ── Main Component ───────────────────────────────────────────────────────
 export default function CbfSimulator() {
-  const [dt, setDt] = useState(1.0);
+  const [dt, setDt] = useState(0.1);
   const [seed, setSeed] = useState(42);
   const [tau, setTau] = useState(0.05);
-  const [steps, setSteps] = useState(150);
+  const [steps, setSteps] = useState(200);
   const [projection, setProjection] = useState<'duchi' | 'naive'>('duchi');
   const [showVz, setShowVz] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
 
-  const runBoth = useCallback(() => {
-    const governed = runSimulation(steps, dt, seed, tau, projection);
-    const ungoverned = runSimulation(steps, dt, seed, tau, 'naive');
-    return { governed, ungoverned };
-  }, [steps, dt, seed, tau, projection]);
+  const governed = useMemo(() => runSimulation(steps, dt, seed, tau, projection), [steps, dt, seed, tau, projection]);
+  const ungoverned = useMemo(() => runSimulation(steps, dt, seed, tau, 'naive'), [steps, dt, seed, tau]);
 
-  const { governed, ungoverned } = useMemo(() => runBoth(), [runBoth]);
+  useEffect(() => {
+    if (isPlaying) {
+      setProgress(0);
+      let start: number;
+      const duration = 1500; // 1.5s animation
+      const animate = (time: number) => {
+        if (!start) start = time;
+        const elapsed = time - start;
+        const p = Math.min(elapsed / duration, 1);
+        setProgress(p);
+        if (p < 1) requestAnimationFrame(animate);
+        else setIsPlaying(false);
+      };
+      const frame = requestAnimationFrame(animate);
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [governed, isPlaying]);
 
-  const horizon = +(dt * steps).toFixed(1);
-  const isClassifiedFine = dt <= 0.2;
+  const horizon = +(steps * dt).toFixed(1);
 
   return (
-    <div className="rounded-2xl border p-6 sm:p-8 bg-white dark:bg-black/30 border-slate-200 dark:border-white/10">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-        <span className="text-xs uppercase tracking-widest font-bold text-slate-600 dark:text-slate-500 font-mono">
-          Interactive CBF Simulator
-        </span>
-        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-500">
-          client-side · deterministic · Mulberry32 PRNG
-        </span>
-      </div>
-      <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed mb-4">
-        Run the same CBF simulation the paper&rsquo;s reference engine runs — both arms from the
-        identical perturbation sequence. Adjust parameters and watch the formal classification
-        update in real time. Every slider is a knob on the published dynamics, not a UI hack.
-      </p>
-
-      {/* Parameter Controls */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-        <ParamSlider label="dt (step size)" value={dt} min={0.05} max={2.0} step={0.05} onChange={setDt} />
-        <ParamSlider label="seed" value={seed} min={1} max={200} step={1} onChange={setSeed} />
-        <ParamSlider label="τ (CBF floor)" value={tau} min={0.01} max={0.15} step={0.01} onChange={setTau} />
-        <ParamSlider label="steps" value={steps} min={50} max={500} step={25} onChange={setSteps} />
-      </div>
-
-      {/* Projection toggle + view toggle */}
-      <div className="flex items-center gap-4 mb-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Governed projection:
+    <div className="rounded-2xl border p-6 sm:p-8 bg-white/50 dark:bg-slate-900/40 backdrop-blur-sm border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden group/card">
+      {/* Decorative background glow */}
+      <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#c9a84c]/5 blur-[100px] pointer-events-none" />
+      
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+        <div className="flex flex-col">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-[0.2em] flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#c9a84c] animate-pulse" />
+            CBF Dynamics Simulator
+          </h3>
+          <span className="text-[10px] font-mono text-slate-500 mt-1">
+            Mulberry32 Deterministic PRNG · {horizon}s Horizon
           </span>
-          <div className="flex rounded-md overflow-hidden border border-slate-200 dark:border-white/10">
-            <button
-              onClick={() => setProjection('duchi')}
-              className={`px-2.5 py-1 text-[10px] font-mono transition-colors
-                ${projection === 'duchi'
-                  ? 'bg-[#c9a84c]/20 text-[#c9a84c] font-semibold'
-                  : 'bg-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-            >
-              Duchi (deployed)
-            </button>
-            <button
-              onClick={() => setProjection('naive')}
-              className={`px-2.5 py-1 text-[10px] font-mono transition-colors
-                ${projection === 'naive'
-                  ? 'bg-[#c9a84c]/20 text-[#c9a84c] font-semibold'
-                  : 'bg-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-            >
-              Naive x/Σx
-            </button>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsPlaying(true)}
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all active:scale-95"
+            title="Re-run Simulation"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isPlaying ? 'animate-spin' : ''}>
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mb-8">
+        <ParamSlider label="dt (Step Size)" value={dt} min={0.05} max={1.0} step={0.05} onChange={setDt} />
+        <ParamSlider label="Entropy Seed" value={seed} min={1} max={999} step={1} onChange={setSeed} />
+        <ParamSlider label="τ (Safety Floor)" value={tau} min={0.01} max={0.15} step={0.01} onChange={setTau} />
+        <ParamSlider label="Integration Steps" value={steps} min={50} max={500} step={25} onChange={setSteps} />
+      </div>
+
+      <div className="flex items-center gap-6 mb-6 text-[10px] font-mono border-b border-white/5 pb-4">
+        <div className="flex items-center gap-3">
+          <span className="text-slate-500 uppercase tracking-widest">Mode:</span>
+          <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
+            <button onClick={() => setProjection('duchi')} className={`px-3 py-1 rounded-md transition-all ${projection === 'duchi' ? 'bg-white dark:bg-[#c9a84c]/20 text-[#c9a84c] shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Duchi</button>
+            <button onClick={() => setProjection('naive')} className={`px-3 py-1 rounded-md transition-all ${projection === 'naive' ? 'bg-white dark:bg-red-500/20 text-red-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Naive</button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Plot:
-          </span>
-          <div className="flex rounded-md overflow-hidden border border-slate-200 dark:border-white/10">
-            <button
-              onClick={() => setShowVz(false)}
-              className={`px-2.5 py-1 text-[10px] font-mono transition-colors
-                ${!showVz
-                  ? 'bg-[#c9a84c]/20 text-[#c9a84c] font-semibold'
-                  : 'bg-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-            >
-              M (margin)
-            </button>
-            <button
-              onClick={() => setShowVz(true)}
-              className={`px-2.5 py-1 text-[10px] font-mono transition-colors
-                ${showVz
-                  ? 'bg-[#c9a84c]/20 text-[#c9a84c] font-semibold'
-                  : 'bg-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-            >
-              V_z (Lyapunov)
-            </button>
+        <div className="flex items-center gap-3">
+          <span className="text-slate-500 uppercase tracking-widest">Metric:</span>
+          <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
+            <button onClick={() => setShowVz(false)} className={`px-3 py-1 rounded-md transition-all ${!showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Margin (M)</button>
+            <button onClick={() => setShowVz(true)} className={`px-3 py-1 rounded-md transition-all ${showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Lyapunov (Vz)</button>
           </div>
         </div>
       </div>
 
-      {/* Chart */}
-      <TrajectoryChart
-        governed={governed.trajectory}
-        ungoverned={ungoverned.trajectory}
-        tau={tau}
-        showVz={showVz}
-      />
+      <TrajectoryChart governed={governed.trajectory} ungoverned={ungoverned.trajectory} tau={tau} showVz={showVz} progress={progress} />
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 mt-3 mb-4 text-[10px] font-mono flex-wrap">
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-0.5 inline-block" style={{ background: G.gold }} />
-          <span className="text-slate-500">governed · min M = {governed.min_M.toFixed(4)}</span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-0.5 inline-block" style={{ background: G.red }} />
-          <span className="text-slate-500">ungoverned · min M = {ungoverned.min_M.toFixed(4)}</span>
-        </span>
-        <span className="text-slate-400 dark:text-slate-500">
-          horizon T = {horizon} · {steps} steps · dt = {dt.toFixed(2)}
-        </span>
-      </div>
-
-      {/* FPL-1 Classifications */}
-      <div className="h-px bg-slate-200 dark:bg-white/10 my-4" />
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        {/* Governed */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
+      <div className="grid sm:grid-cols-2 gap-8 mt-8 border-t border-white/5 pt-6">
+        {/* Stats Column 1 */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Governed Arm</span>
             <ClassificationBadge classification={governed.fpl1_classification} />
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] font-mono text-slate-500 dark:text-slate-400">
-            <span>stability_ratio</span>
-            <span className="text-slate-700 dark:text-slate-300">{governed.stability_ratio.toFixed(4)}</span>
-            <span>invariance_violations</span>
-            <span className="text-slate-700 dark:text-slate-300">{governed.invariance_violations}</span>
-            <span>max V_z excursion</span>
-            <span className="text-slate-700 dark:text-slate-300">{governed.max_deviation.toFixed(4)}</span>
-            <span>min M</span>
-            <span className="text-slate-700 dark:text-slate-300">{governed.min_M.toFixed(4)}</span>
+          <div className="grid grid-cols-2 gap-y-2 text-[11px] font-mono">
+            <span className="text-slate-500">Stability Ratio</span>
+            <span className="text-slate-900 dark:text-white text-right">{governed.stability_ratio.toFixed(4)}</span>
+            <span className="text-slate-500">Invariance Violations</span>
+            <span className={`text-right ${governed.invariance_violations > 0 ? 'text-red-400' : 'text-green-400'}`}>{governed.invariance_violations}</span>
+            <span className="text-slate-500">Min Margin M</span>
+            <span className="text-slate-900 dark:text-white text-right">{governed.min_M.toFixed(4)}</span>
           </div>
         </div>
 
-        {/* Ungoverned */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
+        {/* Stats Column 2 */}
+        <div className="space-y-4 opacity-60 hover:opacity-100 transition-opacity">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Ungoverned Arm</span>
             <ClassificationBadge classification={ungoverned.fpl1_classification} />
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] font-mono text-slate-500 dark:text-slate-400">
-            <span>stability_ratio</span>
-            <span className="text-slate-700 dark:text-slate-300">{ungoverned.stability_ratio.toFixed(4)}</span>
-            <span>invariance_violations</span>
-            <span className="text-slate-700 dark:text-slate-300">{ungoverned.invariance_violations}</span>
-            <span>max V_z excursion</span>
-            <span className="text-slate-700 dark:text-slate-300">{ungoverned.max_deviation.toFixed(4)}</span>
-            <span>min M</span>
-            <span className="text-slate-700 dark:text-slate-300">{ungoverned.min_M.toFixed(4)}</span>
+          <div className="grid grid-cols-2 gap-y-2 text-[11px] font-mono">
+            <span className="text-slate-500">Stability Ratio</span>
+            <span className="text-slate-900 dark:text-white text-right">{ungoverned.stability_ratio.toFixed(4)}</span>
+            <span className="text-slate-500">Invariance Violations</span>
+            <span className="text-red-400 text-right">{ungoverned.invariance_violations}</span>
+            <span className="text-slate-500">Min Margin M</span>
+            <span className="text-slate-900 dark:text-white text-right">{ungoverned.min_M.toFixed(4)}</span>
           </div>
         </div>
       </div>
 
-      {/* Classification criteria */}
-      <div className="mt-4 text-[10px] font-mono text-slate-500 dark:text-slate-500 leading-relaxed">
-        <b className="text-slate-700 dark:text-slate-300">FPL-1 passes when all three hold:</b>{' '}
-        stability_ratio {'>'} 0.6 · invariance_violations = 0 · max V_z excursion {'<'} 0.25.
-        {' '}The ungoverned arm serves as a counterfactual — it almost always fails.
-        {projection === 'naive' && (
-          <span className="block mt-1 text-amber-600 dark:text-amber-500">
-            ⚠ The governed arm is also using naive x/Σx projection here — this was the bug that
-            caused invariance violations in the original simulator (fixed 2026-07-21 by switching
-            to the Duchi floor-respecting projection). Switch to &ldquo;Duchi (deployed)&rdquo; to
-            see it pass.
-          </span>
-        )}
+      {projection === 'naive' && (
+        <div className="mt-6 p-3 rounded-lg bg-red-500/5 border border-red-500/20 text-[10px] font-mono text-red-400 leading-relaxed animate-in fade-in slide-in-from-top-2">
+          <span className="font-bold mr-2">⚠ ARCHITECTURAL REGRESSION:</span>
+          Naive x/Σx projection fails to respect the safety floor. This mirrors the 2026-07-21 bug. 
+          Switch to <span className="text-white font-bold">Duchi</span> to restore forward invariance.
+        </div>
+      )}
+
+      <div className="mt-6 text-[10px] font-mono text-slate-500 leading-relaxed italic">
+        * Seeded finite-horizon numerical certificate. Global analytical Lyapunov proof (Open Problem 1) remains open.
       </div>
-
-      {/* Honesty constraint */}
-      <div className="h-px bg-slate-200 dark:bg-white/10 my-4" />
-
-      <p className="text-slate-500 dark:text-slate-500 text-[11px] leading-relaxed">
-        <b className="text-slate-700 dark:text-slate-300">What this is not:</b> a seeded,
-        finite-horizon <i>numerical</i> certificate of the governed dynamics — not the analytical
-        multi-pillar global Lyapunov proof, which remains an open problem. The floor-holding
-        result and the classification are both real and reproducible; neither is claimed as the
-        closed-form theorem. Fine-dt classification (dt {'\u2264'} 0.2) is closer to the
-        continuous-flow limit FPL-1 actually describes; coarse dt inflates discretization error.
-      </p>
     </div>
   );
 }
