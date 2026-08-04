@@ -442,36 +442,60 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
 }
 
 // ── C: Continuity measurement ──────────────────────────────────────────────
-// Measures task alignment: does this call match the original task context?
-function measureC(tool: ToolCallInput): number {
+// fix (2026-08-04) — SEMANTIC UPGRADE: previously scored via keyword overlap
+// between task_context and the stringified tool call — brittle to paraphrase,
+// exactly the gap self_referential_crs.ts already closed for text governance
+// (keyword matching → embedding cosine similarity, same reasoning). Now:
+// embed task_context and a short natural-language description of the call,
+// compare cosine similarity. Falls back to the original keyword heuristic if
+// embedding fails — fail OPEN, matches semanticInjectionCheck's pattern
+// above, never blocks a tool call on a provider outage.
+async function measureC(tool: ToolCallInput): Promise<number> {
   if (!tool.task_context) return 0.60; // no context = neutral
 
-  const task = tool.task_context.toLowerCase();
-  const callStr = `${tool.name} ${JSON.stringify(tool.arguments)}`.toLowerCase();
+  try {
+    const [taskEmb, callEmb] = await Promise.all([
+      embedText(tool.task_context),
+      embedText(describeToolCall(tool)),
+    ]);
+    const sim  = cosineSimilarity(taskEmb, callEmb);
+    const base = Math.max(0.05, Math.min(0.95, sim));
+    return applyDriftPenalty(tool, tool.task_context, base);
+  } catch {
+    return measureCKeywordFallback(tool);
+  }
+}
 
-  // Keyword overlap between task and call
-  const taskWords = new Set(task.split(/\s+/).filter(w => w.length > 3));
-  const callWords = callStr.split(/\s+/).filter(w => w.length > 3);
-  const overlap = callWords.filter(w => taskWords.has(w)).length;
-  const maxPossible = Math.max(callWords.length, 1);
-  const base = Math.min(0.95, 0.35 + (overlap / maxPossible) * 0.60);
+// Short natural-language description of the call, for embedding against
+// free-form task_context. Deliberately prose, not JSON — see this file's
+// second-pass fix note above on why comparing JSON structure to English
+// text produces unreliable similarity scores.
+function describeToolCall(tool: ToolCallInput): string {
+  const free   = extractFreeText(tool.arguments);
+  const target = String(tool.arguments.path ?? tool.arguments.file ?? tool.arguments.query ?? tool.arguments.sql ?? '');
+  return [`Tool call: ${tool.name}`, target ? `Target: ${target}` : '', free].filter(Boolean).join('. ');
+}
 
-  // Task drift detection: major semantic mismatch
-  const taskIsRead  = /read|get|fetch|find|search|list|show|display/.test(task);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const callIsWrite = /write|create|delete|modify|update|drop|truncate/.test(tool.name);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const taskIsWrite = /write|create|fix|update|build|implement|add/.test(task);
-  // callIsRead intentionally unused — retained for future drift detection
-  // const callIsRead = /read|get|fetch|list|search/.test(tool.name);
-
-  // Reading when task was to write, or vice versa — fine, agents explore
-  // Deleting when task was to read — significant drift
+// Task drift detection, unchanged in substance from the original: deleting
+// when the task was to read is significant drift regardless of similarity.
+function applyDriftPenalty(tool: ToolCallInput, task: string, base: number): number {
+  const taskIsRead = /read|get|fetch|find|search|list|show|display/.test(task.toLowerCase());
   if (taskIsRead && /delete|drop|truncate|destroy/.test(tool.name)) {
     return Math.min(base, 0.15); // C collapse
   }
-
   return base;
+}
+
+// Original keyword-overlap scorer, retained as the fail-open fallback for
+// when embedding is unavailable — identical logic to the pre-upgrade version.
+function measureCKeywordFallback(tool: ToolCallInput): number {
+  const task    = tool.task_context!.toLowerCase();
+  const callStr = `${tool.name} ${JSON.stringify(tool.arguments)}`.toLowerCase();
+  const taskWords = new Set(task.split(/\s+/).filter(w => w.length > 3));
+  const callWords = callStr.split(/\s+/).filter(w => w.length > 3);
+  const overlap   = callWords.filter(w => taskWords.has(w)).length;
+  const base = Math.min(0.95, 0.35 + (overlap / Math.max(callWords.length, 1)) * 0.60);
+  return applyDriftPenalty(tool, task, base);
 }
 
 // ── R: Reciprocity measurement ─────────────────────────────────────────────
