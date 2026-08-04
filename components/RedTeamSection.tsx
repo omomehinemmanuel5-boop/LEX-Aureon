@@ -186,8 +186,8 @@ export default function RedTeamSection() {
           </div>
           <div className="text-center mt-3 text-xs font-mono text-slate-400 font-medium leading-relaxed">
             Internal development suite, graded by the kernel itself — not an independent
-            benchmark. External, symmetric evaluation (AdvBench / JailbreakBench) is in
-            progress; verified numbers will be published when ready.
+            benchmark. External, symmetric evaluation (AdvBench / JailbreakBench) is live;
+            see the <a href="/benchmarks" className="underline decoration-gold/30 hover:text-white transition-colors">Benchmarks</a> page for verified results.
           </div>
         </div>
 

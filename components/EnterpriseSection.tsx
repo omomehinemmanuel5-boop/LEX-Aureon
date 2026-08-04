@@ -71,9 +71,9 @@ export default function EnterpriseSection() {
             <span className="text-slate-500 dark:text-slate-500 font-light">for AI agent tool calls.</span>
           </h2>
           <p className="text-slate-600 dark:text-slate-400 text-sm max-w-xl mx-auto leading-relaxed font-medium">
-            Every tool call your AI agent makes passes through the constitutional governor
-            before execution. Injection blocked. Destructive ops denied. Slow-drip attacks
-            detected across sessions. SHA-256 receipt on every call.
+            Constitutional interception for AI agent tool calls.
+            Injection blocked. Destructive ops denied. Slow-drip attacks
+            detected across sessions. SHA-256 receipt on every governed call.
           </p>
         </div>
 
@@ -186,7 +186,7 @@ export default function EnterpriseSection() {
             <div className="text-slate-500 mb-1">{'// Before: agent calls tools directly'}</div>
             <div className="text-red-400 mb-4">{'target_mcp_url: "https://tools.yourcompany.com/mcp"'}</div>
             <div className="text-slate-500 mb-1">{'// After: route through constitutional proxy'}</div>
-            <div className="text-emerald-400">{'target_mcp_url: "https://lexaureon.com/api/tool-proxy"'}</div>
+            <div className="text-emerald-400">{'target_mcp_url: "https://lexaureon.com/api/mcp"'}</div>
           </div>
           <div className="text-xs text-slate-400 font-mono mt-3 font-bold">
             Every call intercepted · SHA-256 audit receipt · Full audit trail

@@ -36,7 +36,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lexaureon.com'),
   title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-  description: 'A constitutional control layer for language models. CBF math, an explicit log-barrier Lyapunov certificate, and cryptographic SHA-256 audit receipts.',
+  description: 'A constitutional control layer for language models. Certified Lyapunov stability, CBF math, and cryptographic SHA-256 audit receipts.',
   alternates: {
     canonical: 'https://www.lexaureon.com',
   },
@@ -230,8 +230,8 @@ async function Hero() {
 
         <p className="text-slate-300 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
           A mathematical constitutional control layer for language models and agentic pipelines.
-          Built on a simplex state space and an explicit log-barrier certificate — not guardrails,
-          not filters. Drop-in API. Any LLM. Any agent framework.
+          Certified Lyapunov stable + Forward invariant. Not guardrails, not filters. 
+          Drop-in API. Any LLM. Any agent framework.
         </p>
 
         <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/15 bg-white/[0.07]">
