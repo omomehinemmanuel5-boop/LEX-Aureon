@@ -454,7 +454,16 @@ function TrajectoryChart({
 }
 
 // ── Parameter Slider ─────────────────────────────────────────────────────
-function ParamSlider({ label, value, min, max, step, onChange }: any) {
+interface ParamSliderProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+}
+
+function ParamSlider({ label, value, min, max, step, onChange }: ParamSliderProps) {
   return (
     <div className="flex flex-col gap-2 group">
       <div className="flex items-center justify-between">
