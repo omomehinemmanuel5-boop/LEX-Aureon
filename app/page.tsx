@@ -12,6 +12,7 @@ import RedTeamSection from '@/components/RedTeamSection';
 import ArchitectureSection from '@/components/ArchitectureSection';
 import BenchmarkResults from '@/components/BenchmarkResults';
 import CbfInvariancePanel from '@/components/CbfInvariancePanel';
+import CbfSimulator from '@/components/CbfSimulator';
 import AgenticGovernancePanel from '@/components/AgenticGovernancePanel';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
@@ -421,6 +422,10 @@ function TechnicalFoundationSection() {
         </div>
 
         <CbfInvariancePanel />
+
+        <div className="mt-6">
+          <CbfSimulator />
+        </div>
 
         <p className="text-center text-[11px] font-mono text-slate-600 dark:text-slate-600 mt-6">
           Full derivation and the CBF floor (τ = 0.05) in the{' '}
