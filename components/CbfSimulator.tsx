@@ -7,7 +7,7 @@
  * animated drawing, and a refined "Basin Intelligence" aesthetic.
  */
 
-import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 
 // ── Theme constants ──────────────────────────────────────────────────────
 const G = { 
@@ -501,21 +501,21 @@ export default function CbfSimulator() {
   const ungoverned = useMemo(() => runSimulation(steps, dt, seed, tau, 'naive'), [steps, dt, seed, tau]);
 
   useEffect(() => {
-    if (isPlaying) {
-      setProgress(0);
-      let start: number;
-      const duration = 1500; // 1.5s animation
-      const animate = (time: number) => {
-        if (!start) start = time;
-        const elapsed = time - start;
-        const p = Math.min(elapsed / duration, 1);
-        setProgress(p);
-        if (p < 1) requestAnimationFrame(animate);
-        else setIsPlaying(false);
-      };
-      const frame = requestAnimationFrame(animate);
-      return () => cancelAnimationFrame(frame);
-    }
+    if (!isPlaying) return;
+    
+    setProgress(0);
+    let start: number;
+    const duration = 1500; // 1.5s animation
+    const animate = (time: number) => {
+      if (!start) start = time;
+      const elapsed = time - start;
+      const p = Math.min(elapsed / duration, 1);
+      setProgress(p);
+      if (p < 1) requestAnimationFrame(animate);
+      else setIsPlaying(false);
+    };
+    const frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
   }, [governed, isPlaying]);
 
   const horizon = +(steps * dt).toFixed(1);

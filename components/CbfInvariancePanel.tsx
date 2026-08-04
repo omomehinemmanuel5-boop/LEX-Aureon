@@ -7,7 +7,7 @@
  * High-precision aesthetic, data-dense but readable.
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 
 const G = { 
   gold: '#c9a84c', 
