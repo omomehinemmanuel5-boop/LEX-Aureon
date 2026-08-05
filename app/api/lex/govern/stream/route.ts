@@ -136,11 +136,11 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 export async function POST(req: Request) {
-  let body: { prompt?: string; session_id?: string; turn?: number };
+  let body: { prompt?: string; session_id?: string; turn?: number; identity_mode?: string };
   try { body = await req.json(); }
   catch { return new Response('Invalid JSON', { status: 400 }); }
 
-  const { prompt, session_id, turn = 1 } = body;
+  const { prompt, session_id, turn = 1, identity_mode = 'full' } = body;
   if (!prompt?.trim() || !session_id?.trim())
     return new Response('prompt and session_id required', { status: 400 });
 
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
         }
 
         emit('stage', { name: 'generating', description: 'Generator: dual LLM — raw (T=0.4) + governed (T=f(M))' });
-        const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
+        const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, kernelSignal.severity, identity_mode as any);
 
         if (result.status === 'Error') { emit('error', { error: publicError('govern.stream.kernel', result.error ?? 'Kernel error') }); controller.close(); return; }
 

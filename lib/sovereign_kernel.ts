@@ -215,7 +215,9 @@
 import { env } from './env';
 import { generateGoverned } from './llm_provider';
 import type { LLMResult } from './llm_provider';
-import { LEX_IDENTITY, LEX_IDENTITY_MINIMAL, LEX_IDENTITY_STABLE_CORE } from './lex_identity';
+import { LEX_IDENTITY, LEX_IDENTITY_MINIMAL, LEX_IDENTITY_STABLE_CORE, LEX_IDENTITY_DYNAMIC_BASE } from './lex_identity';
+import { getCodebaseSummary } from './codebase_summary';
+import { getCapabilitiesSummary, getDetailedCapabilities } from './capability_discovery';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
@@ -816,6 +818,22 @@ export class SovereignKernel {
   }
 
   /**
+   * identity: 2026-08-05 — dynamic self-knowledge for identityMode === 'dynamic'.
+   * Combines codebase summary, capabilities, and live state.
+   */
+  buildDynamicIdentityBlock(M: number, health_band: string, activeLaw: string | null, threatSignal: number): string {
+    const liveStateLine = this.buildLiveStateLine(M, health_band, activeLaw, threatSignal);
+    const codebaseSummary = getCodebaseSummary();
+    const capabilitiesSummary = getCapabilitiesSummary();
+    const detailedCapabilities = getDetailedCapabilities();
+
+    return LEX_IDENTITY_DYNAMIC_BASE
+      .replace('{codebase_summary}', codebaseSummary)
+      .replace('{capabilities_summary}', `${capabilitiesSummary}\n\nDETAILED CAPABILITIES:\n${detailedCapabilities}`)
+      .replace('{live_state_line}', liveStateLine);
+  }
+
+  /**
    * Returns the full LLMResult (not just text) so callers can see WHICH
    * provider produced it — 'static' means the entire 5-provider fallback
    * chain in generateGoverned() was exhausted. See header fix note.
@@ -840,11 +858,11 @@ export class SovereignKernel {
    * buildLiveStateLine and passed in, since it needs runtime values only
    * runCycle has in scope at call time).
    */
-  async callLLM(prompt: string, context: string, _temperature: number, identityMode: IdentityMode = 'full', liveStateLine?: string): Promise<LLMResult> {
+  async callLLM(prompt: string, context: string, _temperature: number, identityMode: IdentityMode = 'full', dynamicBlock?: string): Promise<LLMResult> {
     try {
       const identityBlock = identityMode === 'none' ? ''
         : identityMode === 'minimal' ? LEX_IDENTITY_MINIMAL
-        : identityMode === 'dynamic' ? [LEX_IDENTITY_STABLE_CORE, liveStateLine].filter(Boolean).join('\n\n')
+        : identityMode === 'dynamic' ? dynamicBlock ?? ''
         : LEX_IDENTITY;
       const systemContent = identityBlock ? `${identityBlock}\n\n${context}` : context;
       const result = await generateGoverned([{ role: 'system', content: systemContent }, { role: 'user', content: prompt }]);
@@ -1003,11 +1021,9 @@ export class SovereignKernel {
       health_band = M0 < 0.15 ? 'CRITICAL' : 'STRESSED';
     }
 
-    // identity: 2026-07-18, second pass — built AFTER the severity>=0.7
-    // override above, so a dynamic-mode live state line reports the band
-    // the model is actually being asked to respond under this turn.
-    const liveStateLine = identityMode === 'dynamic'
-      ? this.buildLiveStateLine(M0, health_band, activeLaw, clampedThreat)
+    // identity: 2026-08-05 — dynamic self-knowledge block
+    const dynamicIdentityBlock = identityMode === 'dynamic'
+      ? this.buildDynamicIdentityBlock(M0, health_band, activeLaw, clampedThreat)
       : undefined;
 
     let rawResponse = '';
@@ -1019,7 +1035,7 @@ export class SovereignKernel {
       const governedContext = memoryContext ? `${memoryContext}\n\n${context}` : context;
       const [rawResult, governedResult] = await Promise.allSettled([
         this.callLLMRaw(userPrompt, '', temperature),
-        this.callLLM(userPrompt, governedContext, temperature, identityMode, liveStateLine),
+        this.callLLM(userPrompt, governedContext, temperature, identityMode, dynamicIdentityBlock),
       ]);
       const rawLLM      = rawResult.status      === 'fulfilled' ? rawResult.value      : { text: '[raw: unavailable]', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
       const governedLLM = governedResult.status === 'fulfilled' ? governedResult.value : { text: 'I was unable to generate a response at this time.', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
@@ -1229,7 +1245,7 @@ export class SovereignKernel {
       governed_source: governedSource,
       post_response_metrics: postMetrics,
       identity_mode: identityMode,
-      identity_live_state_line: liveStateLine,
+      identity_live_state_line: dynamicIdentityBlock,
     };
 
     return {
