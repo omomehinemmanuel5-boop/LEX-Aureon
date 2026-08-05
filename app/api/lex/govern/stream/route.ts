@@ -93,7 +93,7 @@
  * in safe(), so this should essentially never happen).
  */
 
-import { SovereignKernel }    from '@/lib/sovereign_kernel';
+import { SovereignKernel, type IdentityMode }    from '@/lib/sovereign_kernel';
 import { getCachedKernel } from '@/lib/kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import {
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
         }
 
         emit('stage', { name: 'generating', description: 'Generator: dual LLM — raw (T=0.4) + governed (T=f(M))' });
-        const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, kernelSignal.severity, identity_mode as any);
+        const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, kernelSignal.severity, identity_mode as IdentityMode);
 
         if (result.status === 'Error') { emit('error', { error: publicError('govern.stream.kernel', result.error ?? 'Kernel error') }); controller.close(); return; }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SovereignKernel } from '../lib/sovereign_kernel';
+import { SovereignKernel, type IdentityMode } from '../lib/sovereign_kernel';
 import * as codebaseSummary from '../lib/codebase_summary';
 import * as capabilityDiscovery from '../lib/capability_discovery';
 import * as llmProvider from '../lib/llm_provider';
@@ -32,7 +32,8 @@ describe('Dynamic Identity', () => {
     const capabilitiesSpy = vi.spyOn(capabilityDiscovery, 'getCapabilitiesSummary').mockReturnValue('Mock Capabilities Summary');
     const detailedSpy = vi.spyOn(capabilityDiscovery, 'getDetailedCapabilities').mockReturnValue('- tool1: desc1');
 
-    await kernel.runCycle('Who are you?', '', 'test-session', undefined, 0, 'dynamic');
+    const mode: IdentityMode = 'dynamic';
+    await kernel.runCycle('Who are you?', '', 'test-session', undefined, 0, mode);
 
     expect(codebaseSpy).toHaveBeenCalled();
     expect(capabilitiesSpy).toHaveBeenCalled();
@@ -40,13 +41,14 @@ describe('Dynamic Identity', () => {
 
     const callLLMSpy = vi.spyOn(kernel, 'callLLM');
     // Note: Since we are testing runCycle which calls callLLM, we can check the arguments passed to generateGoverned
-    const generateSpy = llmProvider.generateGoverned as any;
-    console.log('Mock calls:', JSON.stringify(generateSpy.mock.calls, null, 2));
+    const generateSpy = llmProvider.generateGoverned as unknown as { mock: { calls: Array<Array<Array<{ role: string; content: string }>>> } };
     
     // generateGoverned is called twice: once for raw, once for governed
     // The governed call is the one with the system message
-    const governedCall = generateSpy.mock.calls.find((call: any) => call[0].some((m: any) => m.role === 'system'));
-    const systemMessage = governedCall[0].find((m: any) => m.role === 'system');
+    const governedCall = generateSpy.mock.calls.find(call => call[0].some(m => m.role === 'system'));
+    if (!governedCall) throw new Error('Governed call not found');
+    const systemMessage = governedCall[0].find(m => m.role === 'system');
+    if (!systemMessage) throw new Error('System message not found');
     
     expect(systemMessage.content).toContain('Mock Codebase Summary');
     expect(systemMessage.content).toContain('Mock Capabilities Summary');
