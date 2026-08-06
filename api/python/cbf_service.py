@@ -423,8 +423,16 @@ def simulate_cbf(
         1 for i, value in enumerate(delta_v_series[:-1])
         if value > 0 and delta_v_series[i + 1] < 0
     )
+    # fix (2026-08-06) — NON-OVERLAPPING RATIOS: corrected_positive_steps was
+    # credited to stability_ratio's numerator without being removed from
+    # destabilizing_ratio's numerator, so a step could count as both
+    # "stable" and "destabilizing" (verified: the two summed to 1.27-1.41 of
+    # the same step population depending on params). Ported the same fix
+    # applied to lib/cbf_simulation.ts — destabilizing_ratio's numerator now
+    # excludes steps credited to stability_ratio. stability_ratio's own
+    # value and the classification test below are unchanged.
     stability_ratio = (delta_v_negative_steps + corrected_positive_steps) / total_delta_steps
-    destabilizing_ratio = delta_v_positive_steps / total_delta_steps
+    destabilizing_ratio = (delta_v_positive_steps - corrected_positive_steps) / total_delta_steps
 
     # fix (2026-07-18) — EXCURSION, NOT RAW VALUE: the log-barrier certificate
     # (lyapunov_candidate, above) has a nonzero floor even at the ideal
