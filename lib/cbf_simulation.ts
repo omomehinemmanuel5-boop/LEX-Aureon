@@ -47,17 +47,28 @@
  * (-log(1/3) ≈ 1.10 for uniform z), so a raw-value threshold calibrated for
  * the quadratic's 0-floor is meaningless once the candidate changes.
  *
- * VERIFIED, NOT ASSUMED CLOSED: ran the corrected simulation across 5 seeds
- * (steps=150) before writing this fix. stability_ratio now clears the >0.6
- * bar easily (0.92-0.97, this port's own Mulberry32 RNG realization).
- * BUT excursion-based max_deviation still runs 0.29-0.40 against the
- * existing 0.25 threshold, and invariance_violations is nonzero in 3 of 5
- * seeds. fpl1_classification therefore still reads NOT PROVEN on every
- * tested seed under current noise/gain parameters — the formula was
- * genuinely wrong and is now correct, but that does not by itself close the
- * F(x,z)-vs-V_z gap the README/website describe. Recalibrating thresholds or
- * simulation parameters to actually close it is separate, deliberately
- * unaddressed work — not guessed at here.
+ * VERIFIED, NOT ASSUMED CLOSED (updated 2026-08-06 — 30-seed sweep, both
+ * this module's own defaults AND the shipped landing-page UI defaults from
+ * components/CbfSimulator.tsx, not just the original 5-seed check):
+ *   - steps=150, dt=1.0 (this module's DT_DEFAULT, and what the original
+ *     2026-07-19 5-seed check used): stability_ratio clears >0.6 easily
+ *     (avg 0.953 across 30 seeds); invariance_violations is 0/30 (resolved
+ *     by the 2026-07-21 floor-respecting projection below — the earlier
+ *     "nonzero in 3 of 5 seeds" note is superseded); BUT excursion-based
+ *     max_deviation averages 0.356 against the 0.25 threshold, so
+ *     fpl1_classification reads NOT PROVEN on 29/30 seeds.
+ *   - steps=200, dt=0.1 (the actual shipped UI defaults): max_deviation
+ *     averages 0.057 — comfortably under 0.25 — and fpl1_classification
+ *     reads LYAPUNOV STABLE + FORWARD INVARIANT on 30/30 seeds tested.
+ *   Likely mechanism, NOT independently re-derived here: dt sets the
+ *   forward-Euler step size in the state update below (xNextRaw = x +
+ *   dt*totalForce, pre-projection); a coarser dt=1.0 step lets the
+ *   pre-projection state swing further in a single step, inflating the peak
+ *   V excursion the classification measures — even though the
+ *   floor-respecting projection still holds min(x_i) >= tau afterward
+ *   either way, at both dt values. If citing the classification result
+ *   anywhere, cite it at the specific (steps, dt) pair actually tested —
+ *   it is not (yet verified as) a dt-independent property of the system.
  *
  * fix (2026-07-19, second pass) — CI TYPECHECK FAILURE: the first version of
  * lyapunovCandidate() used `([0,1,2] as const).reduce(...)`, which TypeScript
