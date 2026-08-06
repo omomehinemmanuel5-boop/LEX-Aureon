@@ -541,8 +541,20 @@ export function simulateCbf(opts: SimulateCbfOptions = {}): CbfSimResult {
   for (let i = 0; i < deltaVSeries.length - 1; i++) {
     if (deltaVSeries[i]! > 0 && deltaVSeries[i + 1]! < 0) correctedPositiveSteps++;
   }
+  // fix (2026-08-06) — NON-OVERLAPPING RATIOS: corrected-positive steps were
+  // credited to stabilityRatio's numerator without being removed from
+  // destabilizingRatio's numerator, so a single step could count as both
+  // "stable" and "destabilizing" — the two fractions of the same step
+  // population could exceed 1 combined (verified by a 30-seed sweep: avg
+  // 1.27-1.41 summed, depending on params). destabilizingRatio's numerator
+  // now excludes the steps credited to stabilityRatio, so the two are
+  // complementary shares of totalDeltaSteps. stabilityRatio's own value and
+  // the classification test below are UNCHANGED by this fix (same
+  // numerator, same threshold, re-verified against the pre-fix values) —
+  // this corrects the second, previously-unverified metric, not the
+  // pass/fail result.
   const stabilityRatio     = (deltaVNegativeSteps + correctedPositiveSteps) / totalDeltaSteps;
-  const destabilizingRatio = deltaVPositiveSteps / totalDeltaSteps;
+  const destabilizingRatio = (deltaVPositiveSteps - correctedPositiveSteps) / totalDeltaSteps;
 
   // fix (2026-07-19) — EXCURSION, NOT RAW VALUE: see file header. The
   // log-barrier candidate has a nonzero floor even at the ideal centroid, so
