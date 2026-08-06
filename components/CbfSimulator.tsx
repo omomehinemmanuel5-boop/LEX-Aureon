@@ -62,10 +62,19 @@ const MARGIN_CUTOFF = 0.1;
 
 type Vec3 = [number, number, number];
 
+// fix (2026-08-06) — WAS COMPUTING A DIFFERENT FUNCTION THAN THE REFERENCE
+// SIMULATOR: this previously weighted the barrier term by x_i itself
+// (-(x0*log x0 + x1*log x1 + x2*log x2)/3, i.e. Shannon entropy / 3), not
+// the published V_z(x) = -sum(z_i*log(x_i)) certificate that
+// lib/cbf_simulation.ts's lyapunovCandidate() and lib/aureonics_core.ts's
+// lyapunovBarrierZ() implement. z defaults to uniform (1/3,1/3,1/3) here,
+// matching this simulator having no session-specific z — same convention
+// lib/cbf_simulation.ts uses. Now genuinely mirrors the reference module.
 function lyapunovVz(x: Vec3, tau: number): number {
-  const barrier = -(x[0] * Math.log(Math.max(x[0], LYAP_FLOOR))
-                   + x[1] * Math.log(Math.max(x[1], LYAP_FLOOR))
-                   + x[2] * Math.log(Math.max(x[2], LYAP_FLOOR))) / 3;
+  const z: Vec3 = [1 / 3, 1 / 3, 1 / 3];
+  const barrier = -(z[0] * Math.log(Math.max(x[0], LYAP_FLOOR))
+                   + z[1] * Math.log(Math.max(x[1], LYAP_FLOOR))
+                   + z[2] * Math.log(Math.max(x[2], LYAP_FLOOR)));
   let penaltySum = 0;
   for (let i = 0; i < 3; i++) {
     const v = Math.max(0, tau - x[i]);
