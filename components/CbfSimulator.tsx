@@ -623,11 +623,11 @@ export default function CbfSimulator() {
   const horizon = +(steps * dt).toFixed(1);
 
   return (
-    <div className="rounded-2xl border p-6 sm:p-8 bg-white/50 dark:bg-slate-900/40 backdrop-blur-sm border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden group/card">
+    <div className="rounded-2xl border p-4 sm:p-6 bg-white/50 dark:bg-slate-900/40 backdrop-blur-sm border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden">
       {/* Decorative background glow */}
       <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#c9a84c]/5 blur-[100px] pointer-events-none" />
-      
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-4">
         <div className="flex flex-col">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-[0.2em] flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#c9a84c] animate-pulse" />
@@ -637,90 +637,104 @@ export default function CbfSimulator() {
             Mulberry32 Deterministic PRNG · {horizon}s Horizon
           </span>
         </div>
-        
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setIsPlaying(true)}
-            className="p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all active:scale-95"
-            title="Re-run Simulation"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isPlaying ? 'animate-spin' : ''}>
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-            </svg>
-          </button>
-        </div>
+
+        <button
+          onClick={() => setIsPlaying(true)}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all active:scale-95"
+          title="Re-run Simulation"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isPlaying ? 'animate-spin' : ''}>
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+          </svg>
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mb-8">
-        <ParamSlider label="dt (Step Size)" value={dt} min={0.05} max={1.0} step={0.05} onChange={setDt} />
-        <ParamSlider label="Entropy Seed" value={seed} min={1} max={999} step={1} onChange={setSeed} />
-        <ParamSlider label="τ (Safety Floor)" value={tau} min={0.01} max={0.15} step={0.01} onChange={setTau} />
-        <ParamSlider label="Integration Steps" value={steps} min={50} max={500} step={25} onChange={setSteps} />
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Controls panel */}
+        <div className="lg:col-span-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4 flex flex-col gap-5">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">Parameters</span>
+          <ParamSlider label="dt (Step Size)" value={dt} min={0.05} max={1.0} step={0.05} onChange={setDt} />
+          <ParamSlider label="Entropy Seed" value={seed} min={1} max={999} step={1} onChange={setSeed} />
+          <ParamSlider label="τ (Safety Floor)" value={tau} min={0.01} max={0.15} step={0.01} onChange={setTau} />
+          <ParamSlider label="Integration Steps" value={steps} min={50} max={500} step={25} onChange={setSteps} />
 
-      <div className="flex items-center gap-6 mb-6 text-[10px] font-mono border-b border-white/5 pb-4">
-        <div className="flex items-center gap-3">
-          <span className="text-slate-500 uppercase tracking-widest">Mode:</span>
-          <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
-            <button onClick={() => setProjection('duchi')} className={`px-3 py-1 rounded-md transition-all ${projection === 'duchi' ? 'bg-white dark:bg-[#c9a84c]/20 text-[#c9a84c] shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Duchi</button>
-            <button onClick={() => setProjection('naive')} className={`px-3 py-1 rounded-md transition-all ${projection === 'naive' ? 'bg-white dark:bg-red-500/20 text-red-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Naive</button>
+          <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex flex-col gap-3">
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 block mb-1.5">Projection</span>
+              <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
+                <button onClick={() => setProjection('duchi')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${projection === 'duchi' ? 'bg-white dark:bg-[#c9a84c]/20 text-[#c9a84c] shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Duchi</button>
+                <button onClick={() => setProjection('naive')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${projection === 'naive' ? 'bg-white dark:bg-red-500/20 text-red-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Naive</button>
+              </div>
+            </div>
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 block mb-1.5">Metric</span>
+              <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
+                <button onClick={() => setShowVz(false)} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${!showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Margin (M)</button>
+                <button onClick={() => setShowVz(true)} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Lyapunov (Vz)</button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-slate-500 uppercase tracking-widest">Metric:</span>
-          <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
-            <button onClick={() => setShowVz(false)} className={`px-3 py-1 rounded-md transition-all ${!showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Margin (M)</button>
-            <button onClick={() => setShowVz(true)} className={`px-3 py-1 rounded-md transition-all ${showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Lyapunov (Vz)</button>
-          </div>
-        </div>
-      </div>
 
-      <TrajectoryChart governed={governed.trajectory} ungoverned={ungoverned.trajectory} tau={tau} showVz={showVz} progress={progress} />
-
-      <div className="grid sm:grid-cols-2 gap-8 mt-8 border-t border-white/5 pt-6">
-        {/* Stats Column 1 */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Governed Arm</span>
-            <ClassificationBadge classification={governed.fpl1_classification} />
-          </div>
-          <div className="grid grid-cols-2 gap-y-2 text-[11px] font-mono">
-            <span className="text-slate-500">Stability Ratio</span>
-            <span className="text-slate-900 dark:text-white text-right">{governed.stability_ratio.toFixed(4)}</span>
-            <span className="text-slate-500">Invariance Violations</span>
-            <span className={`text-right ${governed.invariance_violations > 0 ? 'text-red-400' : 'text-green-400'}`}>{governed.invariance_violations}</span>
-            <span className="text-slate-500">Min Margin M</span>
-            <span className="text-slate-900 dark:text-white text-right">{governed.min_M.toFixed(4)}</span>
+          <div className="pt-3 border-t border-slate-200 dark:border-white/5">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 block mb-2">State Simplex</span>
+            <SimplexPlot
+              governedPoint={governed.trajectory[Math.max(0, Math.floor(governed.trajectory.length * progress) - 1)]}
+              ungovernedPoint={ungoverned.trajectory[Math.max(0, Math.floor(ungoverned.trajectory.length * progress) - 1)]}
+              tau={tau}
+            />
+            <div className="flex items-center gap-4 mt-2 text-[9px] font-mono text-slate-500">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: G.goldL }} />Governed</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: G.red }} />Ungoverned</span>
+            </div>
           </div>
         </div>
 
-        {/* Stats Column 2 */}
-        <div className="space-y-4 opacity-60 hover:opacity-100 transition-opacity">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Ungoverned Arm</span>
-            <ClassificationBadge classification={ungoverned.fpl1_classification} />
+        {/* Chart + metrics panel */}
+        <div className="lg:col-span-9 flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4">
+            <TrajectoryChart governed={governed.trajectory} ungoverned={ungoverned.trajectory} tau={tau} showVz={showVz} progress={progress} />
           </div>
-          <div className="grid grid-cols-2 gap-y-2 text-[11px] font-mono">
-            <span className="text-slate-500">Stability Ratio</span>
-            <span className="text-slate-900 dark:text-white text-right">{ungoverned.stability_ratio.toFixed(4)}</span>
-            <span className="text-slate-500">Invariance Violations</span>
-            <span className="text-red-400 text-right">{ungoverned.invariance_violations}</span>
-            <span className="text-slate-500">Min Margin M</span>
-            <span className="text-slate-900 dark:text-white text-right">{ungoverned.min_M.toFixed(4)}</span>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Governed Arm</span>
+                <ClassificationBadge classification={governed.fpl1_classification} />
+              </div>
+              <MetricBar label="Stability Ratio" value={governed.stability_ratio} threshold={0.6} formatted={governed.stability_ratio.toFixed(4)} />
+              <MetricBar label="Min Margin M" value={governed.min_M} max={Math.max(tau * 3, 0.4)} threshold={tau} formatted={governed.min_M.toFixed(4)} />
+              <div className="flex items-center justify-between text-[11px] font-mono pt-1">
+                <span className="text-slate-500">Invariance Violations</span>
+                <span className={governed.invariance_violations > 0 ? 'text-red-400' : 'text-green-400'}>{governed.invariance_violations}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4 space-y-3 opacity-70 hover:opacity-100 transition-opacity">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Ungoverned Arm</span>
+                <ClassificationBadge classification={ungoverned.fpl1_classification} />
+              </div>
+              <MetricBar label="Stability Ratio" value={ungoverned.stability_ratio} threshold={0.6} formatted={ungoverned.stability_ratio.toFixed(4)} />
+              <MetricBar label="Min Margin M" value={ungoverned.min_M} max={Math.max(tau * 3, 0.4)} threshold={tau} formatted={ungoverned.min_M.toFixed(4)} />
+              <div className="flex items-center justify-between text-[11px] font-mono pt-1">
+                <span className="text-slate-500">Invariance Violations</span>
+                <span className="text-red-400">{ungoverned.invariance_violations}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {projection === 'naive' && (
-        <div className="mt-6 p-3 rounded-lg bg-red-500/5 border border-red-500/20 text-[10px] font-mono text-red-400 leading-relaxed animate-in fade-in slide-in-from-top-2">
+        <div className="mt-4 p-3 rounded-lg bg-red-500/5 border border-red-500/20 text-[10px] font-mono text-red-400 leading-relaxed animate-in fade-in slide-in-from-top-2">
           <span className="font-bold mr-2">⚠ ARCHITECTURAL REGRESSION:</span>
-          Naive x/Σx projection fails to respect the safety floor. This mirrors the 2026-07-21 bug. 
+          Naive x/Σx projection fails to respect the safety floor. This mirrors the 2026-07-21 bug.
           Switch to <span className="text-white font-bold">Duchi</span> to restore forward invariance.
         </div>
       )}
 
-      <div className="mt-6 text-[10px] font-mono text-slate-500 leading-relaxed italic">
+      <div className="mt-4 text-[10px] font-mono text-slate-500 leading-relaxed italic">
         * Seeded finite-horizon numerical certificate. Global analytical Lyapunov proof (Open Problem 1) remains open.
       </div>
     </div>
