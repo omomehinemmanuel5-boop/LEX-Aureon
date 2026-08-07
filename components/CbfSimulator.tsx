@@ -462,6 +462,90 @@ function TrajectoryChart({
   );
 }
 
+// ── Simplex (ternary) plot — the state (C,R,S) literally lives on a
+// 2-simplex, so this shows real position/geometry a line chart can't:
+// how close to a vertex (collapse toward one dimension) vs. the centroid.
+function SimplexPlot({
+  governedPoint,
+  ungovernedPoint,
+  tau,
+}: {
+  governedPoint: SimStep | undefined;
+  ungovernedPoint: SimStep | undefined;
+  tau: number;
+}) {
+  const W = 220, H = 196, PAD = 20;
+  const top: [number, number] = [W / 2, PAD];
+  const left: [number, number] = [PAD, H - PAD];
+  const right: [number, number] = [W - PAD, H - PAD];
+
+  const toXY = (c: number, r: number, s: number): [number, number] => [
+    c * top[0] + r * left[0] + s * right[0],
+    c * top[1] + r * left[1] + s * right[1],
+  ];
+
+  // Inner triangle = the safe region where every coordinate >= tau.
+  const floorScale = Math.max(0, 1 - 3 * tau);
+  const floorTop = toXY(tau + floorScale, tau, tau);
+  const floorLeft = toXY(tau, tau + floorScale, tau);
+  const floorRight = toXY(tau, tau, tau + floorScale);
+
+  const [gx, gy] = governedPoint ? toXY(governedPoint.C, governedPoint.R, governedPoint.S) : top;
+  const [ux, uy] = ungovernedPoint ? toXY(ungovernedPoint.C, ungovernedPoint.R, ungovernedPoint.S) : top;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="State position on the C/R/S simplex">
+      <defs>
+        <filter id="glowSimplex">
+          <feGaussianBlur stdDeviation="1.5" result="b" />
+          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+      <polygon points={`${top.join(',')} ${left.join(',')} ${right.join(',')}`}
+        fill="none" stroke="currentColor" strokeOpacity={0.15} strokeWidth={1} className="text-slate-500" />
+      <polygon points={`${floorTop.join(',')} ${floorLeft.join(',')} ${floorRight.join(',')}`}
+        fill={G.gold} fillOpacity={0.05} stroke={G.gold} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
+      <text x={top[0]} y={top[1] - 6} textAnchor="middle" className="fill-slate-500 font-mono text-[8px]">C</text>
+      <text x={left[0] - 4} y={left[1] + 10} textAnchor="end" className="fill-slate-500 font-mono text-[8px]">R</text>
+      <text x={right[0] + 4} y={right[1] + 10} textAnchor="start" className="fill-slate-500 font-mono text-[8px]">S</text>
+      <circle cx={ux} cy={uy} r={3.5} fill={G.red} fillOpacity={0.65} />
+      <circle cx={gx} cy={gy} r={4.5} fill={G.goldL} filter="url(#glowSimplex)" />
+    </svg>
+  );
+}
+
+// ── Metric bar — small horizontal gauge with a pass-threshold tick ───────
+function MetricBar({
+  label,
+  value,
+  max = 1,
+  threshold,
+  formatted,
+}: {
+  label: string;
+  value: number;
+  max?: number;
+  threshold?: number;
+  formatted: string;
+}) {
+  const pct = Math.min(100, Math.max(0, (value / max) * 100));
+  const thresholdPct = threshold !== undefined ? Math.min(100, Math.max(0, (threshold / max) * 100)) : undefined;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-[10px] font-mono">
+        <span className="text-slate-500">{label}</span>
+        <span className="text-slate-900 dark:text-white">{formatted}</span>
+      </div>
+      <div className="relative h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+        <div className="h-full rounded-full bg-[#c9a84c] transition-all duration-700" style={{ width: `${pct}%` }} />
+        {thresholdPct !== undefined && (
+          <div className="absolute top-0 bottom-0 w-px bg-slate-400 dark:bg-white/40" style={{ left: `${thresholdPct}%` }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Parameter Slider ─────────────────────────────────────────────────────
 interface ParamSliderProps {
   label: string;
