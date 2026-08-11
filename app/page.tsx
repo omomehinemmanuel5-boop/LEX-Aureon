@@ -37,13 +37,13 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lexaureon.com'),
   title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-  description: 'A constitutional control layer for language models. Certified Lyapunov stability, CBF math, and cryptographic SHA-256 audit receipts.',
+  description: 'A constitutional control layer for language models. Numerical Lyapunov/CBF certificate, honest open-proof boundary, and cryptographic SHA-256 audit receipts.',
   alternates: {
     canonical: 'https://www.lexaureon.com',
   },
   openGraph: {
     title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-    description: 'A constitutional governance layer for language models and agentic systems: simplex state, an explicit log-barrier Lyapunov certificate, and cryptographic audit receipts. Adversarial evaluation in progress under symmetric judging.',
+    description: 'A constitutional governance layer for language models and agentic systems: simplex state, numerical CBF/Lyapunov certificate, explicit open-proof boundary, and cryptographic audit receipts.',
     images: [{ url: '/logo.png', width: 1080, height: 1080 }],
     url: 'https://www.lexaureon.com',
     type: 'website',
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Lex Aureon — Constitutional AI Governance for LLMs and Agents',
-    description: 'Drop-in constitutional governance layer for any LLM or agent. Explicit log-barrier certificate + cryptographic audit. Benchmarks being re-run under symmetric judging.',
+    description: 'Drop-in constitutional governance layer for any LLM or agent. Numerical CBF/Lyapunov certificate + cryptographic audit + honest open-proof boundary.',
     images: ['/logo.png'],
   },
 };
@@ -96,7 +96,7 @@ const JSON_LD = {
       '@id': 'https://www.lexaureon.com/#website',
       url: 'https://www.lexaureon.com',
       name: 'Lex Aureon',
-      description: 'A constitutional control layer for language models. CBF math, an explicit log-barrier Lyapunov certificate, and cryptographic SHA-256 audit receipts.',
+      description: 'A constitutional control layer for language models. CBF math, numerical Lyapunov certificate, explicit open-proof boundary, and cryptographic SHA-256 audit receipts.',
       publisher: { '@id': 'https://www.lexaureon.com/#organization' },
       inLanguage: 'en',
     },
@@ -107,7 +107,7 @@ const JSON_LD = {
       applicationCategory: 'SecurityApplication',
       operatingSystem: 'Any (API/HTTP)',
       url: 'https://www.lexaureon.com',
-      description: 'Constitutional AI governance layer for LLMs and agentic systems. Simplex constitutional state (C+R+S=1), control-barrier-function safety projection, an explicit Lyapunov barrier certificate, and cryptographic SHA-256 audit receipts. Drop-in — no retraining or fine-tuning of the underlying model required.',
+      description: 'Constitutional AI governance layer for LLMs and agentic systems. Simplex constitutional state (C+R+S=1), control-barrier-function safety projection, numerical Lyapunov/CBF certificate, explicit open-proof boundary, and cryptographic SHA-256 audit receipts. Drop-in — no retraining or fine-tuning of the underlying model required.',
       publisher: { '@id': 'https://www.lexaureon.com/#organization' },
       offers: {
         '@type': 'Offer',
@@ -231,8 +231,8 @@ async function Hero() {
 
         <p className="text-slate-300 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
           A mathematical constitutional control layer for language models and agentic pipelines.
-          Certified Lyapunov stable + Forward invariant. Not guardrails, not filters. 
-          Drop-in API. Any LLM. Any agent framework.
+          Numerically certified CBF simulator, append-only audit receipts, and explicit open-proof boundaries.
+          Not guardrails, not filters. Drop-in API. Any LLM. Any agent framework.
         </p>
 
         <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/15 bg-white/[0.07]">
@@ -327,6 +327,73 @@ function ComparisonSection() {
   );
 }
 
+
+function ResearchStatusSection() {
+  const items = [
+    {
+      label: 'Closed',
+      title: 'Dynamic z-update rule',
+      detail: 'Banach fixed-point update is deployed in Turso and stamped into receipts as session z-weights.',
+      tone: 'emerald',
+    },
+    {
+      label: 'Closed',
+      title: 'Nonlinear Pareto frontier',
+      detail: 'The λ phase transition and brittleness term are no longer active open problems.',
+      tone: 'emerald',
+    },
+    {
+      label: 'Resolved numerically',
+      title: 'FPL-1 simulator classification',
+      detail: 'The governed counterfactual now certifies stable + forward-invariant behavior at dt=0.1.',
+      tone: 'amber',
+    },
+    {
+      label: 'Still open',
+      title: 'Analytical multi-pillar proof',
+      detail: 'The remaining gap is the closed-form governor-vs-drift margin in simultaneous pillar stress.',
+      tone: 'slate',
+    },
+  ];
+
+  const toneClass = {
+    emerald: 'border-emerald-500/25 bg-emerald-500/[0.07] text-emerald-300',
+    amber: 'border-amber-500/25 bg-amber-500/[0.07] text-amber-300',
+    slate: 'border-slate-500/25 bg-white/[0.04] text-slate-300',
+  } as const;
+
+  return (
+    <section className="py-14 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-8">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
+            Research status — cleaned up
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-black text-white mb-3">
+            Resolved work is marked resolved.
+          </h2>
+          <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            The landing page now shows one active mathematical frontier: the analytical multi-pillar Lyapunov proof.
+            Closed z-update and Pareto-frontier results are no longer presented as open problems.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {items.map(item => (
+            <div key={item.title} className={`rounded-2xl border p-4 ${toneClass[item.tone as keyof typeof toneClass]}`}>
+              <div className="text-[10px] font-mono uppercase tracking-widest font-black mb-3 opacity-90">{item.label}</div>
+              <h3 className="text-sm font-black text-white mb-2 leading-tight">{item.title}</h3>
+              <p className="text-[11px] leading-relaxed text-slate-400">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-center text-[11px] font-mono text-slate-500 mt-5">
+          Canonical tracker: <Link href="/research" className="text-amber-400 hover:text-amber-300 transition-colors">research page</Link> · <span className="text-slate-400">research/open-problems.md</span>
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /* ── Technical Foundation — for the control-theory literate ──────
    Added 2026-07-07 per direct request: a precise, honest CBF/Lyapunov
    section aimed at readers who'd recognize sloppy vs. correct use of this
@@ -345,7 +412,7 @@ function ComparisonSection() {
    both. The panel now states the measured 34.0%, labels the population honestly
    (99.4% of rows are lexbench-% sessions; the chat_% pattern the frontend
    generates matches ZERO rows, so "real traffic" was wrong), and names the
-   descent condition as an open problem alongside FPL-1's failure.
+   deployed descent gap as the remaining open analytical/production alignment question.
    Any future edit to these numbers should re-query governor_log rather than
    trusting this comment — that is precisely how the stale figure survived.
    fix (2026-07-13) — LIGHT-THEME CONTRAST: labels here used text-slate-500
@@ -417,7 +484,7 @@ function TechnicalFoundationSection() {
           <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
             Every governed turn logs whether V<sub>z</sub> decreased, held, or increased that step. On the current instrumented population — 34,329 turns, of which 99.4% is adversarial benchmark traffic rather than organic use — the non-increasing condition (ΔV<sub>z</sub> ≤ 0 — stable + converging) holds on <b className="text-slate-800 dark:text-white">34.0%</b> of turns. We previously published 79.7% here. That figure was computed against a database instance replaced on 2026-07-14 and cannot be reproduced from the source it cited, so it is withdrawn rather than carried forward.
             <br /><br />
-            We also tested the explanation we previously offered — that divergence concentrates in attack-response turns, where the governor trades smooth descent for suspending the exchange. It does not hold: divergence runs 71.4% on turns with an intervention and 63.7% on turns without, so it is the majority behaviour in both. The descent condition is specified in the barrier&rsquo;s construction and is <b className="text-slate-800 dark:text-white">not currently satisfied empirically in production</b>. The <i>simulator</i> — running the governed-vs-ungoverned counterfactual at the continuous-flow limit (dt=0.1) — certifies <b className="text-slate-800 dark:text-white">LYAPUNOV STABLE + FORWARD INVARIANT</b> (descent ratio 0.76, 0 invariance incursions, V<sub>z</sub> excursion 0.056 {'<'} 0.25), but that is a seeded, finite-horizon <b>numerical</b> certificate, not the analytical multi-pillar proof (Open Problem 1, still open). The discrepancy between the simulator and the empirical production measurement is itself the open question: the simulator uses the same projection and floor the deployed governor uses, but the discrete deployed governor operates under embedding noise, provider fallback, and the slow-drip detector&apos;s suspension logic — none of which exist in the idealized numerical integration.
+            We also tested the explanation we previously offered — that divergence concentrates in attack-response turns, where the governor trades smooth descent for suspending the exchange. It does not hold: divergence runs 71.4% on turns with an intervention and 63.7% on turns without, so it is the majority behaviour in both. The descent condition is specified in the barrier&rsquo;s construction and is <b className="text-slate-800 dark:text-white">not currently satisfied empirically in production</b>. The <i>simulator</i> — running the governed-vs-ungoverned counterfactual at the continuous-flow limit (dt=0.1) — numerically certifies <b className="text-slate-800 dark:text-white">LYAPUNOV STABLE + FORWARD INVARIANT</b> (descent ratio 0.76, 0 invariance incursions, V<sub>z</sub> excursion 0.056 {'<'} 0.25), but that is a seeded, finite-horizon <b>numerical</b> certificate, not the analytical multi-pillar proof (Open Problem 1, still open). The FPL-1 simulator item is resolved; the remaining open question is the deployed governor-vs-drift margin and production alignment gap: the simulator uses the same projection and floor the deployed governor uses, but the discrete deployed governor operates under embedding noise, provider fallback, and the slow-drip detector&apos;s suspension logic — none of which exist in the idealized numerical integration.
           </p>
         </div>
 
@@ -553,6 +620,7 @@ export default function LandingPage() {
       <BenchmarkResults compact />
       <ComparisonSection />
       <ArchitectureSection />
+      <ResearchStatusSection />
       <AgenticGovernancePanel />
       <TechnicalFoundationSection />
       <LiveStatsBar />
