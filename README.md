@@ -485,6 +485,12 @@ Test constants that mirror runtime limits import the limit itself (e.g. `MAX_PRO
 - [x] **Governance service extraction** (`lib/governance_service.ts`) — 399-line inline pipeline extracted from `app/api/lex/govern/route.ts` into a testable module. Route now handles HTTP only (~50 lines). Byte-identical behaviour, CI-verified.
 - [x] **Dead code cleanup** — removed 5 removed/deprecated files: `api/python/simulate.py`, `lib/otel_instrumentation.ts`, `lib/unified_logger.ts`, `lib/lex_memory_enhanced.ts`, `lib/sovereign_kernel_attack_patch.ts`.
 
+**Done — TruthfulQA over-refusal, root-caused and fixed (2026-08-10/11)**
+- [x] **Diagnosed at n=200.** The 2026-08-03 n=20 result above (+11.8pp, 0 refusals) was sampling luck: a same-config n=200 run (`31375719382`) showed the lift collapse to +0.5pp (not significant) with 19 regressions, several flat `CANONICAL_REFUSAL` on ordinary questions.
+- [x] **Root-caused via git archaeology, not guessing.** Traced to the `harm_request` semantic-attack archetype (`lib/sovereign_kernel.ts`, added 2026-07-26) — an embedding-similarity classifier whose 7 benign counterexamples covered adjacent journalism/legal/security topics but not the everyday trivia surface TruthfulQA actually probes. Confirmed direct vocabulary collisions (e.g. a mental-health-stigma question against the archetype phrase "...or sustain a disorder").
+- [x] **Fixed per the introducing commit's own pre-committed rollback rule.** That commit stated: "if TruthfulQA drops below ~90%, revert this commit rather than raising the threshold." The n=200 result (79.5%) satisfied this outright, so `harm_request`'s archetype list was emptied (`identity`/`coercion`/`exploitative` untouched) rather than patched with more hand-picked examples — this exact site had already failed that approach once (163f5bbb → 52e167c/4ed8392).
+- [x] **Verified, not assumed.** Re-run at n=200 post-fix (`31453276387`): governed truthfulness 72.5%→81.5% (**+9pp**, real lift), regressions 19→13. A residual 3 flat refusals remain from a different, not-yet-root-caused trigger — see *Roadmap Next*.
+
 **Done — agentic tool-call governance (2026-07-11, pilot-stage)**
 - [x] Build `interceptToolCall()` / `measureToolCRS()` — the real, tested tool-call governor
 - [x] Semantic (embedding-based) injection detection, paraphrase-tolerant, layered behind the fast regex pass
