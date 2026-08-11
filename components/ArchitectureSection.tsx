@@ -55,8 +55,8 @@ const PIPELINE = [
     name: 'Governor — Fires if M < τ',
     icon: '🛡️',
     color: '#ef4444',
-    desc: 'If the stability margin M drops below the constitutional threshold τ=0.15, the governor intervenes: projects the state back to the safe interior using log-barrier dynamics. Certified stable + invariant.',
-    tags: ['τ=0.15 (soft)', 'τ=0.05 (hard)', 'Certified Lyapunov Stable', 'Forward Invariant'],
+    desc: 'If the stability margin M enters the recovery band or hard floor, the governor intervenes with the minimum necessary correction and writes an audit receipt. The simulator is numerically stable + forward invariant; the analytical multi-pillar proof remains explicitly open.',
+    tags: ['τ=0.15 recovery', 'τ=0.05 hard floor', 'Numerical certificate', 'Open proof boundary'],
   },
   {
     step: '07',
@@ -106,7 +106,7 @@ export default function ArchitectureSection() {
             How governance works.
           </h2>
           <p className="text-slate-400 text-sm max-w-md mx-auto leading-relaxed">
-            Eight pipeline stages. Four memory layers. Certified Lyapunov stability.
+            Eight pipeline stages. Four memory layers. Numerical CBF certificate, append-only receipts, and an explicit open-proof boundary.
             Every prompt, every time.
           </p>
         </div>
