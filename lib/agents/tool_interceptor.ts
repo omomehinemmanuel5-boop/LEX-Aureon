@@ -260,7 +260,16 @@ export async function runToolGoverned(
     name:          toolName,
     arguments:     args,
     session_id:    sid,
-    task_context:  task_context ?? (args.message as string | undefined) ?? (args.query as string | undefined) ?? toolName,
+    task_context:  task_context
+      ?? (args.message as string | undefined)
+      ?? (args.query as string | undefined)
+      ?? (args.sql as string | undefined)
+      // Fall back to a description that mirrors describeToolCall()'s own
+      // "Tool call: X. Target: Y" format instead of a bare tool name. A bare
+      // name embeds with near-zero cosine similarity against that format,
+      // which floors C at TAU_FLOOR on every ungoverned call and forces
+      // risk_level to HIGH regardless of what the tool actually does.
+      ?? `Tool call: ${toolName}. Target: ${JSON.stringify(args).slice(0, 200)}`,
   };
 
   const decision = await interceptToolCall(toolInput);
