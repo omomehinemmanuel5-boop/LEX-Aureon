@@ -487,10 +487,27 @@ function applyDriftPenalty(tool: ToolCallInput, task: string, base: number): num
 }
 
 // Original keyword-overlap scorer, retained as the fail-open fallback for
-// when embedding is unavailable — identical logic to the pre-upgrade version.
+// when embedding is unavailable.
+//
+// fix (2026-08-11): callStr previously used raw JSON.stringify(tool.arguments),
+// which includes every field verbatim — for patch_file this means old_str/new_str
+// diff bodies get word-counted directly. A multi-hundred-word documentation diff
+// balloons callWords.length, crushing overlap/callWords.length toward zero
+// regardless of true relevance, landing base near its 0.35 floor and then, after
+// simplex division against categorical R/S, floored to TAU_FLOOR — a real-content
+// write scored identically to a no-content one. Root cause found live: three
+// separate patch_file calls with unrelated diffs scored identical C/R/S to 16
+// decimal places, which is only possible if C_raw was landing on the same
+// near-zero-overlap floor each time, not varying with actual content.
+// describeToolCall() already solves exactly this for the primary embedding path
+// (extractFreeText's field allowlist deliberately excludes old_str/new_str, with
+// a comment explaining why JSON structure shouldn't be embedded as prose) — this
+// fallback just never got the same treatment. Reusing it here makes the
+// degraded-mode comparison consistent with the primary path instead of a harsher,
+// unintentionally different metric.
 function measureCKeywordFallback(tool: ToolCallInput): number {
   const task    = tool.task_context!.toLowerCase();
-  const callStr = `${tool.name} ${JSON.stringify(tool.arguments)}`.toLowerCase();
+  const callStr = describeToolCall(tool).toLowerCase();
   const taskWords = new Set(task.split(/\s+/).filter(w => w.length > 3));
   const callWords = callStr.split(/\s+/).filter(w => w.length > 3);
   const overlap   = callWords.filter(w => taskWords.has(w)).length;
