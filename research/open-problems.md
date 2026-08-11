@@ -1,72 +1,79 @@
 # Aureonics Open Mathematical Problems
 
-## Open Problem 1 — Global Lyapunov Proof
-Status: Partial (single-pillar regime proven; CBF-safe Π_S
-non-expansive lemma added in v3 candidate)
-Remains: Multi-pillar simultaneous violation
-Approach: Comparison system or LaSalle invariance, leveraging
-non-expansivity of the Duchi simplex projection
-Priority: MEDIUM
-(Downgraded from HIGH after the non-expansive Π_S lemma —
-see research/paper-updates.md §2.)
-Numerical note (2026-07-20): the CBF simulator's FPL-1 classification
-reads NOT PROVEN at dt=1.0 purely as a discretization artifact — it
-passes on all seeds for dt ≤ 0.5 (invariance_violations = 0, excursion
-< 0.25, stability_ratio > 0.6). This is numerical evidence for the
-governed continuous flow, NOT a proof of the multi-pillar analytical
-result above. See research/empirical-results.md "Run 002" and
-scripts/cbf/fpl1-dt-sweep.ts.
+This file tracks only unresolved mathematical problems. Resolved problems stay listed in the resolved ledger below so README, landing-page, and paper copy do not accidentally keep stale "open" claims alive.
 
-Progress (2026-07-21, see empirical-results.md "Run 003" +
-scripts/cbf/op1-lyapunov-check.ts) — two analytical results advance
-this, WITHOUT closing it:
-  (a) Idealized flow, multi-pillar CLOSED: V_z is convex on the
-      floor-simplex, so ẋ=−Π∇V_z gives V̇_z=−‖Π∇V_z‖²≤0 to the unique
-      global minimizer — all pillars, via convexity alone (no
-      comparison-system/LaSalle needed).
-  (b) Deployed governor descent term proven ≤0 multi-pillar via
-      Chebyshev's sum inequality: ⟨∇V_z,G⟩≤0 for all states (uniform z),
-      including two-pillars-stressed — so multi-pillar is NOT a new
-      structural/sign problem.
-  Residual (still open): the quantitative governor-vs-drift margin
-  |⟨∇V_z,G⟩| ≥ ⟨∇V_z,F⟩ in the multi-pillar region — same type as the
-  single-pillar k0/εₖ>3B/2 condition, not yet discharged in closed form.
-  Status remains PARTIAL, now with the gap sharply localized.
+## Open Problem 1 — Analytical multi-pillar Lyapunov proof
 
-## Open Problem 2 — Nonlinear Pareto Frontier
-Status: Open
-Remains: Full characterization under lambda > 0, including the
-coupling to adaptive τ_eff(z, ℓ)
-Approach: Lagrangian methods + numerical continuation
-Priority: MEDIUM
+Status: **PARTIAL — residual margin not yet discharged in closed form**
 
-## Open Problem 3 — Complete z-Update Rule
-Status: Partial (velocity, n_stable, drift_dir, sigma_viol,
-attack_pressure specified; state-space side closed in v3 candidate)
-Remains: Characterize dp_attack/dt coupling to law_events
-Approach: Hybrid dynamical system formulation with three regions
-(M > τ_LYP, τ_floor < M ≤ τ_LYP, M ≤ τ_floor)
-Priority: HIGH
-(Rephrased from "Full coupling to law_events and z_env" after
-attack_pressure was added as the tenth z-state variable —
-see research/paper-updates.md §3 and §4.)
+Closed sub-results:
 
-## Falsifiable Predictions Status
+- Single-pillar regime is proven under the scoped condition already stated in the project notes.
+- Idealized multi-pillar projected flow is Lyapunov-stable by convexity of `V_z` on the floor-simplex: `ẋ = −Π∇V_z` gives `V̇_z = −‖Π∇V_z‖² ≤ 0` toward the unique minimizer.
+- The deployed governor descent term has no multi-pillar sign obstruction in the checked formulation: `⟨∇V_z, G⟩ ≤ 0`, including two-pillar stressed states.
+- The FPL-1 simulator now numerically certifies `LYAPUNOV STABLE + FORWARD INVARIANT` for the governed counterfactual at the continuous-flow limit. This is numerical evidence, not the analytical proof.
+
+Remaining gap:
+
+- Prove the quantitative governor-vs-drift margin in the multi-pillar region:
+
+```text
+|⟨∇V_z, G⟩| ≥ ⟨∇V_z, F⟩
+```
+
+This is the same kind of margin condition already discharged in the single-pillar regime (`k0/ε_k > 3B/2`), but it has not yet been expressed and proven in closed form for simultaneous multi-pillar stress.
+
+Priority: **HIGH**
+
+Suggested next proof route:
+
+1. Formalize the admissible drift envelope `F(x,z,T)` for simultaneous pillar stress.
+2. Bound `⟨∇V_z,F⟩` over the floor-simplex under that envelope.
+3. Compare the bound against the already sign-correct governor term.
+4. State the resulting parameter condition without weakening `TAU_FLOOR`, `TAU_RECOVERY`, or the simplex invariant.
+
+---
+
+## Resolved mathematical problems
+
+### Resolved Problem 2 — Nonlinear Pareto frontier
+
+Status: **CLOSED**
+
+The nonlinear Pareto frontier with `λ > 0` has been characterized; the phase transition `λ*` was derived and brittleness `B` formalized. Keep this out of active "open problems" sections in README and landing-page copy.
+
+### Resolved Problem 3 — Dynamic z-update rule
+
+Status: **CLOSED**
+
+The dynamic z-update rule is closed via the Banach fixed-point construction:
+
+```text
+A(t) = γ · Σ_law∈events_t sev(law) · dir(law)
+z_{t+1} = normalize(clamp(ρ·z_t + (1−ρ)·x_t − A(t), τ/2, 1−τ))
+ρ = 0.85, γ = 0.10
+```
+
+Implemented in `lib/kv.ts` through `updateZTraj()` / `computeZWeights()`, loaded by `lib/kernel_bridge.ts`, passed into `runCycle(sessionZ)`, and stamped into receipts as `z_weights` with `lyapunov_V`.
+
+### Resolved numerical item — FPL-1 simulator classification
+
+Status: **RESOLVED NUMERICALLY; not an analytical proof**
+
+The prior `NOT PROVEN` simulator classification was traced to two implementation issues: naive projection in the governed arm and a coarse `dt=1.0` discretization artifact. The governed counterfactual now uses the production floor-respecting Duchi projection and certifies at `dt=0.1`, yielding `LYAPUNOV STABLE + FORWARD INVARIANT` in the numerical panel.
+
+---
+
+## Falsifiable predictions status
+
 P1: Untested  P2: Untested  P3: Untested
 P4: Untested  P5: Untested  P6: Untested
 P7: Untested  P8: Untested  P9: Untested
 
-### Proposed (v3 candidate — see research/paper-updates.md)
+### Proposed v3 predictions
 
-P10 — Per-session adversarial collapse: repeated adversarial turns
-within a single session collapse M(x) faster than the same prompts
-across independent sessions, because attack_pressure raises τ_eff
-over time. Test on SSS50 with paired session/fresh-session arms.
+P10 — Per-session adversarial collapse: repeated adversarial turns within a single session collapse `M(x)` faster than the same prompts across independent sessions, because attack pressure raises effective recovery demand over time.
 
-P11 — Faster slow-drip detection under τ_LYP rule: time-to-detection
-of slow-drip attacks is shorter when sigma_viol accumulates at τ_LYP
-(0.08) than at τ_floor (0.05). Replay SSS50 with both definitions.
+P11 — Faster slow-drip detection under the recovery-margin rule: time-to-detection of slow-drip attacks is shorter when `sigma_viol` accumulates at the recovery margin than at the hard floor.
 
-P12 — Taxonomy partition completeness: the empirical distribution of
-law_fired on production traffic matches the attack taxonomy partition
-assumed in §3, with no "other" residual class needed.
+P12 — Taxonomy partition completeness: the empirical distribution of `law_fired` on production traffic matches the attack taxonomy partition assumed in the paper, with no unexplained residual class needed.
