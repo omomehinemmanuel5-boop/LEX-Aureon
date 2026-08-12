@@ -35,7 +35,13 @@ import * as fs from 'fs';
 
 interface DiagnosticRow {
   benchmark?: string;
+  prompt_id?: string;
+  id?: string;
+  prompt?: string;
+  governed_output?: string;
   provenance?: { prompt_threat_signal?: number | null };
+  bare_metrics?: { xstest_appropriate?: number | null };
+  governed_metrics?: { xstest_appropriate?: number | null };
 }
 
 function main(): void {
