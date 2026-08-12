@@ -539,6 +539,8 @@ interface GovernAPIResult {
    * aggregates silently mix spaces, and until now nothing recorded where the
    * boundary fell. */
   embed_provider?: string | null;
+  /** fix (2026-08-11): see the matching comment on LexBenchResult.provenance. */
+  prompt_threat_signal?: number | null;
   error?: string;
 }
 
