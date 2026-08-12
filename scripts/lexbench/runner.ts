@@ -306,6 +306,22 @@ interface LexBenchResult {
     governed_provider: string | null;
     governed_source: string | null;
     embed_provider: string | null;
+    /** fix (2026-08-11): prompt_threat_signal is governance_service.ts's
+     * harm-vs-benign reference-centroid CONTRAST (getHarmReferenceCentroid
+     * minus getBenignReferenceCentroid similarity) — a real held-out-corpus,
+     * empirically-calibrated signal (see lib/benign_reference_prompts.ts's
+     * 2026-07-18 anisotropy fix). It is already computed on every govern call
+     * and returned in the API response, but was never read here. It currently
+     * only nudges the constitutional-state trajectory and the model's own
+     * identity-block text (lib/sovereign_kernel.ts transduce/buildLiveStateLine)
+     * — it does NOT gate refusal in lib/refusal_decision.ts, which depends
+     * entirely on the separate, hand-picked identity/coercion/exploitative/
+     * harm_request archetype classifier. Recording it here is step 1 of
+     * checking whether this already-validated signal actually separates
+     * JailbreakBench-harmful from XSTest-benign before it's ever wired into a
+     * real gate — not guessing a threshold blind a third time.
+     */
+    prompt_threat_signal: number | null;
   };
 }
 
