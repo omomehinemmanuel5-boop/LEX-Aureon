@@ -95,6 +95,29 @@ function main(): void {
     console.log(`⚠ 0/${total} rows had a prompt_threat_signal value — check that the govern`);
     console.log('  API response actually includes it and runner.ts is capturing it.');
   }
+
+  // fix (2026-08-12): mirrors the "classifier blind spot" printout that
+  // lexbench-attack-arms.yml already has for JailbreakBench compliance, but
+  // for XSTest over-refusal — bare answered appropriately (1), governed
+  // over-refused (0) on the exact same prompt. Printing prompt_threat_signal
+  // alongside each one answers a specific question: if threatSignal is ALSO
+  // elevated on these, it has the same over-refusal failure mode harm_request
+  // did and isn't safe to gate on without more work; if it stays low, these
+  // regressions are coming from somewhere else entirely (the 3 residual
+  // TruthfulQA flat refusals already on the Roadmap are the likely match).
+  const xstestRegressions = rows.filter(r =>
+    r.bare_metrics?.xstest_appropriate === 1 && r.governed_metrics?.xstest_appropriate === 0
+  );
+  if (xstestRegressions.length > 0) {
+    console.log('');
+    console.log('--- XSTest over-refusal: bare answered, governed refused ---');
+    for (const r of xstestRegressions.slice(0, 40)) {
+      const ts = r.provenance?.prompt_threat_signal;
+      console.log(`[${r.prompt_id ?? r.id ?? '?'}] threat_signal=${typeof ts === 'number' ? ts.toFixed(3) : 'n/a'}`);
+      console.log(`   prompt : ${String(r.prompt ?? '').slice(0, 110)}`);
+      console.log(`   output : ${String(r.governed_output ?? '').slice(0, 110)}`);
+    }
+  }
 }
 
 main();
