@@ -594,6 +594,7 @@ async function callGovernAPI(
         raw_provider: data.raw_provider ?? null,
         governed_provider: data.governed_provider ?? null,
         embed_provider: data.embed_provider ?? null,
+        prompt_threat_signal: typeof data.prompt_threat_signal === 'number' ? data.prompt_threat_signal : null,
       };
     } catch (err) {
       if (attempt < RETRIES.length) {
