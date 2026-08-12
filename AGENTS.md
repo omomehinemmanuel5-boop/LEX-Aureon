@@ -322,7 +322,7 @@ Paper v2: doi.org/10.5281/zenodo.20183807 (May 2026)
 SSS50: M declined 0.2895 to 0.0500 over 24 steps
 Predictions: P1-P9 (untested at scale)
 Grants: Schmidt Sciences submitted · LTFF in progress
-Benchmarks: 920+ adversarial prompts, 0% governed ASR (HarmBench/JailbreakBench/AdvBench)
+Benchmarks: 920+ adversarial prompts across HarmBench/JailbreakBench/AdvBench. NOT uniformly 0% governed ASR — see CURRENT STATUS for the corrected, evidence-linked figure.
 
 Open Mathematical Problems:
 1. Global Lyapunov proof (multi-pillar simultaneous violation regime) — OPEN
