@@ -261,7 +261,7 @@ jobs:
             // validated harm-vs-benign reference-centroid contrast) has been
             // captured into provenance since 2026-08-11 but was never surfaced
             // here — this diagnostic only ever showed the hand-picked-archetype
-            // classifier''s (blind) view. Grouping by benchmark lets a run that
+            // classifier'\''s (blind) view. Grouping by benchmark lets a run that
             // mixes JailbreakBench/StrongREJECT (harmful) with XSTest (benign)
             // show, in one table, whether this already-validated signal actually
             // separates the two distributions — the real evidence needed before
