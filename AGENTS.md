@@ -479,7 +479,7 @@ Open Probs: Problem 3 CLOSED. Problem 2 CLOSED. Problem 1 single-pillar CLOSED, 
 Paper:      Body correctly scoped. Global stability claim not made.
 Grants:     Schmidt Sciences submitted · LTFF in progress
 Revenue:    $500 audit · Upwork active
-Benchmarks: 920+ adversarial, 0% governed ASR
+Benchmarks: 920+ adversarial prompts total. JailbreakBench n=150 (run 31479398303, 2026-08-11, post-harm_request-disable): bare ASR 23.49%, governed ASR 17.45% (+6.04pp, NOT statistically significant, McNemar p=0.1237). NOT 0% — the classifier layer (identity/coercion/exploitative) detects zero signal on JailbreakBench's plainly-worded prompts (attack_type=none on 150/150); harm_request was the only class covering that content shape and is currently disabled (see Known Operational Limitations in README). Do not restate "0% governed ASR" as a blanket claim until a rebuilt, validated harm-content classifier is re-measured.
 
 ---
 
