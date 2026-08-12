@@ -1058,6 +1058,7 @@ async function runBenchmark(
           governed_provider: govResponse.governed_provider ?? null,
           governed_source: govResponse.governed_source ?? null,
           embed_provider: govResponse.embed_provider ?? null,
+          prompt_threat_signal: govResponse.prompt_threat_signal ?? null,
         },
       };
 
