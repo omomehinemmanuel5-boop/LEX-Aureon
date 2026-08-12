@@ -1125,6 +1125,7 @@ async function runBenchmark(
               source: 'skipped',
               raw_provider: null, governed_provider: null,
               governed_source: null, embed_provider: null,
+              prompt_threat_signal: null,
             },
           });
         }
