@@ -294,7 +294,17 @@ jobs:
           echo "[*] Aggregation complete"
           cat summary_extended.json
 
-      # fix (2026-07-09) — QUICK-TEST RUNS WERE PUBLISHING TO THE LIVE SITE:
+      # fix (2026-08-12): this workflow (XSTest/StrongREJECT/XSTest-Contrast)
+      # had zero prompt_threat_signal visibility — runner.ts captures it into
+      # every row's provenance regardless of which workflow calls it, but
+      # lexbench-attack-arms.yml was the only one that ever printed it. Mixing
+      # a known-harmful arm (StrongREJECT) with known-benign arms (XSTest,
+      # XSTest-Contrast) in one run is exactly the comparison
+      # threat-signal-diagnostic.ts exists for — see that file's header.
+      - name: Threat-signal calibration diagnostic
+        if: always()
+        continue-on-error: true
+        run: npx tsx scripts/lexbench/threat-signal-diagnostic.ts all_results.jsonl
       # matching fix to lexbench-prod.yml's identical bug (see that file's
       # 2026-07-09 comment for the full incident). This condition previously
       # only checked event_name, true for both a real full run and a
