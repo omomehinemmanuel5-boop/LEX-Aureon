@@ -559,6 +559,8 @@ interface GovernAPIResult {
   embed_provider?: string | null;
   /** fix (2026-08-11): see the matching comment on LexBenchResult.provenance. */
   prompt_threat_signal?: number | null;
+  /** fix (2026-08-13): see the matching comment on LexBenchResult.provenance. */
+  semantic_signal?: { attack_type: string; severity: number } | null;
   error?: string;
 }
 
