@@ -1,0 +1,168 @@
+{
+  "xstest": {
+    "benchmark": "XSTest",
+    "kind": "over_refusal",
+    "total_prompts": 250,
+    "scored_prompts": 246,
+    "coverage_pct": 98.4,
+    "coverage_warning": false,
+    "dropped_unpaired": 4,
+    "judge_methods_used": [
+      "llm-judge-xstest-appropriateness",
+      "provider-exhausted"
+    ],
+    "provenance": {
+      "rows_live": 250,
+      "rows_cached": 0,
+      "rows_skipped": 0,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "mistral": 174,
+        "gemini": 42,
+        "groq": 18,
+        "cerebras": 12,
+        "static": 4
+      },
+      "governed_providers": {
+        "mistral": 181,
+        "gemini": 44,
+        "groq": 13,
+        "cerebras": 12
+      },
+      "embed_providers": {
+        "jina": 130,
+        "gemini": 120
+      },
+      "judge_models": {
+        "open-mistral-7b": 398,
+        "gemini-3.1-flash-lite": 98
+      }
+    },
+    "avg_C": 0.4734,
+    "avg_R": 0.3391,
+    "avg_S": 0.1875,
+    "avg_M": 0.1786,
+    "avg_bare_pct": 98.37,
+    "avg_governed_pct": 93.09,
+    "delta_pp": -5.28,
+    "bare_ci95": [
+      95.89,
+      99.37
+    ],
+    "governed_ci95": [
+      89.21,
+      95.64
+    ],
+    "mcnemar_p": 0.0059,
+    "cohen_h": 0.2763
+  },
+  "strongreject": {
+    "benchmark": "StrongREJECT",
+    "kind": "severity",
+    "total_prompts": 213,
+    "scored_prompts": 205,
+    "coverage_pct": 96.24,
+    "coverage_warning": false,
+    "dropped_unpaired": 8,
+    "judge_methods_used": [
+      "strong-reject-official-formula-genpurpose-judge",
+      "unparseable"
+    ],
+    "provenance": {
+      "rows_live": 213,
+      "rows_cached": 0,
+      "rows_skipped": 0,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "mistral": 167,
+        "gemini": 28,
+        "cerebras": 10,
+        "groq": 8
+      },
+      "governed_providers": {
+        "mistral": 166,
+        "gemini": 30,
+        "cerebras": 9,
+        "groq": 8
+      },
+      "embed_providers": {
+        "jina": 111,
+        "gemini": 102
+      },
+      "judge_models": {
+        "open-mistral-7b": 360,
+        "gemini-3.1-flash-lite": 66
+      }
+    },
+    "avg_C": 0.4103,
+    "avg_R": 0.3723,
+    "avg_S": 0.2174,
+    "avg_M": 0.1913,
+    "avg_bare_pct": 5.37,
+    "avg_governed_pct": 2.44,
+    "delta_pp": 2.93,
+    "bare_ci95": [
+      2.37,
+      8.36
+    ],
+    "governed_ci95": [
+      0.33,
+      4.55
+    ]
+  },
+  "xstest-contrast": {
+    "benchmark": "XSTest-Contrast",
+    "kind": "harm",
+    "total_prompts": 200,
+    "scored_prompts": 200,
+    "coverage_pct": 100,
+    "coverage_warning": false,
+    "dropped_unpaired": 0,
+    "judge_methods_used": [
+      "llm-judge-harm-compliance"
+    ],
+    "provenance": {
+      "rows_live": 200,
+      "rows_cached": 0,
+      "rows_skipped": 0,
+      "rows_unknown": 0,
+      "raw_providers": {
+        "mistral": 126,
+        "groq": 42,
+        "gemini": 22,
+        "cerebras": 10
+      },
+      "governed_providers": {
+        "mistral": 130,
+        "groq": 37,
+        "gemini": 23,
+        "cerebras": 10
+      },
+      "embed_providers": {
+        "gemini": 111,
+        "jina": 89
+      },
+      "judge_models": {
+        "open-mistral-7b": 370,
+        "gemini-3.1-flash-lite": 30
+      }
+    },
+    "avg_C": 0.4234,
+    "avg_R": 0.3833,
+    "avg_S": 0.1934,
+    "avg_M": 0.1845,
+    "avg_bare_pct": 0.5,
+    "avg_governed_pct": 1,
+    "delta_pp": -0.5,
+    "bare_ci95": [
+      0.09,
+      2.78
+    ],
+    "governed_ci95": [
+      0.27,
+      3.57
+    ],
+    "mcnemar_p": null,
+    "cohen_h": 0.0588
+  }
+}
