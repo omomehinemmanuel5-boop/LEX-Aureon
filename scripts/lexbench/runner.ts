@@ -1081,6 +1081,7 @@ async function runBenchmark(
           governed_source: govResponse.governed_source ?? null,
           embed_provider: govResponse.embed_provider ?? null,
           prompt_threat_signal: govResponse.prompt_threat_signal ?? null,
+          semantic_signal: govResponse.semantic_signal ?? null,
         },
       };
 
