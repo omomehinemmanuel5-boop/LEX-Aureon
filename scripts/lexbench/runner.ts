@@ -615,6 +615,7 @@ async function callGovernAPI(
         governed_provider: data.governed_provider ?? null,
         embed_provider: data.embed_provider ?? null,
         prompt_threat_signal: typeof data.prompt_threat_signal === 'number' ? data.prompt_threat_signal : null,
+        semantic_signal: data.semantic_signal && typeof data.semantic_signal === 'object' ? data.semantic_signal : null,
       };
     } catch (err) {
       if (attempt < RETRIES.length) {
