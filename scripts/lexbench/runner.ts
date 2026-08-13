@@ -322,6 +322,24 @@ interface LexBenchResult {
      * real gate — not guessing a threshold blind a third time.
      */
     prompt_threat_signal: number | null;
+    /** fix (2026-08-13): semantic_signal (attack_type + severity from
+     * lib/sovereign_kernel.ts's identity/coercion/exploitative/harm_request
+     * classifier) is present in every govern response (governance_service.ts
+     * line ~372) but was never captured here either — the exact same class of
+     * gap as prompt_threat_signal above. This one was worse: nothing read it,
+     * so every diagnostic that referenced r.semantic_signal (the JailbreakBench
+     * "attack_type distribution" report in lexbench-attack-arms.yml) was
+     * reading `undefined`, defaulting via `?? 'none'` to a value that LOOKED
+     * like a real classifier verdict of 'none' but was actually just missing
+     * data. Every "attack_type: none on N/N prompts" conclusion drawn from
+     * that report (JailbreakBench n=150, 2026-08-11) was unverified — the
+     * deduction that identity/coercion/exploitative must be the XSTest
+     * over-refusal culprit still holds (decideRefusal in
+     * lib/refusal_decision.ts has exactly two refusal paths and both require
+     * attack_type !== 'none'; harm_request is disabled), but which archetype
+     * and at what severity was never actually confirmed per-prompt until this
+     * field exists. */
+    semantic_signal: { attack_type: string; severity: number } | null;
   };
 }
 
