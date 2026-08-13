@@ -1027,6 +1027,7 @@ async function runBenchmark(
           governed_source: null,
           embed_provider: null,
           prompt_threat_signal: null,
+          semantic_signal: null,
         },
       });
       continue;
