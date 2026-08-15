@@ -391,6 +391,12 @@ export class SovereignKernel {
   invariance_violations: number = 0;
   session_decisions: ('OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL')[] = [];
   session_compliance: boolean[] = [];
+  // fix (2026-08-14): stage 2 shadow logging (see lib/aureonics_core.ts's
+  // V_z basin force section) — computed and stored, never applied to
+  // this.state. Zero behavior change; visibility only, until real data
+  // justifies promotion to an active correction.
+  shadow_basin_vz: [number, number, number] | null = null;
+  shadow_descent_guard_fired: boolean = false;
   // fix (2026-07-12, second pass): tracks this session's own governed
   // responses so CCP can measure continuity against the session's actual
   // established context (session_responses[0], the anchor) instead of a
