@@ -231,6 +231,7 @@ import {
   TAU, SOFT_FLOOR, TAU_GOV, TARGET_MARGIN, THETA_0, THETA_MIN, THETA_MAX,
   THETA_ETA, THETA_BETA, SOFT_GAIN, MIN_DELTA, Z_RECOVERY,
   projectToSimplex, lyapunovBarrierZ, calculateGovernorG,
+  computeBasinForceVz, applyDescentGuardVz,
 } from './aureonics_core';
 
 void env; void SOFT_GAIN; void TAU_GOV;
