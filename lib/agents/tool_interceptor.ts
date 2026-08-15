@@ -403,8 +403,23 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
   // Step 3: Load session state (cumulative slow-drip defence)
   const session = await getSessionState(tool.session_id);
 
+  // fix (2026-08-15): hard lock previously had no expiry — locked:true was
+  // written once (with a real last_high_at timestamp, right below) and never
+  // auto-cleared, so a legitimate solo operator working across a real day
+  // had no path back in except raw SQL against production (UPDATE
+  // tool_sessions SET locked=0 ...). Found 6 separate sessions stuck this
+  // way, dating back to 2026-08-07. The lock is a slow-drip CIRCUIT BREAKER
+  // — its actual purpose is to block RAPID compounding HIGH actions in a
+  // short window, not to require permanent manual intervention. Auto-expiry
+  // preserves that real protection (a burst of HIGH actions within
+  // LOCK_TTL_MS still gets denied) while removing the requirement to ever
+  // touch the database by hand again.
+  const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes — tunable, not safety-critical
+  const lockExpired = session.locked && session.last_high_at != null
+    && (Date.now() - session.last_high_at) > LOCK_TTL_MS;
+
   // Step 4: Hard lock check
-  if (session.locked) {
+  if (session.locked && !lockExpired) {
     await writeReceipt({
       receipt_id, session_id: tool.session_id,
       tool_name: tool.name, args_hash, decision: 'DENIED_LOCKED',
@@ -421,6 +436,12 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       sigma_viol:   session.sigma_viol,
       health_band:  'LOCKED',
     };
+  }
+  if (lockExpired) {
+    // Auto-clear: same fresh state a manual DB reset would have produced.
+    session.locked = false;
+    session.sigma_viol = 0;
+    session.n_stable = N_MIN;
   }
 
   // Step 5: HIGH action in recovery window — deny to prevent slow-drip
