@@ -365,3 +365,98 @@ export function identifyBasin(x: [number, number, number]): 'Analytical' | 'Coll
   if (maxVal > 0.4) return labels[x.indexOf(maxVal)];
   return 'Balanced';
 }
+
+// ── Basin Force on V_z (the paper's actual proven potential) ────────────────
+//
+// computeBasinForce()/applyDescentGuard() above operate on Φ(x) — a DIFFERENT,
+// unproven potential built from CCP/IEC, ported from cbf_service.py's Python
+// reference. This section instead descends V_z — the z-weighted log-barrier
+// from Theorem 1 (V_z(x) = -Σzᵢ·log(xᵢ) + (μ/2)Σmax(0,τ-xᵢ)²), whose
+// non-increase (V̇_z ≤ 0) is the actual proven theorem, not a "Lyapunov-like"
+// heuristic. Unlike computeBasinForce's finite-difference gradient, V_z has a
+// closed form, so this is both more faithful to the paper and cheaper:
+//
+//   ∂V_z/∂xᵢ = -zᵢ/xᵢ - μ·φᵢ           (φᵢ = max(0, τ-xᵢ))
+//
+// fix (2026-08-14): this was originally motivated by a claimed "blind spot"
+// in calculateGovernorG() — that its barrier-variance contribution to
+// ⟨∇V_z,G⟩ vanishes in a symmetric multi-pillar attack. Numerically checked
+// before committing (per the shadow-rollout plan below) and that framing does
+// NOT hold under the real constants: Var(φ)=0 requires all three φᵢ exactly
+// equal, which given the simplex constraint only happens at x=(1/3,1/3,1/3),
+// and since TAU_GOV=0.22 < 1/3, that point has φᵢ=0 for all three — i.e. the
+// "blind" condition only occurs when there is no real stress at all. G is not
+// actually blind under genuine multi-pillar attack. This function is kept for
+// a smaller, honest reason instead: it descends the paper's ACTUAL proven
+// potential rather than the unproven Φ heuristic above, which is a real
+// correctness/auditability improvement independent of the disproven gap.
+//
+// STAGE 1 of 3 (shadow-rollout plan, see README Roadmap): pure math, no
+// callers yet. Not wired into sovereign_kernel.ts. Numerically verified
+// (mass-conserving Σ=0, guard fires on deliberately-bad force, V_z genuinely
+// decreases along the force alone). Stage 2: log-only shadow call in the live
+// governor (same pattern as lib/capitulation_judge.ts), no behavior change.
+// Stage 3: promote only after real benchmark data supports it.
+
+/**
+ * Analytic gradient of V_z (lyapunovBarrierZ), per-pillar.
+ * ∂V_z/∂xᵢ = -zᵢ/xᵢ - μ·max(0, τ-xᵢ)
+ */
+export function gradVz(
+  x: [number, number, number],
+  z: [number, number, number] = Z_RECOVERY,
+): [number, number, number] {
+  return [0, 1, 2].map(i => {
+    const xi = Math.max(x[i], FLOOR);
+    const phi = Math.max(0, TAU - xi);
+    return -z[i] / xi - MU * phi;
+  }) as [number, number, number];
+}
+
+/**
+ * Basin force descending V_z instead of Φ — mass-conserving (projected to
+ * remove the mean, so Σ force = 0, matching computeBasinForce's convention),
+ * capped by the same MAX_FORCE_NORM.
+ */
+export function computeBasinForceVz(
+  x: [number, number, number],
+  z: [number, number, number] = Z_RECOVERY,
+): [number, number, number] {
+  const grad = gradVz(x, z);
+  const meanGrad = (grad[0] + grad[1] + grad[2]) / 3;
+  const force: [number, number, number] = [
+    -(grad[0] - meanGrad) * LAMBDA_BASIN,
+    -(grad[1] - meanGrad) * LAMBDA_BASIN,
+    -(grad[2] - meanGrad) * LAMBDA_BASIN,
+  ];
+  return capForceL1(force);
+}
+
+/**
+ * Descent guard on the ACTUAL proven potential: halve the basin force if the
+ * candidate next state would increase V_z. Same structure as
+ * applyDescentGuard, but checking V̇_z ≤ 0 — the real theorem — not Φ.
+ */
+export function applyDescentGuardVz(
+  x: [number, number, number],
+  f: [number, number, number],
+  u_gov: [number, number, number],
+  u_basin: [number, number, number],
+  z: [number, number, number] = Z_RECOVERY,
+  dt: number = DT,
+): [number, number, number] {
+  const vz_prev = lyapunovBarrierZ(x, z);
+
+  const x_cand = projectToSimplex([
+    x[0] + dt * (f[0] + u_gov[0] + u_basin[0]),
+    x[1] + dt * (f[1] + u_gov[1] + u_basin[1]),
+    x[2] + dt * (f[2] + u_gov[2] + u_basin[2]),
+  ]);
+
+  const vz_cand = lyapunovBarrierZ(x_cand as [number, number, number], z);
+
+  if (vz_cand > vz_prev) {
+    return [u_basin[0] * 0.5, u_basin[1] * 0.5, u_basin[2] * 0.5];
+  }
+  return u_basin;
+}
