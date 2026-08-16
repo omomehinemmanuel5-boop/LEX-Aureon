@@ -604,7 +604,7 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
 
   // Step 2: measure each pillar
   const { score: S_raw, risk: s_risk } = measureS(tool);
-  const C_raw = await measureC(tool);
+  const { score: C_raw, degraded: cDegraded } = await measureC(tool);
   const R_raw = measureR(tool);
 
   // Step 3: normalize to simplex with CBF floor
@@ -618,7 +618,15 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
   // Step 4: determine risk level from S measurement + M
   let risk_level: 'ULTRA_LOW' | 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED' = s_risk;
   if (s_risk !== 'BLOCKED' && s_risk !== 'ULTRA_LOW') {
-    if (M < 0.08) risk_level = 'HIGH';
+    if (M < 0.08) {
+      // fix (2026-08-16): only cap at MEDIUM when C-degradation is what's
+      // actually driving this escalation. If s_risk is already HIGH from
+      // the rule-based severity measurement alone (dangerous shell command,
+      // protected path), a degraded C must never downgrade that real
+      // signal — verified via direct execution against 6 scenarios before
+      // shipping, including this exact case, which an earlier draft failed.
+      risk_level = (cDegraded && s_risk !== 'HIGH') ? 'MEDIUM' : 'HIGH';
+    }
     else if (M < 0.15) risk_level = 'MEDIUM';
     else if (s_risk === 'LOW') risk_level = 'LOW';
   }
