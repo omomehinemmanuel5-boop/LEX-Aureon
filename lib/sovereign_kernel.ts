@@ -1191,7 +1191,7 @@ export class SovereignKernel {
     }
 
     this.state.S += advGain;
-    this.governorUpdate(effectiveTheta);
+    this.governorUpdate(effectiveTheta, sessionZ);
 
     if (semanticSignal.attack_type !== 'none') {
       const pressure = 0.08 * semanticSignal.severity;
