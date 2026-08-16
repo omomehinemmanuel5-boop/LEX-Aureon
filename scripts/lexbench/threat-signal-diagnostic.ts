@@ -39,7 +39,10 @@ interface DiagnosticRow {
   id?: string;
   prompt?: string;
   governed_output?: string;
-  provenance?: { prompt_threat_signal?: number | null };
+  provenance?: {
+    prompt_threat_signal?: number | null;
+    semantic_signal?: { attack_type?: string; severity?: number } | null;
+  };
   bare_metrics?: { xstest_appropriate?: number | null };
   governed_metrics?: { xstest_appropriate?: number | null };
 }
