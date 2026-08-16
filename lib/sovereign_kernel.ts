@@ -919,11 +919,12 @@ export class SovereignKernel {
     return -Object.values(freq).reduce((s, c) => { const p = c / len; return s + p * Math.log2(p); }, 0);
   }
 
-  governorUpdate(effectiveTheta: number): void {
+  governorUpdate(effectiveTheta: number, sessionZ?: [number, number, number]): void {
     const M = Math.min(this.state.C, this.state.R, this.state.S);
     const margin = M - TAU;
+    const x0: [number, number, number] = [this.state.C, this.state.R, this.state.S];
     if (margin < TARGET_MARGIN) {
-      const G = calculateGovernorG([this.state.C, this.state.R, this.state.S], effectiveTheta);
+      const G = calculateGovernorG(x0, effectiveTheta);
       const scalar = TARGET_MARGIN - margin;
       this.state.C += G[0] * scalar;
       this.state.R += G[1] * scalar;
@@ -931,6 +932,20 @@ export class SovereignKernel {
     }
     if (M < 0.08) this.theta = Math.min(THETA_MAX, this.theta * (1 + THETA_ETA));
     else if (M > 0.20) this.theta = Math.max(THETA_MIN, this.theta * (1 - THETA_BETA));
+
+    // fix (2026-08-14): stage 2 shadow logging, deliberately NOT applied to
+    // this.state — see lib/aureonics_core.ts's V_z basin force section for
+    // the full rollout plan. Computes what the V_z-descending basin force
+    // WOULD be, using this turn's real state and session z, purely for
+    // visibility. try/catch because this must never be able to affect the
+    // real governor path even if the shadow computation itself throws.
+    try {
+      const z = sessionZ ?? Z_RECOVERY;
+      const u = computeBasinForceVz(x0, z);
+      const guarded = applyDescentGuardVz(x0, [0, 0, 0], [0, 0, 0], u, z, 1.0);
+      this.shadow_basin_vz = guarded;
+      this.shadow_descent_guard_fired = guarded[0] !== u[0];
+    } catch { this.shadow_basin_vz = null; this.shadow_descent_guard_fired = false; }
   }
 
   applySuspensionLayer(): boolean {
