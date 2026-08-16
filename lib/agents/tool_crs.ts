@@ -450,8 +450,22 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
 // compare cosine similarity. Falls back to the original keyword heuristic if
 // embedding fails — fail OPEN, matches semanticInjectionCheck's pattern
 // above, never blocks a tool call on a provider outage.
-async function measureC(tool: ToolCallInput): Promise<number> {
-  if (!tool.task_context) return 0.60; // no context = neutral
+// fix (2026-08-16): measureC previously returned a bare number, so nothing
+// downstream could tell "embedding genuinely computed a low similarity"
+// apart from "embedding call failed, fell back to keyword heuristic" — a
+// real infrastructure gap (Gemini free-tier daily quota under heavy load)
+// got treated identically to a genuine content mismatch, both silently
+// forcing M<0.08 -> HIGH in measureToolCRS below, which repeatedly hard-
+// locked legitimate sessions with no way to distinguish "this call looks
+// dangerous" from "we simply couldn't measure it right now". Same
+// precedent already established elsewhere in this codebase (commit
+// 3f55919, 2026-07-18: "lower enforce threshold when embeddings are down"
+// for the semantic-attack classifier) — extending it here, not inventing
+// new leniency. Genuinely dangerous calls (HIGH_RISK_TOOLS, protected
+// paths, real low embedding similarity) are completely unaffected; only
+// the specific case of missing data gets capped instead of auto-escalated.
+async function measureC(tool: ToolCallInput): Promise<{ score: number; degraded: boolean }> {
+  if (!tool.task_context) return { score: 0.60, degraded: false }; // no context = neutral
 
   try {
     const [taskEmb, callEmb] = await Promise.all([
@@ -460,9 +474,9 @@ async function measureC(tool: ToolCallInput): Promise<number> {
     ]);
     const sim  = cosineSimilarity(taskEmb, callEmb);
     const base = Math.max(0.05, Math.min(0.95, sim));
-    return applyDriftPenalty(tool, tool.task_context, base);
+    return { score: applyDriftPenalty(tool, tool.task_context, base), degraded: false };
   } catch {
-    return measureCKeywordFallback(tool);
+    return { score: measureCKeywordFallback(tool), degraded: true };
   }
 }
 
