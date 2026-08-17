@@ -12,7 +12,7 @@ import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import type { ToolCallDecision } from './types';
 
 const READ_TOOLS = new Set([
-  'read_file', 'read_directory', 'list_files', 'read_memory',
+  'read_file', 'read_directory', 'list_directory', 'list_files', 'read_memory',
   'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file',
   'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
   'read_json', 'parse_csv',
@@ -21,9 +21,8 @@ const READ_TOOLS = new Set([
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
   ttlMs: 60_000,
   isCacheable: (toolName) => READ_TOOLS.has(toolName),
-  authorize: async (toolName) => {
-    // The full tool input is bound per request by executeGovernedTool below.
-    throw new Error(`Authorization context missing for ${toolName}`);
+  authorize: async () => {
+    throw new Error('Authorization must be supplied by executeGovernedTool.');
   },
   isApproved: (decision) => decision.approved,
 });
@@ -55,10 +54,6 @@ function report(toolName: string, decision: ToolCallDecision, result?: string, c
   return lines.join('\n');
 }
 
-/**
- * Govern a tool request first, then optionally reuse only its execution result.
- * The cache is never consulted until the current request has been authorized.
- */
 export async function executeGovernedTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -80,28 +75,14 @@ export async function executeGovernedTool(
 
   if (!decision.approved) return report(toolName, decision);
 
-  // The existing cache primitive is intentionally not used to authorize this
-  // request: authorization has already happened with the complete ToolCallInput.
-  // It is used here as an execution-result cache by binding the current decision
-  // into the per-request cache call.
-  const requestCache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
-    ttlMs: 60_000,
-    isCacheable: (name) => READ_TOOLS.has(name),
-    authorize: async () => decision,
-    isApproved: (current) => current.approved,
+  // Authorization has already been performed with the complete ToolCallInput.
+  // Only the execution result is eligible for reuse.
+  const cached = await cache.getOrExecuteAuthorized({
+    key: keyFor(sessionId, toolName, args),
+    toolName,
+    decision,
+    execute: () => toolFn(args),
   });
 
-  try {
-    const cached = await requestCache.getOrExecute({
-      key: keyFor(sessionId, toolName, args),
-      toolName,
-      execute: () => toolFn(args),
-    });
-    return report(toolName, cached.decision, cached.value, cached.cacheHit);
-  } catch (error) {
-    if (error instanceof Error && error.message === 'Tool execution denied by constitutional governance.') {
-      return report(toolName, decision);
-    }
-    throw error;
-  }
+  return report(toolName, cached.decision, cached.value, cached.cacheHit);
 }
