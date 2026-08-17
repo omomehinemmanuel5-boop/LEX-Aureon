@@ -22,28 +22,17 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
 
 const EXTENSION_DEFINITIONS = [PATCH_FILE_DEFINITION] as const;
 
+/**
+ * Extension handlers are kept PURE here. The MCP dispatcher applies the
+ * constitutional executor uniformly to every exposed tool, including
+ * patch_file. This prevents an extension from accidentally bypassing the
+ * same authorization boundary used by the main registry.
+ */
 const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
-  patch_file: (args) => executeGovernedTool(
-    'patch_file',
-    args,
-    () => patch_file(args as unknown as Parameters<typeof patch_file>[0]),
-    (args.session_id as string | undefined) ?? `mcp-${new Date().toISOString().slice(0, 10)}`,
-    args.task_context as string | undefined
+  patch_file: (args) => patch_file(
+    args as unknown as Parameters<typeof patch_file>[0]
   ),
 };
-
-/**
- * Main-suite tools that are now dispatched through the constitutional executor.
- * The current authorization is evaluated before any execution-result cache is
- * consulted. The list starts with file/code operations where stale approval
- * has the clearest consequences.
- */
-const GOVERNED_DISPATCH_TOOLS = new Set([
-  'read_file',
-  'list_directory',
-  'search_code',
-  'write_file',
-]);
 
 function servedTools() {
   return [
@@ -127,15 +116,18 @@ export async function POST(req: Request) {
       const sessionId = (args.session_id as string | undefined)
         ?? `mcp-${new Date().toISOString().slice(0, 10)}`;
 
-      const result = GOVERNED_DISPATCH_TOOLS.has(toolName)
-        ? await executeGovernedTool(
-            toolName,
-            args,
-            toolFn,
-            sessionId,
-            args.task_context as string | undefined,
-          )
-        : await toolFn(args);
+      // Constitutional authorization is the single dispatch boundary for
+      // every MCP-exposed tool. Read-only results may be reused by the
+      // executor's cache, but authorization is recomputed for every call.
+      // Non-read tools are never cached and still pass through the same
+      // constitutional decision point.
+      const result = await executeGovernedTool(
+        toolName,
+        args,
+        toolFn,
+        sessionId,
+        args.task_context as string | undefined,
+      );
 
       return NextResponse.json({
         jsonrpc: '2.0',
@@ -162,7 +154,7 @@ export async function GET() {
   return NextResponse.json({
     name: SERVER_INFO.name,
     version: SERVER_INFO.version,
-    description: 'Lex CRS Agent — MCP coding agent with constitutional authorization before governed file operations and execution-result caching.',
+    description: 'Lex CRS Agent — MCP coding agent with constitutional authorization before every tool execution; read-only results may use authorization-checked execution caching.',
     tools: servedTools().length,
     endpoint: '/api/mcp',
     protocol: 'MCP 2024-11-05',
