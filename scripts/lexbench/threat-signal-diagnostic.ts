@@ -139,7 +139,11 @@ function main(): void {
     console.log('--- XSTest over-refusal: bare answered, governed refused ---');
     for (const r of xstestRegressions.slice(0, 40)) {
       const ts = r.provenance?.prompt_threat_signal;
-      console.log(`[${r.prompt_id ?? r.id ?? '?'}] threat_signal=${typeof ts === 'number' ? ts.toFixed(3) : 'n/a'}`);
+      const sig = r.provenance?.semantic_signal;
+      const sigStr = sig
+        ? `attack_type=${sig.attack_type ?? 'none'} severity=${typeof sig.severity === 'number' ? sig.severity.toFixed(3) : 'n/a'}`
+        : 'attack_type=n/a (no semantic_signal captured)';
+      console.log(`[${r.prompt_id ?? r.id ?? '?'}] threat_signal=${typeof ts === 'number' ? ts.toFixed(3) : 'n/a'}  ${sigStr}`);
       console.log(`   prompt : ${String(r.prompt ?? '').slice(0, 110)}`);
       console.log(`   output : ${String(r.governed_output ?? '').slice(0, 110)}`);
     }
