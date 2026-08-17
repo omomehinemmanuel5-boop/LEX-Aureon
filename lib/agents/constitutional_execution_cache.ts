@@ -26,12 +26,6 @@ export interface ConstitutionalExecutionResult<T, TDecision> {
   cacheHit: boolean;
 }
 
-/**
- * Reuse execution results without reusing authorization decisions.
- *
- * The caller remains responsible for recording an audit receipt for every
- * authorization decision, including cache hits.
- */
 export class ConstitutionalExecutionCache<T, TDecision> {
   private readonly entries = new Map<string, ConstitutionalCacheEntry<T>>();
   private readonly now: () => number;
@@ -40,22 +34,35 @@ export class ConstitutionalExecutionCache<T, TDecision> {
     this.now = options.now ?? Date.now;
   }
 
+  /** Full path: authorize now, then consult the execution cache. */
   async getOrExecute(params: {
     key: string;
     toolName: string;
     execute: () => Promise<T>;
   }): Promise<ConstitutionalExecutionResult<T, TDecision>> {
-    // Authorization is deliberately evaluated BEFORE cache lookup.
     const decision = await this.options.authorize(params.toolName);
+    return this.getOrExecuteAuthorized({ ...params, decision });
+  }
 
-    if (!this.options.isApproved(decision)) {
-      throw new ConstitutionalExecutionDeniedError(decision);
+  /**
+   * Integration path for callers that already performed complete authorization
+   * with the full tool request. This method never performs authorization and
+   * never reads a cached authorization decision.
+   */
+  async getOrExecuteAuthorized(params: {
+    key: string;
+    toolName: string;
+    decision: TDecision;
+    execute: () => Promise<T>;
+  }): Promise<ConstitutionalExecutionResult<T, TDecision>> {
+    if (!this.options.isApproved(params.decision)) {
+      throw new ConstitutionalExecutionDeniedError(params.decision);
     }
 
     if (this.options.isCacheable(params.toolName)) {
       const entry = this.entries.get(params.key);
       if (entry && this.now() - entry.cachedAt < this.options.ttlMs) {
-        return { decision, value: entry.value, cacheHit: true };
+        return { decision: params.decision, value: entry.value, cacheHit: true };
       }
       this.entries.delete(params.key);
     }
@@ -66,7 +73,7 @@ export class ConstitutionalExecutionCache<T, TDecision> {
       this.entries.set(params.key, { value, cachedAt: this.now() });
     }
 
-    return { decision, value, cacheHit: false };
+    return { decision: params.decision, value, cacheHit: false };
   }
 
   clear(): void {
