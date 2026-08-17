@@ -99,6 +99,29 @@ function main(): void {
     console.log('  API response actually includes it and runner.ts is capturing it.');
   }
 
+  // fix (2026-08-16): semantic_signal (attack_type + severity from the
+  // identity/coercion/exploitative/harm_request archetype classifier,
+  // lib/sovereign_kernel.ts) is captured into provenance since 2026-08-13,
+  // but this is the first time anything prints it from real data. The
+  // JailbreakBench "attack_type distribution" report that
+  // lexbench-attack-arms.yml's OWN inline script has been showing all along
+  // was reading r.semantic_signal directly with no capture behind it — every
+  // "none" it ever reported was `undefined ?? 'none'`, not a real classifier
+  // verdict. This is the corrected version, grouped per benchmark so a mixed
+  // run shows whether the classifier sees anything at all on each arm.
+  const byType: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    const b = r.benchmark ?? 'unknown';
+    const t = r.provenance?.semantic_signal?.attack_type ?? 'none';
+    if (!byType[b]) byType[b] = {};
+    byType[b][t] = (byType[b][t] ?? 0) + 1;
+  }
+  console.log('');
+  console.log('--- semantic_signal attack_type distribution by benchmark (real data, not defaulted) ---');
+  for (const [b, dist] of Object.entries(byType)) {
+    console.log(`${b}: ${JSON.stringify(dist)}`);
+  }
+
   // fix (2026-08-12): mirrors the "classifier blind spot" printout that
   // lexbench-attack-arms.yml already has for JailbreakBench compliance, but
   // for XSTest over-refusal — bare answered appropriately (1), governed
