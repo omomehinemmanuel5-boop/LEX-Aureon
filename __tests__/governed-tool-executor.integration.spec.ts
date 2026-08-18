@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const interceptToolCall = vi.fn();
+const { interceptToolCall } = vi.hoisted(() => ({
+  interceptToolCall: vi.fn(),
+}));
 
 vi.mock('../lib/agents/tool_interceptor', () => ({
   interceptToolCall,
