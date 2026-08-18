@@ -1,222 +1,16 @@
 'use client';
 
 /**
- * CbfSimulator — interactive, client-side CBF simulation.
- * 
- * Redesigned for beauty and clarity. Uses high-fidelity SVG paths,
- * animated drawing, and a refined "Basin Intelligence" aesthetic.
+ * CBF Dynamics Simulator — landing-page edition.
+ *
+ * Mobile-first presentation of the reference-grade simulator. The math stays
+ * in lib/cbf_simulation.ts; this component is presentation only.
  */
 
-import { useCallback, useMemo, useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { simulateCbf, simulateCbfComparison } from '@/lib/cbf_simulation';
 
-// ── Theme constants ──────────────────────────────────────────────────────
-const G = { 
-  gold: '#c9a84c', 
-  goldL: '#e8c96d', 
-  goldGlow: 'rgba(201, 168, 76, 0.3)',
-  red: '#ef4444', 
-  redGlow: 'rgba(239, 68, 68, 0.2)',
-  muted: '#94a3b8',
-  bg: '#0f172a',
-  card: 'rgba(30, 41, 59, 0.5)'
-};
-
-// ── Deterministic RNG — Mulberry32 (mirrors backend) ─────────────────────
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6D2B79F5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function gaussClip(rng: () => number, sigma: number, clip: number): number {
-  const u1 = Math.max(rng(), 1e-12);
-  const u2 = rng();
-  const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  return Math.max(-clip, Math.min(clip, z0 * sigma));
-}
-
-// ── Math (mirrors lib/cbf_simulation.ts) ─────────────────────────────────
-const NOISE_SIGMA = 0.08;
-const NOISE_CLIP  = 0.15;
-const MU_LYAP     = 2.0;
-const LYAP_FLOOR  = 1e-9;
-const NORMALIZE_EPS = 1e-12;
-
-// Governor params
-const TAU_GOV       = 0.25;
-const THETA_0       = 1.0;
-const THETA_MIN     = 0.1;
-const THETA_MAX     = 5.0;
-const ALPHA_THETA   = 0.8;
-const BETA_THETA    = 0.05;
-const DEADZONE      = 0.01;
-const TARGET_MARGIN = 0.33;
-const LAMBDA_GAIN   = 0.2;
-const MAX_FORCE_NORM = 1.0;
-const MARGIN_CUTOFF = 0.1;
-
-type Vec3 = [number, number, number];
-
-// fix (2026-08-06) — WAS COMPUTING A DIFFERENT FUNCTION THAN THE REFERENCE
-// SIMULATOR: this previously weighted the barrier term by x_i itself
-// (-(x0*log x0 + x1*log x1 + x2*log x2)/3, i.e. Shannon entropy / 3), not
-// the published V_z(x) = -sum(z_i*log(x_i)) certificate that
-// lib/cbf_simulation.ts's lyapunovCandidate() and lib/aureonics_core.ts's
-// lyapunovBarrierZ() implement. z defaults to uniform (1/3,1/3,1/3) here,
-// matching this simulator having no session-specific z — same convention
-// lib/cbf_simulation.ts uses. Now genuinely mirrors the reference module.
-function lyapunovVz(x: Vec3, tau: number): number {
-  const z: Vec3 = [1 / 3, 1 / 3, 1 / 3];
-  const barrier = -(z[0] * Math.log(Math.max(x[0], LYAP_FLOOR))
-                   + z[1] * Math.log(Math.max(x[1], LYAP_FLOOR))
-                   + z[2] * Math.log(Math.max(x[2], LYAP_FLOOR)));
-  let penaltySum = 0;
-  for (let i = 0; i < 3; i++) {
-    const v = Math.max(0, tau - x[i]);
-    penaltySum += v * v;
-  }
-  return barrier + (MU_LYAP / 2) * penaltySum;
-}
-
-function replicator(x: Vec3, alpha: number): Vec3 {
-  const a = 0.5;
-  const f: Vec3 = [
-    a - alpha * (x[1] + x[2]),
-    a - alpha * (x[0] + x[2]),
-    a - alpha * (x[0] + x[1]),
-  ];
-  const fBar = x[0] * f[0] + x[1] * f[1] + x[2] * f[2];
-  return [x[0] * (f[0] - fBar), x[1] * (f[1] - fBar), x[2] * (f[2] - fBar)];
-}
-
-function intrinsicDynamics(x: Vec3, rng: () => number, alpha: number): Vec3 {
-  const rep = replicator(x, alpha);
-  const nRaw: Vec3 = [
-    gaussClip(rng, NOISE_SIGMA, NOISE_CLIP),
-    gaussClip(rng, NOISE_SIGMA, NOISE_CLIP),
-    gaussClip(rng, NOISE_SIGMA, NOISE_CLIP),
-  ];
-  const nMean = (nRaw[0] + nRaw[1] + nRaw[2]) / 3;
-  return [
-    rep[0] + nRaw[0] - nMean,
-    rep[1] + nRaw[1] - nMean,
-    rep[2] + nRaw[2] - nMean,
-  ];
-}
-
-function governorG(x: Vec3, tauGov: number): Vec3 {
-  const phi: Vec3 = [
-    Math.max(0, tauGov - x[0]),
-    Math.max(0, tauGov - x[1]),
-    Math.max(0, tauGov - x[2]),
-  ];
-  const phiBar = (phi[0] + phi[1] + phi[2]) / 3;
-  return [phi[0] - phiBar, phi[1] - phiBar, phi[2] - phiBar];
-}
-
-function computeCCP(x: Vec3): number {
-  const centroid = 1 / 3;
-  const variance = (x[0] - centroid) ** 2 + (x[1] - centroid) ** 2 + (x[2] - centroid) ** 2;
-  const ccpBase = Math.max(0, 1 - 1.5 * variance);
-  return Math.min(1, Math.max(0, ccpBase));
-}
-
-function computeIEC(x: Vec3): number {
-  return Math.min(1, Math.max(0, 3 * Math.min(x[0], x[1], x[2])));
-}
-
-function computePhi(x: Vec3, iecTarget: number): number {
-  const w1 = 1.0;
-  const w2 = 0.5;
-  const ccp = computeCCP(x);
-  const iec = computeIEC(x);
-  return -w1 * ccp + w2 * (iec - iecTarget) ** 2;
-}
-
-function capForce(v: Vec3, maxNorm: number): Vec3 {
-  const norm = Math.abs(v[0]) + Math.abs(v[1]) + Math.abs(v[2]);
-  if (norm > maxNorm && norm > 0) {
-    const scale = maxNorm / norm;
-    return [v[0] * scale, v[1] * scale, v[2] * scale];
-  }
-  return [v[0], v[1], v[2]];
-}
-
-function basinForce(x: Vec3, iecTarget: number): Vec3 {
-  const eps = 1e-4;
-  const grad: Vec3 = [0, 0, 0];
-  for (let i = 0; i < 3; i++) {
-    const xUp: Vec3 = [x[0], x[1], x[2]];
-    const xDn: Vec3 = [x[0], x[1], x[2]];
-    xUp[i] += eps;
-    xDn[i] -= eps;
-    grad[i] = (computePhi(xUp, iecTarget) - computePhi(xDn, iecTarget)) / (2 * eps);
-  }
-  const meanGrad = (grad[0] + grad[1] + grad[2]) / 3;
-  return capForce([
-    -(grad[0] - meanGrad) * LAMBDA_GAIN,
-    -(grad[1] - meanGrad) * LAMBDA_GAIN,
-    -(grad[2] - meanGrad) * LAMBDA_GAIN,
-  ], MAX_FORCE_NORM);
-}
-
-function cbfSafetyFilter(x: Vec3, f: Vec3, uDes: Vec3, tau: number, dt: number): Vec3 {
-  const uMin: Vec3 = [
-    (tau - x[0]) / dt - f[0],
-    (tau - x[1]) / dt - f[1],
-    (tau - x[2]) / dt - f[2],
-  ];
-  const u: Vec3 = [uDes[0], uDes[1], uDes[2]];
-  for (let iter = 0; iter < 5; iter++) {
-    const active: number[] = [];
-    for (let i = 0; i < 3; i++) if (u[i] < uMin[i]) active.push(i);
-    if (active.length === 0) break;
-    const inactive: number[] = [];
-    for (let i = 0; i < 3; i++) if (!active.includes(i)) inactive.push(i);
-    for (const i of active) u[i] = uMin[i];
-    const currentSum = u[0] + u[1] + u[2];
-    if (Math.abs(currentSum) < NORMALIZE_EPS) break;
-    if (inactive.length > 0) {
-      const excessPer = currentSum / inactive.length;
-      for (const j of inactive) u[j] -= excessPer;
-    } else {
-      const meanU = currentSum / 3;
-      u[0] -= meanU; u[1] -= meanU; u[2] -= meanU;
-    }
-  }
-  return u;
-}
-
-function normalizeSimplex(x: Vec3): Vec3 {
-  const clamped: Vec3 = [Math.max(0, x[0]), Math.max(0, x[1]), Math.max(0, x[2])];
-  const total = clamped[0] + clamped[1] + clamped[2];
-  if (total <= NORMALIZE_EPS) return [1 / 3, 1 / 3, 1 / 3];
-  if (Math.abs(total - 1) < 1e-10) return clamped;
-  return [clamped[0] / total, clamped[1] / total, clamped[2] / total];
-}
-
-function projectToSimplexFloor(x: Vec3, floor: number): Vec3 {
-  const y = [x[0] - floor, x[1] - floor, x[2] - floor];
-  const target = 1.0 - 3 * floor;
-  const u = [...y].sort((a, b) => b - a);
-  let cssv = 0, rho = 0;
-  for (let j = 0; j < 3; j++) {
-    cssv += u[j];
-    if (u[j] - (cssv - target) / (j + 1) > 0) rho = j;
-  }
-  const theta = (u.slice(0, rho + 1).reduce((a, b) => a + b, 0) - target) / (rho + 1);
-  const xProj = y.map(v => Math.max(v - theta, 0) + floor);
-  const total = xProj[0] + xProj[1] + xProj[2];
-  return [xProj[0] / total, xProj[1] / total, xProj[2] / total];
-}
-
-// ── Simulation types ─────────────────────────────────────────────────────
-interface SimStep {
+type Point = {
   t: number;
   M: number;
   V: number;
@@ -224,519 +18,204 @@ interface SimStep {
   C: number;
   R: number;
   S: number;
+};
+
+const GOLD = '#c9a84c';
+const GOLD_LIGHT = '#e8c96d';
+const RED = '#ef4444';
+const TAU = 0.05;
+const SEED = 42;
+const STEPS = 150;
+
+function pathFor(points: Point[], value: (p: Point) => number, width: number, height: number, pad = 8) {
+  if (!points.length) return '';
+  const values = points.map(value);
+  const min = Math.min(...values);
+  const max = Math.max(...values, min + 0.0001);
+  return points.map((p, i) => {
+    const x = pad + (i / Math.max(1, points.length - 1)) * (width - pad * 2);
+    const y = height - pad - ((value(p) - min) / Math.max(max - min, 0.0001)) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
 }
 
-interface SimResult {
-  trajectory: SimStep[];
-  min_M: number;
-  safety_violated: boolean;
-  invariance_violations: number;
-  stability_ratio: number;
-  max_deviation: number;
-  fpl1_classification: string;
-  lyapunov_v0: number;
-  steps: number;
-  dt: number;
-  seed: number;
-  tau_cbf: number;
-}
-
-// ── Core simulation (mirrors lib/cbf_simulation.ts simulateCbf) ──────────
-function runSimulation(
-  steps: number,
-  dt: number,
-  seed: number,
-  tauCbf: number,
-  projection: 'duchi' | 'naive',
-): SimResult {
-  const rng = mulberry32(seed);
-  let x: Vec3 = [1 / 3, 1 / 3, 1 / 3];
-  let theta = THETA_0;
-
-  const trajectory: SimStep[] = [];
-  let minMGlobal = 1;
-  let invarianceViolations = 0;
-  let deltaVNegative = 0;
-  let deltaVPositive = 0;
-  let correctedPositive = 0;
-  const lyapunovValues: number[] = [];
-  const deltaVSeries: number[] = [];
-
-  for (let t = 0; t < steps; t++) {
-    const f = intrinsicDynamics(x, rng, 0.5);
-
-    // Governor force
-    const G = governorG(x, TAU_GOV);
-    const uGov: Vec3 = [theta * G[0], theta * G[1], theta * G[2]];
-
-    // Basin force (with descent guard)
-    let uBasin: Vec3 = [0, 0, 0];
-    if (Math.min(x[0], x[1], x[2]) >= MARGIN_CUTOFF) {
-      uBasin = basinForce(x, 1 / 3);
-      const phiPrev = computePhi(x, 1 / 3);
-      const xCandRaw: Vec3 = [
-        x[0] + dt * (f[0] + uGov[0] + uBasin[0]),
-        x[1] + dt * (f[1] + uGov[1] + uBasin[1]),
-        x[2] + dt * (f[2] + uGov[2] + uBasin[2]),
-      ];
-      const xCand = normalizeSimplex(xCandRaw);
-      const phiCand = computePhi(xCand, 1 / 3);
-      if (phiCand > phiPrev) {
-        uBasin = [0.5 * uBasin[0], 0.5 * uBasin[1], 0.5 * uBasin[2]];
-      }
-    }
-
-    // CBF filter applied LAST
-    const uDes: Vec3 = [uGov[0] + uBasin[0], uGov[1] + uBasin[1], uGov[2] + uBasin[2]];
-    const uSafe = cbfSafetyFilter(x, f, uDes, tauCbf, dt);
-
-    // State update
-    const totalForce: Vec3 = [f[0] + uSafe[0], f[1] + uSafe[1], f[2] + uSafe[2]];
-    const xNextRaw: Vec3 = [
-      x[0] + dt * totalForce[0],
-      x[1] + dt * totalForce[1],
-      x[2] + dt * totalForce[2],
-    ];
-    const preProjBelow = xNextRaw[0] < tauCbf || xNextRaw[1] < tauCbf || xNextRaw[2] < tauCbf;
-    const xNext = projection === 'duchi'
-      ? projectToSimplexFloor(xNextRaw, tauCbf)
-      : normalizeSimplex(xNextRaw);
-
-    if (preProjBelow && (xNext[0] < tauCbf || xNext[1] < tauCbf || xNext[2] < tauCbf)) {
-      invarianceViolations += 1;
-    }
-    x = xNext;
-
-    const Vt = lyapunovVz(x, tauCbf);
-    lyapunovValues.push(Vt);
-    const deltaV = lyapunovValues.length <= 1 ? 0 : (lyapunovValues[lyapunovValues.length - 1] - lyapunovValues[lyapunovValues.length - 2]);
-    if (lyapunovValues.length > 1) {
-      deltaVSeries.push(deltaV);
-      if (deltaV < 0) deltaVNegative++;
-      else if (deltaV > 0) deltaVPositive++;
-    }
-
-    const Mnew = Math.min(x[0], x[1], x[2]);
-    if (Mnew < minMGlobal) minMGlobal = Mnew;
-
-    // Adaptive gain
-    const e = Math.max(0, TARGET_MARGIN - Mnew);
-    if (e > DEADZONE) {
-      theta = theta + ALPHA_THETA * e - BETA_THETA * (theta - THETA_0);
-      theta = Math.max(THETA_MIN, Math.min(THETA_MAX, theta));
-    }
-
-    trajectory.push({
-      t,
-      M: +Mnew.toFixed(6),
-      V: +Vt.toFixed(8),
-      dV: +deltaV.toFixed(8),
-      C: +x[0].toFixed(6),
-      R: +x[1].toFixed(6),
-      S: +x[2].toFixed(6),
-    });
-  }
-
-  // Classification
-  const totalDeltaSteps = Math.max(1, lyapunovValues.length - 1);
-  for (let i = 0; i < deltaVSeries.length - 1; i++) {
-    if (deltaVSeries[i] > 0 && deltaVSeries[i + 1] < 0) correctedPositive++;
-  }
-  const stabilityRatio = (deltaVNegative + correctedPositive) / totalDeltaSteps;
-  const v0 = lyapunovValues[0] ?? 0;
-  const maxDeviation = lyapunovValues.length
-    ? Math.max(...lyapunovValues.map(v => v - v0))
-    : 0;
-  const fpl1 = stabilityRatio > 0.6 && invarianceViolations === 0 && maxDeviation < 0.25
-    ? 'LYAPUNOV STABLE + FORWARD INVARIANT'
-    : 'NOT PROVEN';
-
-  return {
-    trajectory,
-    min_M: +minMGlobal.toFixed(6),
-    safety_violated: minMGlobal < tauCbf - 1e-9,
-    invariance_violations: invarianceViolations,
-    stability_ratio: +stabilityRatio.toFixed(6),
-    max_deviation: +maxDeviation.toFixed(8),
-    fpl1_classification: fpl1,
-    lyapunov_v0: +v0.toFixed(8),
-    steps,
-    dt,
-    seed,
-    tau_cbf: tauCbf,
-  };
-}
-
-// ── Trajectory Chart (Enhanced SVG) ──────────────────────────────────────
-function TrajectoryChart({
-  governed,
-  ungoverned,
-  tau,
-  showVz,
-  progress,
-}: {
-  governed: SimStep[];
-  ungoverned: SimStep[];
-  tau: number;
-  showVz: boolean;
-  progress: number;
-}) {
-  const W = 800, H = 260, PAD = 20;
-  
-  const gVisible = governed.slice(0, Math.floor(governed.length * progress));
-  const uVisible = ungoverned.slice(0, Math.floor(ungoverned.length * progress));
-
-  const vMax = Math.max(...governed.map(s => s.V), ...ungoverned.map(s => s.V));
-  const vMin = Math.min(...governed.map(s => s.V), ...ungoverned.map(s => s.V));
-  const yMax = 0.5;
-
-  const toXY = (steps: SimStep[]) => {
-    if (steps.length === 0) return "";
-    return steps.map((s, i) => {
-      const x = PAD + (i / Math.max(1, governed.length - 1)) * (W - 2 * PAD);
-      const raw = showVz ? s.V : s.M;
-      const yRange = showVz ? vMax - vMin : yMax;
-      const yBase = showVz ? vMin : 0;
-      const y = PAD + (1 - Math.max(0, raw - yBase) / Math.max(yRange, 0.001)) * (H - 2 * PAD);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-  };
-
-  const floorY = showVz
-    ? PAD + (1 - Math.max(0, (vMin > 0 ? vMin : 0) / Math.max(vMax - vMin, 0.001))) * (H - 2 * PAD)
-    : PAD + (1 - tau / Math.max(yMax, 0.001)) * (H - 2 * PAD);
+function MiniChart({ governed, ungoverned, metric }: { governed: Point[]; ungoverned: Point[]; metric: 'M' | 'V' }) {
+  const width = 680;
+  const height = 210;
+  const all = [...governed, ...ungoverned];
+  const value = (p: Point) => metric === 'M' ? p.M : p.V;
+  const vals = all.map(value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals, min + 0.0001);
+  const scaleY = (v: number) => height - 18 - ((v - min) / Math.max(max - min, 0.0001)) * (height - 36);
+  const floorY = metric === 'M' && TAU >= min && TAU <= max ? scaleY(TAU) : null;
 
   return (
-    <div className="relative group">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto drop-shadow-2xl overflow-visible" role="img">
-        <defs>
-          <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={G.gold} stopOpacity="0.2" />
-            <stop offset="50%" stopColor={G.gold} stopOpacity="1" />
-            <stop offset="100%" stopColor={G.goldL} stopOpacity="1" />
-          </linearGradient>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-            <feMerge>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-        </defs>
-
-        {/* Grid lines */}
-        {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
-          <line key={i} x1={PAD + p * (W - 2 * PAD)} y1={PAD} x2={PAD + p * (W - 2 * PAD)} y2={H - PAD} 
-            stroke="white" strokeOpacity="0.05" strokeWidth="1" />
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/20 p-2 sm:p-3">
+      <div className="mb-2 flex items-center justify-between px-1 text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">
+        <span>{metric === 'M' ? 'Safety margin M' : 'Lyapunov Vz'}</span>
+        <span>seed {SEED}</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[180px] w-full sm:h-[220px]" role="img" aria-label={`${metric === 'M' ? 'Safety margin' : 'Lyapunov'} comparison`}>
+        {[0.25, 0.5, 0.75].map((p) => (
+          <line key={p} x1={8} x2={width - 8} y1={18 + p * (height - 36)} y2={18 + p * (height - 36)} stroke="white" strokeOpacity="0.05" />
         ))}
-        
-        {/* Floor line */}
-        {!showVz && (
-          <g>
-            <line x1={PAD} y1={floorY} x2={W - PAD} y2={floorY}
-              stroke={G.gold} strokeWidth={1} strokeDasharray="4 4" opacity={0.3} />
-            <text x={W - PAD + 5} y={floorY + 3} className="fill-slate-500 font-mono text-[9px]">
-              τ = {tau.toFixed(2)}
-            </text>
-          </g>
-        )}
-
-        {/* Ungoverned path */}
-        <polyline points={toXY(uVisible)} fill="none"
-          stroke={G.red} strokeWidth={1.5} opacity={0.4} strokeLinejoin="round" />
-        
-        {/* Governed path */}
-        <polyline points={toXY(gVisible)} fill="none"
-          stroke="url(#goldGrad)" strokeWidth={2.5} filter="url(#glow)" strokeLinejoin="round" />
-
-        {/* Current point markers */}
-        {gVisible.length > 0 && (
-          <circle 
-            cx={PAD + ((gVisible.length - 1) / Math.max(1, governed.length - 1)) * (W - 2 * PAD)}
-            cy={toXY([gVisible[gVisible.length - 1]]).split(',')[1]}
-            r="4" fill={G.goldL} filter="url(#glow)"
-          />
-        )}
+        {floorY !== null && <line x1={8} x2={width - 8} y1={floorY} y2={floorY} stroke={GOLD} strokeOpacity="0.45" strokeDasharray="5 5" />}
+        <polyline points={pathFor(ungoverned, value, width, height)} fill="none" stroke={RED} strokeWidth="2" strokeOpacity="0.55" strokeLinejoin="round" />
+        <polyline points={pathFor(governed, value, width, height)} fill="none" stroke={GOLD_LIGHT} strokeWidth="3" strokeLinejoin="round" />
+        <text x="10" y="14" fill="#64748b" fontSize="9" fontFamily="monospace">{max.toFixed(2)}</text>
+        <text x="10" y={height - 4} fill="#64748b" fontSize="9" fontFamily="monospace">{min.toFixed(2)}</text>
       </svg>
+      <div className="mt-1 flex flex-wrap items-center gap-3 px-1 text-[9px] font-mono text-slate-500">
+        <span className="flex items-center gap-1.5"><i className="h-1.5 w-5 rounded-full" style={{ background: GOLD_LIGHT }} />Governed</span>
+        <span className="flex items-center gap-1.5"><i className="h-1.5 w-5 rounded-full bg-red-500/70" />Ungoverned</span>
+        {floorY !== null && <span className="text-[#c9a84c]">τ = {TAU.toFixed(2)}</span>}
+      </div>
     </div>
   );
 }
 
-// ── Simplex (ternary) plot — the state (C,R,S) literally lives on a
-// 2-simplex, so this shows real position/geometry a line chart can't:
-// how close to a vertex (collapse toward one dimension) vs. the centroid.
-function SimplexPlot({
-  governedPoint,
-  ungovernedPoint,
-  tau,
-}: {
-  governedPoint: SimStep | undefined;
-  ungovernedPoint: SimStep | undefined;
-  tau: number;
-}) {
-  const W = 220, H = 196, PAD = 20;
-  const top: [number, number] = [W / 2, PAD];
-  const left: [number, number] = [PAD, H - PAD];
-  const right: [number, number] = [W - PAD, H - PAD];
-
-  const toXY = (c: number, r: number, s: number): [number, number] => [
+function Simplex({ governed, ungoverned }: { governed: Point; ungoverned: Point }) {
+  const W = 240, H = 205;
+  const top: [number, number] = [W / 2, 18];
+  const left: [number, number] = [22, H - 20];
+  const right: [number, number] = [W - 22, H - 20];
+  const xy = (c: number, r: number, s: number): [number, number] => [
     c * top[0] + r * left[0] + s * right[0],
     c * top[1] + r * left[1] + s * right[1],
   ];
-
-  // Inner triangle = the safe region where every coordinate >= tau.
-  const floorScale = Math.max(0, 1 - 3 * tau);
-  const floorTop = toXY(tau + floorScale, tau, tau);
-  const floorLeft = toXY(tau, tau + floorScale, tau);
-  const floorRight = toXY(tau, tau, tau + floorScale);
-
-  const [gx, gy] = governedPoint ? toXY(governedPoint.C, governedPoint.R, governedPoint.S) : top;
-  const [ux, uy] = ungovernedPoint ? toXY(ungovernedPoint.C, ungovernedPoint.R, ungovernedPoint.S) : top;
+  const safeScale = 1 - 3 * TAU;
+  const safeTop = xy(TAU + safeScale, TAU, TAU);
+  const safeLeft = xy(TAU, TAU + safeScale, TAU);
+  const safeRight = xy(TAU, TAU, TAU + safeScale);
+  const [gx, gy] = xy(governed.C, governed.R, governed.S);
+  const [ux, uy] = xy(ungoverned.C, ungoverned.R, ungoverned.S);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="State position on the C/R/S simplex">
-      <defs>
-        <filter id="glowSimplex">
-          <feGaussianBlur stdDeviation="1.5" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
-      <polygon points={`${top.join(',')} ${left.join(',')} ${right.join(',')}`}
-        fill="none" stroke="currentColor" strokeOpacity={0.15} strokeWidth={1} className="text-slate-500" />
-      <polygon points={`${floorTop.join(',')} ${floorLeft.join(',')} ${floorRight.join(',')}`}
-        fill={G.gold} fillOpacity={0.05} stroke={G.gold} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
-      <text x={top[0]} y={top[1] - 6} textAnchor="middle" className="fill-slate-500 font-mono text-[8px]">C</text>
-      <text x={left[0] - 4} y={left[1] + 10} textAnchor="end" className="fill-slate-500 font-mono text-[8px]">R</text>
-      <text x={right[0] + 4} y={right[1] + 10} textAnchor="start" className="fill-slate-500 font-mono text-[8px]">S</text>
-      <circle cx={ux} cy={uy} r={3.5} fill={G.red} fillOpacity={0.65} />
-      <circle cx={gx} cy={gy} r={4.5} fill={G.goldL} filter="url(#glowSimplex)" />
-    </svg>
-  );
-}
-
-// ── Metric bar — small horizontal gauge with a pass-threshold tick ───────
-function MetricBar({
-  label,
-  value,
-  max = 1,
-  threshold,
-  formatted,
-}: {
-  label: string;
-  value: number;
-  max?: number;
-  threshold?: number;
-  formatted: string;
-}) {
-  const pct = Math.min(100, Math.max(0, (value / max) * 100));
-  const thresholdPct = threshold !== undefined ? Math.min(100, Math.max(0, (threshold / max) * 100)) : undefined;
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[10px] font-mono">
-        <span className="text-slate-500">{label}</span>
-        <span className="text-slate-900 dark:text-white">{formatted}</span>
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="mb-1 flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">
+        <span>Constitutional simplex</span><span>C + R + S = 1</span>
       </div>
-      <div className="relative h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-        <div className="h-full rounded-full bg-[#c9a84c] transition-all duration-700" style={{ width: `${pct}%` }} />
-        {thresholdPct !== undefined && (
-          <div className="absolute top-0 bottom-0 w-px bg-slate-400 dark:bg-white/40" style={{ left: `${thresholdPct}%` }} />
-        )}
+      <svg viewBox={`0 0 ${W} ${H}`} className="mx-auto h-[190px] w-full max-w-[280px]" role="img" aria-label="Governed and ungoverned state on the C R S simplex">
+        <polygon points={`${top.join(',')} ${left.join(',')} ${right.join(',')}`} fill="none" stroke="white" strokeOpacity="0.16" />
+        <polygon points={`${safeTop.join(',')} ${safeLeft.join(',')} ${safeRight.join(',')}`} fill={GOLD} fillOpacity="0.05" stroke={GOLD} strokeOpacity="0.45" strokeDasharray="4 4" />
+        <circle cx={W / 2} cy={H / 2 + 25} r="3" fill="#60a5fa" fillOpacity="0.7" />
+        <circle cx={ux} cy={uy} r="5" fill={RED} fillOpacity="0.8" />
+        <circle cx={gx} cy={gy} r="6" fill={GOLD_LIGHT} />
+        <text x={top[0]} y="12" textAnchor="middle" fill="#94a3b8" fontSize="10" fontFamily="monospace">C</text>
+        <text x="12" y={H - 6} textAnchor="middle" fill="#94a3b8" fontSize="10" fontFamily="monospace">R</text>
+        <text x={W - 12} y={H - 6} textAnchor="middle" fill="#94a3b8" fontSize="10" fontFamily="monospace">S</text>
+      </svg>
+      <div className="flex justify-center gap-4 text-[9px] font-mono text-slate-500">
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-[#e8c96d]" />Governed</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500" />Ungoverned</span>
       </div>
     </div>
   );
 }
 
-// ── Parameter Slider ─────────────────────────────────────────────────────
-interface ParamSliderProps {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-}
-
-function ParamSlider({ label, value, min, max, step, onChange }: ParamSliderProps) {
+function Stat({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'good' | 'bad' | 'default' }) {
+  const toneClass = tone === 'good' ? 'text-[#e8c96d]' : tone === 'bad' ? 'text-red-400' : 'text-white';
   return (
-    <div className="flex flex-col gap-2 group">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 group-hover:text-slate-300 transition-colors">
-          {label}
-        </span>
-        <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/5">
-          {value}
-        </span>
-      </div>
-      <input
-        type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-[#c9a84c] hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
-      />
-    </div>
-  );
-}
-
-function ClassificationBadge({ classification }: { classification: string }) {
-  const isPass = classification.includes('STABLE');
-  return (
-    <div className={`px-2 py-0.5 rounded text-[9px] font-mono border transition-all duration-500 ${
-      isPass 
-        ? 'bg-[#c9a84c]/10 text-[#c9a84c] border-[#c9a84c]/30 shadow-[0_0_10px_rgba(201,168,76,0.1)]' 
-        : 'bg-red-500/10 text-red-400 border-red-500/20'
-    }`}>
-      {classification}
+    <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+      <div className="text-[9px] font-mono uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className={`mt-1 text-lg font-semibold tracking-tight ${toneClass}`}>{value}</div>
     </div>
   );
 }
 
 export default function CbfSimulator() {
-  const [dt, setDt] = useState(0.1);
-  const [seed, setSeed] = useState(42);
-  const [tau, setTau] = useState(0.05);
-  const [steps, setSteps] = useState(200);
-  const [projection, setProjection] = useState<'duchi' | 'naive'>('duchi');
-  const [showVz, setShowVz] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [metric, setMetric] = useState<'M' | 'V'>('M');
+  const [playing, setPlaying] = useState(true);
+  const [visible, setVisible] = useState(STEPS);
 
-  const governed = useMemo(() => runSimulation(steps, dt, seed, tau, projection), [steps, dt, seed, tau, projection]);
-  const ungoverned = useMemo(() => runSimulation(steps, dt, seed, tau, 'naive'), [steps, dt, seed, tau]);
+  const comparison = useMemo(() => simulateCbfComparison({ seed: SEED, steps: STEPS }), []);
+  const certificate = useMemo(() => simulateCbf({ seed: SEED, steps: 1500, dt: 0.1, cbfEnabled: true }), []);
+
+  const governed = comparison.governed.trajectory as Point[];
+  const ungoverned = comparison.ungoverned.trajectory as Point[];
+  const gFinal = governed[governed.length - 1];
+  const uFinal = ungoverned[ungoverned.length - 1];
 
   useEffect(() => {
-    if (!isPlaying) return;
-    
-    setProgress(0);
-    let start: number;
-    const duration = 1500; // 1.5s animation
-    const animate = (time: number) => {
+    if (!playing) return;
+    let start = 0;
+    const duration = 1300;
+    let frame = 0;
+    const tick = (time: number) => {
       if (!start) start = time;
-      const elapsed = time - start;
-      const p = Math.min(elapsed / duration, 1);
-      setProgress(p);
-      if (p < 1) requestAnimationFrame(animate);
-      else setIsPlaying(false);
+      const p = Math.min(1, (time - start) / duration);
+      setVisible(Math.max(1, Math.floor(governed.length * p)));
+      if (p < 1) frame = requestAnimationFrame(tick);
+      else setPlaying(false);
     };
-    const frame = requestAnimationFrame(animate);
+    frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [governed, isPlaying]);
+  }, [playing, governed.length]);
 
-  const horizon = +(steps * dt).toFixed(1);
+  const shownG = governed.slice(0, visible);
+  const shownU = ungoverned.slice(0, visible);
+  const replay = () => { setVisible(1); setPlaying(true); };
+  const safe = comparison.safety_guarantee_holds && comparison.governed.invariance_violations === 0;
 
   return (
-    <div className="rounded-2xl border p-4 sm:p-6 bg-white/50 dark:bg-slate-900/40 backdrop-blur-sm border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden">
-      {/* Decorative background glow */}
-      <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#c9a84c]/5 blur-[100px] pointer-events-none" />
+    <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#070b14] p-3 shadow-2xl sm:p-5">
+      <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-[#c9a84c]/10 blur-3xl" />
 
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-4">
-        <div className="flex flex-col">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-[0.2em] flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#c9a84c] animate-pulse" />
-            CBF Dynamics Simulator
-          </h3>
-          <span className="text-[10px] font-mono text-slate-500 mt-1">
-            Mulberry32 Deterministic PRNG · {horizon}s Horizon
-          </span>
+      <header className="relative mb-3 flex items-start justify-between gap-3 sm:mb-4">
+        <div>
+          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.18em] text-[#c9a84c]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#c9a84c]" /> CBF Dynamics
+          </div>
+          <h3 className="mt-1 text-base font-semibold text-white sm:text-lg">Safety under the same disturbance</h3>
+          <p className="mt-1 max-w-xl text-[10px] leading-relaxed text-slate-400 sm:text-xs">
+            A seeded counterfactual: identical dynamics, with and without the barrier.
+          </p>
         </div>
-
-        <button
-          onClick={() => setIsPlaying(true)}
-          className="p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all active:scale-95"
-          title="Re-run Simulation"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isPlaying ? 'animate-spin' : ''}>
-            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-            <path d="M21 3v5h-5" />
-          </svg>
+        <button onClick={replay} className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-mono text-slate-300 transition hover:bg-white/10" aria-label="Replay simulation">
+          {playing ? 'RUNNING' : 'REPLAY'}
         </button>
+      </header>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:mb-4 sm:grid-cols-4">
+        <Stat label="Gov. min M" value={comparison.governed.min_M.toFixed(3)} tone="good" />
+        <Stat label="Ungov. min M" value={comparison.ungoverned.min_M.toFixed(3)} tone={comparison.ungoverned.min_M < TAU ? 'bad' : 'default'} />
+        <Stat label="Violations" value={String(comparison.governed.invariance_violations)} tone="good" />
+        <Stat label="Safety floor" value={TAU.toFixed(2)} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Controls panel */}
-        <div className="lg:col-span-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4 flex flex-col gap-5">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">Parameters</span>
-          <ParamSlider label="dt (Step Size)" value={dt} min={0.05} max={1.0} step={0.05} onChange={setDt} />
-          <ParamSlider label="Entropy Seed" value={seed} min={1} max={999} step={1} onChange={setSeed} />
-          <ParamSlider label="τ (Safety Floor)" value={tau} min={0.01} max={0.15} step={0.01} onChange={setTau} />
-          <ParamSlider label="Integration Steps" value={steps} min={50} max={500} step={25} onChange={setSteps} />
+      <div className="mb-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] p-1">
+        <button onClick={() => setMetric('M')} className={`flex-1 rounded-md px-3 py-2 text-[10px] font-mono transition ${metric === 'M' ? 'bg-white/10 text-white' : 'text-slate-500'}`}>Margin M</button>
+        <button onClick={() => setMetric('V')} className={`flex-1 rounded-md px-3 py-2 text-[10px] font-mono transition ${metric === 'V' ? 'bg-white/10 text-white' : 'text-slate-500'}`}>Lyapunov Vz</button>
+      </div>
 
-          <div className="pt-3 border-t border-slate-200 dark:border-white/5 flex flex-col gap-3">
-            <div>
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 block mb-1.5">Projection</span>
-              <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
-                <button onClick={() => setProjection('duchi')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${projection === 'duchi' ? 'bg-white dark:bg-[#c9a84c]/20 text-[#c9a84c] shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Duchi</button>
-                <button onClick={() => setProjection('naive')} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${projection === 'naive' ? 'bg-white dark:bg-red-500/20 text-red-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Naive</button>
-              </div>
-            </div>
-            <div>
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 block mb-1.5">Metric</span>
-              <div className="flex bg-slate-100 dark:bg-black/20 rounded-lg p-1 border border-slate-200 dark:border-white/5">
-                <button onClick={() => setShowVz(false)} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${!showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Margin (M)</button>
-                <button onClick={() => setShowVz(true)} className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all ${showVz ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Lyapunov (Vz)</button>
-              </div>
-            </div>
+      <MiniChart governed={shownG} ungoverned={shownU} metric={metric} />
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Simplex governed={gFinal} ungoverned={uFinal} />
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">Certificate</span>
+            <span className={`rounded-full border px-2 py-1 text-[8px] font-mono ${safe ? 'border-[#c9a84c]/30 bg-[#c9a84c]/10 text-[#e8c96d]' : 'border-red-500/20 bg-red-500/10 text-red-400'}`}>
+              {safe ? 'FORWARD INVARIANT' : 'NOT PROVEN'}
+            </span>
           </div>
-
-          <div className="pt-3 border-t border-slate-200 dark:border-white/5">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 block mb-2">State Simplex</span>
-            <SimplexPlot
-              governedPoint={governed.trajectory[Math.max(0, Math.floor(governed.trajectory.length * progress) - 1)]}
-              ungovernedPoint={ungoverned.trajectory[Math.max(0, Math.floor(ungoverned.trajectory.length * progress) - 1)]}
-              tau={tau}
-            />
-            <div className="flex items-center gap-4 mt-2 text-[9px] font-mono text-slate-500">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: G.goldL }} />Governed</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: G.red }} />Ungoverned</span>
-            </div>
+          <div className="space-y-3 text-[10px] font-mono">
+            <div className="flex justify-between gap-3"><span className="text-slate-500">FPL-1</span><span className="text-right text-slate-200">{certificate.fpl1_classification}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Descent ratio</span><span className="text-[#e8c96d]">{certificate.stability_ratio.toFixed(3)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Max ΔV excursion</span><span className="text-slate-200">{certificate.max_deviation.toFixed(3)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Integration</span><span className="text-slate-200">dt = 0.1 · T = 150</span></div>
           </div>
-        </div>
-
-        {/* Chart + metrics panel */}
-        <div className="lg:col-span-9 flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4">
-            <TrajectoryChart governed={governed.trajectory} ungoverned={ungoverned.trajectory} tau={tau} showVz={showVz} progress={progress} />
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Governed Arm</span>
-                <ClassificationBadge classification={governed.fpl1_classification} />
-              </div>
-              <MetricBar label="Stability Ratio" value={governed.stability_ratio} threshold={0.6} formatted={governed.stability_ratio.toFixed(4)} />
-              <MetricBar label="Min Margin M" value={governed.min_M} max={Math.max(tau * 3, 0.4)} threshold={tau} formatted={governed.min_M.toFixed(4)} />
-              <div className="flex items-center justify-between text-[11px] font-mono pt-1">
-                <span className="text-slate-500">Invariance Violations</span>
-                <span className={governed.invariance_violations > 0 ? 'text-red-400' : 'text-green-400'}>{governed.invariance_violations}</span>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-black/20 p-4 space-y-3 opacity-70 hover:opacity-100 transition-opacity">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Ungoverned Arm</span>
-                <ClassificationBadge classification={ungoverned.fpl1_classification} />
-              </div>
-              <MetricBar label="Stability Ratio" value={ungoverned.stability_ratio} threshold={0.6} formatted={ungoverned.stability_ratio.toFixed(4)} />
-              <MetricBar label="Min Margin M" value={ungoverned.min_M} max={Math.max(tau * 3, 0.4)} threshold={tau} formatted={ungoverned.min_M.toFixed(4)} />
-              <div className="flex items-center justify-between text-[11px] font-mono pt-1">
-                <span className="text-slate-500">Invariance Violations</span>
-                <span className="text-red-400">{ungoverned.invariance_violations}</span>
-              </div>
-            </div>
-          </div>
+          <p className="mt-4 border-t border-white/10 pt-3 text-[9px] leading-relaxed text-slate-500">
+            Seeded finite-horizon numerical certificate. It does not close the analytical global-proof problem.
+          </p>
         </div>
       </div>
 
-      {projection === 'naive' && (
-        <div className="mt-4 p-3 rounded-lg bg-red-500/5 border border-red-500/20 text-[10px] font-mono text-red-400 leading-relaxed animate-in fade-in slide-in-from-top-2">
-          <span className="font-bold mr-2">⚠ ARCHITECTURAL REGRESSION:</span>
-          Naive x/Σx projection fails to respect the safety floor. This mirrors the 2026-07-21 bug.
-          Switch to <span className="text-white font-bold">Duchi</span> to restore forward invariance.
-        </div>
-      )}
-
-      <div className="mt-4 text-[10px] font-mono text-slate-500 leading-relaxed italic">
-        * Seeded finite-horizon numerical certificate. Global analytical Lyapunov proof (Open Problem 1) remains open.
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[9px] font-mono text-slate-500">
+        <span>Seed {SEED} · {STEPS} display steps · same forcing for both arms</span>
+        <span className="text-[#c9a84c]">Δ min-M: {comparison.improvement_min_M.toFixed(3)}</span>
       </div>
-    </div>
+    </section>
   );
 }
