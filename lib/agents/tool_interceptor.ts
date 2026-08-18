@@ -236,22 +236,36 @@ export async function runToolGoverned(
     const key = cacheKey(sid, toolName, args_hash);
     const cached = _toolCache.get(key);
     if (cached && (Date.now() - cached.ts) < TOOL_CACHE_TTL_MS) {
-      // Cache hit — skip the full interceptor + execution
-      const report = [
-        `── Constitutional tool-call decision [${toolName}] — CACHED ──`,
-        `decision:    ${cached.decision.decision}`,
-        `approved:    ${cached.decision.approved}`,
-        `crs:         C=${cached.decision.crs.C.toFixed(3)} R=${cached.decision.crs.R.toFixed(3)} S=${cached.decision.crs.S.toFixed(3)} M=${cached.decision.crs.M.toFixed(3)}`,
-        `risk_level:  ${cached.decision.crs.risk_level}`,
-        `health_band: ${cached.decision.health_band}`,
-        `sigma_viol:  ${cached.decision.sigma_viol.toFixed(3)}`,
-        `receipt_id:  ${cached.decision.receipt_id}`,
-        `reason:      ${cached.decision.reason}`,
-        `cache_hit:   true`,
-        ``,
-      ];
-      report.push(cached.result);
-      return report.join('\n');
+      // fix (2026-08-18): re-verify kernel M before serving a cache hit.
+      // The cache previously returned immediately on a hit, bypassing
+      // interceptToolCall entirely — which skipped Step 0 (kernel-critical
+      // gate). If a session's kernel M degraded to CRITICAL mid-window,
+      // a stale cached read would still be served for up to
+      // TOOL_CACHE_TTL_MS, defeating "all tool calls suspended." This is
+      // a single cheap DB read (no embedding call), so it doesn't
+      // reintroduce the cost the cache exists to avoid — it only restores
+      // the one safety invariant the cache broke.
+      const currentKernelM = await getKernelM(sid);
+      if (currentKernelM < KERNEL_CRITICAL) {
+        _toolCache.delete(key); // stale under current kernel state — evict
+      } else {
+        // Cache hit — skip the rest of the full interceptor + execution
+        const report = [
+          `── Constitutional tool-call decision [${toolName}] — CACHED ──`,
+          `decision:    ${cached.decision.decision}`,
+          `approved:    ${cached.decision.approved}`,
+          `crs:         C=${cached.decision.crs.C.toFixed(3)} R=${cached.decision.crs.R.toFixed(3)} S=${cached.decision.crs.S.toFixed(3)} M=${cached.decision.crs.M.toFixed(3)}`,
+          `risk_level:  ${cached.decision.crs.risk_level}`,
+          `health_band: ${cached.decision.health_band}`,
+          `sigma_viol:  ${cached.decision.sigma_viol.toFixed(3)}`,
+          `receipt_id:  ${cached.decision.receipt_id}`,
+          `reason:      ${cached.decision.reason}`,
+          `cache_hit:   true`,
+          ``,
+        ];
+        report.push(cached.result);
+        return report.join('\n');
+      }
     }
   }
 
