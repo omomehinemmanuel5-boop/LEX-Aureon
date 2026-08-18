@@ -598,32 +598,38 @@ export async function narrate_origin({ component }: { component?: string }): Pro
   } catch (e) { return `Error: ${String(e)}`; }
 }
 
-// ── Tool registry (GOVERNED) ──────────────────────────────────────────────────
-// Every tool call in the main registry now passes through runToolGoverned().
+// ── Tool registry (PURE) ────────────────────────────────────────────────────
+// Logic only, no governance wrapping here. Both callers (app/api/mcp/route.ts
+// and lib/lex_crs_agent/loop.ts) apply governance at the dispatch boundary via
+// constitutional_tool_executor.ts. Wrapping here too would double-govern every
+// call: two full authorization passes, two receipts, two session-state
+// mutations per single request (found 2026-08-18, after the execution-cache
+// merge added dispatch-boundary governance but left this file's own wrapping
+// in place — a real correctness bug, not a style cleanup).
 export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
-  read_file:                (a) => runToolGoverned('read_file', a, () => read_file(a as { path: string; repo?: string }), a.session_id as string, a.task_context as string),
-  list_directory:           (a) => runToolGoverned('list_directory', a, () => list_directory(a as { path?: string; repo?: string }), a.session_id as string, a.task_context as string),
-  search_code:              (a) => runToolGoverned('search_code', a, () => search_code(a as { query: string; repo?: string }), a.session_id as string, a.task_context as string),
-  write_file:               (a) => runToolGoverned('write_file', a, () => write_file(a as { path: string; content: string; message: string; repo?: string }), a.session_id as string, a.task_context as string),
-  write_file_governed:      (a) => runToolGoverned('write_file', a, () => write_file(a as { path: string; content: string; message: string; repo?: string }), a.session_id as string, a.task_context as string),
-  get_build_status:         (a) => runToolGoverned('get_build_status', a, () => get_build_status(), a.session_id as string, a.task_context as string),
-  get_workflow_run:         (a) => runToolGoverned('get_workflow_run', a, () => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }), a.session_id as string, a.task_context as string),
-  get_workflow_log:         (a) => runToolGoverned('get_workflow_log', a, () => get_workflow_log(a as { job_id: number; repo?: string; maxChars?: number }), a.session_id as string, a.task_context as string),
-  dispatch_workflow:        (a) => runToolGoverned('dispatch_workflow', a, () => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }), a.session_id as string, a.task_context as string),
-  get_workflow_artifact:    (a) => runToolGoverned('get_workflow_artifact', a, () => get_workflow_artifact(a as { run_id: number; repo?: string }), a.session_id as string, a.task_context as string),
-  check_github_token_scope: (a) => runToolGoverned('check_github_token_scope', a, () => check_github_token_scope(), a.session_id as string, a.task_context as string),
-  get_constitutional_state: (a) => runToolGoverned('get_constitutional_state', a, () => get_constitutional_state(), a.session_id as string, a.task_context as string),
-  query_database:           (a) => runToolGoverned('query_database', a, () => query_database(a as { sql: string }), a.session_id as string, a.task_context as string),
-  run_governance:           (a) => runToolGoverned('run_governance', a, () => run_governance(a as { prompt: string; session_id?: string }), a.session_id as string, a.task_context as string),
-  get_recent_receipts:      (a) => runToolGoverned('get_recent_receipts', a, () => get_recent_receipts(a as { limit?: number }), a.session_id as string, a.task_context as string),
-  get_vercel_logs:          (a) => runToolGoverned('get_vercel_logs', a, () => get_vercel_logs(a as { limit?: number }), a.session_id as string, a.task_context as string),
-  run_self_test:            (a) => runToolGoverned('run_self_test', a, () => run_self_test(), a.session_id as string, a.task_context as string),
-  self_reflect:             (a) => runToolGoverned('self_reflect', a, async () => {
+  read_file:                (a) => read_file(a as { path: string; repo?: string }),
+  list_directory:           (a) => list_directory(a as { path?: string; repo?: string }),
+  search_code:              (a) => search_code(a as { query: string; repo?: string }),
+  write_file:               (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
+  write_file_governed:      (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
+  get_build_status:         () => get_build_status(),
+  get_workflow_run:         (a) => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }),
+  get_workflow_log:         (a) => get_workflow_log(a as { job_id: number; repo?: string; maxChars?: number }),
+  dispatch_workflow:        (a) => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }),
+  get_workflow_artifact:    (a) => get_workflow_artifact(a as { run_id: number; repo?: string }),
+  check_github_token_scope: () => check_github_token_scope(),
+  get_constitutional_state: () => get_constitutional_state(),
+  query_database:           (a) => query_database(a as { sql: string }),
+  run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string }),
+  get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
+  get_vercel_logs:          (a) => get_vercel_logs(a as { limit?: number }),
+  run_self_test:            () => run_self_test(),
+  self_reflect:             async () => {
     const r = await runSelfReflection();
     return r ? r.summary : 'No new receipts to reflect on since last run.';
-  }, a.session_id as string, a.task_context as string),
-  log_decision:              (a) => runToolGoverned('log_decision', a, () => log_decision(a as { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }), a.session_id as string, a.task_context as string),
-  narrate_origin:            (a) => runToolGoverned('narrate_origin', a, () => narrate_origin(a as { component?: string }), a.session_id as string, a.task_context as string),
+  },
+  log_decision:              (a) => log_decision(a as { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }),
+  narrate_origin:            (a) => narrate_origin(a as { component?: string }),
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
