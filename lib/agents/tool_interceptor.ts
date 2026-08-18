@@ -215,7 +215,7 @@ function toolHealthBand(sigma: number, locked: boolean): ToolCallDecision['healt
  * 2. If approved, executes the tool function.
  * 3. Returns a unified report string.
  */
-export async function runToolGoverned(
+async function runToolGoverned(
   toolName: string,
   args: Record<string, unknown>,
   toolFn: (args: Record<string, unknown>) => Promise<string>,
