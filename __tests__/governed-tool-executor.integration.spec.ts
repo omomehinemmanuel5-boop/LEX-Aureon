@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { interceptToolCall } = vi.hoisted(() => ({
+const { interceptToolCall, dbExecute } = vi.hoisted(() => ({
   interceptToolCall: vi.fn(),
+  dbExecute: vi.fn(),
 }));
 
 vi.mock('../lib/agents/tool_interceptor', () => ({
   interceptToolCall,
+}));
+
+vi.mock('../lib/db', () => ({
+  getClient: () => ({ execute: dbExecute }),
 }));
 
 import { executeGovernedTool } from '../lib/agents/constitutional_tool_executor';
@@ -38,6 +43,7 @@ describe('governed tool execution integration boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     interceptToolCall.mockResolvedValue(approvedDecision());
+    dbExecute.mockResolvedValue({ rows: [{ last_m: 1.0 }] });
   });
 
   it('authorizes before reusing a cached read result', async () => {
@@ -96,5 +102,31 @@ describe('governed tool execution integration boundary', () => {
 
     expect(result).toContain('approved:    false');
     expect(tool).not.toHaveBeenCalled();
+  });
+
+  it('does not serve a cached read after kernel M falls below the critical floor', async () => {
+    let executions = 0;
+    const read = async () => {
+      executions += 1;
+      return 'SAFE_RESULT';
+    };
+
+    await executeGovernedTool('read_file', { path: 'README.md' }, read, 'integration-kernel-critical');
+    dbExecute.mockResolvedValue({ rows: [{ last_m: 0.01 }] });
+    interceptToolCall.mockResolvedValue(deniedDecision());
+
+    const result = await executeGovernedTool(
+      'read_file',
+      { path: 'README.md' },
+      read,
+      'integration-kernel-critical',
+    );
+
+    expect(result).toContain('approved:    false');
+    expect(result).not.toContain('SAFE_RESULT');
+    expect(result).not.toContain('cache_hit:   true');
+    expect(executions).toBe(1);
+    expect(interceptToolCall).toHaveBeenCalledTimes(2);
+    expect(dbExecute).toHaveBeenCalled();
   });
 });
