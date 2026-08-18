@@ -61,8 +61,6 @@
  */
 
 import { env } from '../env';
-import { interceptToolCall, runToolGoverned } from '../agents/tool_interceptor';
-import type { ToolCallInput } from '../agents/types';
 import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
