@@ -313,6 +313,12 @@ const HIGH_RISK_TOOLS = new Set([
 const MEDIUM_RISK_TOOLS = new Set([
   'write_file', 'create_file', 'modify_file', 'update_file',
   'delete_file', 'rename_file', 'move_file',
+  // fix (2026-08-19): patch_file was unclassified here, silently falling
+  // through to the generic {score: 0.70, risk: 'LOW'} catch-all at the
+  // bottom of measureS — its S score never varied with which file or path
+  // was being touched, unlike every other write tool. Same path-based
+  // scoring (protected paths, build files) now applies.
+  'patch_file',
 ]);
 
 // ── Argument scanner ───────────────────────────────────────────────────────
