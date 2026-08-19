@@ -263,7 +263,7 @@ async function Hero() {
               boxShadow: `0 8px 32px ${G.gold}40`,
             }}
           >
-            ⚡ Try Live Demo — Free
+            ⚡ Try Lex Console — Free
           </Link>
           <a
             href="https://doi.org/10.5281/zenodo.18944242"
