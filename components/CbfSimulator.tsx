@@ -99,6 +99,7 @@ function Stat({ label, value, good = false, bad = false }: { label: string; valu
 export default function CbfSimulator() {
   const [playing, setPlaying] = useState(true);
   const [visible, setVisible] = useState(STEPS);
+  const [runId, setRunId] = useState(0);
   const comparison = useMemo(() => simulateCbfComparison({ seed: SEED, steps: STEPS }), []);
   const certificate = useMemo(() => simulateCbf({ seed: SEED, steps: 1500, dt: 0.1, cbfEnabled: true }), []);
   const governed = comparison.governed.trajectory as Point[];
