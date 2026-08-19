@@ -572,6 +572,21 @@ function measureR(tool: ToolCallInput): number {
   if (task.includes('read') && /write|create|modify|delete|patch/.test(name)) return 0.25;
   if (task.includes('list') && /write|delete|modify|patch/.test(name)) return 0.25;
 
+  // fix (2026-08-19): the keyword branches above only fire when task_context
+  // happens to contain one of a handful of trigger words (fix/read/list/
+  // create/delete) — most real commit messages don't ("Update stale
+  // drift_dir stats: re-queried..."), so they fell through to the fully
+  // neutral 0.60 even with a legitimate task_context present, identical to
+  // having none at all. Too conservative specifically for the tools in
+  // MEDIUM_RISK_TOOLS: measureS already establishes these as scoped,
+  // path-visible file edits (not protected/build paths, or S would already
+  // be HIGH) — there IS a real task_context, just no misalignment signal
+  // either. Absent evidence of misalignment, treating a described, scoped
+  // edit identically to a total unknown is unwarranted caution, not honest
+  // uncertainty. Modest positive default, well below the 0.85+
+  // explicit-keyword-match confidence.
+  if (MEDIUM_RISK_TOOLS.has(name)) return 0.70;
+
   return 0.60; // neutral
 }
 
