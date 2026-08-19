@@ -13,7 +13,6 @@ import ArchitectureSection from '@/components/ArchitectureSection';
 import BenchmarkResults from '@/components/BenchmarkResults';
 import CbfInvariancePanel from '@/components/CbfInvariancePanel';
 import CbfSimulator from '@/components/CbfSimulator';
-import AgenticGovernancePanel from '@/components/AgenticGovernancePanel';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
