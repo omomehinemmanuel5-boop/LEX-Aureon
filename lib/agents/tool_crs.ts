@@ -557,15 +557,20 @@ function measureR(tool: ToolCallInput): number {
   const name = tool.name.toLowerCase();
 
   // Strong alignment signals
-  if (task.includes('fix') && /read|search|write/.test(name)) return 0.85;
+  // fix (2026-08-19): added |patch — "patch_file" contains none of
+  // read/search/write/create/modify/delete as substrings, so it matched
+  // none of these branches and always fell through to the neutral 0.60
+  // return below, regardless of task_context. Same fix applied to the
+  // misalignment branches.
+  if (task.includes('fix') && /read|search|write|patch/.test(name)) return 0.85;
   if (task.includes('read') && /read|get|fetch/.test(name)) return 0.90;
   if (task.includes('list') && /list|search|get/.test(name)) return 0.90;
   if (task.includes('create') && /create|write|add/.test(name)) return 0.85;
   if (task.includes('delete') && /delete|remove/.test(name)) return 0.80;
 
   // Misalignment signals
-  if (task.includes('read') && /write|create|modify|delete/.test(name)) return 0.25;
-  if (task.includes('list') && /write|delete|modify/.test(name)) return 0.25;
+  if (task.includes('read') && /write|create|modify|delete|patch/.test(name)) return 0.25;
+  if (task.includes('list') && /write|delete|modify|patch/.test(name)) return 0.25;
 
   return 0.60; // neutral
 }
