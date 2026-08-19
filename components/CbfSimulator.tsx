@@ -119,9 +119,12 @@ export default function CbfSimulator() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, governed.length]);
+    // runId forces a fresh animation even when playing was already true —
+    // without it, clicking replay mid-run silently did nothing, since
+    // setPlaying(true) on an already-true value doesn't re-trigger the effect.
+  }, [playing, governed.length, runId]);
 
-  const replay = () => { setVisible(1); setPlaying(true); };
+  const replay = () => { setVisible(1); setRunId(id => id + 1); setPlaying(true); };
   const safe = comparison.safety_guarantee_holds && comparison.governed.invariance_violations === 0;
   const shownG = governed.slice(0, visible);
   const shownU = ungoverned.slice(0, visible);
