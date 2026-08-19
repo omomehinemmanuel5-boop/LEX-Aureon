@@ -620,7 +620,6 @@ export default function LandingPage() {
       <ComparisonSection />
       <ArchitectureSection />
       <ResearchStatusSection />
-      <AgenticGovernancePanel />
       <TechnicalFoundationSection />
       <LiveStatsBar />
       <ProofPanel />
