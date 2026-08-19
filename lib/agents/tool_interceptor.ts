@@ -274,16 +274,25 @@ async function runToolGoverned(
     name:          toolName,
     arguments:     args,
     session_id:    sid,
+    // fix (2026-08-19): removed the args.sql and generic-JSON-template
+    // fallbacks that used to sit here. Raw SQL and JSON.stringify(args) are
+    // structural/symbolic text, not a natural-language task description —
+    // embedding them against describeToolCall()'s prose template produced
+    // unreliable similarity (a plain `SELECT COUNT(*)...` scored C=0.050,
+    // floored, triggering APPROVED_HIGH on a read-only count query). Same
+    // failure mode this file already fixed once for tool *arguments* via
+    // extractFreeText's field allowlist (which deliberately excludes
+    // 'sql') — this fallback chain was still feeding raw SQL into
+    // task_context, the untreated side of that same comparison. When no
+    // genuine natural-language signal exists (no explicit task_context, no
+    // message, no query), leaving task_context undefined is the honest
+    // choice: measureC's own early-return already gives a clean, stable
+    // neutral 0.60 for "no task signal available" — safer than
+    // synthesizing one that measures embedding noise instead of intent,
+    // and it skips an embedding API call in the process.
     task_context:  task_context
       ?? (args.message as string | undefined)
-      ?? (args.query as string | undefined)
-      ?? (args.sql as string | undefined)
-      // Fall back to a description that mirrors describeToolCall()'s own
-      // "Tool call: X. Target: Y" format instead of a bare tool name. A bare
-      // name embeds with near-zero cosine similarity against that format,
-      // which floors C at TAU_FLOOR on every ungoverned call and forces
-      // risk_level to HIGH regardless of what the tool actually does.
-      ?? `Tool call: ${toolName}. Target: ${JSON.stringify(args).slice(0, 200)}`,
+      ?? (args.query as string | undefined),
   };
 
   const decision = await interceptToolCall(toolInput);
