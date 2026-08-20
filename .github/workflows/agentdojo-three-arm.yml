@@ -1,6 +1,12 @@
 name: AgentDojo Three-Arm Evaluation
 
 on:
+  pull_request:
+    paths:
+      - 'scripts/agentdojo-real/**'
+      - 'lib/agents/**'
+      - 'data/agentdojo.jsonl'
+      - '.github/workflows/agentdojo-three-arm.yml'
   workflow_dispatch:
   push:
     branches: [main]
