@@ -254,7 +254,7 @@ export default function ResearchPage() {
               ['920+', 'external adversarial prompts (HarmBench / JailbreakBench / AdvBench)'],
               ['0%', 'governed attack-success rate reported on those runs'],
               ['550', 'internal adversarial vectors, 8 attack classes'],
-              ['~47,000', 'production turns with logged ΔV_z sign'],
+              ['37,701', 'production turns with logged ΔV_z sign'],
             ].map(([n, d]) => (
               <div key={n} className="rounded-xl border border-white/8 p-4" style={{ background: '#0a0d18' }}>
                 <div className="text-2xl font-black font-mono" style={{ color: G.gold }}>{n}</div>
