@@ -5,6 +5,7 @@ interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   retryAfter: number;
+  storageError?: boolean;
 }
 
 export function getClientIp(req: Request): string {
@@ -54,15 +55,17 @@ export async function checkRateLimit(
 
     const row = result.rows[0];
     const count = (row?.count as number) ?? 0;
-    const ws    = (row?.window_start as number) ?? now;
+    const ws = (row?.window_start as number) ?? now;
     const allowed = count <= limit;
     const remaining = Math.max(0, limit - count);
     const retryAfter = allowed ? 0 : Math.max(1, Math.ceil((ws + windowMs - now) / 1000));
 
     return { allowed, remaining, retryAfter };
   } catch (e) {
-    // Storage outage shouldn't gate user traffic — fail open and surface in logs.
-    logger.warn('rate_limit', 'turso rate limit failed, failing open', { error: String(e) });
-    return { allowed: true, remaining: limit, retryAfter: 0 };
+    // A governance admission control should not silently disappear when its
+    // backing store is unavailable. Fail closed and let the route return a
+    // transient 503 so callers know admission state could not be verified.
+    logger.error('rate_limit', 'turso rate limit failed, failing closed', { error: String(e) });
+    return { allowed: false, remaining: 0, retryAfter: 5, storageError: true };
   }
 }

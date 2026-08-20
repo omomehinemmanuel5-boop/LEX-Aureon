@@ -17,6 +17,15 @@
 | Author | Emmanuel King · [ORCID 0009-0000-2986-4935](https://orcid.org/0009-0000-2986-4935) |
 | Contact | lexaureon@gmail.com · [@lexAureon](https://x.com/lexAureon) |
 
+### Engineering references
+
+- [API guide](docs/api.md)
+- [Architecture overview](docs/architecture/system-overview.md)
+- [Security model](docs/security.md)
+- [Evaluation manifest](docs/evaluation-manifest.md)
+- [Contributing](CONTRIBUTING.md)
+
+
 ---
 
 ## What Lex Aureon does

@@ -351,7 +351,14 @@ export default function ApiDocsPage() {
             <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#4a5870' }}>Emmanuel King · Aureonics · Lagos 2026</span>
           </div>
 
-        </main>
+        
+          <section id="security" style={{ marginTop: 36, padding: 20, border: `1px solid ${G.border}`, borderRadius: 8, background: G.surface }}>
+            <SectionLabel>Production limits</SectionLabel>
+            <h2 style={{ color: G.goldL, fontSize: 20, marginBottom: 10 }}>Authentication and rate limits</h2>
+            <p style={{ color: "#8a9ab0", fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>Anonymous callers receive 20 requests per IP per minute. API-key callers can send x-lex-api-key or Authorization: Bearer and receive 120 requests per IP per minute plus plan-level run accounting.</p>
+            <p style={{ color: "#8a9ab0", fontSize: 13, lineHeight: 1.7 }}>Oversized bodies, invalid turns, and oversized session identifiers are rejected at the HTTP boundary. Temporary backend errors are sanitized and internal details are logged server-side.</p>
+          </section>
+</main>
       </div>
     </div>
   );
