@@ -93,7 +93,21 @@ export async function generateApiKey(params: {
   };
 }
 
-// ── Validate & consume one run ─────────────────────────────────────────────
+function rowToApiKey(row: Record<string, unknown>): ApiKey {
+  return {
+    id: row.id as string,
+    key: row.key as string,
+    name: row.name as string,
+    email: row.email as string,
+    plan: row.plan as 'free' | 'sovereign',
+    runs_used: row.runs_used as number,
+    runs_limit: row.runs_limit as number,
+    created_at: row.created_at as number,
+    last_used_at: row.last_used_at as number | null,
+  };
+}
+
+// ── Validate without consuming a run ──────────────────────────────────────
 
 export interface ValidateResult {
   valid: boolean;
@@ -101,7 +115,7 @@ export interface ValidateResult {
   key?: ApiKey;
 }
 
-export async function validateAndConsumeKey(raw: string): Promise<ValidateResult> {
+export async function validateApiKey(raw: string): Promise<ValidateResult> {
   const db = getClient();
   if (!db) return { valid: false, error: 'Database unavailable' };
   await initApiKeySchema();
@@ -113,8 +127,8 @@ export async function validateAndConsumeKey(raw: string): Promise<ValidateResult
 
   if (r.rows.length === 0) return { valid: false, error: 'Invalid API key' };
 
-  const row = r.rows[0];
-  const used  = row.runs_used  as number;
+  const row = r.rows[0] as Record<string, unknown>;
+  const used = row.runs_used as number;
   const limit = row.runs_limit as number;
 
   if (used >= limit) {
@@ -124,28 +138,40 @@ export async function validateAndConsumeKey(raw: string): Promise<ValidateResult
     };
   }
 
-  // Consume the run
-  await db.execute({
+  return { valid: true, key: rowToApiKey(row) };
+}
+
+// ── Consume one run after all admission checks pass ────────────────────────
+
+export async function consumeApiKey(raw: string): Promise<ValidateResult> {
+  const db = getClient();
+  if (!db) return { valid: false, error: 'Database unavailable' };
+
+  const result = await db.execute({
     sql: `UPDATE api_keys
           SET runs_used = runs_used + 1, last_used_at = unixepoch()
-          WHERE key = ?`,
+          WHERE key = ? AND runs_used < runs_limit`,
     args: [raw],
   });
 
-  return {
-    valid: true,
-    key: {
-      id:           row.id as string,
-      key:          row.key as string,
-      name:         row.name as string,
-      email:        row.email as string,
-      plan:         row.plan as 'free' | 'sovereign',
-      runs_used:    used + 1,
-      runs_limit:   limit,
-      created_at:   row.created_at as number,
-      last_used_at: Date.now(),
-    },
-  };
+  if ((result.rowsAffected ?? 0) !== 1) {
+    return { valid: false, error: 'API key is invalid or exhausted' };
+  }
+
+  const r = await db.execute({
+    sql: `SELECT * FROM api_keys WHERE key = ?`,
+    args: [raw],
+  });
+  if (r.rows.length === 0) return { valid: false, error: 'API key unavailable after consumption' };
+
+  return { valid: true, key: rowToApiKey(r.rows[0] as Record<string, unknown>) };
+}
+
+// Backwards-compatible combined validation + consumption for existing callers.
+export async function validateAndConsumeKey(raw: string): Promise<ValidateResult> {
+  const validation = await validateApiKey(raw);
+  if (!validation.valid) return validation;
+  return consumeApiKey(raw);
 }
 
 // ── Lookup keys by email ───────────────────────────────────────────────────
@@ -160,17 +186,7 @@ export async function getKeysByEmail(email: string): Promise<ApiKey[]> {
     args: [email],
   });
 
-  return r.rows.map(row => ({
-    id:           row.id as string,
-    key:          row.key as string,
-    name:         row.name as string,
-    email:        row.email as string,
-    plan:         row.plan as 'free' | 'sovereign',
-    runs_used:    row.runs_used as number,
-    runs_limit:   row.runs_limit as number,
-    created_at:   row.created_at as number,
-    last_used_at: row.last_used_at as number | null,
-  }));
+  return r.rows.map(row => rowToApiKey(row as Record<string, unknown>));
 }
 
 // ── Revoke ─────────────────────────────────────────────────────────────────
