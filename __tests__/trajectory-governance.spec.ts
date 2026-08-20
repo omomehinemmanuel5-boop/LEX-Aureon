@@ -28,6 +28,18 @@ describe('trajectory governance', () => {
       actionId: 'evil',
       toolName: 'delete_file',
       declaredIntent: 'delete data',
+      risk: 'write',
+    });
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toBe('action_outside_authorized_scope');
+  });
+
+  it('rejects risk escalation beyond the plan ceiling', () => {
+    const state = createTrajectoryState(plan);
+    const decision = authorizeTrajectoryAction(state, {
+      actionId: 'evil',
+      toolName: 'patch_file',
+      declaredIntent: 'perform destructive operation',
       risk: 'destructive',
     });
     expect(decision.approved).toBe(false);
@@ -61,5 +73,38 @@ describe('trajectory governance', () => {
       actualEffect: 'unexpected mutation',
     });
     expect(next.locked).toBe(true);
+  });
+
+  it('locks after a failed action and rejects subsequent actions', () => {
+    const state = createTrajectoryState(plan);
+    const failed = reconcileTrajectoryOutcome(state, {
+      actionId: 'a1',
+      success: false,
+      actualEffect: 'tool execution failed',
+    });
+    expect(failed.locked).toBe(true);
+
+    const decision = authorizeTrajectoryAction(failed, plan.actions[1]);
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toBe('trajectory_locked');
+  });
+
+  it('preserves the ordered trajectory across a successful multi-step run', () => {
+    const afterFirst = reconcileTrajectoryOutcome(createTrajectoryState(plan), {
+      actionId: 'a1',
+      success: true,
+      actualEffect: 'README inspected',
+    });
+    const secondDecision = authorizeTrajectoryAction(afterFirst, plan.actions[1]);
+    expect(secondDecision.approved).toBe(true);
+
+    const afterSecond = reconcileTrajectoryOutcome(afterFirst, {
+      actionId: 'a2',
+      success: true,
+      actualEffect: 'approved documentation patch applied',
+    });
+    expect(afterSecond.currentStep).toBe(2);
+    expect(afterSecond.completed).toEqual(['a1', 'a2']);
+    expect(afterSecond.locked).toBe(false);
   });
 });
