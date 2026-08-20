@@ -7,7 +7,6 @@ import SignalPillBar from '@/components/SignalPillBar';
 import UpgradeModal from '@/components/UpgradeModal';
 import DynamicSimplex from '@/components/DynamicSimplex';
 import EmailCapture from '@/components/EmailCapture';
-import CountUp from '@/components/CountUp';
 import { useToast } from '@/components/Toast';
 import { useLexStream } from '@/lib/use_lex_stream';
 import { EXAMPLE_PROMPTS } from '@/lib/example_prompts';
