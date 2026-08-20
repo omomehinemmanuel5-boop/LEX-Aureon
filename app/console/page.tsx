@@ -228,10 +228,6 @@ export default function Console() {
   const [tab, setTab] = useState<Tab>('governed');
   const [pulse, setPulse] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
-  const [totalRuns, setTotalRuns] = useState<number | null>(null);
-  // 2026-07-20: true when /api/stats can't be reached — the counter's green
-  // "live" dot previously glowed unconditionally, even with the stats API down.
-  const [statsDown, setStatsDown] = useState(false);
   const [outputLines, setOutputLines] = useState<{ ts: string; text: string; color: string }[]>([]);
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'console';
