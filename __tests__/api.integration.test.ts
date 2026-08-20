@@ -152,4 +152,39 @@ describe('API integration', () => {
     expect(data.state.C + data.state.R + data.state.S).toBeCloseTo(1, 6);
     expect(data.total_runs).toBe(1337);
   });
+
+    it('rejects oversized governance requests before reading the body', async () => {
+      const { POST } = await import('../app/api/lex/govern/route');
+      const req = new Request('http://localhost/api/lex/govern', {
+        method: 'POST',
+        headers: { 'content-length': '70001' },
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(413);
+    });
+
+    it('rejects invalid turn values at the HTTP boundary', async () => {
+      const { POST } = await import('../app/api/lex/govern/route');
+      const req = new Request('http://localhost/api/lex/govern', {
+        method: 'POST',
+        body: JSON.stringify({ prompt: 'hello', session_id: 'test-session', turn: 0 }),
+        headers: { 'content-type': 'application/json' },
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining('turn') });
+    });
+
+    it('rejects oversized session identifiers', async () => {
+      const { POST } = await import('../app/api/lex/govern/route');
+      const req = new Request('http://localhost/api/lex/govern', {
+        method: 'POST',
+        body: JSON.stringify({ prompt: 'hello', session_id: 'x'.repeat(129), turn: 1 }),
+        headers: { 'content-type': 'application/json' },
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining('session_id') });
+    });
+    
 });
