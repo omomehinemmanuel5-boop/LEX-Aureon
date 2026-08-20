@@ -14,7 +14,7 @@ import { MAX_PROMPT_CHARS } from '@/lib/schemas';
 import { executeGovern, type GovernRequest, type GovernResponse } from '@/lib/governance_service';
 import type { IdentityMode } from '@/lib/sovereign_kernel';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
-import { validateAndConsumeKey } from '@/lib/api_keys';
+import { consumeApiKey, validateApiKey } from '@/lib/api_keys';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -47,25 +47,77 @@ function getProvidedApiKey(req: Request): string | null {
 function limitedResponse(retryAfter: number, limit: number) {
   return NextResponse.json(
     { error: 'Rate limit exceeded. Please retry later or use a Lex Aureon API key.' },
-    { status: 429, headers: {
-      'Retry-After': String(retryAfter),
-      'X-RateLimit-Limit': String(limit),
-      'X-RateLimit-Remaining': '0',
-    } },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfter),
+        'X-RateLimit-Limit': String(limit),
+        'X-RateLimit-Remaining': '0',
+        'Cache-Control': 'no-store',
+      },
+    },
   );
 }
 
+function admissionUnavailable() {
+  return NextResponse.json(
+    { error: 'Governance admission temporarily unavailable. Please retry shortly.' },
+    {
+      status: 503,
+      headers: {
+        'Retry-After': '5',
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
+}
+
+async function readBodyWithinLimit(req: Request): Promise<string | null> {
+  const reader = req.body?.getReader();
+  if (!reader) return null;
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 export async function POST(req: Request) {
-  const contentLength = Number(req.headers.get('content-length') ?? 0);
-  if (contentLength > MAX_BODY_BYTES) {
+  const contentLengthHeader = req.headers.get('content-length');
+  const contentLength = contentLengthHeader ? Number(contentLengthHeader) : 0;
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
     return NextResponse.json({ error: 'Request body too large' }, { status: 413 });
   }
 
   const providedApiKey = getProvidedApiKey(req);
   let authenticated = false;
   if (providedApiKey) {
-    const keyResult = await validateAndConsumeKey(providedApiKey);
+    const keyResult = await validateApiKey(providedApiKey);
     if (!keyResult.valid) {
+      if (keyResult.error === 'Database unavailable') return admissionUnavailable();
       return NextResponse.json({ error: 'Invalid or exhausted API key' }, { status: 401 });
     }
     authenticated = true;
@@ -77,10 +129,18 @@ export async function POST(req: Request) {
     authenticated ? AUTHENTICATED_LIMIT : ANONYMOUS_LIMIT,
     WINDOW_SECONDS,
   );
-  if (!rate.allowed) return limitedResponse(rate.retryAfter, authenticated ? AUTHENTICATED_LIMIT : ANONYMOUS_LIMIT);
+  if (rate.storageError) return admissionUnavailable();
+  if (!rate.allowed) {
+    return limitedResponse(rate.retryAfter, authenticated ? AUTHENTICATED_LIMIT : ANONYMOUS_LIMIT);
+  }
+
+  const rawBody = await readBodyWithinLimit(req);
+  if (rawBody === null) {
+    return NextResponse.json({ error: 'Request body too large or missing' }, { status: 413 });
+  }
 
   let body: GovernRequest & { identity_mode?: string };
-  try { body = await req.json(); }
+  try { body = JSON.parse(rawBody) as GovernRequest & { identity_mode?: string }; }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
   const { prompt, session_id, turn = 1 } = body;
@@ -90,16 +150,26 @@ export async function POST(req: Request) {
   if (session_id.length > 128) return NextResponse.json({ error: 'session_id too long (max 128 chars)' }, { status: 400 });
   if (!Number.isInteger(turn) || turn < 1 || turn > 100_000) return NextResponse.json({ error: 'turn must be an integer between 1 and 100000' }, { status: 400 });
 
+  if (providedApiKey) {
+    const consumption = await consumeApiKey(providedApiKey);
+    if (!consumption.valid) {
+      if (consumption.error === 'Database unavailable') return admissionUnavailable();
+      return limitedResponse(60, AUTHENTICATED_LIMIT);
+    }
+  }
+
   const identityMode = resolveIdentityMode(body.identity_mode);
   await ensureDB();
 
   try {
     const response: GovernResponse = await executeGovern({ prompt, session_id, turn, identity_mode: identityMode });
-    return NextResponse.json(response, { headers: {
-      'Cache-Control': 'no-store',
-      'X-RateLimit-Limit': String(authenticated ? AUTHENTICATED_LIMIT : ANONYMOUS_LIMIT),
-      'X-RateLimit-Remaining': String(rate.remaining),
-    } });
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'no-store',
+        'X-RateLimit-Limit': String(authenticated ? AUTHENTICATED_LIMIT : ANONYMOUS_LIMIT),
+        'X-RateLimit-Remaining': String(rate.remaining),
+      },
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: publicError('govern.kernel', msg) }, { status: 500 });
