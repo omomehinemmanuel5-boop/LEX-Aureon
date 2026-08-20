@@ -6,8 +6,8 @@ const mockClient = {
   async execute(arg: string | { sql: string; args?: unknown[] }) {
     const sql = typeof arg === 'string' ? arg : arg.sql;
     if (sql === 'SELECT 1') return { rows: [{ '1': 1 }] };
-    if (sql.includes('FROM run_stats'))      return { rows: [{ value: 1337 }] };
-    if (sql.startsWith('UPDATE run_stats'))  return { rows: [{ value: 1338 }] };
+    if (sql.includes('FROM run_stats')) return { rows: [{ value: 1337 }] };
+    if (sql.startsWith('UPDATE run_stats')) return { rows: [{ value: 1338 }] };
     if (sql.includes('FROM praxis_receipts')) return { rows: [] };
     return { rows: [] };
   },
@@ -15,30 +15,28 @@ const mockClient = {
 };
 
 vi.mock('../lib/db', () => ({
-  seedSovereignLaws:             vi.fn(async () => undefined),
-  getTotalRuns:                  vi.fn(async () => 1337),
-  incrementRuns:                 vi.fn(async () => 1338),
-  getClient:                     vi.fn(() => mockClient),
-  db:                            mockClient,
-  runZTrajMigrations:            vi.fn(async () => undefined),
+  seedSovereignLaws: vi.fn(async () => undefined),
+  getTotalRuns: vi.fn(async () => 1337),
+  incrementRuns: vi.fn(async () => 1338),
+  getClient: vi.fn(() => mockClient),
+  db: mockClient,
+  runZTrajMigrations: vi.fn(async () => undefined),
   getAggregateConstitutionalState: vi.fn(async () => ({ C: 0.34, R: 0.33, S: 0.33, M: 0.33 })),
-  initSchema:                    vi.fn(async () => undefined),
+  initSchema: vi.fn(async () => undefined),
 }));
 
 // ── Mock lex_memory — avoids Jina API calls and crypto.subtle in test env ─────
-// The govern route imports embedText, retrieveSimilar, storeMemory, etc.
-// None of those should actually run in a unit/integration test.
 vi.mock('../lib/lex_memory', () => ({
-  embedText:                  vi.fn(async () => new Array(256).fill(0.01)),
-  retrieveSimilar:            vi.fn(async () => []),
-  buildMemoryContext:         vi.fn(() => ''),
-  storeMemory:                vi.fn(async () => undefined),
-  classifyStateLabel:         vi.fn(() => 'STABLE'),
-  ensureLexMemoryTable:       vi.fn(async () => undefined),
-  getConstitutionalCentroid:  vi.fn(async () => null),
-  getSessionCentroid:         vi.fn(async () => null),
-  invalidateCentroidCache:    vi.fn(),
-  pruneEmbeddingCache:        vi.fn(async () => 0),
+  embedText: vi.fn(async () => new Array(256).fill(0.01)),
+  retrieveSimilar: vi.fn(async () => []),
+  buildMemoryContext: vi.fn(() => ''),
+  storeMemory: vi.fn(async () => undefined),
+  classifyStateLabel: vi.fn(() => 'STABLE'),
+  ensureLexMemoryTable: vi.fn(async () => undefined),
+  getConstitutionalCentroid: vi.fn(async () => null),
+  getSessionCentroid: vi.fn(async () => null),
+  invalidateCentroidCache: vi.fn(),
+  pruneEmbeddingCache: vi.fn(async () => 0),
 }));
 
 // ── Mock rate_limit — avoids Turso calls from within the govern route ─────────
@@ -46,6 +44,13 @@ vi.mock('../lib/rate_limit', () => ({
   checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 99, retryAfter: 0 })),
   getClientIp: vi.fn(() => '127.0.0.1'),
   getRateLimitKey: vi.fn((ip: string) => `rate:${ip}`),
+}));
+
+// ── Mock API-key admission so HTTP boundary tests never touch real key storage ─
+vi.mock('../lib/api_keys', () => ({
+  validateApiKey: vi.fn(async () => ({ valid: true, key: undefined })),
+  consumeApiKey: vi.fn(async () => ({ valid: true, key: undefined })),
+  validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: undefined })),
 }));
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -86,9 +91,6 @@ describe('API integration', () => {
     const req = new Request('http://localhost/api/lex/govern', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      // Cap + 1 so this is rejected at validation regardless of the cap value —
-      // otherwise the route accepts it and proceeds to generation, and the test
-      // times out instead of asserting the 400.
       body: JSON.stringify({ prompt: 'a'.repeat(MAX_PROMPT_CHARS + 1), session_id: 's1' }),
     });
     const res = await POST(req);
@@ -124,7 +126,8 @@ describe('API integration', () => {
     const res = await GET(new Request('http://localhost/api/health'));
     expect(res.status).toBe(200);
     const data = await res.json() as {
-      ok: boolean; api: string;
+      ok: boolean;
+      api: string;
       services: { turso: string };
       frontend_contract: { routes: { lex_run: string; govern: string; govern_stream: string } };
       version: string;
@@ -154,38 +157,37 @@ describe('API integration', () => {
     expect(data.total_runs).toBe(1337);
   });
 
-    it('rejects oversized governance requests before reading the body', async () => {
-      const { POST } = await import('../app/api/lex/govern/route');
-      const req = new Request('http://localhost/api/lex/govern', {
-        method: 'POST',
-        headers: { 'content-length': '70001' },
-      });
-      const res = await POST(req);
-      expect(res.status).toBe(413);
+  it('rejects oversized governance requests before reading the body', async () => {
+    const { POST } = await import('../app/api/lex/govern/route');
+    const req = new Request('http://localhost/api/lex/govern', {
+      method: 'POST',
+      headers: { 'content-length': '70001' },
     });
+    const res = await POST(req);
+    expect(res.status).toBe(413);
+  });
 
-    it('rejects invalid turn values at the HTTP boundary', async () => {
-      const { POST } = await import('../app/api/lex/govern/route');
-      const req = new Request('http://localhost/api/lex/govern', {
-        method: 'POST',
-        body: JSON.stringify({ prompt: 'hello', session_id: 'test-session', turn: 0 }),
-        headers: { 'content-type': 'application/json' },
-      });
-      const res = await POST(req);
-      expect(res.status).toBe(400);
-      await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining('turn') });
+  it('rejects invalid turn values at the HTTP boundary', async () => {
+    const { POST } = await import('../app/api/lex/govern/route');
+    const req = new Request('http://localhost/api/lex/govern', {
+      method: 'POST',
+      body: JSON.stringify({ prompt: 'hello', session_id: 'test-session', turn: 0 }),
+      headers: { 'content-type': 'application/json' },
     });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining('turn') });
+  });
 
-    it('rejects oversized session identifiers', async () => {
-      const { POST } = await import('../app/api/lex/govern/route');
-      const req = new Request('http://localhost/api/lex/govern', {
-        method: 'POST',
-        body: JSON.stringify({ prompt: 'hello', session_id: 'x'.repeat(129), turn: 1 }),
-        headers: { 'content-type': 'application/json' },
-      });
-      const res = await POST(req);
-      expect(res.status).toBe(400);
-      await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining('session_id') });
+  it('rejects oversized session identifiers', async () => {
+    const { POST } = await import('../app/api/lex/govern/route');
+    const req = new Request('http://localhost/api/lex/govern', {
+      method: 'POST',
+      body: JSON.stringify({ prompt: 'hello', session_id: 'x'.repeat(129), turn: 1 }),
+      headers: { 'content-type': 'application/json' },
     });
-    
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining('session_id') });
+  });
 });
