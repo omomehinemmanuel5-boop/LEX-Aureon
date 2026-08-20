@@ -292,12 +292,6 @@ export default function Console() {
     setTab('governed');
     addLine('> Starting safety analysis...', '#c9a84c');
     await runStream(p, sessionId);
-    setTimeout(() => {
-      fetch('/api/stats')
-        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-        .then(d => { if (typeof d.runs === 'number') { setTotalRuns(d.runs); setStatsDown(false); } else { setStatsDown(true); } })
-        .catch(() => setStatsDown(true));
-    }, 1500);
   }, [apiCalls, prompt, runStream, sessionId, addLine]);
 
   const loadExample = useCallback((examplePrompt: string) => {
