@@ -43,7 +43,8 @@ vi.mock('../lib/lex_memory', () => ({
 
 // ── Mock rate_limit — avoids Turso calls from within the govern route ─────────
 vi.mock('../lib/rate_limit', () => ({
-  checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 99, reset: 0 })),
+  checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 99, retryAfter: 0 })),
+  getClientIp: vi.fn(() => '127.0.0.1'),
   getRateLimitKey: vi.fn((ip: string) => `rate:${ip}`),
 }));
 
