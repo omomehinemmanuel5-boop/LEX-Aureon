@@ -255,13 +255,6 @@ export default function Console() {
   useEffect(() => { void flushPendingLead(); }, []);
 
   useEffect(() => {
-    fetch('/api/stats')
-      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then(d => { if (typeof d.runs === 'number') { setTotalRuns(d.runs); setStatsDown(false); } else { setStatsDown(true); } })
-      .catch(() => setStatsDown(true));
-  }, []);
-
-  useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('dev_reset') === 'true') {
