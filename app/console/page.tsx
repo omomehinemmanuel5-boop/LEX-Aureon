@@ -553,19 +553,6 @@ export default function Console() {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 pt-4 pb-36 space-y-4">
 
-          {/* ── Global Runs Counter ─────────────────────── */}
-          <div className="rounded-lg border px-4 py-3 flex items-center justify-between" style={{ background: '#070b14', borderColor: '#1a2040' }}>
-            <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full" style={statsDown ? { background: '#64748b' } : { background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
-              <span className="text-xs font-mono uppercase tracking-widest" style={{ color: '#94a3b8' }}>Total governed runs</span>
-            </div>
-            {totalRuns !== null ? (
-              <CountUp value={totalRuns} className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#c9a84c', textShadow: '0 0 12px rgba(201,168,76,0.35)' }} />
-            ) : (
-              <span className="text-xl sm:text-2xl font-bold font-mono tabular-nums" style={{ color: '#94a3b8' }} aria-label={statsDown ? 'Total runs unavailable' : 'Loading total runs'}>{statsDown ? 'offline' : '———'}</span>
-            )}
-          </div>
-
           {/* ── Terminal Input ──────────────────────────── */}
           <div className="rounded-lg border p-4" style={{ background: '#070b14', borderColor: '#1a2040' }}>
             <div className="flex items-center gap-2 mb-3">
