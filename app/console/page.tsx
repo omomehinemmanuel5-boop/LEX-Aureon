@@ -426,7 +426,6 @@ export default function Console() {
   useEffect(() => {
     if (stream.stage !== 'complete' || !stream.complete) return;
     setApiCalls((c) => c + 1);
-    setTotalRuns((t) => (t !== null ? t + 1 : null));
     setPulse(true);
     const id = setTimeout(() => setPulse(false), 2500);
     addLine('> Run complete.', '#64748b');
