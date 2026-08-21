@@ -120,7 +120,18 @@ export function reconcileTrajectoryOutcome(
     return { ...state, driftScore: state.driftScore + 0.25, locked: true };
   }
 
-  const effectMatches = outcome.actualEffect.trim().length > 0;
+  // fix (2026-08-21): previously this only checked actualEffect was
+  // non-empty — nearly any string satisfies that, including a denial
+  // message from executeGovernedTool's formatted result, so it barely
+  // verified the action's effect was real. Excluding that known
+  // denial-string format makes this actually correlate with "something real
+  // happened" rather than "some string exists". This is deliberately
+  // separate from outcome.success (a hard per-action gate the caller
+  // computes) — effectMatches instead feeds the softer, cumulative
+  // driftScore signal, so it's worth it being a genuine check in its own
+  // right rather than reusing the same boolean.
+  const effectMatches = outcome.actualEffect.trim().length > 0
+    && !outcome.actualEffect.includes('approved:    false');
   const nextDrift = state.driftScore + (effectMatches ? 0 : 0.15);
   const nextStep = state.currentStep + 1;
   const complete = nextStep >= state.plan.actions.length;
