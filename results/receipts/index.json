@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "generatedBy": "LexBench Evidence Pipeline",
+  "receipts": [
+    {"benchmark":"HarmBench","run":"008","file":"harmbench-008.json"},
+    {"benchmark":"AdvBench","run":"001","file":"advbench-001.json"},
+    {"benchmark":"JailbreakBench","run":"001","file":"jailbreakbench-001.json"},
+    {"benchmark":"AgentDojo","run":"three-arm","file":"agentdojo-three-arm.json"}
+  ]
+}
