@@ -1,0 +1,29 @@
+name: LexBench Receipts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'data/lexbench-v2.json'
+      - 'lib/lexbench/**'
+      - 'scripts/lexbench/**'
+      - '.github/workflows/lexbench-receipts.yml'
+
+jobs:
+  receipts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: node scripts/lexbench/generate-receipts.ts
+        env:
+          GIT_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexbench-receipts-${{ github.run_id }}
+          path: results/receipts
