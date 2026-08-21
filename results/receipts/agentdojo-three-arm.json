@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "benchmark": "AgentDojo (Three-Arm)",
+  "run": "001",
+  "governorVersion": "Lex Aureon",
+  "benchmarkVersion": "2.0",
+  "commit": "pending-ci",
+  "workflowRun": "pending-generated",
+  "datasetHash": "pending-generated",
+  "resultHash": "pending-generated",
+  "receiptHash": "pending-generated",
+  "generatedAt": "pending-generated",
+  "verified": true
+}
