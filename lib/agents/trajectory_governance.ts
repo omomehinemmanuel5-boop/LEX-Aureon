@@ -134,20 +134,19 @@ export function reconcileTrajectoryOutcome(
     && !outcome.actualEffect.includes('approved:    false');
   const nextDrift = state.driftScore + (effectMatches ? 0 : 0.15);
   const nextStep = state.currentStep + 1;
-  const complete = nextStep >= state.plan.actions.length;
 
   return {
     ...state,
     currentStep: nextStep,
     completed: [...state.completed, outcome.actionId],
     driftScore: nextDrift,
-    // fix (2026-08-21): `complete` used to be computed and then spread back
-    // in with a locked value identical to the one already set two lines
-    // above — dead code that implied distinct end-of-plan behavior without
-    // providing any. A finished plan should not silently accept further
-    // actions; locking explicitly here is defense-in-depth rather than
-    // relying only on the incidental out-of-bounds `expected` check in
-    // authorizeTrajectoryAction.
-    locked: complete || !outcome.success || nextDrift >= 1,
+    // `locked` intentionally signals "an outcome violated the plan," not
+    // "no more steps remain" — a plan that finishes all its steps
+    // successfully stays unlocked (see trajectory-governance.spec.ts:
+    // "preserves the ordered trajectory across a successful multi-step
+    // run"). Actions after completion are independently denied by the
+    // out-of-bounds `expected` check in authorizeTrajectoryAction, so no
+    // separate completion-locking is needed here.
+    locked: !outcome.success || nextDrift >= 1,
   };
 }
