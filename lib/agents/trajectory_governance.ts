@@ -130,7 +130,13 @@ export function reconcileTrajectoryOutcome(
     currentStep: nextStep,
     completed: [...state.completed, outcome.actionId],
     driftScore: nextDrift,
-    locked: !outcome.success || nextDrift >= 1,
-    ...(complete ? { locked: !outcome.success || nextDrift >= 1 } : {}),
+    // fix (2026-08-21): `complete` used to be computed and then spread back
+    // in with a locked value identical to the one already set two lines
+    // above — dead code that implied distinct end-of-plan behavior without
+    // providing any. A finished plan should not silently accept further
+    // actions; locking explicitly here is defense-in-depth rather than
+    // relying only on the incidental out-of-bounds `expected` check in
+    // authorizeTrajectoryAction.
+    locked: complete || !outcome.success || nextDrift >= 1,
   };
 }
