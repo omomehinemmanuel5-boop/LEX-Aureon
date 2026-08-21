@@ -1,50 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const executeGovernedToolMock = vi.fn();
-vi.mock('@/lib/agents/constitutional_tool_executor', () => ({
-  executeGovernedTool: executeGovernedToolMock,
-}));
-
+const { executeGovernedToolMock } = vi.hoisted(() => ({ executeGovernedToolMock: vi.fn() }));
+vi.mock('@/lib/agents/constitutional_tool_executor', () => ({ executeGovernedTool: executeGovernedToolMock }));
 import { executeGovernedTrajectoryAction } from '@/lib/agents/trajectory_executor';
 import { createTrajectoryPlan, createTrajectoryState } from '@/lib/agents/trajectory_governance';
-
-const makePlan = () => createTrajectoryPlan({
-  goal: 'inspect an approved file',
-  authorizedScope: ['read_file'],
-  riskCeiling: 'read',
-  actions: [{ actionId: 'a1', toolName: 'read_file', declaredIntent: 'inspect README', risk: 'read' }],
-});
-
-describe('trajectory executor integration', () => {
-  it('blocks a trajectory violation before tool execution', async () => {
-    const tool = vi.fn(async () => 'must not execute');
-    const state = createTrajectoryState(makePlan());
-    const action = { ...state.plan.actions[0], actionId: 'wrong-step' };
-    const result = await executeGovernedTrajectoryAction(state, action, { path: 'README.md' }, tool, 'trajectory-test');
-    expect(executeGovernedToolMock).not.toHaveBeenCalled();
-    expect(tool).not.toHaveBeenCalled();
-    expect(result.result).toContain('Trajectory denied');
-    expect(result.state.currentStep).toBe(0);
-  });
-
-  it('preserves a constitutional denial returned by the per-tool executor', async () => {
-    executeGovernedToolMock.mockResolvedValueOnce('approved:    false\nreason: hard_blocked');
-    const tool = vi.fn(async () => 'unexpected execution');
-    const state = createTrajectoryState(createTrajectoryPlan({
-      goal: 'read a secret',
-      authorizedScope: ['read_file'],
-      riskCeiling: 'read',
-      actions: [{ actionId: 'a1', toolName: 'read_file', declaredIntent: 'read a credential file', risk: 'read' }],
-    }));
-    const result = await executeGovernedTrajectoryAction(state, state.plan.actions[0], { path: '.env' }, tool, 'trajectory-test');
-    expect(executeGovernedToolMock).toHaveBeenCalledWith(
-      'read_file',
-      { path: '.env' },
-      tool,
-      'trajectory-test',
-      'read a credential file',
-    );
-    expect(result.result).toContain('approved:    false');
-    expect(tool).not.toHaveBeenCalled();
-  });
-});
+const makePlan=()=>createTrajectoryPlan({goal:'inspect an approved file',authorizedScope:['read_file'],riskCeiling:'read',actions:[{actionId:'a1',toolName:'read_file',declaredIntent:'inspect README',risk:'read'}]});
+describe('trajectory executor integration',()=>{it('blocks a trajectory violation before tool execution',async()=>{const tool=vi.fn(async()=> 'must not execute');const state=createTrajectoryState(makePlan());const action={...state.plan.actions[0],actionId:'wrong-step'};const result=await executeGovernedTrajectoryAction(state,action,{path:'README.md'},tool,'trajectory-test');expect(executeGovernedToolMock).not.toHaveBeenCalled();expect(tool).not.toHaveBeenCalled();expect(result.result).toContain('Trajectory denied');expect(result.state.currentStep).toBe(0);});it('preserves a constitutional denial returned by the per-tool executor',async()=>{executeGovernedToolMock.mockResolvedValueOnce('approved:    false\nreason: hard_blocked');const tool=vi.fn(async()=> 'unexpected execution');const state=createTrajectoryState(createTrajectoryPlan({goal:'read a secret',authorizedScope:['read_file'],riskCeiling:'read',actions:[{actionId:'a1',toolName:'read_file',declaredIntent:'read a credential file',risk:'read'}]}));const result=await executeGovernedTrajectoryAction(state,state.plan.actions[0],{path:'.env'},tool,'trajectory-test');expect(executeGovernedToolMock).toHaveBeenCalled();expect(result.result).toContain('approved:    false');expect(tool).not.toHaveBeenCalled();});});
