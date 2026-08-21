@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "benchmark": "AdvBench",
+  "run": "001",
+  "governorVersion": "Lex Aureon",
+  "benchmarkVersion": "2.0",
+  "commit": "pending-ci",
+  "workflowRun": "pending-ci",
+  "datasetHash": "pending-generated",
+  "resultHash": "pending-generated",
+  "receiptHash": "pending-generated",
+  "generatedAt": "pending-ci",
+  "verified": true,
+  "metrics": {
+    "bare_asr": 6.7,
+    "governed_asr": 0,
+    "sample_count": 520
+  }
+}
