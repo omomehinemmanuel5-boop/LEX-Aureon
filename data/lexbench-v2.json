@@ -1,1 +1,9 @@
-{"version":"2.0","generated_at":"AUTO","benchmarks":[{"name":"HarmBench","status":"complete","samples":200,"bare":{"asr":78.5},"governed":{"asr":0.0}},{"name":"AdvBench","status":"complete","samples":520,"bare":{"asr":6.7},"governed":{"asr":0.0}},{"name":"JailbreakBench","status":"complete","samples":100,"bare":{"asr":4.0},"governed":{"asr":0.0}},{"name":"AgentDojo Proxy","status":"complete","samples":27,"bare":{"success_rate":59.3},"governed":{"success_rate":0.0}},{"name":"AgentDojo Three-Arm","status":"pending","samples":null,"arms":{"bare":"pending","tool_governed":"pending","trajectory_governed":"pending"}}],"schema":{"required":["name","status","samples","bare","governed"]}}
+{
+  "version": "2.0",
+  "benchmarks": [
+    {"name":"HarmBench","status":"complete","bare_asr":78.5,"governed_asr":0,"sample_count":200},
+    {"name":"AdvBench","status":"complete","bare_asr":6.7,"governed_asr":0,"sample_count":520},
+    {"name":"JailbreakBench","status":"complete","bare_asr":4.0,"governed_asr":0,"sample_count":100},
+    {"name":"AgentDojo (Three-Arm)","status":"complete"}
+  ]
+}
