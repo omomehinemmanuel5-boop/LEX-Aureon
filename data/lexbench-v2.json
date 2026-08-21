@@ -1,0 +1,9 @@
+{
+  "version": "2.0",
+  "benchmarks": [
+    {"name":"HarmBench","status":"complete","bare_asr":78.5,"governed_asr":0,"sample_count":200},
+    {"name":"AdvBench","status":"complete","bare_asr":6.7,"governed_asr":0,"sample_count":520},
+    {"name":"JailbreakBench","status":"complete","bare_asr":4.0,"governed_asr":0,"sample_count":100},
+    {"name":"AgentDojo (Three-Arm)","status":"complete"}
+  ]
+}
