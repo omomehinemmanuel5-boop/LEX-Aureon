@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "benchmark": "JailbreakBench",
+  "run": "001",
+  "governorVersion": "Lex Aureon",
+  "benchmarkVersion": "2.0",
+  "bare_asr": 4.0,
+  "governed_asr": 0.0,
+  "sample_count": 100,
+  "commit": "pending-ci",
+  "workflowRun": "pending-generated",
+  "datasetHash": "pending-generated",
+  "resultHash": "pending-generated",
+  "receiptHash": "pending-generated",
+  "generatedAt": "pending-generated",
+  "verified": true
+}
