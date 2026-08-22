@@ -119,6 +119,9 @@ export default function BenchmarksPage() {
               <Link href="/console" className="text-amber-500 hover:text-amber-400 transition-colors">
                 Live console →
               </Link>
+              <Link href="/verify" className="text-amber-500 hover:text-amber-400 transition-colors">
+                Verify a receipt →
+              </Link>
             </div>
           </div>
         </div>
