@@ -15,7 +15,8 @@ import { describe, expect, it } from 'vitest';
         expect(step.C).toBeGreaterThanOrEqual(result.tau_cbf - EPSILON);
         expect(step.R).toBeGreaterThanOrEqual(result.tau_cbf - EPSILON);
         expect(step.S).toBeGreaterThanOrEqual(result.tau_cbf - EPSILON);
-        expect(step.C + step.R + step.S).toBeCloseTo(1, 6);
+        // Trajectory coordinates are intentionally serialized to six decimals.
+      expect(step.C + step.R + step.S).toBeCloseTo(1, 5);
         expect(Number.isFinite(step.M)).toBe(true);
         expect(Number.isFinite(step.lyapunov_V)).toBe(true);
       }
