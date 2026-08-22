@@ -306,6 +306,16 @@ export async function writeKernelReceipt(
 
   const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
 
+  // fix (2026-08-22): what the audit tab (app/audit/page.tsx) actually
+  // means by "the governor intervened" -- previously this column only ever
+  // reflected safety_projection_triggered (see this function's header note:
+  // "rare in healthy sessions"), so the much more common async governor
+  // correction and slow-drip accumulator never showed up here even though
+  // they're real governor activity, already correctly categorized two
+  // blocks below for governor_log. Computed once, used for both.
+  const governorIntervened =
+    result.receipt.safety_projection_triggered || asyncGovEffort > 0 || slowDrip > 0;
+
   // ── Write receipt (SHA-256 proof + HMAC signature) — one retry ────────────
   let receiptPersisted = false;
   for (let attempt = 0; attempt < 2 && !receiptPersisted; attempt++) {
