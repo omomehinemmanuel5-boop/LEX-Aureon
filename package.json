@@ -39,7 +39,8 @@
     "humaneval": "npx tsx scripts/humaneval/run.ts",
     "humaneval:score": "npx tsx scripts/humaneval/score.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "verify": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
