@@ -24,7 +24,7 @@ export default function GovernanceStateBar(props: GovernanceStateBarProps) {
         {items.map(([label, value]) => (
           <div key={String(label)} className="rounded-lg border p-3">
             <div className="text-xs opacity-70">{label}</div>
-            <div className="text-lg font-bold">{Number(value).toFixed(1)}%</div>
+            <div className="text-lg font-bold">{(Number(value) * 100).toFixed(1)}%</div>
           </div>
         ))}
       </div>
