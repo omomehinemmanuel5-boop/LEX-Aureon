@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import LiveGovernanceState from '@/components/LiveGovernanceState';
-import TimelineReplayControls from '@/components/TimelineReplayControls';
+import ObservabilityTimeline from '@/components/ObservabilityTimeline';
 
 const LyapunovVisualizer = dynamic(() => import('@/components/LyapunovVisualizer'), {
   ssr: false,
