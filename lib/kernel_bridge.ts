@@ -249,7 +249,6 @@ export async function writeKernelReceipt(
   const asyncGovEffort  = result.governor_sensing.correction_magnitude ?? 0;
   const cbfProjEffort   = result.projection_magnitude ?? 0;
   const governorEffort  = Math.max(asyncGovEffort, cbfProjEffort);
-
   // ── crs_method: Python override when present, else TS kernel string ──────
   // The persisted tag now tells auditors which engine produced the authoritative
   // CRS this turn. Python success → 'python-cbf|...'; fallback/stream/refusal →
