@@ -22,6 +22,7 @@ export interface ReceiptRow {
   governed_score: number;
   delta_pp: number;
   run_date: string;
+  n_total: number;
   created_at: string;
 }
 
