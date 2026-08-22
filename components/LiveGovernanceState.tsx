@@ -8,12 +8,13 @@
     total_runs: number;
     };
 
-    export default function LiveGovernanceState() {
+    export default function LiveGovernanceState({ paused = false }: { paused?: boolean }) {
     const [data, setData] = useState<LiveStateResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
 
     useEffect(() => {
+      if (paused) return;
       let mounted = true;
       const load = async () => {
         try {
@@ -30,7 +31,7 @@
       load();
       const interval = setInterval(load, 60_000);
       return () => { mounted = false; clearInterval(interval); };
-    }, []);
+    }, [paused]);
 
     if (loading && !data) {
       return <div className="rounded-xl border p-4 bg-background/60 text-sm opacity-70">Syncing live constitutional state…</div>;
@@ -48,6 +49,13 @@
     // names are mapped to GovernanceStateBar's descriptive prop names.
     // governorMode is intentionally omitted: /api/live-state does not expose it,
     // and this surface must not invent a mode or fetch an unrelated value.
-    return <GovernanceStateBar continuity={state.C} reciprocity={state.R} sovereignty={state.S} stabilityMargin={state.M} />;
+    return (
+      <div>
+        {paused && (
+          <div className="text-xs opacity-60 mb-2">Paused — showing last fetched state, not polling.</div>
+        )}
+        <GovernanceStateBar continuity={state.C} reciprocity={state.R} sovereignty={state.S} stabilityMargin={state.M} />
+      </div>
+    );
     }
     
