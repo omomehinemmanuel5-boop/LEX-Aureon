@@ -1,29 +1,33 @@
-name: LexBench Receipts
+# DEPRECATED (see commit fa414bb280 / the passports-vs-single-source-of-truth
+# fix on 2026-08-22): this workflow generated results/receipts/*.json from
+# data/lexbench-v2.json, a hand-typed static manifest kept separately from
+# benchmark_results -- the project's actual single source of truth (see
+# lib/benchmark_results.ts's header note: "No numbers are hardcoded anywhere
+# else"). It also never committed its output back to the repo (only
+# uploaded as a build artifact), so the checked-in results/receipts/*.json
+# files were permanently stuck at "pending-ci" / "pending-generated"
+# placeholders with a hardcoded verified:true next to them regardless.
+#
+# The passport/verify UI (app/verify/page.tsx,
+# components/lexbench/ConstitutionalPassportGrid.tsx) now reads GET
+# /api/benchmarks directly, same as the /benchmarks dashboard. This
+# workflow, scripts/lexbench/generate-receipts.ts, data/lexbench-v2.json,
+# and results/receipts/*.json are no longer part of that path. Left in the
+# repo rather than deleted (no delete capability from the agent that made
+# this fix) -- push trigger removed below so this can't fire on its own and
+# reintroduce confusion; workflow_dispatch kept in case someone wants to
+# inspect what it used to do.
+name: LexBench Receipts (deprecated)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'data/lexbench-v2.json'
-      - 'lib/lexbench/**'
-      - 'scripts/lexbench/**'
-      - '.github/workflows/lexbench-receipts.yml'
 
 jobs:
   receipts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: node scripts/lexbench/generate-receipts.ts
-        env:
-          GIT_SHA: ${{ github.sha }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lexbench-receipts-${{ github.run_id }}
-          path: results/receipts
+      - run: |
+          echo "This workflow is deprecated and no longer wired to anything."
+          echo "See the header comment in this file for why."
+          echo "The live passport/verify UI reads GET /api/benchmarks instead."
