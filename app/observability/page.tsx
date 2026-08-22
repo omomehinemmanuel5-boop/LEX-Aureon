@@ -102,7 +102,7 @@ export default function ObservabilityPage() {
 
         <section className="space-y-4">
           <LiveGovernanceState />
-          <TimelineReplayControls mode={replayMode} onModeChange={setReplayMode} />
+          <ObservabilityTimeline sessionId={sessionId} mode={replayMode} onModeChange={setReplayMode} />
         </section>
 
         {/* Key Metrics */}
