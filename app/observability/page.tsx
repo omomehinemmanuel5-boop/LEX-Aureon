@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import LiveGovernanceState from '@/components/LiveGovernanceState';
+import TimelineReplayControls from '@/components/TimelineReplayControls';
 
 const LyapunovVisualizer = dynamic(() => import('@/components/LyapunovVisualizer'), {
   ssr: false,
@@ -96,6 +98,11 @@ export default function ObservabilityPage() {
             <div className="text-gray-400">Loading metrics from audit_log...</div>
           </div>
         )}
+
+        <section className="space-y-4">
+          <LiveGovernanceState />
+          <TimelineReplayControls />
+        </section>
 
         {/* Key Metrics */}
         {metrics && (

@@ -5,7 +5,6 @@ export interface GovernanceStateBarProps {
   reciprocity: number;
   sovereignty: number;
   stabilityMargin: number;
-  governorMode: string;
 }
 
 export default function GovernanceStateBar(props: GovernanceStateBarProps) {
@@ -20,7 +19,6 @@ export default function GovernanceStateBar(props: GovernanceStateBarProps) {
     <div className="rounded-xl border p-4 bg-background/60 backdrop-blur">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold">Live Constitutional State</h3>
-        <span className="text-xs px-2 py-1 rounded-full border">{props.governorMode}</span>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {items.map(([label, value]) => (
