@@ -44,7 +44,7 @@ export default function ObservabilityPage() {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionId, setSessionId] = useState('');
-  const [replayMode, setReplayMode] = useState<'live' | 'pause'>('live');
+  const [replayMode, setReplayMode] = useState<'idle' | 'auto'>('idle');
 
   useEffect(() => {
     const fetchMetrics = async () => {
