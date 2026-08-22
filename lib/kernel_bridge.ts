@@ -334,7 +334,7 @@ export async function writeKernelReceipt(
           mBefore,
           result.M,
           `kernel-${result.health_band.toLowerCase()}`,
-          result.receipt.safety_projection_triggered ? 1 : 0,
+          governorIntervened ? 1 : 0,
           slowDrip,
           governorEffort,
           sigmaViol,
