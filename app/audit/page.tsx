@@ -111,6 +111,13 @@ export default async function AuditIndexPage() {
             independently re-verified after the fact. Below are the most recent receipts. Refreshed
             periodically, not real-time.
           </p>
+          <p className="text-slate-600 text-[11px] font-mono max-w-2xl leading-relaxed mt-3">
+            Note (2026-08-22): the GOVERNED/PASS classification now reflects the async governor
+            correction and slow-drip accumulator in addition to the hard CBF-floor projection —
+            previously it only reflected the latter. This applies to receipts written from this date
+            forward; older rows in this log were classified under the narrower definition and have
+            not been reclassified.
+          </p>
         </div>
 
         {receipts === null ? (
