@@ -27,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: No deprecated static receipt sources
+        run: bash scripts/ci/check-no-static-receipts.sh
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
