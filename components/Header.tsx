@@ -43,6 +43,12 @@ export default function Header({ apiCalls }: { apiCalls: number }) {
             >
               About
             </Link>
+            <Link
+              href="/observability"
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors hidden sm:block"
+            >
+              Observability
+            </Link>
             {user ? (
               <div className="text-right">
                 <div className="flex items-center gap-2 justify-end mb-1">
