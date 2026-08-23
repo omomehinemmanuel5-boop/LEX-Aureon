@@ -306,15 +306,20 @@ export async function writeKernelReceipt(
 
   const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
 
-  // fix (2026-08-22): what the audit tab (app/audit/page.tsx) actually
-  // means by "the governor intervened" -- previously this column only ever
-  // reflected safety_projection_triggered (see this function's header note:
-  // "rare in healthy sessions"), so the much more common async governor
-  // correction and slow-drip accumulator never showed up here even though
-  // they're real governor activity, already correctly categorized two
-  // blocks below for governor_log. Computed once, used for both.
-  const governorIntervened =
-    result.receipt.safety_projection_triggered || asyncGovEffort > 0 || slowDrip > 0;
+  // fix (2026-08-22): single source for both intervention columns below.
+  // Previously governorIntervened (praxis_receipts.intervention, a bool) and
+  // the governor_log.intervention category string were two SEPARATE
+  // expressions over the same three facts -- they happened to agree today
+  // because I wrote both by hand in the same sitting, but nothing enforced
+  // that. Deriving the bool FROM the category instead of independently
+  // means they structurally cannot drift apart on a future edit that
+  // touches one and not the other.
+  const interventionCategory: 'cbf_projection' | 'slow_drip_accumulator' | 'async_governor' | 'none' =
+    result.receipt.safety_projection_triggered ? 'cbf_projection'
+      : slowDrip ? 'slow_drip_accumulator'
+      : asyncGovEffort > 0 ? 'async_governor'
+      : 'none';
+  const governorIntervened = interventionCategory !== 'none';
 
   // ── Write receipt (SHA-256 proof + HMAC signature) — one retry ────────────
   let receiptPersisted = false;
