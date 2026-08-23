@@ -7,19 +7,12 @@
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { NextRequest, NextResponse } from 'next/server';
+import { MetricsResponseSchema } from '@/lib/observability_contract';
 
 export const runtime  = 'nodejs';
 export const revalidate = 30;
 
 interface AgentStat {
-  calls: number;
-  avg_duration_ms: number;
-  error_count: number;
-  error_rate: number;
-  last_call: string | null;
-}
-
-interface MetricsResponse {
   timestamp:       string;
   window_minutes:  number;
   total_governed:  number;
@@ -40,6 +33,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = req.headers.get('x-request-id') ?? `req-${Date.now()}`;
   try {
     const windowMinutes = 60;
+    const sessionId = new URL(req.url).searchParams.get('session_id')?.trim() ?? '';
+    if (sessionId.length > 128) return NextResponse.json({ error: 'session_id is too long', request_id: requestId }, { status: 400 });
+    const scope = sessionId ? ' AND session_id = ?' : '';
+    const scopeArgs = sessionId ? [sessionId] : [];
     const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
 
     const [systemResult, modeResult] = await Promise.all([
@@ -54,8 +51,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 SUM(CASE WHEN m_after >= 0.15 AND m_after < 0.25       THEN 1 ELSE 0 END) AS alert_count,
                 SUM(CASE WHEN m_after >= 0.08 AND m_after < 0.15       THEN 1 ELSE 0 END) AS stressed_count,
                 SUM(CASE WHEN m_after  < 0.08                          THEN 1 ELSE 0 END) AS critical_count
-              FROM praxis_receipts WHERE created_at > ?`,
-        args: [cutoff],
+              FROM praxis_receipts WHERE created_at > ?${scope}`,
+        args: [cutoff, ...scopeArgs],
       }),
       db.execute({
         sql: `SELECT COALESCE(governor_mode,'unknown') AS mode,
@@ -105,6 +102,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       timestamp:      new Date().toISOString(),
       window_minutes: windowMinutes,
       total_governed: totalCalls,
+      session_id: sessionId || null,
       agents,
       system: {
         total_calls:         totalCalls,
@@ -124,7 +122,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     };
 
     logger.info('observability.metrics', 'metrics served', { total_calls: totalCalls, health: healthStatus });
-    return NextResponse.json(response, { headers: { 'x-request-id': requestId } });
+    const validated = MetricsResponseSchema.parse(response);
+    return NextResponse.json(validated, { headers: { 'x-request-id': requestId, 'Cache-Control': 'private, max-age=15, stale-while-revalidate=15' } });
 
   } catch (error) {
     logger.error('observability.metrics', 'failed', { error: String(error) });
