@@ -6,8 +6,6 @@ import ObservabilityTimeline from '@/components/ObservabilityTimeline';
 import type { MetricsResponse } from '@/lib/observability_contract';
 const LyapunovVisualizer = dynamic(() => import('@/components/LyapunovVisualizer'), { ssr: false, loading: () => <div className="h-72 rounded-xl bg-slate-900/40 animate-pulse" /> });
 const G = { gold: '#c9a84c', navy: '#07070d', surface: '#0f1017', border: '#1a2030' };
-interface AgentStat { calls: number; avg_duration_ms: number; error_count: number; error_rate: number; last_call: string | null; }
-interface MetricsResponse { timestamp: string; window_minutes: number; agents: Record<string, AgentStat>; system: { total_calls: number; total_interventions: number; intervention_rate: number; avg_m_before: number; avg_m_after: number; avg_governor_effort: number; }; health_distribution: { OPTIMAL: number; ALERT: number; STRESSED: number; CRITICAL: number }; health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL'; }
 const HEALTH_COLOR: Record<string, string> = { OPTIMAL: '#00e5a0', ALERT: '#f7931a', STRESSED: '#ff6b35', CRITICAL: '#ff3b30' };
 export default function ObservabilityPage() {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null); const [loading, setLoading] = useState(true);
