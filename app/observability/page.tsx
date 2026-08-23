@@ -1,197 +1,31 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import LiveGovernanceState from '@/components/LiveGovernanceState';
 import ObservabilityTimeline from '@/components/ObservabilityTimeline';
-
-const LyapunovVisualizer = dynamic(() => import('@/components/LyapunovVisualizer'), {
-  ssr: false,
-  loading: () => <div className="h-96 bg-slate-900/40 rounded-xl animate-pulse" />,
-});
-
+const LyapunovVisualizer = dynamic(() => import('@/components/LyapunovVisualizer'), { ssr: false, loading: () => <div className="h-72 rounded-xl bg-slate-900/40 animate-pulse" /> });
 const G = { gold: '#c9a84c', navy: '#07070d', surface: '#0f1017', border: '#1a2030' };
-
-// Shape matches /api/observability/metrics response exactly
-interface AgentStat {
-  calls: number;
-  avg_duration_ms: number;
-  error_count: number;
-  error_rate: number;
-  last_call: string | null;
-}
-
-interface MetricsResponse {
-  timestamp: string;
-  window_minutes: number;
-  agents: Record<string, AgentStat>;
-  system: {
-    total_calls: number;
-    total_errors: number;
-    global_error_rate: number;
-    avg_pipeline_duration_ms: number;
-  };
-  health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
-}
-
-const HEALTH_COLOR: Record<string, string> = {
-  OPTIMAL: '#00e5a0',
-  ALERT: '#f7931a',
-  STRESSED: '#ff6b35',
-  CRITICAL: '#ff3b30',
-};
-
+interface AgentStat { calls: number; avg_duration_ms: number; error_count: number; error_rate: number; last_call: string | null; }
+interface MetricsResponse { timestamp: string; window_minutes: number; agents: Record<string, AgentStat>; system: { total_calls: number; total_interventions: number; intervention_rate: number; avg_m_before: number; avg_m_after: number; avg_governor_effort: number; }; health_distribution: { OPTIMAL: number; ALERT: number; STRESSED: number; CRITICAL: number }; health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL'; }
+const HEALTH_COLOR: Record<string, string> = { OPTIMAL: '#00e5a0', ALERT: '#f7931a', STRESSED: '#ff6b35', CRITICAL: '#ff3b30' };
 export default function ObservabilityPage() {
-  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [sessionId, setSessionId] = useState('');
+  const [metrics, setMetrics] = useState<MetricsResponse | null>(null); const [loading, setLoading] = useState(true);
+  const [metricsError, setMetricsError] = useState(false); const [sessionId, setSessionId] = useState('');
   const [replayMode, setReplayMode] = useState<'idle' | 'auto'>('idle');
-
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      try {
-        const res = await fetch('/api/observability/metrics');
-        if (res.ok) {
-          const data = await res.json() as MetricsResponse;
-          setMetrics(data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch metrics:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMetrics();
-    // fix (2026-07-13) — READ EXHAUSTION: /api/observability/metrics sets
-    // `export const revalidate = 30` (30s intent) but no response-level
-    // Cache-Control header, so a 5s client poll was still forcing a fresh
-    // Turso read on nearly every tick (see HeroTicker.tsx's fix note for
-    // the full diagnosis across all six components found this way).
-    // Matched to the route's own 30s revalidate intent.
-    const interval = setInterval(fetchMetrics, 30_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const agentList = metrics
-    ? Object.entries(metrics.agents).map(([name, stat]) => ({ name, ...stat }))
-    : [];
-
-  return (
-    <div className="min-h-screen" style={{ background: G.navy, color: '#c4cfe0' }}>
-      {/* Header */}
-      <div style={{ background: G.surface, borderBottom: `1px solid ${G.border}` }}>
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div>
-            <span style={{ fontFamily: 'monospace', fontSize: 10, letterSpacing: '0.15em', color: G.gold }}>
-              LEX AUREON
-            </span>
-            <h1 className="text-white font-bold text-2xl mt-1">Deep Observability</h1>
-            <p className="text-sm text-gray-400 mt-2">Real-time pipeline tracing and performance metrics</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-
-        {/* Loading state */}
-        {loading && (
-          <div className="rounded-xl p-8 text-center" style={{ background: G.surface, border: `1px solid ${G.border}` }}>
-            <div className="text-gray-400">Loading metrics from audit_log...</div>
-          </div>
-        )}
-
-        <section className="space-y-4">
-          <LiveGovernanceState />
-          <ObservabilityTimeline sessionId={sessionId} mode={replayMode} onModeChange={setReplayMode} />
-        </section>
-
-        {/* Key Metrics */}
-        {metrics && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: 'Total Calls', value: metrics.system.total_calls, color: '#4b8fff' },
-              { label: 'Avg Latency', value: `${metrics.system.avg_pipeline_duration_ms}ms`, color: G.gold },
-              { label: 'Error Rate', value: `${(metrics.system.global_error_rate * 100).toFixed(1)}%`, color: '#f7931a' },
-              { label: 'Health', value: metrics.health_status, color: HEALTH_COLOR[metrics.health_status] ?? G.gold },
-            ].map(metric => (
-              <div key={metric.label} className="rounded-xl p-4" style={{ background: G.surface, border: `1px solid ${G.border}` }}>
-                <div style={{ fontFamily: 'monospace', fontSize: 9, letterSpacing: '0.15em', color: '#4a5870', textTransform: 'uppercase', marginBottom: 4 }}>
-                  {metric.label}
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: metric.color, fontFamily: 'monospace' }}>
-                  {metric.value}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Lyapunov Trajectory */}
-        <div>
-          <h2 className="text-lg font-bold text-white mb-4">Constitutional State Trajectory</h2>
-          <LyapunovVisualizer sessionId={sessionId || undefined} height={400} />
-        </div>
-
-        {/* Agent Performance */}
-        {agentList.length > 0 && (
-          <div className="rounded-xl p-6" style={{ background: G.surface, border: `1px solid ${G.border}` }}>
-            <h2 className="text-lg font-bold text-white mb-4">Agent Performance</h2>
-            <div className="space-y-3">
-              {agentList.map(agent => (
-                <div key={agent.name} className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
-                  <div>
-                    <div className="font-mono font-bold text-white">{agent.name}</div>
-                    <div className="text-xs text-gray-400">{agent.calls} executions</div>
-                  </div>
-                  <div className="text-right">
-                    <div style={{ color: G.gold }} className="font-mono font-bold">
-                      {agent.avg_duration_ms}ms
-                    </div>
-                    <div className="text-xs text-gray-400">avg latency</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Session Filter */}
-        <div className="rounded-xl p-6" style={{ background: G.surface, border: `1px solid ${G.border}` }}>
-          <h2 className="text-lg font-bold text-white mb-4">Filter by Session</h2>
-          <input
-            type="text"
-            placeholder="Enter session ID (optional)"
-            value={sessionId}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSessionId(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg text-white"
-            style={{ background: 'rgba(255, 255, 255, 0.05)', border: `1px solid ${G.border}` }}
-          />
-          <p className="text-xs text-gray-400 mt-2">Leave empty to see all sessions</p>
-        </div>
-
-        {/* Documentation */}
-        <div className="rounded-xl p-6" style={{ background: G.surface, border: `1px solid ${G.border}` }}>
-          <h2 className="text-lg font-bold text-white mb-4">About Deep Observability</h2>
-          <div className="space-y-3 text-sm text-gray-300">
-            <p>
-              Lex Aureon&apos;s 10-agent pipeline is instrumented with OpenTelemetry for deep
-              observability. Every agent&apos;s execution is traced, including:
-            </p>
-            <ul className="list-disc list-inside space-y-2 ml-2">
-              <li>Agent initialization and setup</li>
-              <li>Input processing and embedding</li>
-              <li>Constitutional state measurement</li>
-              <li>Decision points and interventions</li>
-              <li>Output validation and projection</li>
-              <li>Performance metrics and latency</li>
-            </ul>
-            <p className="mt-4">
-              Traces are exported to OpenTelemetry-compatible backends including Arize Phoenix,
-              LangSmith, Datadog, and New Relic.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const fetchMetrics = useCallback(async () => { setMetricsError(false); try { const res = await fetch('/api/observability/metrics', { cache: 'no-store' }); if (!res.ok) throw new Error('metrics request failed'); setMetrics(await res.json() as MetricsResponse); } catch (err) { console.error('Failed to fetch metrics:', err); setMetricsError(true); } finally { setLoading(false); } }, []);
+  useEffect(() => { void fetchMetrics(); const interval = setInterval(() => void fetchMetrics(), 30000); return () => clearInterval(interval); }, [fetchMetrics]);
+  const agentList = metrics ? Object.entries(metrics.agents).map(([name, stat]) => ({ name, ...stat })) : []; const health = metrics?.health_status;
+  const updatedAt = metrics ? new Date(metrics.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+  return <div className="min-h-screen" style={{ background: G.navy, color: '#c4cfe0' }}>
+    <header style={{ background: G.surface, borderBottom: '1px solid ' + G.border }}><div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6"><span style={{ fontFamily: 'monospace', fontSize: 10, letterSpacing: '0.15em', color: G.gold }}>LEX AUREON</span><h1 className="mt-1 text-xl font-bold text-white sm:text-2xl">Deep Observability</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-gray-400">Live pipeline health, constitutional state, and persisted governance turns.</p></div></header>
+    <main className="mx-auto max-w-7xl space-y-5 px-4 py-5 sm:space-y-8 sm:px-6 sm:py-8">
+      {loading && <div role="status" className="rounded-xl p-5 text-center text-sm" style={{ background: G.surface, border: '1px solid ' + G.border }}>Loading live metrics…</div>}
+      {metricsError && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-700/60 bg-amber-950/30 p-4 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between"><span>Live metrics are unavailable. Existing panels may be stale.</span><button type="button" onClick={() => void fetchMetrics()} className="min-h-11 rounded-lg border border-amber-500/60 px-4 font-semibold">Retry</button></div>}
+      <section className="space-y-4"><div className="rounded-xl p-4 sm:p-6" style={{ background: G.surface, border: '1px solid ' + G.border }}><h2 className="mb-3 text-base font-bold text-white sm:text-lg">Session filter</h2><input type="text" inputMode="text" autoComplete="off" placeholder="Session ID (optional)" value={sessionId} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSessionId(e.target.value)} className="min-h-12 w-full rounded-lg px-4 py-3 text-base text-white outline-none focus:ring-2 focus:ring-amber-500" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid ' + G.border }} /><p className="mt-2 text-xs text-gray-400">Filters the live trajectory and persisted replay below.</p></div><LiveGovernanceState /><ObservabilityTimeline sessionId={sessionId} mode={replayMode} onModeChange={setReplayMode} /></section>
+      {metrics && <section className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">{[{ label: 'Calls', value: metrics.system.total_calls, color: '#4b8fff' }, { label: 'Interventions', value: metrics.system.total_interventions, color: '#ff6b35' }, { label: 'Intervention rate', value: (metrics.system.intervention_rate * 100).toFixed(1) + '%', color: '#f7931a' }, { label: 'Health', value: health, color: HEALTH_COLOR[health ?? ''] ?? G.gold }].map(metric => <div key={metric.label} className="min-w-0 rounded-xl p-3 sm:p-4" style={{ background: G.surface, border: '1px solid ' + G.border }}><div className="mb-1 truncate text-[9px] uppercase tracking-[0.15em] text-[#4a5870]" style={{ fontFamily: 'monospace' }}>{metric.label}</div><div className="truncate text-lg font-extrabold sm:text-[22px]" style={{ color: metric.color, fontFamily: 'monospace' }}>{metric.value}</div></div>)}</section>}
+      {metrics && <div className="grid grid-cols-2 gap-3 text-xs text-gray-400 sm:grid-cols-4"><div>Avg M before <strong className="text-gray-200">{metrics.system.avg_m_before.toFixed(3)}</strong></div><div>Avg M after <strong className="text-gray-200">{metrics.system.avg_m_after.toFixed(3)}</strong></div><div>Avg effort <strong className="text-gray-200">{metrics.system.avg_governor_effort.toFixed(3)}</strong></div><div>Updated <strong className="text-gray-200">{updatedAt}</strong></div></div>}
+      <section><h2 className="mb-3 text-lg font-bold text-white sm:mb-4">Constitutional State Trajectory</h2><div className="min-w-0 overflow-hidden rounded-xl"><LyapunovVisualizer sessionId={sessionId || undefined} height={320} /></div></section>
+      {agentList.length > 0 && <section className="rounded-xl p-4 sm:p-6" style={{ background: G.surface, border: '1px solid ' + G.border }}><h2 className="mb-4 text-lg font-bold text-white">Agent Performance</h2><div className="space-y-2">{agentList.map(agent => <div key={agent.name} className="flex min-w-0 flex-col gap-2 rounded-lg p-3 sm:flex-row sm:items-center sm:justify-between" style={{ background: 'rgba(255,255,255,0.02)' }}><div className="min-w-0"><div className="truncate font-mono font-bold text-white">{agent.name}</div><div className="text-xs text-gray-400">{agent.calls} executions · {(agent.error_rate * 100).toFixed(1)}% errors</div></div><div className="text-left sm:text-right"><div className="font-mono font-bold" style={{ color: G.gold }}>{agent.avg_duration_ms}ms</div><div className="text-xs text-gray-400">avg latency</div></div></div>)}</div></section>}
+      <section className="rounded-xl p-4 sm:p-6" style={{ background: G.surface, border: '1px solid ' + G.border }}><h2 className="mb-3 text-lg font-bold text-white sm:mb-4">About Deep Observability</h2><div className="space-y-3 text-sm leading-6 text-gray-300"><p>Lex Aureon’s pipeline is instrumented around constitutional state and governance receipts.</p><ul className="list-disc space-y-2 pl-5"><li>Live C/R/S/M state with explicit no-data handling</li><li>Persisted governance turns scoped by session</li><li>Interventions, governor effort, and health windows</li><li>Agent latency and error-rate summaries</li></ul></div></section>
+    </main></div>;
 }
