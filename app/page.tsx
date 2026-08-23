@@ -496,7 +496,7 @@ function TechnicalFoundationSection() {
         <p className="text-center text-[11px] font-mono text-slate-600 dark:text-slate-600 mt-6">
           Full derivation and the CBF floor (τ = 0.05) in the{' '}
           <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors underline underline-offset-2">paper</a>.
-          Every receipt records the constitutional state — <Link href="/console" className="text-amber-500 hover:text-amber-400 transition-colors">verify it live</Link>.
+          Every receipt records the constitutional state — <Link href="/verify" className="text-amber-500 hover:text-amber-400 transition-colors">verify it live</Link>.
         </p>
       </div>
     </section>
