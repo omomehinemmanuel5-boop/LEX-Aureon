@@ -1,11 +1,34 @@
 /**
- * FORMAL PAPER REFERENCE IMPLEMENTATION — NOT WIRED INTO PRODUCTION PIPELINE
+ * FORMAL PAPER REFERENCE IMPLEMENTATION -- INTERVENTION_REQUIRED IS NOT
+ * WIRED INTO THE LIVE DECISION. THE REST OF THIS FILE IS.
  *
  * ═══════════════════════════════════════════════════════════════════════════
+ * fix (2026-08-22): corrected from a blanket "NOT WIRED INTO PRODUCTION
+ * PIPELINE" claim that was no longer accurate and was actively misleading --
+ * it nearly caused a mistrace of an unrelated bug through this file. The
+ * real, verified status:
+ *
+ *   GovernorAgent() (below) DOES run live, on every turn, in
+ *   app/api/lex/govern/stream/route.ts (the route console/chat actually
+ *   call) -- see that file's 2026-07-09 fix note. It is used ONLY to select
+ *   `weakest` (which C/R/S pillar to target for law/clause selection) via
+ *   the Section 11 F+G reference simulation below. Its `intervention_required`
+ *   output is emitted in the 'governor' SSE event explicitly labeled
+ *   non-authoritative telemetry -- it does not and cannot gate whether a
+ *   turn is refused. That decision is decideRefusal() in
+ *   lib/refusal_decision.ts, unified across every route (Move A, 2026-07-07).
+ *
+ *   The reasoning below (why the FULL replicator dynamics F_i aren't used
+ *   for the live intervention decision) remains accurate and unchanged --
+ *   it explains why this file's decision arm is telemetry-only, not why the
+ *   file is unused.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
  * ARCHITECTURAL NOTE FOR PAPER REVIEWERS (added 2026-06-12)
  *
  * This file is the exact Section 11 dynamical system from the Aureonics paper.
- * It is intentionally NOT used in production for the following reason:
+ * Its `intervention_required` verdict is intentionally not authoritative
+ * in production for the following reason:
  *
  *   The replicator dynamics term F_i = x_i(f_i - f̄) introduces a second-order
  *   non-linearity that, with DT=1.0 (discrete) and Vercel's ~25s timeout budget
@@ -14,7 +37,8 @@
  *   load in the HarmBench run (200 prompts), this caused 3 spurious V-increasing
  *   steps that would have triggered false-positive interventions.
  *
- * PRODUCTION SYSTEM (lib/sovereign_kernel.ts → governorUpdate()):
+ * PRODUCTION DECISION SYSTEM (lib/sovereign_kernel.ts → governorUpdate(),
+ * gated by lib/refusal_decision.ts → decideRefusal()):
  *   Uses only the G_i = k(φ_i - φ̄) correction term (the governor arm).
  *   Drops replicator F_i entirely. This is mathematically equivalent in the
  *   steady state (both converge to the same interior fixed point) but removes
@@ -28,11 +52,14 @@
  *   theoretical certificate (not disproven); the quadratic used in production
  *   is a weaker but always-satisfied certificate. Both bound the same CBF floor.
  *
- *   If you are a reviewer: the production system is a strict simplification of
- *   this reference implementation, not a contradiction of it.
+ *   If you are a reviewer: the production DECISION system is a strict
+ *   simplification of this reference implementation's decision arm, not a
+ *   contradiction of it. The reference simulation itself (weakest-pillar
+ *   selection) runs as-is in production, unmodified.
  *
- * DO NOT WIRE THIS FILE into route.ts or praxis.ts without a real-time
- * convergence analysis at DT=1 under adversarial load.
+ * DO NOT WIRE intervention_required from this file into any live refusal
+ * decision without a real-time convergence analysis at DT=1 under
+ * adversarial load. weakest_dimension is safe to use as-is (already live).
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Agent 3: Governor — Aureonics Formal Dynamical System (Section 11)
