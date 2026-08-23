@@ -384,10 +384,7 @@ export async function writeKernelReceipt(
       args: [
         sessionId, turn,
         mBefore, result.M, driftDir, sigmaViol,
-        result.receipt.safety_projection_triggered ? 'cbf_projection'
-          : slowDrip ? 'slow_drip_accumulator'
-          : asyncGovEffort > 0 ? 'async_governor'
-          : 'none',
+        interventionCategory,
         result.receipt.active_law || (result.semantic_signal.attack_type !== 'none'
           ? `semantic:${result.semantic_signal.attack_type}` : null),
         new Date().toISOString(),
