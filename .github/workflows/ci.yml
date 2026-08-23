@@ -9,7 +9,12 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # fix (2026-08-22): true only for PRs, where a stale in-review commit's CI
+  # result is genuinely superseded by the next push. For direct pushes to
+  # main, cancelling meant rapid sequential commits could race past CI
+  # entirely on the push trigger -- confirmed happening this session (see
+  # commit message). Each push to main now gets its own completed run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
