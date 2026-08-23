@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import LiveGovernanceState from '@/components/LiveGovernanceState';
 import ObservabilityTimeline from '@/components/ObservabilityTimeline';
+import type { MetricsResponse } from '@/lib/observability_contract';
 const LyapunovVisualizer = dynamic(() => import('@/components/LyapunovVisualizer'), { ssr: false, loading: () => <div className="h-72 rounded-xl bg-slate-900/40 animate-pulse" /> });
 const G = { gold: '#c9a84c', navy: '#07070d', surface: '#0f1017', border: '#1a2030' };
 interface AgentStat { calls: number; avg_duration_ms: number; error_count: number; error_rate: number; last_call: string | null; }
@@ -12,7 +13,7 @@ export default function ObservabilityPage() {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null); const [loading, setLoading] = useState(true);
   const [metricsError, setMetricsError] = useState(false); const [sessionId, setSessionId] = useState('');
   const [replayMode, setReplayMode] = useState<'idle' | 'auto'>('idle');
-  const fetchMetrics = useCallback(async () => { setMetricsError(false); try { const res = await fetch('/api/observability/metrics', { cache: 'no-store' }); if (!res.ok) throw new Error('metrics request failed'); setMetrics(await res.json() as MetricsResponse); } catch (err) { console.error('Failed to fetch metrics:', err); setMetricsError(true); } finally { setLoading(false); } }, []);
+  const fetchMetrics = useCallback(async () => { setMetricsError(false); try { const res = await fetch('/api/observability/metrics?session_id=' + encodeURIComponent(sessionId.trim()), { cache: 'no-store' }); if (!res.ok) throw new Error('metrics request failed'); setMetrics(await res.json() as MetricsResponse); } catch (err) { console.error('Failed to fetch metrics:', err); setMetricsError(true); } finally { setLoading(false); } }, []);
   useEffect(() => { void fetchMetrics(); const interval = setInterval(() => void fetchMetrics(), 30000); return () => clearInterval(interval); }, [fetchMetrics]);
   const agentList = metrics ? Object.entries(metrics.agents).map(([name, stat]) => ({ name, ...stat })) : []; const health = metrics?.health_status;
   const updatedAt = metrics ? new Date(metrics.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
