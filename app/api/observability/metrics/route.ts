@@ -12,22 +12,7 @@ import { MetricsResponseSchema } from '@/lib/observability_contract';
 export const runtime  = 'nodejs';
 export const revalidate = 30;
 
-interface AgentStat {
-  timestamp:       string;
-  window_minutes:  number;
-  total_governed:  number;
-  agents:          Record<string, AgentStat>;
-  system: {
-    total_calls:         number;
-    total_interventions: number;
-    intervention_rate:   number;
-    avg_m_before:        number;
-    avg_m_after:         number;
-    avg_governor_effort: number;
-  };
-  health_distribution: { OPTIMAL: number; ALERT: number; STRESSED: number; CRITICAL: number };
-  health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
-}
+import type { MetricsResponse } from '@/lib/observability_contract';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = req.headers.get('x-request-id') ?? `req-${Date.now()}`;
@@ -59,9 +44,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                      COUNT(*)                          AS calls,
                      AVG(CAST(governor_effort AS REAL)) AS avg_effort,
                      SUM(intervention)                 AS interventions
-              FROM praxis_receipts WHERE created_at > ?
+              FROM praxis_receipts WHERE created_at > ?${scope}
               GROUP BY governor_mode ORDER BY calls DESC`,
-        args: [cutoff],
+        args: [cutoff, ...scopeArgs],
       }),
     ]);
 
