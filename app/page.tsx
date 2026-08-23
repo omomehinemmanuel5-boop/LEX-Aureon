@@ -657,6 +657,7 @@ export default function LandingPage() {
                 visitor curious about a receipt had no path to actually see
                 one. Added here, same treatment as every other real page. */}
             <Link href="/audit" className="hover:text-white transition-colors">Audit</Link>
+            <Link href="/verify" className="hover:text-white transition-colors">Verify</Link>
             <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paper</a>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
           </div>
