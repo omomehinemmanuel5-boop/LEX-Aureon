@@ -91,6 +91,14 @@ export async function POST(req: Request) {
   const { method, params, id } = body;
 
   if (method === 'initialize') {
+    // fix (2026-08-24): clientInfo (name/version) arrives here per the MCP
+    // protocol spec and was previously never read. Best-effort record —
+    // never let this block or fail the actual handshake response.
+    try {
+      const clientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
+      await recordMcpClientIdentity(ipHash(req), clientInfo?.name, clientInfo?.version);
+    } catch { /* non-fatal — see lib/db.ts's other best-effort writes */ }
+
     return NextResponse.json({
       jsonrpc: '2.0',
       result: {
