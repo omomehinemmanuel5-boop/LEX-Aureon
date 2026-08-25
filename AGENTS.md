@@ -302,7 +302,7 @@ Convention:
 
 | Agent | Started (UTC) | Scope (files / branch) | Task |
 |---|---|---|---|
-| _(none active)_ | | | |
+| Claude (chat session) | 2026-08-24 | `AGENTS.md`, `docs/multi-agent-governance.md` | Building multi-agent coordination convention + case-study writeup, motivated by the observability-contracts collision documented above |
 
 ---
 
