@@ -288,6 +288,22 @@
     return (r.rows[0]?.value as number) ?? 0;
   }
 
+  export async function recordMcpClientIdentity(
+    ipHash: string, clientName?: string, clientVersion?: string,
+  ): Promise<void> {
+    await initSchema();
+    await getClient().execute({
+      sql: `INSERT INTO mcp_client_identity (ip_hash, client_name, client_version, call_count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(ip_hash) DO UPDATE SET
+              client_name    = excluded.client_name,
+              client_version = excluded.client_version,
+              last_seen      = datetime('now'),
+              call_count     = call_count + 1`,
+      args: [ipHash, clientName ?? null, clientVersion ?? null],
+    });
+  }
+
   // ── Sovereign Laws ────────────────────────────────────────────────────────────
 
   export async function seedSovereignLaws(): Promise<void> {
