@@ -137,7 +137,7 @@ export async function POST(req: Request) {
 
     try {
       const sessionId = (args.session_id as string | undefined)
-        ?? `mcp-${new Date().toISOString().slice(0, 10)}`;
+        ?? `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
 
       // Constitutional authorization is the single dispatch boundary for
       // every MCP-exposed tool. Read-only results may be reused by the
