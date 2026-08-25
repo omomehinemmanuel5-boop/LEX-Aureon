@@ -462,6 +462,24 @@
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_receipts_session ON tool_receipts(session_id)`);
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_sessions_updated ON tool_sessions(updated_at)`);
 
+    // fix (2026-08-24): app/api/mcp/route.ts's `initialize` handler receives
+    // clientInfo (name/version) per the MCP protocol but previously
+    // discarded it entirely -- no record of which named client connected
+    // was ever kept. Keyed by ip_hash rather than a session id because
+    // MCP-over-HTTP here is stateless per POST request: there's no
+    // cookie/handshake token linking a later tools/call back to the
+    // initialize that preceded it. IP hash is an imperfect but genuinely
+    // available correlation key without adding new client-side protocol
+    // requirements. See app/api/mcp/route.ts's ipHash() for the write side.
+    await safeExec(`CREATE TABLE IF NOT EXISTS mcp_client_identity (
+      ip_hash         TEXT    PRIMARY KEY,
+      client_name     TEXT,
+      client_version  TEXT,
+      first_seen      TEXT    NOT NULL DEFAULT (datetime('now')),
+      last_seen       TEXT    NOT NULL DEFAULT (datetime('now')),
+      call_count      INTEGER NOT NULL DEFAULT 0
+    )`);
+
     await safeExec(`CREATE TABLE IF NOT EXISTS sovereign_laws (
       id              INTEGER PRIMARY KEY,
       book            INTEGER NOT NULL,
