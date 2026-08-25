@@ -10,6 +10,21 @@ import { NextResponse } from 'next/server';
 import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
 import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
+import { recordMcpClientIdentity } from '@/lib/db';
+import crypto from 'crypto';
+
+// fix (2026-08-24): short, non-reversible correlation key for a caller —
+// MCP-over-HTTP here is stateless per POST request, so IP is the only
+// signal consistently available across a client's initialize call and the
+// tools/call requests that follow it, short of adding a new handshake
+// token no client currently sends. Used both for the session_id fallback
+// below and for mcp_client_identity's primary key.
+function ipHash(req: Request): string {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? req.headers.get('x-real-ip')
+    ?? 'unknown';
+  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12);
+}
 
 const SERVER_INFO = {
   name:    'lex-crs-agent',
