@@ -273,6 +273,39 @@ graceful degrade-to-next-provider behavior. See the comment at that call site.
 
 ---
 
+## ACTIVE AGENT CLAIMS — CHECK BEFORE STARTING SUBSTANTIAL WORK
+
+Added 2026-08-24 after a real collision: this session's Claude and a
+separate Replit-driven branch (`agent/observability-contracts`) worked on
+the same files (ObservabilityTimeline, metrics types, session filtering) at
+the same time, with neither aware the other existed. Root cause: no shared
+gatekeeper — Replit pushes via its own GitHub integration, never through the
+Lex CRS MCP proxy, so nothing scoped to that proxy could have caught it.
+This file is the one thing every agent (governed or not) is already
+instructed to read first ("Read this entire file before doing anything").
+Using it as the coordination point costs nothing to enforce technically and
+works for any agent, not just ones that happen to connect through a
+specific tool.
+
+This is advisory, not a hard lock — it doesn't stop anyone from working,
+it just makes concurrent work visible before it collides.
+
+Convention:
+- Before starting work expected to touch more than one file or take more
+  than a few minutes, add a row below.
+- If an existing row's scope overlaps with what you're about to do, stop.
+  Either narrow your scope to not overlap, or flag it to Emmanuel before
+  proceeding — don't silently duplicate or fight another agent's in-flight
+  work, that's the exact failure this section exists to prevent.
+- Remove your row when done. Fold the outcome into CHANGELOG instead —
+  this table is for what's IN FLIGHT, not history.
+
+| Agent | Started (UTC) | Scope (files / branch) | Task |
+|---|---|---|---|
+| _(none active)_ | | | |
+
+---
+
 ## DEPLOYMENT RULES
 
 1. npm run build before every commit
