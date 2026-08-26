@@ -1,3 +1,4 @@
-# Lex Aureon — scratch files
-
-_patch_sr_block.txt
+Cleared 2026-08-26 — leftover scratch file that should never have been
+committed (matches .gitignore's own `.gitignore-scratch` entry, added after
+this file was already tracked). No file-deletion tool available to the
+agent making this fix, so content was cleared rather than the file removed.
