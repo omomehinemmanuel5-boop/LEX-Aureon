@@ -495,6 +495,21 @@ async function measureC(tool: ToolCallInput): Promise<{ score: number; degraded:
       embedText(describeToolCall(tool)),
     ]);
     const sim  = cosineSimilarity(taskEmb, callEmb);
+    // TEMP DEBUG (2026-08-31, remove once Bug B root cause confirmed): near-
+    // duplicate text (self_reflect, patch_file) has been observed flooring to
+    // TAU_FLOOR with cDegraded=false, i.e. NOT the known exception/fallback
+    // path — logging the raw inputs to confirm whether this is a genuinely
+    // low sim value from the provider or a mismeasurement further down.
+    console.log('[DEBUG measureC]', JSON.stringify({
+      tool: tool.name,
+      task_context: tool.task_context,
+      describeToolCall: describeToolCall(tool),
+      taskEmbLen: taskEmb.length,
+      callEmbLen: callEmb.length,
+      taskEmbSample: taskEmb.slice(0, 5),
+      callEmbSample: callEmb.slice(0, 5),
+      sim,
+    }));
     const base = Math.max(0.05, Math.min(0.95, sim));
     return { score: applyDriftPenalty(tool, tool.task_context, base), degraded: false };
   } catch {
