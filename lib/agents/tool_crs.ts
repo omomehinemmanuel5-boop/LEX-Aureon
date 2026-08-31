@@ -388,6 +388,22 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
   const name = tool.name.toLowerCase();
   const args = JSON.stringify(tool.arguments).toLowerCase();
 
+  // fix (2026-08-31): READ_ONLY_TOOLS is a curated, manually-vetted safe
+  // list — but the only place that previously checked it was nested inside
+  // the /read|get|fetch|list|search/ naming-heuristic branch further below.
+  // Tools whose names don't happen to contain one of those words (e.g.
+  // self_reflect, run_self_test, narrate_origin, check_github_token_scope)
+  // never reached that check at all, and fell through every branch to the
+  // generic { score: 0.70, risk: 'LOW' } catch-all instead of their
+  // intended 0.98 ULTRA_LOW — confirmed live: self_reflect and
+  // query_database scored HIGH/STRESSED (C floored to TAU_FLOOR) while
+  // get_constitutional_state/get_build_status/get_recent_receipts (which do
+  // contain "get") correctly got 0.98. The curated list should short-circuit
+  // every naming heuristic below it, not depend on happening to match one.
+  if (READ_ONLY_TOOLS.has(name)) {
+    return { score: 0.98, risk: 'ULTRA_LOW' };
+  }
+
   // HIGH risk tools — shell execution, anything that runs arbitrary code
   if (HIGH_RISK_TOOLS.has(name)) {
     // Check args for particularly dangerous patterns
