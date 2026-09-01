@@ -76,14 +76,28 @@ export async function POST(req: Request) {
   const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ);
 
   // ── Self-referential CRS ──────────────────────────────────────────────────
-  if (result.status !== 'Error' && promptEmbedding.length) {
+  // fix (2026-09-01) — CROSS-PROVIDER EMBEDDING MISMATCH: outputEmb and
+  // constCentroid were each resolved independently (bare embedText() /
+  // getConstitutionalCentroid() with no forced provider), while
+  // promptEmbedding above was ALSO independently resolved — three vectors
+  // compared against each other with no guarantee any two shared an
+  // embedding space. Same root cause fixed in lib/agents/tool_crs.ts earlier
+  // this session (commits 5acda12673, 80bcc311c5..3826ab6338), and already
+  // correctly handled in the canonical /api/lex/govern endpoint (see
+  // lib/governance_service.ts) — this endpoint just never received that
+  // fix. Now pins outputEmb and constCentroid to promptEmbedProvider,
+  // exactly mirroring governance_service.ts's pattern. sessCentroid is left
+  // unforced, matching that same reference implementation — getSessionCentroid
+  // self-selects its own most-recently-used provider internally rather than
+  // accepting a forced one.
+  if (result.status !== 'Error' && promptEmbedding.length && promptEmbedProvider) {
     try {
       const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
-        embedText(result.governed_output).catch(() => [] as number[]),
-        getConstitutionalCentroid(),
+        embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
+        getConstitutionalCentroid(promptEmbedProvider),
         getSessionCentroid(session_id),
       ]);
-      if (outputEmb.length) {
+      if (outputEmb.length && constCentroid) {
         const sr = kernel.applySelfReferentialMeasurement(
           outputEmb, promptEmbedding, constCentroid, sessCentroid,
         );
