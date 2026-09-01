@@ -244,11 +244,36 @@ function cosineSimilarity(a: number[], b: number[]): number {
 // eval spends quota only on the genuinely-distinct corpus texts. Only a fully
 // successful batch is cached — a partial failure leaves it null to retry.
 let _archetypeVecs: number[][] | null = null;
-async function embedArchetypes(): Promise<number[][]> {
-  if (_archetypeVecs) return _archetypeVecs;
-  const vecs = await Promise.all(INJECTION_ARCHETYPES.map(a => embedText(a)));
+let _archetypeProvider: EmbedProvider | null = null;
+
+// fix (2026-09-01) — CROSS-PROVIDER EMBEDDING MISMATCH (same root cause as
+// measureC's fix, commit 5acda12673): embedText() independently resolves a
+// provider per call via providerOrder()'s random gemini/jina alternation —
+// the previous version embedded all 6 archetypes via
+// Promise.all(...map(a => embedText(a))), so each archetype could land on a
+// DIFFERENT provider than the others, and injectionSimilarity() then
+// embedded the incoming free text via yet another independent embedText()
+// call, comparable against a possibly mixed-space archetype set. This is
+// the security-relevant instance of the measureC bug: a mismatched
+// embedding space here doesn't error, it silently produces a meaningless
+// similarity score for the actual prompt-injection detector governing tool
+// calls. Fixed by resolving ONE provider for the first archetype, then
+// pinning every remaining archetype — AND, in injectionSimilarity below,
+// the content text — to that same provider. The provider is remembered
+// alongside the cached vectors (not just the vectors) so later calls reuse
+// it rather than each independently re-resolving.
+async function embedArchetypesWithProvider(): Promise<{ vecs: number[][]; provider: EmbedProvider }> {
+  if (_archetypeVecs && _archetypeProvider) {
+    return { vecs: _archetypeVecs, provider: _archetypeProvider };
+  }
+  const { vector: first, provider } = await embedTextResolved(INJECTION_ARCHETYPES[0]);
+  const rest = await Promise.all(
+    INJECTION_ARCHETYPES.slice(1).map(a => embedTextWithProvider(a, provider))
+  );
+  const vecs = [first, ...rest];
   _archetypeVecs = vecs;
-  return vecs;
+  _archetypeProvider = provider;
+  return { vecs, provider };
 }
 
 interface SemanticInjectionResult {
