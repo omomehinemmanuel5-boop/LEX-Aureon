@@ -48,10 +48,20 @@ export async function POST(req: Request) {
   await ensureDB();
 
   // ── 1. Embed prompt + retrieve constitutional memory ──────────────────────
+  // fix (2026-09-01): capture the RESOLVED provider alongside the vector, not
+  // just the vector — needed below to pin the output/centroid embeddings in
+  // the self-referential CRS block to this SAME provider. Mirrors the
+  // established pattern in lib/governance_service.ts (the canonical
+  // /api/lex/govern endpoint), which this backwards-compat endpoint never
+  // received when that fix (2026-07-04, per lib/lex_memory.ts's file header)
+  // was originally applied.
   let promptEmbedding: number[] = [];
+  let promptEmbedProvider: EmbedProvider | null = null;
   let memoryContext = '';
   try {
-    promptEmbedding = await embedText(prompt);
+    const resolved       = await embedTextResolved(prompt);
+    promptEmbedding      = resolved.vector;
+    promptEmbedProvider  = resolved.provider;
     const memories  = await retrieveSimilar(promptEmbedding, 5);
     memoryContext   = buildMemoryContext(memories);
   } catch { /* non-fatal */ }
