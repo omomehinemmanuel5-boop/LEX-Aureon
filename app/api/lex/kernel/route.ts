@@ -11,9 +11,10 @@ import { NextResponse } from 'next/server';
 import { SovereignKernel } from '@/lib/sovereign_kernel';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import {
-  embedText, retrieveSimilar, buildMemoryContext,
+  embedText, embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
+  type EmbedProvider,
 } from '@/lib/lex_memory';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
 
