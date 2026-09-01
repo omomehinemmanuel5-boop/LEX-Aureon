@@ -83,7 +83,7 @@
 
 import { ToolCallInput, ToolCRSState } from './types';
 import { projectToSimplex } from '../aureonics_math';
-import { embedText } from '../lex_memory';
+import { embedText, embedTextResolved, embedTextWithProvider } from '../lex_memory';
 
 // ── Constitutional constants (shared with text governance) ─────────────────
 const TAU_FLOOR = 0.05;
