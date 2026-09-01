@@ -301,10 +301,8 @@ export async function injectionSimilarity(
 ): Promise<{ similarity: number; matched?: string; degraded: boolean }> {
   if (!freeText.trim()) return { similarity: 0, degraded: false };
   try {
-    const [contentVec, archetypeVecs] = await Promise.all([
-      embedText(freeText),
-      embedArchetypes(),
-    ]);
+    const { vecs: archetypeVecs, provider } = await embedArchetypesWithProvider();
+    const contentVec = await embedTextWithProvider(freeText, provider);
     let best = 0, bestIdx = -1;
     for (let i = 0; i < archetypeVecs.length; i++) {
       const sim = cosineSimilarity(contentVec, archetypeVecs[i]);
