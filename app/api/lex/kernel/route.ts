@@ -127,6 +127,7 @@ export async function POST(req: Request) {
       session_id, prompt,
       prompt_hash:           result.receipt.input_hash,
       embedding:             promptEmbedding,
+      embedding_provider:    promptEmbedProvider ?? undefined,
       M:                     result.M,
       C:                     result.state.C,
       R:                     result.state.R,
