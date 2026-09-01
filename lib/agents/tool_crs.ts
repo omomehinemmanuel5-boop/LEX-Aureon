@@ -490,26 +490,27 @@ async function measureC(tool: ToolCallInput): Promise<{ score: number; degraded:
   if (!tool.task_context) return { score: 0.60, degraded: false }; // no context = neutral
 
   try {
-    const [taskEmb, callEmb] = await Promise.all([
-      embedText(tool.task_context),
-      embedText(describeToolCall(tool)),
-    ]);
+    // fix (2026-09-01) — CROSS-PROVIDER EMBEDDING MISMATCH: embedText()
+    // independently resolves a provider per call via providerOrder()'s
+    // random gemini/jina alternation (lib/lex_memory.ts) — calling it twice
+    // in Promise.all, as this function did, could silently embed
+    // task_context and describeToolCall(tool) with TWO DIFFERENT providers.
+    // That is exactly the comparison lib/lex_memory.ts's own file header
+    // calls out as producing "a NUMBER that looks valid but measures
+    // nothing" (its CORRECTNESS CONSTRAINT section) — self-referential
+    // detection in app/api/lex/govern/route.ts already pins one provider
+    // for exactly this reason; this function never adopted that pattern.
+    // Confirmed live via temporary debug logging (now removed): identical
+    // text ("Tool call: self_reflect") embedded to two qualitatively
+    // different vectors across separate calls, and near-duplicate
+    // task_context/description text scored similarity as low as -0.042 —
+    // consistent with occasionally landing in two different embedding
+    // spaces, not a real semantic mismatch. Fixed by resolving ONE provider
+    // for task_context, then pinning describeToolCall(tool)'s embedding to
+    // that SAME provider via embedTextWithProvider.
+    const { vector: taskEmb, provider } = await embedTextResolved(tool.task_context);
+    const callEmb = await embedTextWithProvider(describeToolCall(tool), provider);
     const sim  = cosineSimilarity(taskEmb, callEmb);
-    // TEMP DEBUG (2026-08-31, remove once Bug B root cause confirmed): near-
-    // duplicate text (self_reflect, patch_file) has been observed flooring to
-    // TAU_FLOOR with cDegraded=false, i.e. NOT the known exception/fallback
-    // path — logging the raw inputs to confirm whether this is a genuinely
-    // low sim value from the provider or a mismeasurement further down.
-    console.log('[DEBUG measureC]', JSON.stringify({
-      tool: tool.name,
-      task_context: tool.task_context,
-      describeToolCall: describeToolCall(tool),
-      taskEmbLen: taskEmb.length,
-      callEmbLen: callEmb.length,
-      taskEmbSample: taskEmb.slice(0, 5),
-      callEmbSample: callEmb.slice(0, 5),
-      sim,
-    }));
     const base = Math.max(0.05, Math.min(0.95, sim));
     return { score: applyDriftPenalty(tool, tool.task_context, base), degraded: false };
   } catch {
