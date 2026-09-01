@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server';
 import { SovereignKernel } from '@/lib/sovereign_kernel';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from '@/lib/kernel_bridge';
 import {
-  embedText, embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
+  embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
   storeMemory, classifyStateLabel, ensureLexMemoryTable,
   getConstitutionalCentroid, getSessionCentroid,
   type EmbedProvider,
