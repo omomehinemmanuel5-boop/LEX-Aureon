@@ -650,13 +650,19 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-wrap justify-center gap-x-10 gap-y-4 text-xs font-mono text-slate-400 font-bold uppercase tracking-widest">
             <Link href="/console" className="hover:text-white transition-colors">Console</Link>
+            <Link href="/keys" className="hover:text-white transition-colors">API Keys</Link>
             <Link href="/benchmarks" className="hover:text-white transition-colors">Benchmarks</Link>
             {/* fix (2026-07-11): /audit existed, was live, was even referenced
                 in on-page copy ("Every receipt records the constitutional
                 state") -- but was linked from nowhere on the homepage. A
                 visitor curious about a receipt had no path to actually see
-                one. Added here, same treatment as every other real page. */}
+                one. Added here, same treatment as every other real page.
+                fix (2026-09-01): same pattern recurred — /observability and
+                /keys were both fully built and live but linked from nowhere
+                on the site (nav or footer). Added both here and to
+                LandingNav for the same reason /audit was added above. */}
             <Link href="/audit" className="hover:text-white transition-colors">Audit</Link>
+            <Link href="/observability" className="hover:text-white transition-colors">Observability</Link>
             <Link href="/verify" className="hover:text-white transition-colors">Verify</Link>
             <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paper</a>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
