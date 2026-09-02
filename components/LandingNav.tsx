@@ -12,9 +12,11 @@ const G = {
 
 const NAV_LINKS = [
   ['Benchmarks', '/benchmarks'],
+  ['Observability', '/observability'],
   ['Constitution', '/constitution'],
   ['Research', '/research'],
   ['API', '/api-docs'],
+  ['Keys', '/keys'],
   ['Pricing', '#pricing'],
 ] as const;
 
