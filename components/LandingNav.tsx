@@ -46,7 +46,7 @@ export default function LandingNav() {
         </Link>
 
         {/* Desktop links */}
-        <div className="hidden sm:flex items-center gap-8 text-xs text-slate-300 font-black tracking-tight">
+        <div className="hidden sm:flex items-center gap-5 text-xs text-slate-300 font-black tracking-tight">
           {NAV_LINKS.map(([label, href]) => (
             <a
               key={label}
