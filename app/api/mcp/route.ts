@@ -138,6 +138,37 @@ export async function POST(req: Request) {
   }
 
   if (method === 'tools/call') {
+    // fix (2026-09-01): require a valid API key before dispatching ANY
+    // tool. Previously this endpoint had zero caller authentication --
+    // only the constitutional (CRS) content-risk scorer sat between an
+    // anonymous request and full write access to this repo (patch_file),
+    // CI/CD (dispatch_workflow), and the database (query_database), using
+    // this project's own credentials. CRS scores whether a CALL looks
+    // risky; it was never designed to answer whether a CALLER is
+    // authorized, and conflating the two left this endpoint effectively
+    // open to anyone who knew the URL. Checked BEFORE tool resolution so
+    // an unauthenticated caller gets a uniform error regardless of which
+    // tool they asked for, and before CRS or tool logic ever runs.
+    const apiKey = extractApiKey(req);
+    if (!apiKey) {
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Unauthorized: missing API key. Send x-lex-api-key or Authorization: Bearer. Generate one at https://www.lexaureon.com/keys',
+        },
+        id,
+      });
+    }
+    const keyCheck = await validateAndConsumeKey(apiKey);
+    if (!keyCheck.valid) {
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: `Unauthorized: ${keyCheck.error ?? 'invalid API key'}` },
+        id,
+      });
+    }
+
     const toolName = (params?.name as string) ?? '';
     const args = (params?.arguments as Record<string, unknown>) ?? {};
     const toolFn = resolveTool(toolName);
