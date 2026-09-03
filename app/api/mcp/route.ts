@@ -27,6 +27,20 @@ function ipHash(req: Request): string {
   return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12);
 }
 
+// fix (2026-09-01): reuses the exact header convention already documented
+// in /api-docs for /api/lex/govern (x-lex-api-key, or Authorization:
+// Bearer) rather than inventing a new one — same key system, same
+// lib/api_keys.ts validation, now REQUIRED here rather than optional,
+// since this endpoint's blast radius (repo write, CI dispatch, DB read)
+// is categorically larger than a rate-limited text-governance call.
+function extractApiKey(req: Request): string | null {
+  const header = req.headers.get('x-lex-api-key');
+  if (header) return header.trim();
+  const auth = req.headers.get('authorization');
+  if (auth?.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
+  return null;
+}
+
 const SERVER_INFO = {
   name:    'lex-crs-agent',
   version: '2.3.0',
