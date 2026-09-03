@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
 import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
+import { validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity } from '@/lib/db';
 import crypto from 'crypto';
 
