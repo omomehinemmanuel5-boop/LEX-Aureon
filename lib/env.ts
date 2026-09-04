@@ -7,7 +7,7 @@ function required(key: string): string {
   const val = process.env[key];
   if (!val) {
     throw new Error(
-      '[Lexaureon] Missing required env var: ' + key + '\\n' +
+      '[Lexaureon] Missing required env var: ' + key + String.fromCharCode(10) +
       'Set it in Vercel → lexaureonfrontendx → Settings → Environment Variables'
     );
   }
@@ -17,40 +17,35 @@ function required(key: string): string {
 const optional = (key: string): string | undefined => process.env[key] || undefined;
 
 type EnvShape = {
-  GROQ_API_KEY:                 string;
-  JINA_API_KEY:                 string;
-  TURSO_DATABASE_URL:           string;
-  TURSO_AUTH_TOKEN:             string;
-  ADMIN_PASSWORD:               string;
-  GEMINI_API_KEY:               string | undefined;
-  MISTRAL_API_KEY:              string | undefined;
-  CEREBRAS_API_KEY:             string | undefined;
-  AUDITOR_SECRET:               string | undefined;
-  RESEND_API_KEY:               string | undefined;
-  OPS_ALERT_EMAIL:              string | undefined;
-  SERPER_API_KEY:               string | undefined;
-  GITHUB_TOKEN:                 string | undefined;
-  VERCEL_TOKEN:                 string | undefined;
-  CRON_SECRET:                  string;
-  NEXT_PUBLIC_SITE_URL:         string;
-  ANTHROPIC_API_KEY:            string | undefined;
+  GROQ_API_KEY: string;
+  JINA_API_KEY: string;
+  TURSO_DATABASE_URL: string;
+  TURSO_AUTH_TOKEN: string;
+  ADMIN_PASSWORD: string;
+  GEMINI_API_KEY: string | undefined;
+  MISTRAL_API_KEY: string | undefined;
+  CEREBRAS_API_KEY: string | undefined;
+  AUDITOR_SECRET: string | undefined;
+  RESEND_API_KEY: string | undefined;
+  OPS_ALERT_EMAIL: string | undefined;
+  SERPER_API_KEY: string | undefined;
+  GITHUB_TOKEN: string | undefined;
+  VERCEL_TOKEN: string | undefined;
+  CRON_SECRET: string;
+  NEXT_PUBLIC_SITE_URL: string;
+  ANTHROPIC_API_KEY: string | undefined;
   NEXT_PUBLIC_PRO_CHECKOUT_URL: string | undefined;
-  LOG_DRAIN_URL:                string | undefined;
-  LOG_DRAIN_TOKEN:              string | undefined;
-  GRAFANA_LOKI_URL:             string | undefined;
-  GRAFANA_LOKI_USER:            string | undefined;
-  GRAFANA_LOKI_TOKEN:           string | undefined;
-  BENCH_SECRET:                 string | undefined;
+  LOG_DRAIN_URL: string | undefined;
+  LOG_DRAIN_TOKEN: string | undefined;
+  GRAFANA_LOKI_URL: string | undefined;
+  GRAFANA_LOKI_USER: string | undefined;
+  GRAFANA_LOKI_TOKEN: string | undefined;
+  BENCH_SECRET: string | undefined;
 };
 
 const REQUIRED = new Set<keyof EnvShape>([
-  'GROQ_API_KEY',
-  'JINA_API_KEY',
-  'TURSO_DATABASE_URL',
-  'TURSO_AUTH_TOKEN',
-  'ADMIN_PASSWORD',
-  'CRON_SECRET',
-  'NEXT_PUBLIC_SITE_URL',
+  'GROQ_API_KEY', 'JINA_API_KEY', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN',
+  'ADMIN_PASSWORD', 'CRON_SECRET', 'NEXT_PUBLIC_SITE_URL',
 ]);
 
 const ALIASES: Partial<Record<keyof EnvShape, string>> = {
