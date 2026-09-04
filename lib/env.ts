@@ -7,8 +7,8 @@ function required(key: string): string {
   const val = process.env[key];
   if (!val) {
     throw new Error(
-      `[Lexaureon] Missing required env var: ${key}\n` +
-      `Set it in Vercel → lexaureonfrontendx → Settings → Environment Variables`
+      '[Lexaureon] Missing required env var: ' + key + '\\n' +
+      'Set it in Vercel → lexaureonfrontendx → Settings → Environment Variables'
     );
   }
   return val;
@@ -37,6 +37,9 @@ type EnvShape = {
   NEXT_PUBLIC_PRO_CHECKOUT_URL: string | undefined;
   LOG_DRAIN_URL:                string | undefined;
   LOG_DRAIN_TOKEN:              string | undefined;
+  GRAFANA_LOKI_URL:             string | undefined;
+  GRAFANA_LOKI_USER:            string | undefined;
+  GRAFANA_LOKI_TOKEN:           string | undefined;
   BENCH_SECRET:                 string | undefined;
 };
 
@@ -50,7 +53,6 @@ const REQUIRED = new Set<keyof EnvShape>([
   'NEXT_PUBLIC_SITE_URL',
 ]);
 
-// Optional vars whose process.env key differs from the canonical field name.
 const ALIASES: Partial<Record<keyof EnvShape, string>> = {
   ANTHROPIC_API_KEY: 'Claude_api_key',
 };
