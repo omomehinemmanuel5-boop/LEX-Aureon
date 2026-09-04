@@ -1,6 +1,5 @@
 import { db, initSchema } from '@/lib/db';
 import { applyRequestContext, createRequestContext } from '@/lib/request-context';
-import { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const revalidate = 30;
@@ -18,9 +17,9 @@ function parseWindow(raw: string | null): number | null {
   return Number.isInteger(value) && value >= 5 && value <= MAX_WINDOW_MINUTES ? value : null;
 }
 
-export async function GET(req: NextRequest): Promise<Response> {
+export async function GET(req: Request): Promise<Response> {
   const context = createRequestContext(req.headers);
-  const windowMinutes = parseWindow(req.nextUrl.searchParams.get('window_minutes'));
+  const windowMinutes = parseWindow(new URL(req.url).searchParams.get('window_minutes'));
   if (windowMinutes === null) return applyRequestContext(new Response('# window_minutes must be an integer between 5 and 1440.\n', { status: 400, headers: { 'Content-Type': 'text/plain; version=0.0.4', 'Cache-Control': 'no-store' } }), context);
 
   try {
