@@ -24,7 +24,7 @@ vi.mock('next/server', () => ({
   },
 }));
 
-vi.mock('../lib/api_keys', () => ({
+vi.mock('@/lib/api_keys', () => ({
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
 }));
 
