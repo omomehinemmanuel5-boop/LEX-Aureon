@@ -210,7 +210,7 @@ describe('API integration', () => {
       const res = await GET(new Request('http://localhost/api/observability/prometheus') as Request);
       const body = await res.text();
       expect(res.status).toBe(200);
-      expect(res.headers.get('content-type')).toMatch(/text\\/plain/);
+      expect(res.headers.get('content-type')).toMatch(/text\/plain/);
       expect(body).toMatch(/lex_governance_calls_in_window/);
       expect(body).toMatch(/lex_observability_up 1/);
     });
