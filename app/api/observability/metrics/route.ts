@@ -2,7 +2,7 @@
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { applyRequestContext, createRequestContext } from '@/lib/request-context';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const revalidate = 30;
@@ -43,10 +43,10 @@ export function parseWindowMinutes(raw: string | null): number | null {
   return value;
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export async function GET(req: Request): Promise<NextResponse> {
   const context = createRequestContext(req.headers);
   const json = (body: unknown, status = 200, cache = 'no-store') => applyRequestContext(NextResponse.json(body, { status, headers: { 'Cache-Control': cache } }), context);
-  const windowMinutes = parseWindowMinutes(req.nextUrl.searchParams.get('window_minutes'));
+  const windowMinutes = parseWindowMinutes(new URL(req.url).searchParams.get('window_minutes'));
   if (windowMinutes === null) return json({ error: 'window_minutes must be an integer between 5 and 1440.', request_id: context.requestId }, 400);
 
   try {
