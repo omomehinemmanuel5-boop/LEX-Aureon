@@ -50,7 +50,14 @@ import { POST } from '../app/api/mcp/route';
 function request(body: Record<string, unknown>) {
   return new Request('http://localhost/api/mcp', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      // validateAndConsumeKey is mocked to always resolve { valid: true }
+      // above, so the actual value here is irrelevant — it just needs to
+      // be present, since /api/mcp now rejects any tools/call request
+      // with no API key before it ever reaches executeGovernedTool.
+      'x-lex-api-key': 'test-key',
+    },
     body: JSON.stringify(body),
   });
 }

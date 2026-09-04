@@ -33,11 +33,23 @@ function ipHash(req: Request): string {
 // lib/api_keys.ts validation, now REQUIRED here rather than optional,
 // since this endpoint's blast radius (repo write, CI dispatch, DB read)
 // is categorically larger than a rate-limited text-governance call.
+//
+// fix (2026-09-04): added a `?apiKey=` query-param fallback. Claude.ai's
+// custom connector UI (mobile + web) has no field for a static request
+// header today — "Requires sign-in" only exposes OAuth client id/secret,
+// not a raw Bearer/x-lex-api-key value — so header-only auth leaves that
+// client unable to authenticate at all. Every other MCP client we support
+// (Claude Code, Codex, etc.) already sends the header and is unaffected.
+// Query-param keys can leak into logs/browser history more easily than
+// headers, so this is an interim measure until OAuth is added for the
+// Claude.ai path specifically — not a replacement for the header check.
 function extractApiKey(req: Request): string | null {
   const header = req.headers.get('x-lex-api-key');
   if (header) return header.trim();
   const auth = req.headers.get('authorization');
   if (auth?.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
+  const queryKey = new URL(req.url).searchParams.get('apiKey');
+  if (queryKey) return queryKey.trim();
   return null;
 }
 
