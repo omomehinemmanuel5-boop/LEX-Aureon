@@ -8,7 +8,7 @@ const requestIdPattern = /^[a-zA-Z0-9._:-]{1,128}$/;
 const traceparentPattern = /^00-([a-f0-9]{32})-([a-f0-9]{16})-([a-f0-9]{2})$/i;
 
 function randomTraceId(): string {
-  return crypto.randomUUID().replaceAll('-', '');
+  return crypto.randomUUID().replace(/-/g, '');
 }
 
 export function createRequestContext(headers: Headers): RequestContext {
