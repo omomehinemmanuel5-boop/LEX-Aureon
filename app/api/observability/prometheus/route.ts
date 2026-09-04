@@ -6,7 +6,7 @@ export const revalidate = 30;
 const MAX_WINDOW_MINUTES = 24 * 60;
 
 function escapeLabel(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('"', '\\"');
+  return value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/"/g, '\\"');
 }
 function formatLabels(values: Record<string, string>): string {
   return '{' + Object.entries(values).map(([key, value]) => key + '="' + escapeLabel(value) + '"').join(',') + '}';
