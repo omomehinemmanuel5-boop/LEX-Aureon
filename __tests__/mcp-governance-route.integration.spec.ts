@@ -24,6 +24,10 @@ vi.mock('next/server', () => ({
   },
 }));
 
+vi.mock('../lib/api_keys', () => ({
+  validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
+}));
+
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
   TOOL_REGISTRY: {
