@@ -10,7 +10,7 @@ function escapeLabel(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('"', '\\"');
 }
 function formatLabels(values: Record<string, string>): string {
-  return '{' + Object.entries(values).map(([key, value]) => key + '=\\"' + escapeLabel(value) + '\\"').join(',') + '}';
+  return '{' + Object.entries(values).map(([key, value]) => key + '="' + escapeLabel(value) + '"').join(',') + '}';
 }
 function parseWindow(raw: string | null): number | null {
   if (raw === null || raw.trim() === '') return 60;
