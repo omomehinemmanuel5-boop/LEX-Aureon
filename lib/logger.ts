@@ -75,14 +75,15 @@ function emit(level: Level, scope: string, message: string, fields?: Record<stri
 
 export const logger = {
   debug: (scope: string, msg: string, fields?: Record<string, unknown>) => emit('debug', scope, msg, fields),
-  info:  (scope: string, msg: string, fields?: Record<string, unknown>) => emit('info',  scope, msg, fields),
-  warn:  (scope: string, msg: string, fields?: Record<string, unknown>) => emit('warn',  scope, msg, fields),
+  info: (scope: string, msg: string, fields?: Record<string, unknown>) => emit('info', scope, msg, fields),
+  warn: (scope: string, msg: string, fields?: Record<string, unknown>) => emit('warn', scope, msg, fields),
   error: (scope: string, msg: string, fields?: Record<string, unknown>) => emit('error', scope, msg, fields),
 };
 
 export function errorFields(e: unknown): Record<string, unknown> {
   if (e instanceof Error) {
-    return { error: e.message, stack: e.stack?.split('\\n').slice(0, 5).join('\\n') };
+    const newline = String.fromCharCode(10);
+    return { error: e.message, stack: e.stack?.split(newline).slice(0, 5).join(newline) };
   }
   return { error: String(e) };
 }
