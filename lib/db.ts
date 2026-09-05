@@ -9,32 +9,78 @@
 
   let _client: Client | null = null;
 
-  export function getClient(): Client {
+    type AnyFn = (...args: any[]) => any;
+
+    export interface DatabaseMetrics {
+    queries_total: number;
+    query_errors_total: number;
+    query_duration_ms_total: number;
+    query_duration_ms_count: number;
+    inflight_queries: number;
+    client_initialized: boolean;
+    }
+
+    const databaseMetrics: Omit<DatabaseMetrics, 'client_initialized'> = {
+    queries_total: 0,
+    query_errors_total: 0,
+    query_duration_ms_total: 0,
+    query_duration_ms_count: 0,
+    inflight_queries: 0,
+    };
+
+    async function measureDatabaseOperation<T>(operation: () => Promise<T>): Promise<T> {
+    databaseMetrics.inflight_queries += 1;
+    const started = performance.now();
+    try {
+      return await operation();
+    } catch (error) {
+      databaseMetrics.query_errors_total += 1;
+      throw error;
+    } finally {
+      databaseMetrics.queries_total += 1;
+      databaseMetrics.query_duration_ms_total += Math.max(0, performance.now() - started);
+      databaseMetrics.query_duration_ms_count += 1;
+      databaseMetrics.inflight_queries = Math.max(0, databaseMetrics.inflight_queries - 1);
+    }
+    }
+
+    function instrumentClient(client: Client): Client {
+    return new Proxy(client, {
+      get(target, prop: string | symbol) {
+        const value = Reflect.get(target, prop, target);
+        if ((prop !== 'execute' && prop !== 'batch') || typeof value !== 'function') return value;
+        return (...args: unknown[]) => measureDatabaseOperation(() => Promise.resolve((value as AnyFn).apply(target, args)));
+      },
+    }) as Client;
+    }
+
+    export function getDatabaseMetrics(): DatabaseMetrics {
+    return {
+      ...databaseMetrics,
+      client_initialized: _client !== null,
+    };
+    }
+
+    export function getClient(): Client {
     if (_client) return _client;
-    _client = createClient({
+    _client = instrumentClient(createClient({
       url: env.TURSO_DATABASE_URL,
       authToken: env.TURSO_AUTH_TOKEN,
-    });
+    }));
     return _client;
-  }
+    }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type AnyFn = (...args: any[]) => any;
-
-  // Proxy that forwards all property access to the real client.
-  // Methods are bound to the real client so that `this` inside libsql
-  // methods (which use private class fields like #promiseLimitFunction)
-  // is the actual HttpClient instance, not the Proxy target.
-  export const db = new Proxy({} as Client, {
+    // Proxy that forwards property access to the instrumented client.
+    export const db = new Proxy({} as Client, {
     get(_, prop: string | symbol) {
       const c = getClient() as unknown as Record<string | symbol, unknown>;
       const val = c[prop];
       if (typeof val !== 'function') return val;
       return (val as AnyFn).bind(c);
     },
-  }) as Client;
+    }) as Client;
 
-  // ── Schema ────────────────────────────────────────────────────────────────────
+    // ── Schema ────────────────────────────────────────────────────────────────────
 
   // fix (2026-07-13) — READ EXHAUSTION: initSchema() ran its FULL migration
   // script -- every CREATE TABLE IF NOT EXISTS, every ALTER TABLE, every
