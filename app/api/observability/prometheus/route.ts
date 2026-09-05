@@ -1,4 +1,4 @@
-import { db, initSchema } from '@/lib/db';
+import { db, getDatabaseMetrics, initSchema } from '@/lib/db';
 import { applyRequestContext, createRequestContext } from '@/lib/request-context';
 
 export const runtime = 'nodejs';
@@ -33,6 +33,7 @@ export async function GET(req: Request): Promise<Response> {
     const totalCalls = Number(row.total_calls ?? 0);
     const totalInterventions = Number(row.total_interventions ?? 0);
     const labels = { window_minutes: String(windowMinutes) };
+    const database = getDatabaseMetrics();
     const lines = [
       '# HELP lex_governance_calls_in_window Governance receipts in the selected time window.',
       '# TYPE lex_governance_calls_in_window gauge',
@@ -49,6 +50,24 @@ export async function GET(req: Request): Promise<Response> {
       '# HELP lex_observability_up Whether the observability query completed successfully.',
       '# TYPE lex_observability_up gauge',
       'lex_observability_up 1',
+      '# HELP lex_database_queries_total Total database execute and batch operations.',
+      '# TYPE lex_database_queries_total counter',
+      'lex_database_queries_total ' + database.queries_total,
+      '# HELP lex_database_query_errors_total Database operations that failed.',
+      '# TYPE lex_database_query_errors_total counter',
+      'lex_database_query_errors_total ' + database.query_errors_total,
+      '# HELP lex_database_query_duration_ms_total Total observed database operation duration in milliseconds.',
+      '# TYPE lex_database_query_duration_ms_total counter',
+      'lex_database_query_duration_ms_total ' + database.query_duration_ms_total,
+      '# HELP lex_database_query_duration_ms_count Number of observed database operations.',
+      '# TYPE lex_database_query_duration_ms_count counter',
+      'lex_database_query_duration_ms_count ' + database.query_duration_ms_count,
+      '# HELP lex_database_inflight_queries Current database operations in flight.',
+      '# TYPE lex_database_inflight_queries gauge',
+      'lex_database_inflight_queries ' + database.inflight_queries,
+      '# HELP lex_database_client_initialized Whether the database client has been initialized.',
+      '# TYPE lex_database_client_initialized gauge',
+      'lex_database_client_initialized ' + (database.client_initialized ? 1 : 0),
     ];
     return applyRequestContext(new Response(lines.join('\n') + '\n', { headers: { 'Content-Type': 'text/plain; version=0.0.4', 'Cache-Control': 'private, max-age=30' } }), context);
   } catch {
