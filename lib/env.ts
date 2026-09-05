@@ -37,6 +37,9 @@ type EnvShape = {
   NEXT_PUBLIC_PRO_CHECKOUT_URL: string | undefined;
   LOG_DRAIN_URL:                string | undefined;
   LOG_DRAIN_TOKEN:              string | undefined;
+  GRAFANA_LOKI_URL:             string | undefined;
+  GRAFANA_LOKI_USER:            string | undefined;
+  GRAFANA_LOKI_TOKEN:           string | undefined;
   BENCH_SECRET:                 string | undefined;
 };
 

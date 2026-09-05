@@ -23,6 +23,7 @@ vi.mock('../lib/db', () => ({
   runZTrajMigrations: vi.fn(async () => undefined),
   getAggregateConstitutionalState: vi.fn(async () => ({ C: 0.34, R: 0.33, S: 0.33, M: 0.33 })),
   initSchema: vi.fn(async () => undefined),
+  getDatabaseMetrics: vi.fn(() => ({ queries_total: 2, query_errors_total: 0, query_duration_ms_total: 4, query_duration_ms_count: 2, inflight_queries: 0, client_initialized: true })),
 }));
 
 // ── Mock lex_memory — avoids Jina API calls and crypto.subtle in test env ─────
@@ -190,4 +191,29 @@ describe('API integration', () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining('session_id') });
   });
+
+    it('observability metrics reject invalid windows with correlation headers', async () => {
+      const { GET } = await import('../app/api/observability/metrics/route');
+      const traceId = '0123456789abcdef0123456789abcdef';
+      const res = await GET(new Request('http://localhost/api/observability/metrics?window_minutes=2', {
+        headers: {
+          'x-request-id': 'observability-test',
+          traceparent: '00-' + traceId + '-0123456789abcdef-01',
+        },
+      }) as Request);
+      expect(res.status).toBe(400);
+      expect(res.headers.get('x-request-id')).toBe('observability-test');
+      expect(res.headers.get('x-trace-id')).toBe(traceId);
+    });
+
+    it('exposes a Prometheus-compatible observability endpoint', async () => {
+      const { GET } = await import('../app/api/observability/prometheus/route');
+      const res = await GET(new Request('http://localhost/api/observability/prometheus') as Request);
+      const body = await res.text();
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toMatch(/text\/plain/);
+      expect(body).toMatch(/lex_governance_calls_in_window/);
+      expect(body).toMatch(/lex_observability_up 1/);
+    expect(body).toMatch(/lex_database_queries_total 2/);
+    });
 });
