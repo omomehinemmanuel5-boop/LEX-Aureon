@@ -9,7 +9,7 @@
 
   let _client: Client | null = null;
 
-    type AnyFn = (...args: any[]) => any;
+    type AnyFn = (...args: unknown[]) => unknown;
 
     export interface DatabaseMetrics {
     queries_total: number;
