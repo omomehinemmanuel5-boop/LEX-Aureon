@@ -1,5 +1,5 @@
 /** Governance observability metrics endpoint. */
-import { db } from '@/lib/db';
+import { db, getDatabaseMetrics } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { applyRequestContext, createRequestContext } from '@/lib/request-context';
 import { NextResponse } from 'next/server';
@@ -34,6 +34,7 @@ interface MetricsResponse {
   };
   health_distribution: { OPTIMAL: number; ALERT: number; STRESSED: number; CRITICAL: number };
   health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
+  database: ReturnType<typeof getDatabaseMetrics>;
 }
 
 export function parseWindowMinutes(raw: string | null): number | null {
@@ -97,6 +98,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       };
     }
 
+    const database = getDatabaseMetrics();
     const response: MetricsResponse = {
       timestamp: new Date().toISOString(),
       window_minutes: windowMinutes,
@@ -117,6 +119,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         CRITICAL: Number(s.critical_count ?? 0),
       },
       health_status: healthStatus,
+      database,
     };
     logger.info('observability.metrics', 'metrics served', { total_calls: totalCalls, health: healthStatus, window_minutes: windowMinutes, request_id: context.requestId, trace_id: context.traceId });
     return json(response, 200, 'private, max-age=30');
