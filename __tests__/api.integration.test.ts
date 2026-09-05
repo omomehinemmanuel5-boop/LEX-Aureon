@@ -23,6 +23,7 @@ vi.mock('../lib/db', () => ({
   runZTrajMigrations: vi.fn(async () => undefined),
   getAggregateConstitutionalState: vi.fn(async () => ({ C: 0.34, R: 0.33, S: 0.33, M: 0.33 })),
   initSchema: vi.fn(async () => undefined),
+  getDatabaseMetrics: vi.fn(() => ({ queries_total: 2, query_errors_total: 0, query_duration_ms_total: 4, query_duration_ms_count: 2, inflight_queries: 0, client_initialized: true })),
 }));
 
 // ── Mock lex_memory — avoids Jina API calls and crypto.subtle in test env ─────
@@ -213,5 +214,6 @@ describe('API integration', () => {
       expect(res.headers.get('content-type')).toMatch(/text\/plain/);
       expect(body).toMatch(/lex_governance_calls_in_window/);
       expect(body).toMatch(/lex_observability_up 1/);
+    expect(body).toMatch(/lex_database_queries_total 2/);
     });
 });
