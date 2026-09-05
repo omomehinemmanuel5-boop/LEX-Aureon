@@ -33,3 +33,14 @@ Available endpoints:
 - `GET /api/observability/prometheus?window_minutes=60` — Prometheus text exposition for Grafana scraping.
 
 Optional structured log shipping remains compatible with `LOG_DRAIN_URL` and adds Grafana Loki support when all three values are configured: `GRAFANA_LOKI_URL`, `GRAFANA_LOKI_USER`, and `GRAFANA_LOKI_TOKEN`. Delivery is best-effort and never blocks an application request.
+## Database health telemetry
+
+Database `execute` and `batch` operations are measured at the shared Turso client boundary. The metrics intentionally contain no SQL text, bind values, or user content:
+
+- `lex_database_queries_total` — completed database operations.
+- `lex_database_query_errors_total` — failed database operations.
+- `lex_database_query_duration_ms_total` and `lex_database_query_duration_ms_count` — aggregate latency suitable for average-duration calculations.
+- `lex_database_inflight_queries` — current database work in flight.
+- `lex_database_client_initialized` — whether the shared client has been initialized.
+
+The `praxis_receipts.created_at` index supports the bounded observability windows and should be retained when changing receipt queries.
