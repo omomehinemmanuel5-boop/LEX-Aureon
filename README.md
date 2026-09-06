@@ -10,6 +10,7 @@
 |---|---|
 | Live system | <https://lexaureon.com> |
 | Governance API | `POST https://www.lexaureon.com/api/lex/govern` |
+| Agent governance (MCP) | `POST https://www.lexaureon.com/api/mcp` |
 | Public audit trail | <https://lexaureon.com/audit> |
 | Benchmarks | <https://lexaureon.com/benchmarks> · `GET /api/benchmarks` |
 | Research page | <https://lexaureon.com/research> |
@@ -52,6 +53,47 @@ Each governed turn passes through the PRAXIS pipeline:
 8. persist a cryptographic audit receipt.
 
 The result is not just a safer response. It is a response with a receipt showing the state, intervention, hashes, Lyapunov value, z-weights, and persistence status for later audit.
+
+---
+
+## Agent and tool-call governance
+
+Lex Aureon also governs *actions*, not just text. Every tool call an
+agent makes — through the MCP endpoint or the internal agent loop —
+passes through `executeGovernedTool`, which:
+
+1. runs semantic injection detection against the tool's arguments,
+2. authorizes the call against the live constitutional state (same
+   C/R/S/M pipeline as text governance),
+3. re-verifies the kernel-critical margin before serving any cached
+   result, so a session that has dropped into the critical floor
+   cannot be bypassed by a stale cache entry,
+4. returns a signed decision receipt — approved or denied — before
+   the tool's actual result.
+
+Read-only tools (`read_file`, `grep`, `search_memory`, etc.) may be
+served from a short-lived cache, but authorization is recomputed on
+every request regardless of cache state.
+
+Example decision, from a live MCP tool call:
+
+```text
+── Constitutional tool-call decision [get_build_status] ──
+decision:    APPROVED_ULTRA_LOW
+approved:    true
+crs:         C=0.375 R=0.237 S=0.387 M=0.237
+risk_level:  ULTRA_LOW
+health_band: OPTIMAL
+sigma_viol:  0.000
+receipt_id:  TCR-27F39C594A17FB98
+reason:      Constitutional bounds satisfied.
+authorization_rechecked: true
+cache_hit:   false
+```
+
+A denied call returns the same receipt shape with `approved: false`
+and a `reason` explaining what fired — e.g. semantic injection
+detection on the tool arguments.
 
 ---
 
@@ -157,6 +199,11 @@ Typical response fields include:
 | `lib/sovereign_kernel.ts` | Kernel cycle, semantic attack detection, Lyapunov receipt data. |
 | `lib/aureonics_core.ts` | Constitutional constants and recovery defaults. |
 | `lib/aureonics_math.ts` | Display-only math helpers, including `computeZWeightsHeuristic`. |
+| `app/api/mcp/route.ts` | MCP endpoint — routes agent tool calls through governance. |
+| `lib/agents/constitutional_tool_executor.ts` | `executeGovernedTool` — per-call authorization, caching, kernel-floor re-check. |
+| `lib/agents/tool_interceptor.ts` | Injection detection and authorization decision logic. |
+| `lib/agents/trajectory_governance.ts` | Multi-step agent trajectory governance. |
+| `lib/lex_crs_agent/loop.ts` | Lex CRS Agent's own governed action loop. |
 | `components/CbfInvariancePanel.tsx` | Landing-page numerical FPL-1 certificate panel. |
 | `research/open-problems.md` | Remaining mathematical open problem and resolved-problem ledger. |
 | `research/empirical-results.md` | Run notes and empirical evidence. |
