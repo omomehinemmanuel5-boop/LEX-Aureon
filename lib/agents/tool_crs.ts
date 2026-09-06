@@ -296,10 +296,43 @@ interface SemanticInjectionResult {
  * semanticInjectionCheck is the production wrapper that applies the threshold
  * to this — one scoring code path, so the harness measures exactly what runs.
  */
+// fix (2026-09-06) — NATURAL-LANGUAGE SHAPE GATE: same root cause this file
+// already fixed twice (JSON.stringify(args) vs SQL COUNT(*), see file
+// header) — embedding structural/symbolic text against natural-language
+// archetype sentences produces unreliable similarity, independent of actual
+// meaning. FREE_TEXT_FIELDS correctly excludes structural fields like 'sql'
+// BY NAME, but a field that legitimately holds natural language for one
+// tool (a chat message's `query`) can hold a bare technical identifier for
+// another (search_code's `query`) — the field name alone doesn't determine
+// whether its *content* is prose. Observed directly in production:
+// search_code({query: "executeGovernedTool"}) — a single 20-character
+// camelCase identifier, zero natural-language structure — scored
+// sim=0.851 against archetype "This is a system override...", just over
+// SEMANTIC_INJECTION_THRESHOLD=0.85 (itself calibrated on only 4 points,
+// see file header HONEST STATE note), producing a false DENIED_INJECTION
+// on a completely benign code search.
+//
+// This gate is also a sound security argument on its own, not just a
+// convenience fix: a real injection attempt is inherently an instruction
+// ("ignore previous rules and do X") — that requires multiple words to
+// even express. A single whitespace-free token has no room to encode
+// injection semantics, paraphrased or otherwise. The fast regex pass
+// (deterministicScan, e.g. the literal `[SYSTEM OVERRIDE]` pattern) still
+// runs unconditionally beforehand and is completely unaffected by this
+// gate — this only narrows the slower, paraphrase-tolerant second pass to
+// text that could plausibly BE a natural-language paraphrase in the first
+// place.
+const MIN_WORDS_FOR_SEMANTIC_CHECK = 3;
+
+function looksLikeNaturalLanguage(text: string): boolean {
+  return text.trim().split(/\s+/).filter(Boolean).length >= MIN_WORDS_FOR_SEMANTIC_CHECK;
+}
+
 export async function injectionSimilarity(
   freeText: string,
 ): Promise<{ similarity: number; matched?: string; degraded: boolean }> {
   if (!freeText.trim()) return { similarity: 0, degraded: false };
+  if (!looksLikeNaturalLanguage(freeText)) return { similarity: 0, degraded: false };
   try {
     const { vecs: archetypeVecs, provider } = await embedArchetypesWithProvider();
     const contentVec = await embedTextWithProvider(freeText, provider);
