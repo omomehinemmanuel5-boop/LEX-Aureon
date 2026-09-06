@@ -683,7 +683,8 @@ const READ_ONLY_TOOLS = new Set([
   'read_file', 'list_directory', 'search_code', 'get_build_status',
   'get_workflow_run', 'get_workflow_log', 'get_workflow_artifact',
   'check_github_token_scope', 'get_constitutional_state', 'get_recent_receipts',
-  'get_vercel_logs', 'run_self_test', 'self_reflect', 'narrate_origin'
+  'get_vercel_logs', 'run_self_test', 'self_reflect', 'narrate_origin',
+  'get_trajectory_status'
 ]);
 
 // ── Main: measure tool call CRS ────────────────────────────────────────────

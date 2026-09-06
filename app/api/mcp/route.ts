@@ -10,6 +10,9 @@ import { NextResponse } from 'next/server';
 import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
 import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
+import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
+import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
+import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity } from '@/lib/db';
 import crypto from 'crypto';
@@ -202,6 +205,54 @@ export async function POST(req: Request) {
       // executor's cache, but authorization is recomputed for every call.
       // Non-read tools are never cached and still pass through the same
       // constitutional decision point.
+      // fix (2026-09-06): trajectory-aware dispatch. Plan-declaring/status/
+      // clear tools always go through bare executeGovernedTool — they
+      // manage trajectory state, so gating them BY a trajectory would be
+      // circular. For every other tool: if this session has declared an
+      // active (unlocked, incomplete) plan via declare_trajectory_plan,
+      // route through executeGovernedTrajectoryAction instead — plan-level
+      // scope/order/drift enforcement on top of, not instead of, the same
+      // per-call constitutional authorization as before. Sessions that
+      // never declare a plan are completely unaffected: falls straight
+      // through to the original bare path.
+      const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan']);
+      const trajectoryState = TRAJECTORY_META_TOOLS.has(toolName) ? undefined : getTrajectoryState(sessionId);
+
+      if (trajectoryState && isTrajectoryActive(trajectoryState)) {
+        const expected = trajectoryState.plan.actions[trajectoryState.currentStep];
+        const attemptedAction: TrajectoryAction = {
+          actionId: trajectoryActionId(toolName, trajectoryState.currentStep),
+          toolName,
+          declaredIntent: expected?.toolName === toolName ? expected.declaredIntent : `Undeclared call to ${toolName}`,
+          risk: expected?.toolName === toolName ? expected.risk : 'destructive',
+          target: expected?.target,
+        };
+
+        const execution = await executeGovernedTrajectoryAction(
+          trajectoryState,
+          attemptedAction,
+          args,
+          toolFn,
+          sessionId,
+          args.task_context as string | undefined,
+        );
+
+        if (isTrajectoryActive(execution.state)) {
+          setTrajectoryState(sessionId, execution.state);
+        } else {
+          // Plan completed or locked — clear it so further calls in this
+          // session fall back to ordinary per-call governance rather than
+          // staying permanently gated by a finished or violated plan.
+          clearTrajectoryState(sessionId);
+        }
+
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          result: { content: [{ type: 'text', text: execution.result }] },
+          id,
+        });
+      }
+
       const result = await executeGovernedTool(
         toolName,
         args,

@@ -598,6 +598,89 @@ export async function narrate_origin({ component }: { component?: string }): Pro
   } catch (e) { return `Error: ${String(e)}`; }
 }
 
+// ── declare_trajectory_plan / get_trajectory_status (2026-09-06) ──────────────
+// Wires lib/agents/trajectory_governance.ts — plan-level scope/order/drift
+// enforcement — into this MCP server. Previously real, tested code that was
+// only exercised by scripts/agentdojo-real/trajectory-run.ts (the benchmark
+// harness); this endpoint's tools/call dispatch went straight to bare
+// executeGovernedTool for every call, with no concept of a declared plan.
+//
+// Deliberately OPT-IN, not forced onto every session: declare_trajectory_plan
+// creates a TrajectoryState (see trajectory_session_store.ts) that ONLY this
+// session_id activates. Sessions that never call it behave exactly as
+// before — bare per-call governance, unchanged. This matters because a
+// live agent session (a chat client calling tools one at a time as a
+// conversation unfolds) does not resemble the benchmark harness's use case
+// of a fully-known-in-advance action list; forcing every session through
+// strict pre-declared ordering would break normal ad-hoc tool use, not
+// secure it. Declaring a plan is a deliberate choice by the calling agent
+// to submit a specific piece of work to stricter scope/order/drift
+// enforcement — same trust model as the rest of this file's tools, applied
+// one level up.
+import type { TrajectoryAction } from '../agents/trajectory_governance';
+import { createTrajectoryPlan, createTrajectoryState } from '../agents/trajectory_governance';
+import { trajectoryActionId } from '../agents/trajectory_executor';
+import { setTrajectoryState, getTrajectoryState, clearTrajectoryState } from '../agents/trajectory_session_store';
+
+export async function declare_trajectory_plan({
+  goal, authorized_scope, risk_ceiling, actions, session_id,
+}: {
+  goal: string;
+  authorized_scope: string[];
+  risk_ceiling: 'read' | 'write' | 'external' | 'destructive';
+  actions: Array<{ toolName: string; declaredIntent: string; risk: 'read' | 'write' | 'external' | 'destructive'; target?: string }>;
+  session_id?: string;
+}): Promise<string> {
+  if (!session_id) return 'Error: session_id is required to declare a trajectory plan.';
+  if (!actions?.length) return 'Error: a plan needs at least one declared action.';
+
+  const declared: TrajectoryAction[] = actions.map((a, i) => ({
+    actionId: trajectoryActionId(a.toolName, i),
+    toolName: a.toolName,
+    declaredIntent: a.declaredIntent,
+    risk: a.risk,
+    target: a.target,
+  }));
+
+  const plan = createTrajectoryPlan({
+    goal,
+    authorizedScope: authorized_scope,
+    riskCeiling: risk_ceiling,
+    actions: declared,
+  });
+  const state = createTrajectoryState(plan);
+  setTrajectoryState(session_id, state);
+
+  const steps = declared.map((a, i) => `  ${i + 1}. [${a.actionId}] ${a.toolName} — ${a.declaredIntent} (risk: ${a.risk})`).join('\n');
+  return `✓ Trajectory plan declared: ${plan.planId}\n` +
+    `Goal: ${goal}\n` +
+    `Authorized scope: ${authorized_scope.join(', ')}\n` +
+    `Risk ceiling: ${risk_ceiling}\n` +
+    `Declared steps:\n${steps}\n\n` +
+    `Every subsequent tools/call in this session must match the next declared step, in order, exactly — ` +
+    `otherwise it is denied as trajectory_step_mismatch or action_outside_authorized_scope before it reaches the tool itself.`;
+}
+
+export async function get_trajectory_status({ session_id }: { session_id?: string }): Promise<string> {
+  if (!session_id) return 'Error: session_id is required.';
+  const state = getTrajectoryState(session_id);
+  if (!state) return `No active trajectory plan for session ${session_id}. Calls are governed per-call, not plan-gated.`;
+
+  const remaining = state.plan.actions.slice(state.currentStep);
+  const next = remaining[0];
+  return `Plan: ${state.plan.planId} — "${state.plan.goal}"\n` +
+    `Progress: ${state.currentStep}/${state.plan.actions.length} steps completed\n` +
+    `Drift score: ${state.driftScore.toFixed(2)}\n` +
+    `Locked: ${state.locked}\n` +
+    (next ? `Next required step: [${next.actionId}] ${next.toolName} — ${next.declaredIntent}` : 'All declared steps completed.');
+}
+
+export async function clear_trajectory_plan({ session_id }: { session_id?: string }): Promise<string> {
+  if (!session_id) return 'Error: session_id is required.';
+  clearTrajectoryState(session_id);
+  return `✓ Cleared trajectory plan for session ${session_id}. Further calls in this session are governed per-call again.`;
+}
+
 // ── Tool registry (PURE) ────────────────────────────────────────────────────
 // Logic only, no governance wrapping here. Both callers (app/api/mcp/route.ts
 // and lib/lex_crs_agent/loop.ts) apply governance at the dispatch boundary via
@@ -630,6 +713,9 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   },
   log_decision:              (a) => log_decision(a as { decision: string; reasoning: string; evidence?: string; commit_sha?: string; component: string }),
   narrate_origin:            (a) => narrate_origin(a as { component?: string }),
+  declare_trajectory_plan:   (a) => declare_trajectory_plan(a as Parameters<typeof declare_trajectory_plan>[0]),
+  get_trajectory_status:     (a) => get_trajectory_status(a as { session_id?: string }),
+  clear_trajectory_plan:     (a) => clear_trajectory_plan(a as { session_id?: string }),
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
@@ -791,6 +877,52 @@ export const TOOL_DEFINITIONS = [
       properties: {
         component: { type: 'string', description: 'Optional. Scope to one subsystem, e.g. "tool_crs" or "audit". Omit for the full recent history across all components.' },
       },
+    },
+  },
+  {
+    name: 'declare_trajectory_plan',
+    description: 'Declare an ordered, scope-limited plan BEFORE executing a multi-step piece of work in this session. Once declared, every subsequent tools/call in this session_id must match the next declared step exactly, in order — any tool call outside the declared scope, above the risk ceiling, or out of sequence is denied before it reaches the tool itself, on top of (not instead of) normal per-call governance. Optional: sessions that never call this are governed per-call as before, unaffected.',
+    parameters: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'What this plan is for.' },
+        authorized_scope: { type: 'array', items: { type: 'string' }, description: 'Tool names this plan is allowed to use at all, e.g. ["read_file", "search_code"].' },
+        risk_ceiling: { type: 'string', enum: ['read', 'write', 'external', 'destructive'], description: 'Highest risk level any declared action may reach.' },
+        actions: {
+          type: 'array',
+          description: 'Ordered list of declared steps. Each subsequent tools/call must match these, in this exact order.',
+          items: {
+            type: 'object',
+            properties: {
+              toolName: { type: 'string' },
+              declaredIntent: { type: 'string', description: 'What this specific step is for.' },
+              risk: { type: 'string', enum: ['read', 'write', 'external', 'destructive'] },
+              target: { type: 'string', description: 'Optional. What this step targets, e.g. a file path.' },
+            },
+            required: ['toolName', 'declaredIntent', 'risk'],
+          },
+        },
+        session_id: { type: 'string', description: 'Required. The session this plan governs.' },
+      },
+      required: ['goal', 'authorized_scope', 'risk_ceiling', 'actions', 'session_id'],
+    },
+  },
+  {
+    name: 'get_trajectory_status',
+    description: 'Check the active trajectory plan for a session: progress, drift score, lock state, and the next required step. Read-only, does not affect the plan.',
+    parameters: {
+      type: 'object',
+      properties: { session_id: { type: 'string' } },
+      required: ['session_id'],
+    },
+  },
+  {
+    name: 'clear_trajectory_plan',
+    description: 'Cancel the active trajectory plan for a session. Further tools/call requests in that session are governed per-call again, with no plan-level scope/order enforcement.',
+    parameters: {
+      type: 'object',
+      properties: { session_id: { type: 'string' } },
+      required: ['session_id'],
     },
   },
 ];
