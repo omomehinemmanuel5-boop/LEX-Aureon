@@ -5,11 +5,12 @@
 [![CI](https://github.com/omomehinemmanuel5-boop/LEX-Aureon/actions/workflows/ci.yml/badge.svg)](https://github.com/omomehinemmanuel5-boop/LEX-Aureon/actions/workflows/ci.yml)
 [![Zenodo](https://img.shields.io/badge/paper-10.5281%2Fzenodo.18944242-blue)](https://doi.org/10.5281/zenodo.18944242)
 [![Live](https://img.shields.io/badge/live-lexaureon.com-gold)](https://lexaureon.com)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 
 | Resource | Link |
 |---|---|
 | Live system | <https://lexaureon.com> |
-| Governance API | `POST https://www.lexaureon.com/api/lex/govern` |
+| Text governance API | `POST https://www.lexaureon.com/api/lex/govern` |
 | Agent governance (MCP) | `POST https://www.lexaureon.com/api/mcp` |
 | Public audit trail | <https://lexaureon.com/audit> |
 | Benchmarks | <https://lexaureon.com/benchmarks> · `GET /api/benchmarks` |
@@ -26,12 +27,23 @@
 - [Evaluation manifest](docs/evaluation-manifest.md)
 - [Contributing](CONTRIBUTING.md)
 
+### Contents
+
+- [What Lex Aureon does](#what-lex-aureon-does)
+- [Agent and tool-call governance](#agent-and-tool-call-governance)
+- [Current research status](#current-research-status)
+- [Quick start](#quick-start)
+- [API example](#api-example)
+- [Repository map](#repository-map)
+- [Benchmarks and evaluation](#benchmarks-and-evaluation)
+- [Next improvements](#next-improvements)
+- [Non-negotiables](#non-negotiables)
 
 ---
 
 ## What Lex Aureon does
 
-Lex Aureon sits above a model call and governs the output before it reaches the user. It tracks constitutional state as:
+Lex Aureon governs two surfaces with one shared constitutional core: **text** a model generates, and **actions** an agent takes. Both pass through the same invariant.
 
 ```text
 x = (C, R, S)          C + R + S = 1
@@ -41,16 +53,20 @@ S = Sovereignty        resistance to manipulation and capture
 M(x) = min(C, R, S)    constitutional stability margin
 ```
 
-Each governed turn passes through the PRAXIS pipeline:
+### Text governance
 
-1. classify prompt risk,
-2. map text into `Δ(C,R,S)`,
-3. update session-adaptive `z` weights in Turso,
-4. apply any fired constitutional law impact,
-5. choose governor mode,
-6. apply the minimum necessary correction,
-7. detect slow-drip pressure,
-8. persist a cryptographic audit receipt.
+Every governed turn passes through the PRAXIS pipeline:
+
+```mermaid
+flowchart LR
+    A[Classify prompt risk] --> B["Map text → Δ(C,R,S)"]
+    B --> C[Update session z-weights<br/>in Turso]
+    C --> D[Apply fired<br/>constitutional law]
+    D --> E[Choose governor mode]
+    E --> F[Apply minimum<br/>necessary correction]
+    F --> G[Detect slow-drip<br/>pressure]
+    G --> H[(Persist signed<br/>audit receipt)]
+```
 
 The result is not just a safer response. It is a response with a receipt showing the state, intervention, hashes, Lyapunov value, z-weights, and persistence status for later audit.
 
@@ -58,24 +74,17 @@ The result is not just a safer response. It is a response with a receipt showing
 
 ## Agent and tool-call governance
 
-Lex Aureon also governs *actions*, not just text. Every tool call an
-agent makes — through the MCP endpoint or the internal agent loop —
-passes through `executeGovernedTool`, which:
+Lex Aureon also governs *actions*, not just text. Every tool call an agent makes — through the MCP endpoint or the internal agent loop — passes through `executeGovernedTool`, which:
 
 1. runs semantic injection detection against the tool's arguments,
-2. authorizes the call against the live constitutional state (same
-   C/R/S/M pipeline as text governance),
-3. re-verifies the kernel-critical margin before serving any cached
-   result, so a session that has dropped into the critical floor
-   cannot be bypassed by a stale cache entry,
-4. returns a signed decision receipt — approved or denied — before
-   the tool's actual result.
+2. authorizes the call against the live constitutional state (same C/R/S/M pipeline as text governance),
+3. re-verifies the kernel-critical margin before serving any cached result, so a session that has dropped into the critical floor cannot be bypassed by a stale cache entry,
+4. returns a signed decision receipt — approved or denied — before the tool's actual result.
 
-Read-only tools (`read_file`, `grep`, `search_memory`, etc.) may be
-served from a short-lived cache, but authorization is recomputed on
-every request regardless of cache state.
+Read-only tools (`read_file`, `grep`, `search_memory`, etc.) may be served from a short-lived cache, but authorization is recomputed on every request regardless of cache state.
 
-Example decision, from a live MCP tool call:
+<details>
+<summary><strong>Example decision, from a live MCP tool call</strong></summary>
 
 ```text
 ── Constitutional tool-call decision [get_build_status] ──
@@ -91,9 +100,9 @@ authorization_rechecked: true
 cache_hit:   false
 ```
 
-A denied call returns the same receipt shape with `approved: false`
-and a `reason` explaining what fired — e.g. semantic injection
-detection on the tool arguments.
+A denied call returns the same receipt shape with `approved: false` and a `reason` explaining what fired — e.g. semantic injection detection on the tool arguments.
+
+</details>
 
 ---
 
@@ -111,7 +120,7 @@ Lex Aureon separates deployed engineering claims from mathematical claims:
 | Multi-pillar global Lyapunov proof | **Still open**; current residual is the closed-form governor-vs-drift margin. |
 | Deployed production descent rate | Instrumented honestly; production `ΔV_z≤0` does not yet match the idealized continuous-flow proof on all turns. |
 
-**Important boundary:** the simulator certificate is a seeded, finite-horizon numerical certificate. It does not replace the open analytical multi-pillar proof.
+> **Important boundary:** the simulator certificate is a seeded, finite-horizon numerical certificate. It does not replace the open analytical multi-pillar proof.
 
 The open-problem tracker is `research/open-problems.md`. It now lists only the remaining mathematical open problem and points resolved items to their closure notes.
 
@@ -126,7 +135,10 @@ The open-problem tracker is `research/open-problems.md`. It now lists only the r
 - Turso database credentials for full local operation
 - Provider keys for live model/embedding calls
 
-Required environment variables are validated through `lib/env.ts`:
+<details>
+<summary>Environment variables (validated through <code>lib/env.ts</code>)</summary>
+
+**Required:**
 
 ```bash
 GROQ_API_KEY=
@@ -138,7 +150,9 @@ CRON_SECRET=
 NEXT_PUBLIC_SITE_URL=
 ```
 
-Optional providers and ops integrations include `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `CEREBRAS_API_KEY`, `RESEND_API_KEY`, `OPS_ALERT_EMAIL`, `AUDITOR_SECRET`, `SERPER_API_KEY`, `GITHUB_TOKEN`, and `VERCEL_TOKEN`.
+**Optional** (providers and ops integrations): `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `CEREBRAS_API_KEY`, `RESEND_API_KEY`, `OPS_ALERT_EMAIL`, `AUDITOR_SECRET`, `SERPER_API_KEY`, `GITHUB_TOKEN`, `VERCEL_TOKEN`.
+
+</details>
 
 ### Install and run
 
@@ -189,9 +203,12 @@ Typical response fields include:
 
 ## Repository map
 
+<details>
+<summary>Expand full repository map</summary>
+
 | Path | Purpose |
 |---|---|
-| `app/api/lex/govern/route.ts` | Canonical governance endpoint. |
+| `app/api/lex/govern/route.ts` | Canonical text-governance endpoint. |
 | `lib/governance_service.ts` | Extracted govern pipeline service. |
 | `lib/praxis.ts` | PRAXIS governor logic. |
 | `lib/kv.ts` | Turso state, receipts, z-trajectory update rule. |
@@ -202,12 +219,16 @@ Typical response fields include:
 | `app/api/mcp/route.ts` | MCP endpoint — routes agent tool calls through governance. |
 | `lib/agents/constitutional_tool_executor.ts` | `executeGovernedTool` — per-call authorization, caching, kernel-floor re-check. |
 | `lib/agents/tool_interceptor.ts` | Injection detection and authorization decision logic. |
-| `lib/agents/trajectory_governance.ts` | Multi-step agent trajectory governance. |
+| `lib/agents/tool_crs.ts` | Tool-call CRS measurement — regex + semantic injection detection. |
+| `lib/agents/trajectory_governance.ts` | Multi-step agent trajectory (plan-level) governance. |
+| `lib/agents/trajectory_executor.ts` | Wires trajectory authorization in front of `executeGovernedTool`. |
 | `lib/lex_crs_agent/loop.ts` | Lex CRS Agent's own governed action loop. |
 | `components/CbfInvariancePanel.tsx` | Landing-page numerical FPL-1 certificate panel. |
 | `research/open-problems.md` | Remaining mathematical open problem and resolved-problem ledger. |
 | `research/empirical-results.md` | Run notes and empirical evidence. |
 | `scripts/lexbench/` | Benchmark runner, judges, aggregation, publication. |
+
+</details>
 
 ---
 
