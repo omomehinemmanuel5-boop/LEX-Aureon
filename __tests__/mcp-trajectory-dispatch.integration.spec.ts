@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedTrajectoryAction } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedTrajectoryAction, dbExecute } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedTrajectoryAction: vi.fn(),
+  dbExecute: vi.fn(),
 }));
 
 vi.mock('next/server', () => ({
@@ -27,12 +28,43 @@ vi.mock('@/lib/db', () => ({
   recordMcpClientIdentity: vi.fn(async () => {}),
 }));
 
+// The trajectory session store (imported both by route.ts via '@/lib/...'
+// and by declare_trajectory_plan via '../agents/...') is Turso-backed as of
+// the 2026-09-06 fix. Mock its underlying getClient() with a simple
+// in-memory table simulation — same approach as trajectory-session-store.spec.ts
+// — rather than needing a real DB connection for this dispatch-routing test.
+vi.mock('../lib/db', () => ({
+  getClient: () => ({ execute: dbExecute }),
+}));
+
+function installFakeTrajectoryTable() {
+  const table = new Map<string, string>();
+  dbExecute.mockImplementation(async (query: string | { sql: string; args: unknown[] }) => {
+    if (typeof query === 'string') return { rows: [] };
+    const { sql, args } = query;
+    if (sql.startsWith('SELECT')) {
+      const [sessionId] = args as [string];
+      const json = table.get(sessionId);
+      return { rows: json ? [{ state_json: json }] : [] };
+    }
+    if (sql.startsWith('INSERT')) {
+      const [sessionId, stateJson] = args as [string, string];
+      table.set(sessionId, stateJson);
+      return { rows: [] };
+    }
+    if (sql.startsWith('DELETE')) {
+      const [sessionId] = args as [string];
+      table.delete(sessionId);
+      return { rows: [] };
+    }
+    return { rows: [] };
+  });
+}
+
 // Canned response, does NOT invoke the real toolFn — this test is about
 // dispatch ROUTING decisions (which executor gets called, with what
 // arguments), not about exercising real tool business logic or making
-// real network calls. Trajectory state for the routing tests is set up
-// directly via the real, unmocked declare_trajectory_plan/tools below,
-// not by relying on this mock to run real tool code.
+// real network calls.
 vi.mock('@/lib/agents/constitutional_tool_executor', () => ({
   executeGovernedTool,
 }));
@@ -69,19 +101,26 @@ async function call(name: string, args: Record<string, unknown>) {
 describe('trajectory-aware MCP dispatch', () => {
   const sessionId = 'trajectory-dispatch-test-session';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    clearTrajectoryState(sessionId);
+    installFakeTrajectoryTable();
+    await clearTrajectoryState(sessionId);
     executeGovernedTool.mockResolvedValue('approved:    true\ncache_hit:   false\nBARE_RESULT');
-    executeGovernedTrajectoryAction.mockResolvedValue({
-      state: { plan: { planId: 'p', goal: 'g', authorizedScope: [], riskCeiling: 'read', actions: [] }, currentStep: 1, completed: [], driftScore: 0, locked: false },
+    // Dynamic, not static: reflects the REAL state/plan passed in (advancing
+    // currentStep by one), so tests that declare a real plan and then check
+    // persisted state afterward see a realistic result — not a fixed canned
+    // shape unrelated to what was actually declared. Individual tests that
+    // need a specific denial/completion shape override this with
+    // mockResolvedValueOnce before making that call.
+    executeGovernedTrajectoryAction.mockImplementation(async (state, action) => ({
+      state: { ...state, currentStep: state.currentStep + 1, completed: [...state.completed, action.actionId] },
       result: 'TRAJECTORY_RESULT',
-      action: { actionId: 'x', toolName: 'read_file', declaredIntent: '', risk: 'read' },
-    });
+      action,
+    }));
   });
 
   it('with no declared plan, dispatches through bare executeGovernedTool as before', async () => {
-    expect(getTrajectoryState(sessionId)).toBeUndefined();
+    expect(await getTrajectoryState(sessionId)).toBeUndefined();
     await call('read_file', { path: 'README.md', session_id: sessionId });
     expect(executeGovernedTool).toHaveBeenCalledTimes(1);
     expect(executeGovernedTrajectoryAction).not.toHaveBeenCalled();
@@ -99,7 +138,7 @@ describe('trajectory-aware MCP dispatch', () => {
       session_id: sessionId,
     });
     expect(text).toContain('Trajectory plan declared');
-    const state = getTrajectoryState(sessionId);
+    const state = await getTrajectoryState(sessionId);
     expect(state).toBeDefined();
     expect(state!.plan.actions).toHaveLength(2);
     expect(state!.plan.actions[0].toolName).toBe('read_file');
@@ -137,9 +176,6 @@ describe('trajectory-aware MCP dispatch', () => {
       session_id: sessionId,
     });
 
-    // search_code was never declared — this must still go through the
-    // trajectory gate (responsible for denying it), not silently fall
-    // through to bare per-call governance and be approved.
     await call('search_code', { query: 'foo', session_id: sessionId });
 
     expect(executeGovernedTrajectoryAction).toHaveBeenCalledTimes(1);
@@ -184,10 +220,36 @@ describe('trajectory-aware MCP dispatch', () => {
     });
 
     await call('read_file', { path: 'README.md', session_id: sessionId }); // completes the plan
-    expect(getTrajectoryState(sessionId)).toBeUndefined();
+    expect(await getTrajectoryState(sessionId)).toBeUndefined();
 
     await call('read_file', { path: 'README.md', session_id: sessionId }); // now bare again
     expect(executeGovernedTool).toHaveBeenCalledTimes(1);
     expect(executeGovernedTrajectoryAction).toHaveBeenCalledTimes(1); // only the first (completing) call
+  });
+
+  it('regression: state actually survives a fresh call the way it would across a serverless cold start (the original bug)', async () => {
+    // This is the exact scenario that broke live: declare, then read the
+    // state back as if from a completely separate request/instance —
+    // proven here by NOT sharing any in-process object between the write
+    // and the read, only the fake DB table underneath dbExecute.
+    await declare_trajectory_plan({
+      goal: 'Cold start regression check',
+      authorized_scope: ['read_file'],
+      risk_ceiling: 'read',
+      actions: [
+        { toolName: 'read_file', declaredIntent: 'step one', risk: 'read' },
+        { toolName: 'read_file', declaredIntent: 'step two', risk: 'read' },
+      ],
+      session_id: sessionId,
+    });
+
+    await call('read_file', { path: 'a.md', session_id: sessionId });
+
+    // After one successful step of a two-step plan, state must still be
+    // there and still active — this is exactly what was lost before.
+    const state = await getTrajectoryState(sessionId);
+    expect(state).toBeDefined();
+    expect(state!.currentStep).toBe(1);
+    expect(state!.plan.actions).toHaveLength(2);
   });
 });

@@ -45,6 +45,19 @@ vi.mock('../lib/agents/constitutional_tool_executor', () => ({
   executeGovernedTool,
 }));
 
+// fix (2026-09-06): route.ts now checks getTrajectoryState(sessionId) before
+// every dispatch (trajectory-aware routing). This test is specifically about
+// the BARE per-call dispatch boundary — no trajectory involved — so mock
+// the store to always report "no active trajectory," matching this test's
+// actual scenario, rather than letting it fall through to a real (Turso)
+// DB call this test doesn't otherwise set up.
+vi.mock('../lib/agents/trajectory_session_store', () => ({
+  getTrajectoryState: vi.fn(async () => undefined),
+  setTrajectoryState: vi.fn(async () => {}),
+  clearTrajectoryState: vi.fn(async () => {}),
+  isTrajectoryActive: () => false,
+}));
+
 import { POST } from '../app/api/mcp/route';
 
 function request(body: Record<string, unknown>) {

@@ -216,7 +216,7 @@ export async function POST(req: Request) {
       // never declare a plan are completely unaffected: falls straight
       // through to the original bare path.
       const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan']);
-      const trajectoryState = TRAJECTORY_META_TOOLS.has(toolName) ? undefined : getTrajectoryState(sessionId);
+      const trajectoryState = TRAJECTORY_META_TOOLS.has(toolName) ? undefined : await getTrajectoryState(sessionId);
 
       if (trajectoryState && isTrajectoryActive(trajectoryState)) {
         const expected = trajectoryState.plan.actions[trajectoryState.currentStep];
@@ -238,12 +238,12 @@ export async function POST(req: Request) {
         );
 
         if (isTrajectoryActive(execution.state)) {
-          setTrajectoryState(sessionId, execution.state);
+          await setTrajectoryState(sessionId, execution.state);
         } else {
           // Plan completed or locked — clear it so further calls in this
           // session fall back to ordinary per-call governance rather than
           // staying permanently gated by a finished or violated plan.
-          clearTrajectoryState(sessionId);
+          await clearTrajectoryState(sessionId);
         }
 
         return NextResponse.json({

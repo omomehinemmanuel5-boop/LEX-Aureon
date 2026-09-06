@@ -649,7 +649,7 @@ export async function declare_trajectory_plan({
     actions: declared,
   });
   const state = createTrajectoryState(plan);
-  setTrajectoryState(session_id, state);
+  await setTrajectoryState(session_id, state);
 
   const steps = declared.map((a, i) => `  ${i + 1}. [${a.actionId}] ${a.toolName} — ${a.declaredIntent} (risk: ${a.risk})`).join('\n');
   return `✓ Trajectory plan declared: ${plan.planId}\n` +
@@ -663,7 +663,7 @@ export async function declare_trajectory_plan({
 
 export async function get_trajectory_status({ session_id }: { session_id?: string }): Promise<string> {
   if (!session_id) return 'Error: session_id is required.';
-  const state = getTrajectoryState(session_id);
+  const state = await getTrajectoryState(session_id);
   if (!state) return `No active trajectory plan for session ${session_id}. Calls are governed per-call, not plan-gated.`;
 
   const remaining = state.plan.actions.slice(state.currentStep);
@@ -677,7 +677,7 @@ export async function get_trajectory_status({ session_id }: { session_id?: strin
 
 export async function clear_trajectory_plan({ session_id }: { session_id?: string }): Promise<string> {
   if (!session_id) return 'Error: session_id is required.';
-  clearTrajectoryState(session_id);
+  await clearTrajectoryState(session_id);
   return `✓ Cleared trajectory plan for session ${session_id}. Further calls in this session are governed per-call again.`;
 }
 
