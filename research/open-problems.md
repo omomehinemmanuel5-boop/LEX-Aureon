@@ -92,6 +92,64 @@ direction, checked against `attack_vector_disclosure`, reduced to a
 closed-form parameter condition in `k0, ε_k, μ, τ` matching the shape of
 the closed single-pillar result (`k0/ε_k > 3B/2`).
 
+### Correction to the note above (2026-09-06, same day)
+
+**Point 2 above misidentified the deployed governor function.** Verified
+by tracing the actual call graph (`app/api/lex/govern/route.ts` →
+`lib/governance_service.ts` → `kernel.runCycle()` →
+`SovereignKernel.governorUpdate()`) rather than trusting `AGENTS.md`'s
+pipeline summary: the live governor is `calculateGovernorG` in
+`lib/aureonics_core.ts` — **not** `applyGovernorCorrection` in
+`lib/praxis.ts`, which does not appear to be called from the live
+request path at all. `AGENTS.md`'s "6. applyGovernorCorrection" pipeline
+step description does not match the actual runtime call graph and should
+be corrected there too (done, see CHANGELOG).
+
+The real formula, confirmed from source (`lib/aureonics_core.ts`,
+constants at lines 23–45):
+
+```text
+φ_lin(x_i) = max(0, τ_GOV - x_i)                    τ_GOV = TAU_GOV = 0.22
+φ_log(x_i) = min(1, MU_BARRIER / (x_i - TAU))        TAU = 0.05, MU_BARRIER = 0.02
+φ_i        = φ_lin(x_i) + φ_log(x_i)
+G_i        = K · (φ_i - φ̄)                          K = 4.0
+```
+
+This changes the structure of the problem in two ways:
+
+1. **`τ = TAU_GOV = 0.22` is the operative threshold, not `TAU_FLOOR =
+   0.05`.** The three-pillar impossibility result from the note above
+   still holds and is *more* comfortable under the correct threshold:
+   `3 × 0.22 = 0.66 < 1`, still well short of what the simplex
+   constraint would require to breach all three at once.
+2. **There is no clean "G≡0 regime."** Unlike the linear-only `φ` this
+   note originally analyzed, `φ_log(x_i) > 0` for every `x_i` on the
+   simplex (it only approaches 0 as `x_i → ∞`, which the simplex
+   forbids). So the earlier "Regime A / Regime B" split doesn't apply to
+   the real function — `G` is generically nonzero everywhere, vanishing
+   only where `φ` happens to be exactly equal across all three pillars.
+   Useful simplification: since `G_i` depends only on deviation from the
+   mean, `φ_log`'s contribution to `G` is exactly zero whenever
+   `φ_log` is equal across pillars (e.g., at the symmetric point) —
+   it only matters to the extent `x_i` values differ from each other.
+   The 2026-08-14 numerical check in `aureonics_core.ts` — confirming
+   `calculateGovernorG` doesn't go blind under symmetric multi-pillar
+   stress — **does apply directly here after all**, since this is
+   confirmed to be the real deployed function; the concern raised
+   earlier in this note about it covering the wrong function no longer
+   applies.
+
+Not yet done, and now the actual next step: redo the Regime-B-style bound
+above using the real two-term `φ_lin + φ_log`, for both enumerated
+multi-pillar attack vectors, with the confirmed constants
+`(K=4.0, TAU=0.05, TAU_GOV=0.22, MU_BARRIER=0.02, EPS_BARRIER=1e-4)`.
+Given this is the second correction cycle on a "which function is
+actually deployed" question within the same investigation, this is a
+reasonable point to get a second pass on the confirmed facts above
+before extending the derivation further — either from the same author
+in a dedicated follow-up, or an outside control-theory reviewer, since
+the remaining gap is now precisely specified rather than open-ended.
+
 ---
 
 ## Resolved mathematical problems
