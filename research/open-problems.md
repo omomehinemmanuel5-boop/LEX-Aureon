@@ -32,6 +32,66 @@ Suggested next proof route:
 3. Compare the bound against the already sign-correct governor term.
 4. State the resulting parameter condition without weakening `TAU_FLOOR`, `TAU_RECOVERY`, or the simplex invariant.
 
+### Progress note (2026-09-06)
+
+Two simplifications, found while working the proof route above:
+
+**1. Step 1 above is mostly already done — `F` is not a continuum.** The
+actual attack model in this codebase is a finite, 6-row table
+(`lib/kv.ts` `LAW_ATTACK_SIGNAL`), each a fixed `(severity, direction)`
+pair used by the proven z-update rule (Resolved Problem 3). Only two of
+the six rows stress more than one pillar simultaneously — the regime
+this open problem is actually about:
+
+- `attack_vector_disclosure`: `dir=[-0.5, 0, -0.5]`, `sev=0.9` (two-pillar)
+- `multi_attack` / `slow_drip`: `dir=[-1/3,-1/3,-1/3]`, `sev∈{1.0, 0.3}` (three-pillar, symmetric)
+
+The remaining three rows (`bypass_attempt`, `identity_reframe`,
+`sycophancy`) each push exactly one coordinate negative — the regime the
+single-pillar result already closes. So "bound `⟨∇V_z,F⟩` over the
+admissible envelope" reduces to checking these two specific vectors, not
+an open-ended adversarial search. `multi_attack`'s symmetric direction is
+the natural candidate for the binding case.
+
+**2. The margin condition is not one inequality — it's two, by regime.**
+The deployed governor (`lib/praxis.ts` `applyGovernorCorrection`, the
+function `AGENTS.md`'s PRAXIS pipeline confirms actually runs in
+production) uses `φ_i = max(0, τ-x_i)` with `τ = TAU_FLOOR = 0.05`
+(effectively `0.10` when Pre-Eval classifies a turn `HIGH`). Since
+`φ_i ≡ 0` for any pillar at or above `τ`, the governor's correction `G`
+is **identically zero whenever no pillar has actually breached the
+floor** — which includes almost all of "nudge" mode
+(`TAU_FLOOR < M ≤ TAU_RECOVERY`) unless the effective τ is raised. This
+means:
+
+- **Regime A — no pillar below τ:** `G ≡ 0`. Stability in this region
+  rests entirely on `V_z`'s own log-barrier gradient term `-z_i/x_i`,
+  with no governor contribution at all.
+- **Regime B — at least one pillar below τ:** `G ≠ 0`, the CBF penalty
+  term is active, and this is the regime the margin inequality
+  `|⟨∇V_z,G⟩| ≥ ⟨∇V_z,F⟩` needs to hold in, checked against the two
+  attack vectors above.
+
+Note: `lib/aureonics_core.ts` records a 2026-08-14 numerical check that
+`calculateGovernorG` doesn't go blind under symmetric multi-pillar
+stress — but that function uses `TAU_GOV = 0.22`, a materially different
+threshold from the deployed `applyGovernorCorrection`'s `TAU_FLOOR =
+0.05`. That earlier check does not obviously carry over to the function
+actually running in production and should not be treated as covering
+Regime B above until re-verified against the real deployed threshold.
+
+Exact closed-form gradient available for the next step (`lib/aureonics_core.ts`
+`gradVz()`, not yet wired into production but mathematically exact):
+
+```text
+∂V_z/∂x_i = -z_i/x_i - μ·φ_i     (φ_i = max(0, τ-x_i)),  μ = MU = 2.0
+```
+
+Not yet done: the actual symbolic bound in Regime B for the `multi_attack`
+direction, checked against `attack_vector_disclosure`, reduced to a
+closed-form parameter condition in `k0, ε_k, μ, τ` matching the shape of
+the closed single-pillar result (`k0/ε_k > 3B/2`).
+
 ---
 
 ## Resolved mathematical problems
