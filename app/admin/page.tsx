@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-const G = { gold: '#c9a84c', goldL: '#e8c96d', navy: '#07070d', surface: '#0f1017', border: '#1a2030' };
+const G = { gold: '#c9a84c', goldL: '#e8c96d', navy: 'var(--bg-primary)', surface: 'var(--bg-hover)', border: 'var(--border)' };
 
 type Lead = {
   id: number; email: string; source: string; plan: string;
@@ -59,7 +59,7 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: G.navy, color: '#c4cfe0' }}>
+    <div className="min-h-screen" style={{ background: G.navy, color: 'var(--text-primary)' }}>
       <div style={{ background: G.surface, borderBottom: `1px solid ${G.border}` }}>
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>

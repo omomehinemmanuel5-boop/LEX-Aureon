@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: 'Constitutional AI Governance API. Ensures stable and principled AI responses.'
 };
 
-const G = { gold: '#c9a84c', goldL: '#e8c96d', navy: '#07070d', navyL: '#0d0d1a', surface: '#0f1017', border: '#1a2030' };
+const G = { gold: '#c9a84c', goldL: '#e8c96d', navy: 'var(--bg-primary)', navyL: 'var(--bg-secondary)', surface: 'var(--bg-hover)', border: 'var(--border)' };
 
 function Badge({ type }: { type: 'POST' | 'GET' }) {
   const s = type === 'POST'
@@ -51,7 +51,7 @@ export default function ApiDocsPage() {
     <div className="min-h-screen text-white" style={{ background: G.navy }}>
 
       {/* Nav */}
-      <nav className="sticky top-0 z-40 border-b border-white/5 backdrop-blur-xl"
+      <nav className="sticky top-0 z-40 border-b border-[var(--border)] backdrop-blur-xl"
         style={{ background: 'rgba(7,7,13,0.92)' }}>
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">

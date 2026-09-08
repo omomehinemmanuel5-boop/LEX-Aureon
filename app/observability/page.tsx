@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import LiveGovernanceState from '@/components/LiveGovernanceState';
 import ObservabilityTimeline from '@/components/ObservabilityTimeline';
 const LyapunovVisualizer = dynamic(() => import('@/components/LyapunovVisualizer'), { ssr: false, loading: () => <div className="h-72 rounded-xl bg-slate-900/40 animate-pulse" /> });
-const G = { gold: '#c9a84c', navy: '#07070d', surface: '#0f1017', border: '#1a2030' };
+const G = { gold: '#c9a84c', navy: 'var(--bg-primary)', surface: 'var(--bg-hover)', border: 'var(--border)' };
 interface AgentStat { calls: number; avg_duration_ms: number; error_count: number; error_rate: number; last_call: string | null; }
 interface MetricsResponse { timestamp: string; window_minutes: number; agents: Record<string, AgentStat>; system: { total_calls: number; total_interventions: number; intervention_rate: number; avg_m_before: number; avg_m_after: number; avg_governor_effort: number; }; health_distribution: { OPTIMAL: number; ALERT: number; STRESSED: number; CRITICAL: number }; health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL'; }
 interface RecentSession { session_id: string; last_seen: string; turns: number; }
@@ -20,7 +20,7 @@ export default function ObservabilityPage() {
   useEffect(() => { (async () => { try { const res = await fetch('/api/observability/sessions?limit=8'); if (!res.ok) throw new Error('sessions request failed'); const data = await res.json() as { sessions?: RecentSession[] }; setRecentSessions(data.sessions ?? []); } catch { setRecentSessions([]); } finally { setSessionsLoading(false); } })(); }, []);
   const agentList = metrics ? Object.entries(metrics.agents).map(([name, stat]) => ({ name, ...stat })) : []; const health = metrics?.health_status;
   const updatedAt = metrics ? new Date(metrics.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
-  return <div className="min-h-screen" style={{ background: G.navy, color: '#c4cfe0' }}>
+  return <div className="min-h-screen" style={{ background: G.navy, color: 'var(--text-primary)' }}>
     <header style={{ background: G.surface, borderBottom: '1px solid ' + G.border }}><div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6"><span style={{ fontFamily: 'monospace', fontSize: 10, letterSpacing: '0.15em', color: G.gold }}>LEX AUREON</span><h1 className="mt-1 text-xl font-bold text-white sm:text-2xl">Deep Observability</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-gray-400">Live pipeline health, constitutional state, and persisted governance turns.</p></div></header>
     <main className="mx-auto max-w-7xl space-y-5 px-4 py-5 sm:space-y-8 sm:px-6 sm:py-8">
       {loading && <div role="status" className="rounded-xl p-5 text-center text-sm" style={{ background: G.surface, border: '1px solid ' + G.border }}>Loading live metrics…</div>}

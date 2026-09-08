@@ -80,7 +80,7 @@ function TrajectoryChart({ data, tau }: { data: SimResponse; tau: number }) {
         {[0, 0.25, 0.5].map(val => (
           <g key={val}>
             <line x1={PAD_L} y1={yAt(val)} x2={W - PAD_R} y2={yAt(val)} stroke="white" strokeOpacity="0.05" />
-            <text x={PAD_L - 8} y={yAt(val) + 3} textAnchor="end" className="fill-slate-500 text-[9px]">{val.toFixed(2)}</text>
+            <text x={PAD_L - 8} y={yAt(val) + 3} textAnchor="end" className="fill-[var(--text-secondary)] text-[9px]">{val.toFixed(2)}</text>
           </g>
         ))}
 
@@ -119,7 +119,7 @@ function TrajectoryChart({ data, tau }: { data: SimResponse; tau: number }) {
 }
 
 function Readout({ label, value, tone = 'default' }: { label: string; value: ReactNode; tone?: 'default' | 'good' | 'bad' | 'gold' }) {
-  const color = tone === 'good' ? 'text-green-400' : tone === 'bad' ? 'text-red-400' : tone === 'gold' ? 'text-[#c9a84c]' : 'text-slate-900 dark:text-white';
+  const color = tone === 'good' ? 'text-green-400' : tone === 'bad' ? 'text-red-400' : tone === 'gold' ? 'text-[#c9a84c]' : 'text-[var(--text-primary)]';
   return (
     <div>
       <div className="text-[11px] text-slate-500">{label}</div>
@@ -151,13 +151,13 @@ export default function CbfInvariancePanel() {
   const improvementX = (data.governed.min_M / Math.max(0.0001, data.ungoverned.min_M));
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white/50 p-6 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40 sm:p-10">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 shadow-xl backdrop-blur-xl sm:p-10">
       <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <div>
-          <h2 className="text-2xl font-light tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          <h2 className="text-2xl font-light tracking-tight text-[var(--text-primary)] sm:text-3xl">
             Governed vs. ungoverned, same attack
           </h2>
-          <p className="mt-2 max-w-lg text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--text-secondary)]">
             Same seeded adversarial sequence, replayed twice — once through the deployed floor-respecting
             projection, once raw. The ungoverned arm shows what would happen without it.
           </p>
@@ -181,14 +181,14 @@ export default function CbfInvariancePanel() {
       {data.certificate && (
         <div className="relative mt-8 overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6">
           <div className="absolute left-0 top-0 h-full w-1 bg-[#c9a84c]" />
-          <div className="mb-1 text-sm font-medium text-slate-900 dark:text-white">
+          <div className="mb-1 text-sm font-medium text-[var(--text-primary)]">
             FPL-1 certificate: <span className="italic text-[#c9a84c]">&ldquo;{data.certificate.fpl1_classification}&rdquo;</span>
           </div>
           <div className="mb-4 text-xs text-slate-500">Certified at the continuous-flow limit, this seed and horizon only.</div>
           <div className="grid gap-4 text-[13px] sm:grid-cols-3">
             <div>
               <span className="text-slate-500">Stability ratio </span>
-              <span className="font-mono text-slate-900 dark:text-white">{data.certificate.stability_ratio.toFixed(3)}</span>
+              <span className="font-mono text-[var(--text-primary)]">{data.certificate.stability_ratio.toFixed(3)}</span>
               <span className="text-slate-600"> (≥ 0.60)</span>
             </div>
             <div>
@@ -198,7 +198,7 @@ export default function CbfInvariancePanel() {
             </div>
             <div>
               <span className="text-slate-500">Peak excursion </span>
-              <span className="font-mono text-slate-900 dark:text-white">{data.certificate.max_deviation.toFixed(3)}</span>
+              <span className="font-mono text-[var(--text-primary)]">{data.certificate.max_deviation.toFixed(3)}</span>
               <span className="text-slate-600"> (≤ 0.25)</span>
             </div>
           </div>

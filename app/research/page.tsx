@@ -21,7 +21,7 @@ function slug(s: string) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').re
 // ── Small presentational helpers (match the codebase's hand-rolled style) ──
 function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <div id={slug(title)} className="scroll-mt-20 rounded-2xl border border-white/6 p-6 sm:p-8" style={{ background: G.navyL }}>
+    <div id={slug(title)} className="scroll-mt-20 rounded-2xl border border-[var(--border)] p-6 sm:p-8" style={{ background: 'var(--bg-secondary)' }}>
       <div className="mb-4 flex items-baseline gap-3">
         <span className="font-mono text-sm" style={{ color: G.gold }}>{String(n).padStart(2, '0')}</span>
         <h2 className="text-xl font-bold text-white">{title}</h2>
@@ -43,7 +43,7 @@ function Formula({ formula, desc, color = G.gold }: { formula: string; desc: str
 function StatusRow({ name, status, tone, note }: { name: string; status: string; tone: 'closed' | 'partial' | 'open'; note: string }) {
   const c = tone === 'closed' ? '#10b981' : tone === 'partial' ? G.gold : '#f59e0b';
   return (
-    <div className="py-3 border-b border-white/5 last:border-0">
+    <div className="py-3 border-b border-[var(--border)] last:border-0">
       <div className="flex items-center gap-3 mb-1">
         <span className="text-sm font-bold text-white">{name}</span>
         <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full"
@@ -56,10 +56,10 @@ function StatusRow({ name, status, tone, note }: { name: string; status: string;
 
 export default function ResearchPage() {
   return (
-    <div className="min-h-screen text-white" style={{ background: G.navy }}>
+    <div className="min-h-screen" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
 
       {/* Nav */}
-      <nav className="sticky top-0 z-40 border-b border-white/5 backdrop-blur-xl" style={{ background: 'rgba(7,7,13,0.9)' }}>
+      <nav className="sticky top-0 z-40 border-b border-[var(--border)] backdrop-blur-xl" style={{ background: 'var(--nav-bg)' }}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">
             <Image src="/logo.png" alt="Lex Aureon" width={28} height={28} className="w-7 h-7 rounded-lg object-cover" />
@@ -77,7 +77,7 @@ export default function ResearchPage() {
       </nav>
 
       {/* Hero */}
-      <header className="py-20 px-4 border-b border-white/5 text-center">
+      <header className="py-20 px-4 border-b border-[var(--border)] text-center">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-4xl sm:text-5xl font-black text-white mb-4">Aureonics Research</h1>
           <p className="text-slate-400 text-lg max-w-xl mx-auto leading-relaxed">
@@ -190,7 +190,7 @@ export default function ResearchPage() {
               ['εₖ', '0.01', 'stiffness regularizer'],
               ['ρ', '0.85', 'z-update contraction rate'],
             ].map(([sym, val, desc]) => (
-              <div key={sym} className="rounded-lg border border-white/8 p-3" style={{ background: '#0a0d18' }}>
+              <div key={sym} className="rounded-lg border border-[var(--border)] p-3" style={{ background: 'var(--bg-hover)' }}>
                 <div className="flex items-baseline gap-2">
                   <span style={{ color: G.gold }}>{sym}</span>
                   <span className="text-white font-bold">{val}</span>
@@ -278,7 +278,7 @@ export default function ResearchPage() {
               ['550', 'internal adversarial vectors, 8 attack classes'],
               ['37,701', 'production turns with logged ΔV_z sign'],
             ].map(([n, d]) => (
-              <div key={n} className="rounded-xl border border-white/8 p-4" style={{ background: '#0a0d18' }}>
+              <div key={n} className="rounded-xl border border-[var(--border)] p-4" style={{ background: 'var(--bg-hover)' }}>
                 <div className="text-2xl font-black font-mono" style={{ color: G.gold }}>{n}</div>
                 <div className="text-[11px] text-slate-500 mt-1 leading-snug">{d}</div>
               </div>
@@ -322,7 +322,7 @@ export default function ResearchPage() {
               ['multi_attack', 'all pillars'],
               ['slow_drip', 'M global'],
             ].map(([law, effect]) => (
-              <div key={law} className="rounded-lg border border-white/8 px-2.5 py-2" style={{ background: '#0a0d18' }}>
+              <div key={law} className="rounded-lg border border-[var(--border)] px-2.5 py-2" style={{ background: 'var(--bg-hover)' }}>
                 <div style={{ color: G.gold }}>{law}</div>
                 <div className="text-slate-600">{effect}</div>
               </div>
@@ -362,18 +362,18 @@ export default function ResearchPage() {
             ⚡ Try the Live System
           </Link>
           <Link href="/constitution"
-            className="flex-1 text-center py-3 rounded-xl text-sm font-medium border border-white/10 text-slate-300 hover:text-white transition-all">
+            className="flex-1 text-center py-3 rounded-xl text-sm font-medium border border-[var(--border)] text-slate-300 hover:text-white transition-all">
             📜 Read the Constitution
           </Link>
           <a href="mailto:lexaureon@gmail.com?subject=Research Collaboration"
-            className="flex-1 text-center py-3 rounded-xl text-sm font-medium border border-white/10 text-slate-300 hover:text-white transition-all">
+            className="flex-1 text-center py-3 rounded-xl text-sm font-medium border border-[var(--border)] text-slate-300 hover:text-white transition-all">
             ✉ Collaborate
           </a>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 py-8 px-4 mt-8">
+      <footer className="border-t border-[var(--border)] py-8 px-4 mt-8">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-700">
           <span>© 2026 Aureonics · Emmanuel King · Lagos, Nigeria</span>
           <span className="font-mono">doi:10.5281/zenodo.18944242</span>
