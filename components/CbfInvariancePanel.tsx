@@ -1,19 +1,22 @@
 'use client';
 
 /**
- * CbfInvariancePanel — Redesigned for the Research Page.
- * 
- * Focused on empirical certification and the counterfactual proof.
- * High-precision aesthetic, data-dense but readable.
+ * CbfInvariancePanel — Research Page.
+ *
+ * Shows a controlled counterfactual: identical adversarial perturbation
+ * sequence, replayed once with the deployed floor-respecting projection
+ * enabled and once without it. The moment the ungoverned arm crosses the
+ * safety floor is the whole point of this chart, so it's marked explicitly
+ * rather than left for the viewer to notice in a dashed line.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
-const G = { 
-  gold: '#c9a84c', 
+const G = {
+  gold: '#c9a84c',
   goldL: '#e8c96d',
   red: '#ef4444',
-  slate: '#64748b'
+  slate: '#64748b',
 };
 
 interface SimStep { t: number; M: number; }
@@ -45,56 +48,82 @@ interface SimResponse {
   steps: number;
 }
 
-function TrajectoryChart({ data, tau }: { data: SimResponse; tau: number }) {
-  const W = 800, H = 200, PAD = 30;
-  const yMax = 0.5;
-  
-  const toXY = (steps: SimStep[]) => steps.map((s, i) => {
-    const x = PAD + (i / (steps.length - 1)) * (W - 2 * PAD);
-    const y = PAD + (1 - Math.min(s.M, yMax) / yMax) * (H - 2 * PAD);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
+function findBreachIndex(steps: SimStep[], tau: number): number | null {
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i].M < tau) return i;
+  }
+  return null;
+}
 
-  const tauY = PAD + (1 - tau / yMax) * (H - 2 * PAD);
+function TrajectoryChart({ data, tau }: { data: SimResponse; tau: number }) {
+  const W = 800, H = 220, PAD_L = 40, PAD_R = 20, PAD_T = 20, PAD_B = 30;
+  const yMax = 0.5;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+
+  const xAt = (i: number, n: number) => PAD_L + (i / (n - 1)) * innerW;
+  const yAt = (m: number) => PAD_T + (1 - Math.min(m, yMax) / yMax) * innerH;
+
+  const toXY = (steps: SimStep[]) =>
+    steps.map((s, i) => `${xAt(i, steps.length).toFixed(1)},${yAt(s.M).toFixed(1)}`).join(' ');
+
+  const tauY = yAt(tau);
+  const breachIdx = findBreachIndex(data.ungoverned.trajectory, tau);
+  const breach = breachIdx !== null
+    ? { x: xAt(breachIdx, data.ungoverned.trajectory.length), y: yAt(data.ungoverned.trajectory[breachIdx].M) }
+    : null;
 
   return (
-    <div className="relative w-full bg-slate-950/20 rounded-xl border border-white/5 p-4 overflow-hidden">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto overflow-visible" role="img">
-        {/* Y-axis labels */}
-        {[0, 0.25, 0.5].map(val => {
-          const y = PAD + (1 - val / yMax) * (H - 2 * PAD);
-          return (
-            <g key={val}>
-              <line x1={PAD - 5} y1={y} x2={W - PAD} y2={y} stroke="white" strokeOpacity="0.05" />
-              <text x={PAD - 10} y={y + 3} textAnchor="end" className="fill-slate-500 font-mono text-[9px]">{val.toFixed(2)}</text>
-            </g>
-          );
-        })}
+    <div className="relative w-full rounded-xl border border-white/5 bg-slate-950/30 p-4">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full overflow-visible" role="img"
+           aria-label="Constitutional margin over time, governed versus ungoverned">
+        {[0, 0.25, 0.5].map(val => (
+          <g key={val}>
+            <line x1={PAD_L} y1={yAt(val)} x2={W - PAD_R} y2={yAt(val)} stroke="white" strokeOpacity="0.05" />
+            <text x={PAD_L - 8} y={yAt(val) + 3} textAnchor="end" className="fill-slate-500 text-[9px]">{val.toFixed(2)}</text>
+          </g>
+        ))}
 
-        {/* X-axis line */}
-        <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="white" strokeOpacity="0.2" />
-        
-        {/* Safety Floor */}
-        <line x1={PAD} y1={tauY} x2={W - PAD} y2={tauY} stroke={G.gold} strokeWidth={1} strokeDasharray="4 2" opacity={0.4} />
-        <text x={W - PAD + 5} y={tauY + 3} className="fill-[#c9a84c] font-mono text-[9px] font-bold">τ={tau.toFixed(2)}</text>
+        <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} stroke="white" strokeOpacity="0.2" />
 
-        {/* Ungoverned Path */}
-        <polyline points={toXY(data.ungoverned.trajectory)} fill="none" stroke={G.red} strokeWidth={1.5} opacity={0.6} />
-        
-        {/* Governed Path */}
+        <line x1={PAD_L} y1={tauY} x2={W - PAD_R} y2={tauY} stroke={G.gold} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
+        <text x={W - PAD_R} y={tauY - 6} textAnchor="end" className="fill-[#c9a84c] text-[9px] font-semibold">safety floor · τ={tau.toFixed(2)}</text>
+
+        <polyline points={toXY(data.ungoverned.trajectory)} fill="none" stroke={G.red} strokeWidth={1.5} opacity={0.55} />
         <polyline points={toXY(data.governed.trajectory)} fill="none" stroke={G.gold} strokeWidth={2.5} />
+
+        {breach && (
+          <g>
+            <circle cx={breach.x} cy={breach.y} r={9} fill={G.red} opacity={0.15}>
+              <animate attributeName="r" values="9;16;9" dur="2s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.2;0.02;0.2" dur="2s" repeatCount="indefinite" />
+            </circle>
+            <circle cx={breach.x} cy={breach.y} r={3} fill={G.red} />
+            <text x={breach.x} y={breach.y - 14} textAnchor="middle" className="fill-red-400 text-[9px] font-semibold">
+              floor breached — no governance
+            </text>
+          </g>
+        )}
       </svg>
-      
-      <div className="absolute top-4 right-4 flex flex-col gap-1 text-[9px] font-mono uppercase tracking-widest">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-[#c9a84c]" />
-          <span className="text-slate-300">Governed</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-red-500 opacity-60" />
-          <span className="text-slate-500">Ungoverned</span>
-        </div>
+
+      <div className="mt-3 flex items-center gap-4 border-t border-white/5 pt-3 text-[11px]">
+        <span className="flex items-center gap-1.5 text-slate-300">
+          <span className="h-2 w-2 rounded-full" style={{ background: G.gold }} /> Governed
+        </span>
+        <span className="flex items-center gap-1.5 text-slate-500">
+          <span className="h-2 w-2 rounded-full bg-red-500 opacity-60" /> Ungoverned
+        </span>
       </div>
+    </div>
+  );
+}
+
+function Readout({ label, value, tone = 'default' }: { label: string; value: ReactNode; tone?: 'default' | 'good' | 'bad' | 'gold' }) {
+  const color = tone === 'good' ? 'text-green-400' : tone === 'bad' ? 'text-red-400' : tone === 'gold' ? 'text-[#c9a84c]' : 'text-slate-900 dark:text-white';
+  return (
+    <div>
+      <div className="text-[11px] text-slate-500">{label}</div>
+      <div className={`font-mono text-lg leading-tight ${color}`}>{value}</div>
     </div>
   );
 }
@@ -102,7 +131,6 @@ function TrajectoryChart({ data, tau }: { data: SimResponse; tau: number }) {
 export default function CbfInvariancePanel() {
   const [data, setData] = useState<SimResponse | null>(null);
   const [error, setError] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
     fetch('/api/cbf-simulation')
@@ -114,103 +142,75 @@ export default function CbfInvariancePanel() {
   if (error) return null;
   if (!data) {
     return (
-      <div className="rounded-2xl border p-8 bg-slate-900/20 border-white/5 animate-pulse">
-        <div className="h-48 flex items-center justify-center">
-          <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Initializing Kernel Simulation...</span>
-        </div>
+      <div className="animate-pulse rounded-2xl border border-white/5 bg-slate-900/20 p-8">
+        <div className="flex h-48 items-center justify-center text-sm text-slate-500">Running kernel simulation…</div>
       </div>
     );
   }
 
-  return (
-    <div 
-      className="rounded-2xl border p-6 sm:p-10 bg-white/50 dark:bg-slate-900/40 backdrop-blur-xl border-slate-200 dark:border-white/10 shadow-xl transition-all duration-500"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
-        <div>
-          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-500 mb-2">
-            Empirical Counterfactual
-          </h2>
-          <div className="text-2xl sm:text-3xl font-light text-slate-900 dark:text-white tracking-tight">
-            Constitutional <span className="text-[#c9a84c] font-medium italic">Invariance</span> Proof
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">Source Certificate</div>
-          <div className="text-[11px] font-mono text-slate-700 dark:text-white bg-slate-100 dark:bg-white/5 px-2 py-1 rounded border border-slate-200 dark:border-white/10">
-            SEED_{data.seed} · T_{data.steps} · DT_0.10
-          </div>
-        </div>
-      </div>
+  const improvementX = (data.governed.min_M / Math.max(0.0001, data.ungoverned.min_M));
 
-      <div className="mb-8">
-        <p className="text-slate-400 text-xs leading-relaxed max-w-2xl">
-          Controlled numerical integration comparing identical perturbation sequences. 
-          The <span className="text-white font-medium">Governed Arm</span> utilizes the Duchi floor-respecting projection 
-          deployed in the LEX kernel, while the <span className="text-red-400 font-medium">Ungoverned Arm</span> represents 
-          the raw adversarial dynamics.
-        </p>
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/50 p-6 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40 sm:p-10">
+      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <div>
+          <h2 className="text-2xl font-light tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            Governed vs. ungoverned, same attack
+          </h2>
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            Same seeded adversarial sequence, replayed twice — once through the deployed floor-respecting
+            projection, once raw. The ungoverned arm shows what would happen without it.
+          </p>
+        </div>
+        <div className="text-xs text-slate-500 sm:text-right">
+          seed {data.seed}, {data.steps} steps
+        </div>
       </div>
 
       <TrajectoryChart data={data} tau={data.tau_cbf} />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mt-10">
-        <div className="space-y-1">
-          <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Min Margin (G)</div>
-          <div className="text-xl font-mono text-[#c9a84c]">{data.governed.min_M.toFixed(4)}</div>
-        </div>
-        <div className="space-y-1">
-          <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Min Margin (U)</div>
-          <div className="text-xl font-mono text-red-400">{data.ungoverned.min_M.toFixed(4)}</div>
-        </div>
-        <div className="space-y-1">
-          <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Safety Status</div>
-          <div className={`text-xs font-mono px-2 py-0.5 rounded inline-block border ${data.governed.safety_violated ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>
-            {data.governed.safety_violated ? 'VIOLATED' : 'SECURE'}
-          </div>
-        </div>
-        <div className="space-y-1 text-right">
-          <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Improvement</div>
-          <div className="text-xl font-mono text-slate-900 dark:text-white">+{((data.governed.min_M / Math.max(0.0001, data.ungoverned.min_M)) * 100).toFixed(0)}%</div>
-        </div>
+      <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-4">
+        <Readout label="Min margin, governed" value={data.governed.min_M.toFixed(4)} tone="gold" />
+        <Readout label="Min margin, ungoverned" value={data.ungoverned.min_M.toFixed(4)} tone="bad" />
+        <Readout label="Safety status"
+          value={data.governed.safety_violated ? 'Violated' : 'Held'}
+          tone={data.governed.safety_violated ? 'bad' : 'good'} />
+        <Readout label="Margin retained" value={`${(improvementX * 100).toFixed(0)}%`} />
       </div>
 
       {data.certificate && (
-        <div className="mt-10 p-6 rounded-xl bg-white/5 border border-white/10 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-[#c9a84c]" />
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[10px] font-mono text-[#c9a84c] uppercase tracking-widest font-bold">Formal FPL-1 Certificate</span>
-            <span className="text-[10px] font-mono text-slate-500 italic">Certified at Continuous Limit</span>
+        <div className="relative mt-8 overflow-hidden rounded-xl border border-white/10 bg-white/5 p-6">
+          <div className="absolute left-0 top-0 h-full w-1 bg-[#c9a84c]" />
+          <div className="mb-1 text-sm font-medium text-slate-900 dark:text-white">
+            FPL-1 certificate: <span className="italic text-[#c9a84c]">&ldquo;{data.certificate.fpl1_classification}&rdquo;</span>
           </div>
-          <div className="text-lg font-light text-slate-900 dark:text-white mb-4 italic">
-            &ldquo;{data.certificate.fpl1_classification}&rdquo;
-          </div>
-          <div className="grid sm:grid-cols-3 gap-6 text-[10px] font-mono text-slate-400">
+          <div className="mb-4 text-xs text-slate-500">Certified at the continuous-flow limit, this seed and horizon only.</div>
+          <div className="grid gap-4 text-[13px] sm:grid-cols-3">
             <div>
-              <span className="block text-slate-600 mb-1">STABILITY RATIO</span>
-              <span className="text-slate-900 dark:text-white">{data.certificate.stability_ratio.toFixed(3)}</span> <span className="text-slate-600">(≥ 0.60)</span>
+              <span className="text-slate-500">Stability ratio </span>
+              <span className="font-mono text-slate-900 dark:text-white">{data.certificate.stability_ratio.toFixed(3)}</span>
+              <span className="text-slate-600"> (≥ 0.60)</span>
             </div>
             <div>
-              <span className="block text-slate-600 mb-1">FLOOR INCURSIONS</span>
-              <span className={data.certificate.invariance_violations === 0 ? 'text-green-400' : 'text-red-400'}>{data.certificate.invariance_violations}</span> <span className="text-slate-600">(= 0)</span>
+              <span className="text-slate-500">Floor incursions </span>
+              <span className={`font-mono ${data.certificate.invariance_violations === 0 ? 'text-green-400' : 'text-red-400'}`}>{data.certificate.invariance_violations}</span>
+              <span className="text-slate-600"> (= 0)</span>
             </div>
             <div>
-              <span className="block text-slate-600 mb-1">PEAK EXCURSION</span>
-              <span className="text-slate-900 dark:text-white">{data.certificate.max_deviation.toFixed(3)}</span> <span className="text-slate-600">(≤ 0.25)</span>
+              <span className="text-slate-500">Peak excursion </span>
+              <span className="font-mono text-slate-900 dark:text-white">{data.certificate.max_deviation.toFixed(3)}</span>
+              <span className="text-slate-600"> (≤ 0.25)</span>
             </div>
           </div>
         </div>
       )}
 
-      <div className="mt-8 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="text-[10px] font-mono text-slate-600 max-w-md leading-relaxed">
-          <b className="text-slate-400">DISCLAIMER:</b> This is a seeded, finite-horizon numerical certificate. It does not constitute a global analytical Lyapunov proof (Open Problem 1).
-        </div>
-        <button className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-[10px] font-mono text-slate-700 dark:text-white uppercase tracking-widest transition-all hover:border-[#c9a84c]/50 active:scale-95">
-          View Raw Telemetry
-        </button>
+      <div className="mt-8 border-t border-white/5 pt-6 text-xs leading-relaxed text-slate-500">
+        This is a seeded, finite-horizon numerical certificate — it isn&rsquo;t the open analytical
+        multi-pillar Lyapunov proof (Open Problem 1). It also simulates the idealized continuous-time
+        model (correction and drift applied together each step), not the deployed system&rsquo;s actual
+        discrete, one-turn-delayed correction — production behavior doesn&rsquo;t yet match this
+        continuous-flow simulation on every turn.
       </div>
     </div>
   );
