@@ -10,12 +10,22 @@ export const metadata: Metadata = {
 
 const G = { gold: '#c9a84c', goldL: '#e8c96d', navy: '#07070d', navyL: '#0d0d1a' };
 
+const SECTIONS = [
+  'Abstract', 'Mathematical framework', 'Constitutional constants', 'Formal stability',
+  'Live counterfactual', 'Open problems', 'Falsifiable predictions', 'Empirical evidence',
+  'Governance pipeline', 'Reproducibility', 'Cite this work',
+] as const;
+
+function slug(s: string) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
+
 // ── Small presentational helpers (match the codebase's hand-rolled style) ──
-function Section({ label, title, children }: { label: string; title?: string; children: React.ReactNode }) {
+function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/6 p-6 sm:p-8" style={{ background: G.navyL }}>
-      <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: G.gold }}>{label}</div>
-      {title && <h2 className="text-xl font-bold text-white mb-4">{title}</h2>}
+    <div id={slug(title)} className="scroll-mt-20 rounded-2xl border border-white/6 p-6 sm:p-8" style={{ background: G.navyL }}>
+      <div className="mb-4 flex items-baseline gap-3">
+        <span className="font-mono text-sm" style={{ color: G.gold }}>{String(n).padStart(2, '0')}</span>
+        <h2 className="text-xl font-bold text-white">{title}</h2>
+      </div>
       {children}
     </div>
   );
@@ -69,7 +79,6 @@ export default function ResearchPage() {
       {/* Hero */}
       <header className="py-20 px-4 border-b border-white/5 text-center">
         <div className="max-w-3xl mx-auto">
-          <div className="text-xs font-mono uppercase tracking-widest mb-4" style={{ color: G.gold }}>Research Foundation</div>
           <h1 className="text-4xl sm:text-5xl font-black text-white mb-4">Aureonics Research</h1>
           <p className="text-slate-400 text-lg max-w-xl mx-auto leading-relaxed">
             The mathematical framework behind constitutional AI governance.
@@ -77,6 +86,19 @@ export default function ResearchPage() {
           </p>
         </div>
       </header>
+
+      {/* Table of contents */}
+      <nav className="max-w-3xl mx-auto px-4 pt-10">
+        <ol className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          {SECTIONS.map((title, i) => (
+            <li key={title}>
+              <a href={`#${slug(title)}`} className="text-slate-500 hover:text-slate-300 transition-colors">
+                <span className="font-mono" style={{ color: G.gold }}>{String(i + 1).padStart(2, '0')}</span>{' '}{title}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
 
       <main className="max-w-3xl mx-auto px-4 py-16 space-y-8">
 
@@ -123,7 +145,7 @@ export default function ResearchPage() {
         </div>
 
         {/* Abstract */}
-        <Section label="Abstract">
+        <Section n={1} title="Abstract">
           <p className="text-slate-400 text-sm leading-relaxed">
             We present Aureonics, a constitutional triadic framework for stable adaptive intelligence.
             The framework models an AI system&rsquo;s constitutional health as a point on the probability
@@ -140,7 +162,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Core Mathematics */}
-        <Section label="Mathematical Framework" title="The state, the governor, the certificate">
+        <Section n={2} title="Mathematical framework">
           <div className="space-y-5">
             <Formula color="#3b82f6" formula="x = (C, R, S),  C + R + S = 1" desc="Constitutional state — a point on the 2-simplex. Every governor operation preserves the sum-to-one constraint exactly." />
             <Formula color="#10b981" formula="M(x) = min(C, R, S)" desc="Stability margin — the system is only as stable as its weakest constitutional pillar." />
@@ -154,7 +176,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Constants */}
-        <Section label="Constitutional Constants" title="Frozen parameters">
+        <Section n={3} title="Constitutional constants">
           <p className="text-slate-500 text-xs mb-4 leading-relaxed">
             These values are fixed in code and never tuned per request. The health bands below are defined
             entirely by them.
@@ -187,7 +209,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Formal stability status — the honest core */}
-        <Section label="Formal Stability" title="What is proven, certified, and open">
+        <Section n={4} title="Formal stability">
           <p className="text-slate-400 text-sm leading-relaxed mb-5">
             Constitutional state is a point on the simplex; safety is enforced by a barrier function;
             stability is argued with a Lyapunov function. We are precise about the strength of each claim.
@@ -203,7 +225,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Live counterfactual panel */}
-        <Section label="Live Counterfactual" title="Governed vs ungoverned — the thing production can't show">
+        <Section n={5} title="Live counterfactual">
           <p className="text-slate-400 text-sm leading-relaxed mb-5">
             Production only ever runs with the barrier active, so a real user can never be shown what happens
             without it. This controlled simulation runs the identical perturbation sequence twice from one
@@ -219,7 +241,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Open problems */}
-        <Section label="Open Problems" title="Stated honestly — science that can be falsified">
+        <Section n={6} title="Open problems">
           <StatusRow name="Problem 1 — Global Lyapunov proof" status="Partial" tone="partial"
             note="Single-pillar regime proven; multi-pillar simultaneous violation open. Approach: comparison system or LaSalle invariance, leveraging non-expansivity of the Duchi projection. Priority: medium." />
           <StatusRow name="Problem 2 — Nonlinear Pareto frontier" status="Open" tone="open"
@@ -229,7 +251,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Predictions */}
-        <Section label="Falsifiable Predictions" title="P1–P12">
+        <Section n={7} title="Falsifiable predictions">
           <p className="text-slate-400 text-sm leading-relaxed mb-4">
             A framework that cannot be falsified is not science. Twelve pre-registered predictions; their
             status is reported exactly, including &ldquo;untested.&rdquo;
@@ -243,7 +265,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Empirical evidence */}
-        <Section label="Empirical Evidence" title="Adversarial benchmarks">
+        <Section n={8} title="Empirical evidence">
           <p className="text-slate-400 text-sm leading-relaxed mb-4">
             The governor is developed against a 550-vector internal adversarial suite (8 attack classes) and
             evaluated on external public benchmarks under symmetric judging — the bare and governed arms
@@ -272,7 +294,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* PRAXIS pipeline */}
-        <Section label="Governance Pipeline" title="PRAXIS — every prompt, every time">
+        <Section n={9} title="Governance pipeline">
           <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-xs">
             {[
               ['01', 'Pre-eval classification (CLEAR / HIGH)'],
@@ -291,7 +313,7 @@ export default function ResearchPage() {
             ))}
           </div>
           <div className="h-px bg-white/8 my-5" />
-          <div className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: G.gold }}>Attack Taxonomy</div>
+          <div className="text-sm font-bold text-white mb-3">Attack taxonomy</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] font-mono text-slate-400">
             {[
               ['bypass_attempt', 'S collapse'],
@@ -309,7 +331,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* Reproducibility */}
-        <Section label="Reproducibility" title="Verify it yourself">
+        <Section n={10} title="Reproducibility">
           <div className="space-y-3 text-xs text-slate-400 leading-relaxed">
             <p><b className="text-white">Every governed turn</b> writes an append-only SHA-256 receipt binding the input hash, output hash, and constitutional state — independently re-verifiable at <span className="font-mono" style={{ color: G.gold }}>/api/lex/verify</span>.</p>
             <p><b className="text-white">The stability certificate</b> is a pure, seeded function — reproduce it with <span className="font-mono" style={{ color: G.gold }}>npx tsx scripts/cbf/fpl1-dt-sweep.ts</span>.</p>
@@ -318,7 +340,7 @@ export default function ResearchPage() {
         </Section>
 
         {/* BibTeX */}
-        <Section label="Cite This Work">
+        <Section n={11} title="Cite this work">
           <pre className="text-xs text-slate-400 font-mono leading-relaxed overflow-x-auto bg-black/30 rounded-xl p-4">
 {`@misc{king2026aureonics,
   title  = {Aureonics: A Constitutional Triadic Framework
