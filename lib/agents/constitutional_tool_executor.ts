@@ -126,7 +126,12 @@ export async function executeGovernedToolStructured(
           ?? (args.sql as string | undefined)
           ?? `Tool call: ${toolName}. Target: ${JSON.stringify(args).slice(0, 200)}`,
       });
-      return report(toolName, criticalDecision);
+      return {
+        result: report(toolName, criticalDecision),
+        approved: false,
+        decision: criticalDecision.decision,
+        receiptId: criticalDecision.receipt_id ?? null,
+      };
     }
   }
 
