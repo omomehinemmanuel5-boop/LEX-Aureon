@@ -17,6 +17,16 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       include: ['lib/**/*.ts', 'app/api/**/*.ts'],
       exclude: ['**/*.test.ts', '**/types.ts'],
+      // This is a regression floor, not a claim that broad coverage is
+      // complete. Security-critical modules also have focused integration
+      // tests; raise these global floors as uncovered provider paths become
+      // deterministic and testable.
+      thresholds: {
+        lines: 35,
+        functions: 35,
+        branches: 50,
+        statements: 35,
+      },
     },
   },
 });

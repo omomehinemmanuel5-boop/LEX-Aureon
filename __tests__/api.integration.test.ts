@@ -60,6 +60,28 @@ describe('API integration', () => {
     vi.clearAllMocks();
   });
 
+  it('GET /api/lex/govern exposes the versioned endpoint contract', async () => {
+    const { GET } = await import('../app/api/lex/govern/route');
+    const res = await GET();
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      endpoint: '/api/lex/govern',
+      documentation: '/api-docs',
+    });
+  });
+
+  it('POST /api/lex/govern rejects malformed JSON before admission', async () => {
+    const { POST } = await import('../app/api/lex/govern/route');
+    const req = new Request('http://localhost/api/lex/govern', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"prompt":',
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'Invalid JSON' });
+  });
+
   it('POST /api/lex/govern rejects missing prompt', async () => {
     const { POST } = await import('../app/api/lex/govern/route');
     const req = new Request('http://localhost/api/lex/govern', {
