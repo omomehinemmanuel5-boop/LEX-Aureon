@@ -84,7 +84,7 @@ const KERNEL_ALERT     = 0.22;  // stricter HIGH threshold
 const WRITE_TOOLS      = new Set(['write_file','create_file','delete_file','drop_table',
                            'execute_sql','run_command','bash','shell','eval']);
 
-async function getKernelM(session_id: string): Promise<number> {
+async function getKernelM(session_id: string): Promise<number | null> {
   try {
     const db = getClient();
     const res = await db.execute({
@@ -94,7 +94,9 @@ async function getKernelM(session_id: string): Promise<number> {
     if (!res.rows.length) return 1.0; // no kernel state = treat as stable
     return Number(res.rows[0].last_m ?? 1.0);
   } catch {
-    return 1.0; // fail open — don't block tools on DB error
+    // A missing row is a clean new session; an unavailable state store is not.
+    // Keep those cases distinct so tool authorization fails closed on outage.
+    return null;
   }
 }
 
@@ -246,7 +248,7 @@ async function runToolGoverned(
       // reintroduce the cost the cache exists to avoid — it only restores
       // the one safety invariant the cache broke.
       const currentKernelM = await getKernelM(sid);
-      if (currentKernelM < KERNEL_CRITICAL) {
+      if (currentKernelM === null || currentKernelM < KERNEL_CRITICAL) {
         _toolCache.delete(key); // stale under current kernel state — evict
       } else {
         // Cache hit — skip the rest of the full interceptor + execution
@@ -359,7 +361,23 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
 
   // Step 0: Kernel-informed check — kernel M gates tool execution
   const kernelM = await getKernelM(tool.session_id);
-  const kernelCRS = { C: kernelM, R: kernelM, S: kernelM, M: kernelM, risk_level: 'BLOCKED' as const };
+  const kernelCRS = { C: kernelM ?? 0, R: kernelM ?? 0, S: kernelM ?? 0, M: kernelM ?? 0, risk_level: 'BLOCKED' as const };
+
+  if (kernelM === null) {
+    await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
+      args_hash, decision: 'DENIED_STATE_UNAVAILABLE', crs: kernelCRS,
+      reason: 'Constitutional state unavailable — tool execution denied by fail-closed policy', sigma_viol: 1 });
+    return {
+      approved: false,
+      decision: 'DENIED_BLOCKED' as const,
+      receipt_id,
+      crs: kernelCRS,
+      health_band: 'CRITICAL' as const,
+      reason: 'Constitutional state unavailable — tool execution denied by fail-closed policy',
+      sigma_viol: 1,
+      warning: 'Governance state unavailable; execution denied by fail-closed policy.',
+    };
+  }
 
   if (kernelM < KERNEL_CRITICAL) {
     await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
