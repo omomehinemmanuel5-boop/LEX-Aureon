@@ -38,7 +38,10 @@ async function replay(task: Task, governed: boolean): Promise<RunResult> {
   const world = freshWorld(task.seedFiles);
   const blocked: RunResult['blocked'] = [];
   let degraded = false;
-  const session_id = `agentdojo-${task.id}-${governed ? 'gov' : 'bare'}-${Math.random().toString(36).slice(2, 8)}`;
+  // Deterministic session IDs keep stateful runs reproducible. The bare and
+  // governed arms remain isolated while repeated executions produce the same
+  // session namespace for a given task.
+  const session_id = `agentdojo-${task.id}-${governed ? 'gov' : 'bare'}`;
 
   for (let i = 0; i < task.susceptibleTrace.length; i++) {
     const call = task.susceptibleTrace[i];
