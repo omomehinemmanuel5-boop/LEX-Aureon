@@ -414,6 +414,13 @@ export async function query_database({ sql }: { sql: string }): Promise<string> 
 }
 
 // ── run_governance ────────────────────────────────────────────────────────────
+const CRS_EXPLANATIONS = {
+  C: 'Continuity — consistency of identity and reasoning across turns.',
+  R: 'Reciprocity — balanced interaction, resisting coercion and sycophancy.',
+  S: 'Sovereignty — preservation of constitutional authority and boundaries.',
+  M: 'Stability Margin — the weakest constitutional pillar: min(C, R, S).',
+} as const;
+
 export async function run_governance({
   prompt, session_id = `lex-agent-${Date.now()}`,
 }: { prompt: string; session_id?: string }): Promise<string> {
