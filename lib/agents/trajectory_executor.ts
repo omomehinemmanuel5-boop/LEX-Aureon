@@ -70,7 +70,13 @@ export async function executeGovernedTrajectoryAction(
   };
 
   const nextState = reconcileTrajectoryOutcome(state, outcome);
-  return { state: nextState, result, action };
+  const governance: GovernedToolExecutionResult = {
+    result,
+    approved: outcome.success,
+    decision: outcome.success ? 'APPROVED' : 'DENIED',
+    receiptId: null,
+  };
+  return { state: nextState, result, action, governance };
 }
 
 /** Deterministic action identity helper for adapters that construct plans dynamically. */
