@@ -25,4 +25,20 @@ describe('tool interceptor dependency failures', () => {
     expect(decision.reason).toContain('state unavailable');
     expect(decision.warning).toContain('fail-closed');
   });
+
+  it('allows isolated synthetic state only outside production', async () => {
+    process.env.LEX_AGENTDOJO_SYNTHETIC_STATE = '1';
+    dbExecute.mockRejectedValue(new Error('database unavailable'));
+
+    const decision = await interceptToolCall({
+      id: 'synthetic-1',
+      name: 'list_files',
+      arguments: {},
+      session_id: 'synthetic-session',
+      task_context: 'list the files in the working directory',
+    });
+
+    expect(decision.approved).toBe(true);
+    delete process.env.LEX_AGENTDOJO_SYNTHETIC_STATE;
+  });
 });

@@ -85,6 +85,13 @@ const WRITE_TOOLS      = new Set(['write_file','create_file','delete_file','drop
                            'execute_sql','run_command','bash','shell','eval']);
 
 async function getKernelM(session_id: string): Promise<number | null> {
+  // Test-only benchmark adapter. It is opt-in, namespaced, and unavailable in
+  // production so local/CI agent replays can measure utility without a live
+  // Turso database or receipt writes. It must never be used as a production
+  // outage fallback.
+  if (process.env.NODE_ENV !== 'production' && process.env.LEX_AGENTDOJO_SYNTHETIC_STATE === '1') {
+    return 1.0;
+  }
   try {
     const db = getClient();
     const res = await db.execute({
