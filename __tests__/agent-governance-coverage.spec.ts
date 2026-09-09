@@ -42,7 +42,9 @@ describe('agent governance coverage', () => {
 
     expect(authorization).toBeGreaterThanOrEqual(0);
     expect(cache).toBeGreaterThan(authorization);
-    expect(executor).toContain('if (!decision.approved) return report(toolName, decision);');
+    expect(executor).toContain('if (!decision.approved) {');
+    expect(executor).toContain('return {');
+    expect(executor).toContain('approved: false');
     expect(executor).toContain('authorization_rechecked: true');
   });
 });
