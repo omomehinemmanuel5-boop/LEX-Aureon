@@ -41,10 +41,17 @@ export async function executeGovernedTrajectoryAction(
       ...state,
       driftScore: trajectoryDecision.driftScore,
     };
+    const result = `Trajectory denied: ${trajectoryDecision.reason}`;
     return {
       state: deniedState,
       action,
-      result: `Trajectory denied: ${trajectoryDecision.reason}`,
+      result,
+      governance: {
+        result,
+        approved: false,
+        decision: 'TRAJECTORY_DENIED',
+        receiptId: null,
+      },
     };
   }
 
