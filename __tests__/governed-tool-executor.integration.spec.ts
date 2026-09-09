@@ -13,7 +13,10 @@ vi.mock('../lib/db', () => ({
   getClient: () => ({ execute: dbExecute }),
 }));
 
-import { executeGovernedTool } from '../lib/agents/constitutional_tool_executor';
+import {
+  executeGovernedTool,
+  executeGovernedToolStructured,
+} from '../lib/agents/constitutional_tool_executor';
 
 function approvedDecision() {
   return {
@@ -101,6 +104,45 @@ describe('governed tool execution integration boundary', () => {
     const result = await executeGovernedTool('write_file', { path: 'blocked.ts' }, tool, 'integration-deny-session');
 
     expect(result).toContain('approved:    false');
+    expect(tool).not.toHaveBeenCalled();
+  });
+
+  it('returns typed approval metadata without requiring string parsing', async () => {
+    const tool = vi.fn(async () => 'STRUCTURED_OK');
+
+    const result = await executeGovernedToolStructured(
+      'write_file',
+      { path: 'safe.ts', content: 'export {}' },
+      tool,
+      'structured-approval-session',
+    );
+
+    expect(result).toMatchObject({
+      result: expect.stringContaining('STRUCTURED_OK'),
+      approved: true,
+      decision: 'ALLOW',
+      receiptId: 'integration-receipt',
+    });
+    expect(tool).toHaveBeenCalledOnce();
+  });
+
+  it('returns typed denial metadata and never invokes the tool', async () => {
+    interceptToolCall.mockResolvedValue(deniedDecision());
+    const tool = vi.fn(async () => 'SHOULD_NOT_EXECUTE');
+
+    const result = await executeGovernedToolStructured(
+      'write_file',
+      { path: 'blocked.ts', content: 'unsafe' },
+      tool,
+      'structured-denial-session',
+    );
+
+    expect(result).toMatchObject({
+      result: expect.stringContaining('approved:    false'),
+      approved: false,
+      decision: 'DENY',
+      receiptId: 'integration-denied',
+    });
     expect(tool).not.toHaveBeenCalled();
   });
 
