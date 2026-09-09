@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedToolMock } = vi.hoisted(() => ({ executeGovernedToolMock: vi.fn() }));
-vi.mock('@/lib/agents/constitutional_tool_executor', () => ({ executeGovernedTool: executeGovernedToolMock }));
+const { executeGovernedToolStructuredMock } = vi.hoisted(() => ({ executeGovernedToolStructuredMock: vi.fn() }));
+vi.mock('@/lib/agents/constitutional_tool_executor', () => ({ executeGovernedToolStructured: executeGovernedToolStructuredMock }));
 import { executeGovernedTrajectoryAction } from '@/lib/agents/trajectory_executor';
 import { createTrajectoryPlan, createTrajectoryState } from '@/lib/agents/trajectory_governance';
 const makePlan=()=>createTrajectoryPlan({goal:'inspect an approved file',authorizedScope:['read_file'],riskCeiling:'read',actions:[{actionId:'a1',toolName:'read_file',declaredIntent:'inspect README',risk:'read'}]});
