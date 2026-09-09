@@ -18,6 +18,7 @@ import {
 
 export interface SignedArtifact {
   run_id: string;
+  key_version: string;
   metrics: {
     asr?: number;
     toxicity?: number;
@@ -39,6 +40,7 @@ export interface SignedArtifact {
 export interface ArtifactBundle {
   bundle_id: string;
   created_at: string;
+  key_version: string;
   artifacts: SignedArtifact[];
   bundle_hash: string;
   bundle_signature: string;
@@ -101,6 +103,10 @@ export class ArtifactSigner {
     this.keyManager = new KeyManager(keyDir);
   }
 
+  private keyVersion(): string {
+    return `ed25519-${createHash('sha256').update(this.keyManager.getPublicKey()).digest('hex').slice(0, 16)}`;
+  }
+
   public signArtifact(runId: string, metrics: Record<string, unknown>): SignedArtifact {
     const artifactHash = hashCanonical({ run_id: runId, metrics });
     const signature = sign(null, Buffer.from(artifactHash, 'utf8'), this.keyManager.getPrivateKey())
@@ -108,6 +114,7 @@ export class ArtifactSigner {
 
     return {
       run_id: runId,
+      key_version: this.keyVersion(),
       metrics,
       artifact_hash: artifactHash,
       signature,
@@ -123,6 +130,8 @@ export class ArtifactSigner {
   }
 
   public verifyArtifact(artifact: SignedArtifact): boolean {
+    const expectedKeyVersion = `ed25519-${createHash('sha256').update(artifact.public_key).digest('hex').slice(0, 16)}`;
+    if (artifact.key_version !== expectedKeyVersion) return false;
     const expectedHash = hashCanonical({ run_id: artifact.run_id, metrics: artifact.metrics });
     if (expectedHash !== artifact.artifact_hash) return false;
 
@@ -150,6 +159,7 @@ export class ArtifactSigner {
     return {
       bundle_id: bundleId,
       created_at: new Date().toISOString(),
+      key_version: this.keyVersion(),
       artifacts,
       bundle_hash: bundleHash,
       bundle_signature: bundleSignature,
@@ -159,6 +169,8 @@ export class ArtifactSigner {
 
   public verifyBundle(bundle: ArtifactBundle): boolean {
     if (bundle.artifacts.some(artifact => !this.verifyArtifact(artifact))) return false;
+    const expectedKeyVersion = `ed25519-${createHash('sha256').update(bundle.bundle_public_key).digest('hex').slice(0, 16)}`;
+    if (bundle.key_version !== expectedKeyVersion) return false;
     const computedHash = hashCanonical(bundle.artifacts);
     if (computedHash !== bundle.bundle_hash) return false;
 

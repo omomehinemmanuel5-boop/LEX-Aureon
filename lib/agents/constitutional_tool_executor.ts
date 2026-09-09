@@ -10,6 +10,7 @@
 import crypto from 'crypto';
 import { interceptToolCall } from './tool_interceptor';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
+import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { getClient } from '../db';
 import type { ToolCallDecision } from './types';
 
@@ -31,19 +32,32 @@ const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
   isApproved: (decision) => decision.approved,
 });
 
-async function getCurrentKernelM(sessionId: string): Promise<number> {
+async function getCurrentKernelM(sessionId: string): Promise<{ available: boolean; m: number }> {
   try {
     const db = getClient();
     const result = await db.execute({
       sql: 'SELECT last_m FROM z_traj WHERE session_id = ? LIMIT 1',
       args: [sessionId],
     });
-    if (!result.rows.length) return 1.0;
-    return Number(result.rows[0].last_m ?? 1.0);
+    if (!result.rows.length) return { available: true, m: 1.0 };
+    return { available: true, m: Number(result.rows[0].last_m ?? 1.0) };
   } catch {
-    // Preserve the interceptor's existing fail-open behavior for DB failures.
-    return 1.0;
+    return { available: false, m: 0 };
   }
+}
+
+function dependencyFailureDecision(toolName: string): ToolCallDecision {
+  const policy = dependencyFailurePolicy(READ_TOOLS.has(toolName) ? 'read' : 'high_risk');
+  return {
+    approved: false,
+    decision: 'DENIED_LOCKED',
+    reason: policy.reason,
+    crs: { C: 0, R: 0, S: 0, M: 0, risk_level: 'BLOCKED' },
+    receipt_id: `dependency-${crypto.randomUUID()}`,
+    sigma_viol: 1,
+    health_band: 'LOCKED',
+    warning: 'Governance state unavailable; execution denied by fail-closed policy.',
+  };
 }
 
 function keyFor(sessionId: string, toolName: string, args: Record<string, unknown>): string {
@@ -113,8 +127,17 @@ export async function executeGovernedToolStructured(
   // one final kernel-M read immediately before serving the cached value so a
   // transition into the critical floor cannot be hidden by the cache.
   if (READ_TOOLS.has(toolName)) {
-    const currentKernelM = await getCurrentKernelM(sessionId);
-    if (currentKernelM < KERNEL_CRITICAL) {
+    const kernelState = await getCurrentKernelM(sessionId);
+    if (!kernelState.available) {
+      const unavailableDecision = dependencyFailureDecision(toolName);
+      return {
+        result: report(toolName, unavailableDecision),
+        approved: false,
+        decision: unavailableDecision.decision,
+        receiptId: unavailableDecision.receipt_id,
+      };
+    }
+    if (kernelState.m < KERNEL_CRITICAL) {
       const criticalDecision = await interceptToolCall({
         id: crypto.randomUUID(),
         name: toolName,

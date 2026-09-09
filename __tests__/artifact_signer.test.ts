@@ -24,6 +24,7 @@ describe('ArtifactSigner', () => {
     const artifact = signer.signArtifact('run-1', { attack_success_rate: 0.02 });
 
     expect(artifact.signature).not.toMatch(/^[a-f0-9]{64}$/);
+    expect(artifact.key_version).toMatch(/^ed25519-[a-f0-9]{16}$/);
     expect(signer.verifyArtifact(artifact)).toBe(true);
   });
 
@@ -42,7 +43,16 @@ describe('ArtifactSigner', () => {
     const bundle = signer.createBundle([first, second]);
 
     expect(signer.verifyBundle(bundle)).toBe(true);
+    expect(bundle.key_version).toMatch(/^ed25519-[a-f0-9]{16}$/);
     bundle.artifacts[1].run_id = 'tampered-run';
     expect(signer.verifyBundle(bundle)).toBe(false);
+  });
+
+  it('rejects a signature replayed with a different key version', () => {
+    const signer = makeSigner();
+    const artifact = signer.signArtifact('run-5', { utility: 1 });
+    artifact.key_version = 'ed25519-replayed-key';
+
+    expect(signer.verifyArtifact(artifact)).toBe(false);
   });
 });

@@ -171,4 +171,20 @@ describe('governed tool execution integration boundary', () => {
     expect(interceptToolCall).toHaveBeenCalledTimes(2);
     expect(dbExecute).toHaveBeenCalled();
   });
+
+  it('fails closed instead of executing when governance state is unavailable', async () => {
+    dbExecute.mockRejectedValueOnce(new Error('state store unavailable'));
+    const read = vi.fn(async () => 'SHOULD_NOT_EXECUTE');
+
+    const result = await executeGovernedTool(
+      'read_file',
+      { path: 'README.md' },
+      read,
+      'integration-state-outage',
+    );
+
+    expect(result).toContain('approved:    false');
+    expect(result).toContain('constitutional_state_unavailable');
+    expect(read).not.toHaveBeenCalled();
+  });
 });
