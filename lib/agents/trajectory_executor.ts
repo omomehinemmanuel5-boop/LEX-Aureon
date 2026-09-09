@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { executeGovernedTool } from './constitutional_tool_executor';
+import { executeGovernedToolStructured } from './constitutional_tool_executor';
 import {
   authorizeTrajectoryAction,
   reconcileTrajectoryOutcome,
