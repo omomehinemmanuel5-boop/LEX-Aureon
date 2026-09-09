@@ -27,15 +27,24 @@ export interface GovernanceRequest {
   turn?: number;
 }
 
-import { GovernanceResponse } from '../../types/governance-types';
-import { ConstitutionalState, SemanticSignal } from '../../types';
-
-
-
+export interface GovernanceResponse {
+  raw_output: string;
+  governed_output: string;
+  receipt_id?: string;
+  M?: number;
+  C?: number;
+  R?: number;
+  S?: number;
+  health_band?: string;
+  state?: Record<string, unknown>;
+  metrics?: Record<string, unknown>;
+  [key: string]: unknown;
+}
 
 export interface LexAureonClientConfig {
   baseURL?: string;
   sessionId?: string;
+  apiKey?: string;
   timeout?: number;
   retries?: number;
 }
@@ -47,12 +56,14 @@ export interface LexAureonClientConfig {
 export class LexAureonClient {
   private baseURL: string;
   private sessionId: string;
+  private apiKey?: string;
   private timeout: number;
   private retries: number;
 
   constructor(config: LexAureonClientConfig = {}) {
     this.baseURL = config.baseURL ?? 'https://lexaureon.com';
     this.sessionId = config.sessionId ?? `session-${Date.now()}`;
+    this.apiKey = config.apiKey;
     this.timeout = config.timeout ?? 30000;
     this.retries = config.retries ?? 3;
   }
@@ -76,7 +87,10 @@ export class LexAureonClient {
       try {
         const response = await fetch(`${this.baseURL}/api/lex/govern`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+          },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(this.timeout),
         });

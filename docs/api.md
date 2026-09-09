@@ -26,4 +26,26 @@ Use GET /api/lex/verify and the public audit page to inspect receipt verificatio
 
 ## SDKs
 
-The TypeScript SDK lives under sdk/typescript and the Python SDK lives under sdk/python. Both should send the API key as a bearer token and preserve request and session identifiers for receipt correlation.
+The TypeScript SDK lives under `sdk/typescript` and the Python SDK lives under `sdk/python`. Both accept an optional `apiKey` or `api_key` configuration value and send it as an `Authorization: Bearer` token. Both preserve request and session identifiers for receipt correlation.
+
+TypeScript:
+
+```ts
+const client = new LexAureonClient({
+  baseURL: 'https://lexaureon.com',
+  sessionId: 'production-session-1',
+  apiKey: process.env.LEX_API_KEY,
+});
+```
+
+Python:
+
+```python
+client = LexAureonClient(
+    base_url="https://lexaureon.com",
+    session_id="production-session-1",
+    api_key=os.environ["LEX_API_KEY"],
+)
+```
+
+Do not hard-code API keys in source control. A valid receipt proves the bound data and signing key relationship; it does not independently prove that a benchmark was complete or that its scoring methodology was valid.

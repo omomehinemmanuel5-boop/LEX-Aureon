@@ -95,14 +95,17 @@ class LexAureonClient:
         self,
         base_url: str = "https://lexaureon.com",
         session_id: Optional[str] = None,
+        api_key: Optional[str] = None,
         timeout: float = 30.0,
         retries: int = 3,
     ):
         self.base_url = base_url.rstrip("/")
         self.session_id = session_id or f"session-{int(time.time() * 1000)}"
+        self.api_key = api_key
         self.timeout = timeout
         self.retries = retries
-        self.client = httpx.Client(timeout=timeout)
+        self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self.client = httpx.Client(timeout=timeout, headers=self.headers)
 
     def govern(
         self,
@@ -149,7 +152,7 @@ class LexAureonClient:
             "turn": turn,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as client:
             last_error = None
             for attempt in range(self.retries):
                 try:

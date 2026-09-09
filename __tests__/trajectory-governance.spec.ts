@@ -34,6 +34,28 @@ describe('trajectory governance', () => {
     expect(decision.reason).toBe('action_outside_authorized_scope');
   });
 
+  it('rejects every action when the authorized scope is empty', () => {
+    const emptyScope = createTrajectoryPlan({
+      ...plan,
+      authorizedScope: [],
+    });
+    const decision = authorizeTrajectoryAction(
+      createTrajectoryState(emptyScope),
+      emptyScope.actions[0],
+    );
+
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toBe('action_outside_authorized_scope');
+  });
+
+  it('rejects actions after a trajectory has been explicitly locked', () => {
+    const state = { ...createTrajectoryState(plan), locked: true };
+    const decision = authorizeTrajectoryAction(state, plan.actions[0]);
+
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toBe('trajectory_locked');
+  });
+
   it('rejects risk escalation beyond the plan ceiling', () => {
     const state = createTrajectoryState(plan);
     const decision = authorizeTrajectoryAction(state, {
@@ -73,6 +95,18 @@ describe('trajectory governance', () => {
       actualEffect: 'unexpected mutation',
     });
     expect(next.locked).toBe(true);
+  });
+
+  it('adds drift when a successful action reports no observable effect', () => {
+    const next = reconcileTrajectoryOutcome(createTrajectoryState(plan), {
+      actionId: 'a1',
+      success: true,
+      actualEffect: '   ',
+    });
+
+    expect(next.currentStep).toBe(1);
+    expect(next.driftScore).toBeCloseTo(0.15);
+    expect(next.locked).toBe(false);
   });
 
   it('locks after a failed action and rejects subsequent actions', () => {
