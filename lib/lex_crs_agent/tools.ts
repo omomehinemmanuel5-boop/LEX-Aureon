@@ -446,12 +446,26 @@ export async function run_governance({
     };
     const sig = d.semantic_signal ?? { attack_type: 'none', severity: 0 };
     const met = d.metrics ?? {};
-    return [
-      `Output: ${d.governed_output ?? ''}`,
-      `Health: ${d.health_band ?? '?'} | M=${Number(d.M ?? 0).toFixed(3)} | θ=${Number(d.theta ?? 0).toFixed(3)}`,
-      `Attack: type=${sig.attack_type} severity=${sig.severity} | C=${Number(met.c_measured ?? 0).toFixed(3)} R=${Number(met.r_measured ?? 0).toFixed(3)} S=${Number(met.s_measured ?? 0).toFixed(3)}`,
-      `Projection: ${d.projection_triggered ? '⚠️ TRIGGERED' : '✓ not triggered'} | Receipt: ${d.receipt_id ?? '?'}`,
-    ].join('\n');
+    const C = Number(met.c_measured ?? 0);
+    const R = Number(met.r_measured ?? 0);
+    const S = Number(met.s_measured ?? 0);
+    const M = Number(d.M ?? Math.min(C, R, S));
+    return JSON.stringify({
+      governed_output: d.governed_output ?? '',
+      decision: d.governed_output ? 'GOVERNED' : 'NO_OUTPUT',
+      health_band: d.health_band ?? 'UNKNOWN',
+      constitutional_state: {
+        C: Number(C.toFixed(3)),
+        R: Number(R.toFixed(3)),
+        S: Number(S.toFixed(3)),
+        M: Number(M.toFixed(3)),
+        explanations: CRS_EXPLANATIONS,
+      },
+      attack_signal: sig,
+      projection_triggered: Boolean(d.projection_triggered),
+      receipt_id: d.receipt_id ?? null,
+      timestamp: new Date().toISOString(),
+    });
   } catch (e) { return `Error: ${String(e)}`; }
 }
 
