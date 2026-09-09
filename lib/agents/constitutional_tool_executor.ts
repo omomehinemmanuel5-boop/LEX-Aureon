@@ -73,13 +73,20 @@ function report(toolName: string, decision: ToolCallDecision, result?: string, c
   return lines.join('\n');
 }
 
-export async function executeGovernedTool(
+export interface GovernedToolExecution {
+  result: string;
+  approved: boolean;
+  decision: string;
+  receiptId: string | null;
+}
+
+export async function executeGovernedToolStructured(
   toolName: string,
   args: Record<string, unknown>,
   toolFn: (args: Record<string, unknown>) => Promise<string>,
   sessionId: string,
   taskContext?: string,
-): Promise<string> {
+): Promise<GovernedToolExecution> {
   const decision = await interceptToolCall({
     id: crypto.randomUUID(),
     name: toolName,
