@@ -1,8 +1,42 @@
-// env.test.ts — intentionally skipped.
-// This file was removed on 2026-06-08 because it imported from a non-existent path
-// (../src/lib/env) and a non-existent export (envSchema).
-// See .claude/removed-env-test-2026-06-08.md for full explanation and replacement guidance.
-//
-// Vitest will collect this file but run 0 tests — no failure.
-import { describe } from 'vitest';
-describe.skip('env — REMOVED (see .claude/removed-env-test-2026-06-08.md)', () => {});
+import { afterEach, describe, expect, it } from 'vitest';
+import { env, siteUrlForMetadata } from '@/lib/env';
+
+const REQUIRED_SECRETS = [
+  'GROQ_API_KEY',
+  'JINA_API_KEY',
+  'TURSO_DATABASE_URL',
+  'TURSO_AUTH_TOKEN',
+  'ADMIN_PASSWORD',
+  'CRON_SECRET',
+] as const;
+
+const originalEnv = { ...process.env };
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+});
+
+describe('environment contract', () => {
+  it('uses the canonical public URL when configured', () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://staging.example.com';
+    expect(siteUrlForMetadata()).toBe('https://staging.example.com');
+    expect(env.NEXT_PUBLIC_SITE_URL).toBe('https://staging.example.com');
+  });
+
+  it('falls back to the production URL for build-time metadata', () => {
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+    expect(siteUrlForMetadata()).toBe('https://www.lexaureon.com');
+    expect(env.NEXT_PUBLIC_SITE_URL).toBe('https://www.lexaureon.com');
+  });
+
+  it.each(REQUIRED_SECRETS)('throws when %s is accessed without a value', (key) => {
+    for (const requiredKey of REQUIRED_SECRETS) process.env[requiredKey] = 'configured';
+    delete process.env[key];
+    expect(() => env[key]).toThrow(`[Lexaureon] Missing required env var: ${key}`);
+  });
+
+  it('returns undefined for an unset optional provider', () => {
+    delete process.env.GEMINI_API_KEY;
+    expect(env.GEMINI_API_KEY).toBeUndefined();
+  });
+});
