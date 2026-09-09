@@ -61,3 +61,14 @@ A release candidate should not claim agent-governance superiority unless it meet
 - the result can be reproduced by a second operator from the published manifest.
 
 This plan is an evaluation scaffold, not a completed benchmark result. It does not imply that Lex has passed these gates until a run is executed and independently checked.
+
+## Isolated local smoke mode
+
+For deterministic local smoke tests only, the interceptor accepts `LEX_AGENTDOJO_SYNTHETIC_STATE=1` when `NODE_ENV` is not `production`. This supplies a healthy synthetic kernel state without connecting to Turso. It is explicitly test-only, does not model persistence or receipt durability, and must not be configured in a deployed environment. A state-backed deployment remains required for the authoritative benchmark.
+
+Example:
+
+```bash
+NODE_ENV=test LEX_AGENTDOJO_SYNTHETIC_STATE=1 \
+  npx tsx scripts/agentdojo-real/run.ts --json data/eval/agentdojo-real-synthetic.jsonl
+```
