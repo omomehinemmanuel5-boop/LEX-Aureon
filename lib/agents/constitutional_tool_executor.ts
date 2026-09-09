@@ -142,5 +142,28 @@ export async function executeGovernedToolStructured(
     execute: () => toolFn(args),
   });
 
-  return report(toolName, cached.decision, cached.value, cached.cacheHit);
+  return {
+    result: report(toolName, cached.decision, cached.value, cached.cacheHit),
+    approved: cached.decision.approved,
+    decision: cached.decision.decision,
+    receiptId: cached.decision.receipt_id ?? null,
+  };
+}
+
+/** Backward-compatible string API for existing callers. */
+export async function executeGovernedTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  toolFn: (args: Record<string, unknown>) => Promise<string>,
+  sessionId: string,
+  taskContext?: string,
+): Promise<string> {
+  const execution = await executeGovernedToolStructured(
+    toolName,
+    args,
+    toolFn,
+    sessionId,
+    taskContext,
+  );
+  return execution.result;
 }
