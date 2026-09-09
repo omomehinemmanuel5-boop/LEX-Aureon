@@ -99,7 +99,14 @@ export async function executeGovernedToolStructured(
       ?? `Tool call: ${toolName}. Target: ${JSON.stringify(args).slice(0, 200)}`,
   });
 
-  if (!decision.approved) return report(toolName, decision);
+  if (!decision.approved) {
+    return {
+      result: report(toolName, decision),
+      approved: false,
+      decision: decision.decision,
+      receiptId: decision.receipt_id ?? null,
+    };
+  }
 
   // Authorization has already been performed with the complete ToolCallInput.
   // Only the execution result is eligible for reuse. For cache hits, perform
