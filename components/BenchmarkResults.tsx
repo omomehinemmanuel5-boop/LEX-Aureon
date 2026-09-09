@@ -192,7 +192,7 @@ export default function BenchmarkResults({
 
   return (
     <div
-      className={`w-full border-y border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-[#0d0d1a] ${compact ? 'py-12' : 'py-16'}`}
+      className={`w-full border-y border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-slate-950 ${compact ? 'py-12' : 'py-16'}`}
     >
       <div className="max-w-3xl mx-auto px-5">
         {/* header */}

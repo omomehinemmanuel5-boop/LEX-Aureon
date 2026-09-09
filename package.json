@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint app lib components __tests__ --ext .js,.ts,.tsx --quiet",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "health": "npx tsx scripts/health-check.ts",
     "test:governor": "npx tsx scripts/test-governor.ts",
@@ -40,13 +41,13 @@
     "humaneval:score": "npx tsx scripts/humaneval/score.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "verify": "npm run lint && npm test && npm run build"
+    "verify": "npm run lint && npm test && npm run test:coverage && npm run build"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
     "@vercel/analytics": "^1.4.1",
     "@vercel/speed-insights": "^2.0.0",
-    "next": "15.5.15",
+    "next": "15.5.25",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^3.24.0"
@@ -57,13 +58,17 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^9",
-    "eslint-config-next": "15.5.15",
-    "postcss": "^8.4.32",
+    "eslint-config-next": "15.5.25",
+    "postcss": "8.5.28",
     "tailwindcss": "^4.0.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.22.4",
     "typescript": "^5.0.0",
     "vitest": "^1.6.1"
+  },
+  "overrides": {
+    "postcss": "8.5.28"
   }
 }

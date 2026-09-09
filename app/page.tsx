@@ -293,7 +293,7 @@ function ComparisonSection() {
     { n: 'No retraining required',   d: 'Runs as a layer above any LLM — GPT, Claude, Gemini, Llama, Mistral — with no fine-tuning and no model changes.' },
   ];
   return (
-    <section className="py-20 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-[#0d0d1a]">
+    <section className="py-20 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600 dark:text-slate-500 font-bold">
@@ -429,7 +429,7 @@ function ResearchStatusSection() {
    constraints applied to its copy. */
 function TechnicalFoundationSection() {
   return (
-    <section className="py-16 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-[#0d0d1a] border-y border-slate-100 dark:border-white/5">
+    <section className="py-16 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
@@ -623,7 +623,7 @@ export default function LandingPage() {
       <TechnicalFoundationSection />
       <LiveStatsBar />
       <ProofPanel />
-      <section className="py-16 px-5 bg-slate-50 dark:bg-[#0d0d1a] border-y border-slate-100 dark:border-white/5">
+      <section className="py-16 px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
         <div className="max-w-lg mx-auto text-center">
           <p className="text-xs font-mono uppercase tracking-widest mb-2 font-bold" style={{ color: G.gold }}>
             Stay updated

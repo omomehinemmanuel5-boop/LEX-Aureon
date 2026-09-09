@@ -1,4 +1,0 @@
-Cleared 2026-08-26 — this was a local dev server log file that should never
-have been committed (see .gitignore, added after this file was already
-tracked). No file-deletion tool available to the agent making this fix, so
-content was cleared rather than the file removed.

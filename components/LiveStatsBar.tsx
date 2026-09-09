@@ -136,7 +136,7 @@ export default function LiveStatsBar() {
   ];
 
   return (
-    <div className="border-y overflow-x-auto bg-slate-50 dark:bg-[#0d0d1a] border-slate-200 dark:border-white/5">
+    <div className="border-y overflow-x-auto bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-white/5">
       <div className="flex" style={{ minWidth: 576 }}>
         {cells.map(({ label, value, sub, color, pulse }, i) => (
           <div

@@ -5,9 +5,9 @@ import './globals.css';
 import { ToastProvider } from '@/components/Toast';
 import { ThemeProvider } from '@/lib/theme';
 import ConfigBanner from '@/components/ConfigBanner';
-import { env } from '@/lib/env';
+import { siteUrlForMetadata } from '@/lib/env';
 
-const SITE_URL = env.NEXT_PUBLIC_SITE_URL;
+const SITE_URL = siteUrlForMetadata();
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

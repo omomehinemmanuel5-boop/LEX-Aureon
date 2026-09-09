@@ -16,6 +16,12 @@ function required(key: string): string {
 
 const optional = (key: string): string | undefined => process.env[key] || undefined;
 
+// The public site URL is safe to default during build and local development;
+// private runtime secrets remain strict and fail closed when accessed.
+export function siteUrlForMetadata(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL || 'https://www.lexaureon.com';
+}
+
 type EnvShape = {
   GROQ_API_KEY:                 string;
   JINA_API_KEY:                 string;
@@ -47,7 +53,6 @@ const REQUIRED = new Set<keyof EnvShape>([
   'TURSO_AUTH_TOKEN',
   'ADMIN_PASSWORD',
   'CRON_SECRET',
-  'NEXT_PUBLIC_SITE_URL',
 ]);
 
 // Optional vars whose process.env key differs from the canonical field name.
@@ -59,6 +64,7 @@ export const env = new Proxy({} as EnvShape, {
   get(_, prop: string) {
     const key = prop as keyof EnvShape;
     if (REQUIRED.has(key)) return required(prop);
+    if (key === 'NEXT_PUBLIC_SITE_URL') return siteUrlForMetadata();
     const sourceKey = ALIASES[key] ?? prop;
     return optional(sourceKey);
   },

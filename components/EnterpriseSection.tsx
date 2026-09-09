@@ -59,7 +59,7 @@ export default function EnterpriseSection() {
   const t = examples[active];
 
   return (
-    <section className="py-24 px-5 bg-black/[0.03] dark:bg-[#0d0d1a]">
+    <section className="py-24 px-5 bg-black/[0.03] dark:bg-slate-950">
       <div className="max-w-4xl mx-auto">
 
         <div className="text-center mb-10">

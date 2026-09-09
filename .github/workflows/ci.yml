@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   check:
-    name: typecheck · test
+    name: lint · typecheck · test · build · audit
     runs-on: ubuntu-latest
 
     steps:
@@ -63,4 +63,30 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npm run test -- --run
 
-      # NOTE: Build handled by Vercel on every push to main.
+      - name: Coverage
+        env:
+          GROQ_API_KEY: stub
+          JINA_API_KEY: stub
+          TURSO_DATABASE_URL: libsql://stub.turso.io
+          TURSO_AUTH_TOKEN: stub
+          ADMIN_PASSWORD: stub
+          CRON_SECRET: stub
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+        run: npm run test:coverage
+
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Production build
+        env:
+          GROQ_API_KEY: stub
+          JINA_API_KEY: stub
+          TURSO_DATABASE_URL: libsql://stub.turso.io
+          TURSO_AUTH_TOKEN: stub
+          ADMIN_PASSWORD: stub
+          CRON_SECRET: stub
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+        run: npm run build
+
+      - name: Container build
+        run: docker build --tag lexaureon-ci:${{ github.sha }} .

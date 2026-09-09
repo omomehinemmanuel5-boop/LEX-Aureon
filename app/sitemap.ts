@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
-import { env } from '@/lib/env';
+import { siteUrlForMetadata } from '@/lib/env';
 
-const SITE_URL = env.NEXT_PUBLIC_SITE_URL;
+const SITE_URL = siteUrlForMetadata();
 
 // fix (2026-07-10) — SEO PASS:
 //   - Removed /keys: robots.ts explicitly disallows crawling it (correctly —
