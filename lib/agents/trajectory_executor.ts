@@ -8,10 +8,18 @@ import {
   type TrajectoryState,
 } from './trajectory_governance';
 
+export interface GovernedToolExecutionResult {
+  result: string;
+  approved: boolean;
+  decision: string;
+  receiptId?: string | null;
+}
+
 export interface GovernedTrajectoryExecution {
   state: TrajectoryState;
   result: string;
   action: TrajectoryAction;
+  governance: GovernedToolExecutionResult;
 }
 
 /**
