@@ -55,7 +55,7 @@ export async function executeGovernedTrajectoryAction(
     };
   }
 
-  const result = await executeGovernedTool(
+  const execution = await executeGovernedToolStructured(
     action.toolName,
     args,
     toolFn,
@@ -65,18 +65,18 @@ export async function executeGovernedTrajectoryAction(
 
   const outcome: TrajectoryOutcome = {
     actionId: action.actionId,
-    success: !result.includes('approved:    false'),
-    actualEffect: result,
+    success: execution.approved,
+    actualEffect: execution.result,
   };
 
   const nextState = reconcileTrajectoryOutcome(state, outcome);
   const governance: GovernedToolExecutionResult = {
-    result,
-    approved: outcome.success,
-    decision: outcome.success ? 'APPROVED' : 'DENIED',
-    receiptId: null,
+    result: execution.result,
+    approved: execution.approved,
+    decision: execution.decision,
+    receiptId: execution.receiptId,
   };
-  return { state: nextState, result, action, governance };
+  return { state: nextState, result: execution.result, action, governance };
 }
 
 /** Deterministic action identity helper for adapters that construct plans dynamically. */
