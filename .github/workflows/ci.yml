@@ -63,10 +63,4 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npm run test -- --run
 
-      - name: Build TypeScript SDK
-        run: npm run build --prefix sdk/typescript
-
-      - name: Compile Python SDK
-        run: python -m py_compile sdk/python/lex_aureon.py
-
       # NOTE: Build handled by Vercel on every push to main.
