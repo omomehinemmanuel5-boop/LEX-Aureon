@@ -1,20 +1,20 @@
 /**
- * Artifact Signing System — PHASE 5
- * 
- * Implements:
- * 1. Immutable evaluation output with Ed25519 signatures
- * 2. Cryptographic integrity verification
- * 3. Artifact bundle creation and signing
+ * Artifact Signing System.
+ *
+ * Evaluation artifacts are signed with Ed25519. Hashes provide content
+ * addressing; signatures provide authenticity and tamper evidence.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { createHash } from 'crypto';
-import { execSync } from 'child_process';
-
-// ────────────────────────────────────────────────────────────────────────────
-// Type Definitions
-// ────────────────────────────────────────────────────────────────────────────
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  sign,
+  verify,
+} from 'crypto';
 
 export interface SignedArtifact {
   run_id: string;
@@ -45,9 +45,20 @@ export interface ArtifactBundle {
   bundle_public_key: string;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Key Management (using OpenSSH Ed25519 keys)
-// ────────────────────────────────────────────────────────────────────────────
+function canonicalize(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hashCanonical(value: unknown): string {
+  return createHash('sha256').update(canonicalize(value)).digest('hex');
+}
 
 export class KeyManager {
   private keyDir: string;
@@ -62,49 +73,26 @@ export class KeyManager {
   }
 
   private ensureKeys(): void {
-    if (!fs.existsSync(this.keyDir)) {
-      fs.mkdirSync(this.keyDir, { recursive: true });
-    }
+    if (!fs.existsSync(this.keyDir)) fs.mkdirSync(this.keyDir, { recursive: true });
 
-    if (!fs.existsSync(this.privateKeyPath)) {
-      console.log('[KEY MANAGER] Generating Ed25519 key pair...');
-      try {
-        execSync(
-          `ssh-keygen -t ed25519 -f ${this.privateKeyPath} -N "" -C "lexbench@localhost"`,
-          { stdio: 'pipe' },
-        );
-        console.log('[KEY MANAGER] Key pair generated successfully');
-      } catch (err) {
-        console.warn(`[WARN] Failed to generate keys: ${err}`);
-        console.warn('[WARN] Falling back to placeholder keys');
-        this.createPlaceholderKeys();
-      }
-    }
-  }
+    if (fs.existsSync(this.privateKeyPath) && fs.existsSync(this.publicKeyPath)) return;
 
-  private createPlaceholderKeys(): void {
-    const privateKeyContent = `-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUtbm9uZS1ub25lAAAACXNzaC1lZDI1NTE5
-AAAAIHQvNxUxwFkQvxFQlQvxFQlQvxFQlQvxFQlQvxFQlQvxFQlQvxFQlQvxFQlQvxF
------END OPENSSH PRIVATE KEY-----`;
-    const publicKeyContent = `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHQvNxUxwFkQvxFQlQvxFQlQvxFQlQvxFQlQvxFQlQ lexbench@localhost`;
-
-    fs.writeFileSync(this.privateKeyPath, privateKeyContent);
-    fs.writeFileSync(this.publicKeyPath, publicKeyContent);
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519', {
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
+    fs.writeFileSync(this.privateKeyPath, privateKey, { mode: 0o600 });
+    fs.writeFileSync(this.publicKeyPath, publicKey, { mode: 0o644 });
   }
 
   public getPublicKey(): string {
-    return fs.readFileSync(this.publicKeyPath, 'utf-8').trim();
+    return fs.readFileSync(this.publicKeyPath, 'utf8').trim();
   }
 
-  public getPrivateKeyPath(): string {
-    return this.privateKeyPath;
+  public getPrivateKey(): ReturnType<typeof createPrivateKey> {
+    return createPrivateKey(fs.readFileSync(this.privateKeyPath, 'utf8'));
   }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Artifact Signer
-// ────────────────────────────────────────────────────────────────────────────
 
 export class ArtifactSigner {
   private keyManager: KeyManager;
@@ -114,13 +102,9 @@ export class ArtifactSigner {
   }
 
   public signArtifact(runId: string, metrics: Record<string, unknown>): SignedArtifact {
-    const artifactData = JSON.stringify({ runId, metrics });
-    const artifactHash = createHash('sha256').update(artifactData).digest('hex');
-
-    // Simulate signing
-    const signature = createHash('sha256')
-      .update(artifactHash + this.keyManager.getPrivateKeyPath())
-      .digest('hex');
+    const artifactHash = hashCanonical({ run_id: runId, metrics });
+    const signature = sign(null, Buffer.from(artifactHash, 'utf8'), this.keyManager.getPrivateKey())
+      .toString('base64');
 
     return {
       run_id: runId,
@@ -138,15 +122,30 @@ export class ArtifactSigner {
     };
   }
 
+  public verifyArtifact(artifact: SignedArtifact): boolean {
+    const expectedHash = hashCanonical({ run_id: artifact.run_id, metrics: artifact.metrics });
+    if (expectedHash !== artifact.artifact_hash) return false;
+
+    try {
+      return verify(
+        null,
+        Buffer.from(artifact.artifact_hash, 'utf8'),
+        createPublicKey(artifact.public_key),
+        Buffer.from(artifact.signature, 'base64'),
+      );
+    } catch {
+      return false;
+    }
+  }
+
   public createBundle(artifacts: SignedArtifact[]): ArtifactBundle {
     const bundleId = `bundle-${Date.now()}`;
-    const bundleData = JSON.stringify(artifacts);
-    const bundleHash = createHash('sha256').update(bundleData).digest('hex');
-
-    // Simulate bundle signing
-    const bundleSignature = createHash('sha256')
-      .update(bundleHash + this.keyManager.getPrivateKeyPath())
-      .digest('hex');
+    const bundleHash = hashCanonical(artifacts);
+    const bundleSignature = sign(
+      null,
+      Buffer.from(bundleHash, 'utf8'),
+      this.keyManager.getPrivateKey(),
+    ).toString('base64');
 
     return {
       bundle_id: bundleId,
@@ -159,17 +158,21 @@ export class ArtifactSigner {
   }
 
   public verifyBundle(bundle: ArtifactBundle): boolean {
-    const bundleData = JSON.stringify(bundle.artifacts);
-    const computedHash = createHash('sha256').update(bundleData).digest('hex');
-    return computedHash === bundle.bundle_hash;
+    if (bundle.artifacts.some(artifact => !this.verifyArtifact(artifact))) return false;
+    const computedHash = hashCanonical(bundle.artifacts);
+    if (computedHash !== bundle.bundle_hash) return false;
+
+    try {
+      return verify(
+        null,
+        Buffer.from(bundle.bundle_hash, 'utf8'),
+        createPublicKey(bundle.bundle_public_key),
+        Buffer.from(bundle.bundle_signature, 'base64'),
+      );
+    } catch {
+      return false;
+    }
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Export
-// ────────────────────────────────────────────────────────────────────────────
-
-export default {
-  KeyManager,
-  ArtifactSigner,
-};
+export default { KeyManager, ArtifactSigner };
