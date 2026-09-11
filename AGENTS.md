@@ -517,6 +517,8 @@ npm run build          verify TypeScript
 
 [2026-09-11] FIX: MCP admission control added — `/api/mcp` now applies a Turso-backed, fail-closed per-IP request limit before JSON parsing, authentication, telemetry, or tool dispatch, and rejects declared bodies above 128 KiB. Regression coverage verifies storage-outage denial does not authenticate, consume quota, or execute a tool.
 
+[2026-09-11] FIX: Audit receipt reproducibility wired end-to-end — canonical exports now include the persisted signing-key version and exact canonical field list; verification explicitly classifies retired fallback-key receipts as `legacy_insecure` rather than valid cryptographic proof; the public text-receipt page links to its machine-readable export; API/reproduction docs state the save-and-verify workflow and evidence boundaries. Regression coverage pins the legacy classification and export provenance.
+
 ---
 
 ## CURRENT STATUS

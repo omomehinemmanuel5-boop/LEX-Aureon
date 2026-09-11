@@ -22,7 +22,7 @@ Anonymous requests are limited to 20 requests per IP per minute. Authenticated r
 
 ## Verification
 
-Use GET /api/lex/verify and the public audit page to inspect receipt verification. A numerical simulator certificate is not proof of the open multi-pillar analytical result.
+Use `POST /api/audits/verify` with `{ "receipt_id": "KRN-..." }` to verify a governed text receipt, and `GET /api/audits/{receipt_id}/export` to save its canonical audit bundle. Only a `valid` result carrying `signing_key_version: "v1"` is current production HMAC verification; `legacy_insecure` denotes historical fallback-key metadata rather than cryptographic proof. A numerical simulator certificate is not proof of the open multi-pillar analytical result.
 
 ## SDKs
 

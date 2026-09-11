@@ -20,7 +20,9 @@ import { logger, errorFields } from '@/lib/logger';
  *   - not_found        — no row with that receipt_id exists
  *   - unsigned          — row predates the signature column (written before
  *                         this fix shipped); nothing to verify against
- *   - valid / tampered  — the actual verification result
+ *   - legacy_insecure  — a historical public-fallback signature; it is not
+ *                         evidence-grade even if its bytes match
+ *   - valid / tampered  — the actual verification result for v1 receipts
  *
  * Collapsing "not_found" or "unsigned" into "invalid" would be misleading —
  * a receipt written before signing existed is not evidence of tampering,
@@ -45,7 +47,7 @@ export async function POST(req: Request) {
     await initSchema();
     const r = await getClient().execute({
       sql: `SELECT receipt_id, session_id, m_after, health_band, governor_mode,
-                   input_hash, output_hash, receipt_hash, signature, created_at,
+                   input_hash, output_hash, receipt_hash, signature, signing_key_version, created_at,
                    c_after, r_after, s_after
             FROM praxis_receipts
             WHERE receipt_id = ?
@@ -59,12 +61,26 @@ export async function POST(req: Request) {
 
     const row = r.rows[0];
     const signature = row.signature as string | null;
+    const signingKeyVersion = (row.signing_key_version as string | null) ?? 'unsigned';
+
+    if (signingKeyVersion !== 'v1') {
+      return NextResponse.json({
+        ok: true,
+        status: signingKeyVersion === 'v1-fallback' ? 'legacy_insecure' : 'unsigned',
+        receipt_id: receiptId,
+        signing_key_version: signingKeyVersion,
+        note: signingKeyVersion === 'v1-fallback'
+          ? 'This receipt used the retired development fallback key. It is retained for audit history but is not cryptographically trustworthy.'
+          : 'This receipt was not signed with the production v1 key and cannot be cryptographically verified.',
+      });
+    }
 
     if (!signature) {
       return NextResponse.json({
         ok: true,
         status: 'unsigned',
         receipt_id: receiptId,
+        signing_key_version: signingKeyVersion,
         note: 'This receipt was written before cryptographic signing was enabled and cannot be verified against a signature. It may still be legitimate — absence of a signature is not evidence of tampering, only of age.',
       });
     }
@@ -74,6 +90,7 @@ export async function POST(req: Request) {
         ok: true,
         status: 'unsigned',
         receipt_id: receiptId,
+        signing_key_version: signingKeyVersion,
         note: 'This receipt predates the c_after/r_after/s_after columns and cannot be verified — the full state its signature was computed over is not recoverable from this row.',
       });
     }
@@ -104,6 +121,7 @@ export async function POST(req: Request) {
       ok: true,
       status: valid ? 'valid' : 'tampered',
       receipt_id: receiptId,
+      signing_key_version: signingKeyVersion,
       checked_at: new Date().toISOString(),
     });
   } catch (e) {

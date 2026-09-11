@@ -6,19 +6,15 @@ import { logger, errorFields } from '@/lib/logger';
 /**
  * GET /api/audits/[id]/export
  *
- * A portable, self-contained, independently-verifiable export of a single
- * governed receipt — the "proof-of-sovereignty" artifact. Unlike the console
- * or audit page, which require trusting lexaureon.com to render the data
- * honestly, this bundle can be handed to a third party (a buyer, an auditor,
- * a compliance reviewer) who verifies it themselves: recompute the HMAC from
- * the fields in the bundle using the published verification method and
- * confirm it matches `signature`, with no API call back to this server
- * required for the check itself.
+ * A portable, canonical export of a single governed receipt. Unlike a printed
+ * audit page, the bundle preserves the exact fields used by the signature and
+ * records the signing-key provenance needed for a repeatable review.
  *
- * `self_check` runs that same verification server-side before returning, so
- * the bundle also tells the recipient up front whether it's already known to
- * verify — but the recipient isn't required to trust that field; every input
- * needed to redo the check independently is included in the bundle itself.
+ * HMAC verification necessarily requires the server-held signing secret, so a
+ * recipient should use the verification endpoint rather than treating an HMAC
+ * bundle as public-key-verifiable evidence. `self_check` is informative only;
+ * it is deliberately accompanied by the persisted key version and never
+ * upgrades legacy fallback-signed rows into cryptographic proof.
  */
 export async function GET(
   _req: Request,
@@ -37,7 +33,7 @@ export async function GET(
       sql: `SELECT receipt_id, session_id, turn, pre_eval_label,
                    m_before, m_after, governor_mode, intervention, slow_drip,
                    governor_effort, sigma_viol, crs_method, health_band,
-                   input_hash, output_hash, receipt_hash, signature,
+                   input_hash, output_hash, receipt_hash, signature, signing_key_version,
                    c_after, r_after, s_after, created_at
             FROM praxis_receipts
             WHERE receipt_id = ?
@@ -53,8 +49,10 @@ export async function GET(
     const signature = row.signature as string | null;
     const hasFullState = row.c_after !== null && row.r_after !== null && row.s_after !== null;
 
-    let selfCheck: 'valid' | 'tampered' | 'unsigned' = 'unsigned';
-    if (signature && hasFullState) {
+    const signingKeyVersion = (row.signing_key_version as string | null) ?? 'unsigned';
+    let selfCheck: 'valid' | 'tampered' | 'unsigned' | 'legacy_insecure' = 'unsigned';
+    if (signingKeyVersion === 'v1-fallback') selfCheck = 'legacy_insecure';
+    if (signingKeyVersion === 'v1' && signature && hasFullState) {
       const healthBand = (row.health_band as string | null)
         ?? (row.governor_mode as string).replace(/^kernel-/, '').toUpperCase();
       const valid = verifyReceiptSignature(
@@ -95,13 +93,15 @@ export async function GET(
         input_hash: row.input_hash,
         output_hash: row.output_hash,
         receipt_hash: row.receipt_hash,
+        signing_key_version: signingKeyVersion,
         created_at: row.created_at,
       },
       signature,
       self_check: selfCheck,
       verification: {
         method: 'HMAC-SHA256',
-        instructions: 'Recompute HMAC-SHA256 over the pipe-joined string: receipt_id|session_id|C.toFixed(6)|R.toFixed(6)|S.toFixed(6)|M.toFixed(6)|health_band|input_hash|output_hash|receipt_hash|created_at|key_version, keyed by the server signing secret. Compare against `signature` using a constant-time comparison. See lib/kernel_bridge.ts computeReceiptSignature() in the public repository for the canonical implementation.',
+        canonical_fields: ['receipt_id', 'session_id', 'state.C', 'state.R', 'state.S', 'm_after', 'health_band', 'input_hash', 'output_hash', 'receipt_hash', 'created_at', 'signing_key_version'],
+        instructions: 'The server computes HMAC-SHA256 over the pipe-joined canonical fields, with C/R/S/M formatted to six decimal places. Because the signing secret is intentionally not exported, verify the saved receipt id against the authoritative endpoint. A v1-fallback signature is historical metadata only and is not cryptographic proof.',
         verify_endpoint: 'POST https://www.lexaureon.com/api/audits/verify with body { "receipt_id": "...' + '" }',
         repository: 'https://github.com/omomehinemmanuel5-boop/LEX-Aureon',
       },

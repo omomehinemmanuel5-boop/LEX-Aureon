@@ -11,6 +11,31 @@ The benchmark runners also exist in this repo under `scripts/<bench>/run.ts`
 (`advbench`, `harmbench`, `jailbreakbench`) and are kept in sync with the benchmark
 repo. If you run them from here, the flow is identical to the guide above.
 
+## Audit receipt reproduction and verification
+
+Each governed text receipt has a canonical export at
+`GET /api/audits/{receipt_id}/export`. Save that JSON unchanged: it includes
+the complete signed state (`C`, `R`, `S`), hashes, UTC creation time, and the
+persisted `signing_key_version`, so another reviewer can repeat the same
+integrity check without transcribing values from the rendered audit page.
+
+Verify the saved receipt against the authoritative record with:
+
+```bash
+curl --fail --request POST https://www.lexaureon.com/api/audits/verify \
+  --header 'content-type: application/json' \
+  --data '{"receipt_id":"KRN-..."}'
+```
+
+Treat only `status: "valid"` with `signing_key_version: "v1"` as a current
+production HMAC verification. `unsigned` means no verifiable production
+signature is available; `legacy_insecure` identifies historical fallback-key
+rows, which remain visible for audit continuity but are not evidence-grade.
+HMAC is deliberately not public-key verification: the signing secret is never
+exported, so the server endpoint is required for an authoritative signature
+check. Receipt integrity also does not reproduce a benchmark or prove a
+scientific claim; use the benchmark flow below for that.
+
 ## Summary of the current (v4) flow
 
 1. **Datasets** — download from source, convert to JSONL (not committed to git).
