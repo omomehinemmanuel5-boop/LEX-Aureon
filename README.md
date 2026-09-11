@@ -21,6 +21,7 @@
 
 ### Engineering references
 
+- [Lex Atlas — canonical knowledge operating system](docs/atlas/index.md)
 - [API guide](docs/api.md)
 - [Architecture overview](docs/architecture/system-overview.md)
 - [Security model](docs/security.md)

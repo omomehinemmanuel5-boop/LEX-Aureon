@@ -1,5 +1,7 @@
 # Agent Trajectory Governance
 
+> **Atlas:** This focused implementation note is indexed by the canonical [Trajectory Governance lineage page](atlas/concepts/trajectory-governance.md). It remains the source document for the invariants below.
+
 ## Purpose
 
 Lex already enforces constitutional authorization at the individual tool-call boundary. This layer adds trajectory-level authorization without replacing that enforcement primitive.

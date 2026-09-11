@@ -1,5 +1,7 @@
 # PRAXIS-Gated Action Governance — Design Spec
 
+> **Atlas status:** This is a historical design specification, not a runtime inventory. The canonical map of deployed paths and the distinction between this proposal and implementation are in [MCP Governance](atlas/concepts/mcp-governance.md) and the [withdrawn/superseded archive](atlas/archives/withdrawn-proofs.md).
+
 **Status:** Design only. No implementation yet.
 **Origin:** Synthesis of existing PRAXIS workflow (Notion: Aureonics OS) and the
 Lex Aureon constitutional kernel (`lib/sovereign_kernel.ts`, `lib/cbf.ts`).
