@@ -7,7 +7,7 @@ const pillars = [
   { key: 'C', name: 'Continuity', value: 'State integrity', color: 'var(--c-color)' },
   { key: 'R', name: 'Reciprocity', value: 'Non-coercive exchange', color: 'var(--r-color)' },
   { key: 'S', name: 'Sovereignty', value: 'Boundary integrity', color: 'var(--s-color)' },
-];
+] as const;
 
 const surfaces = [
   { title: 'PRAXIS', text: 'Turn-level governance and constitutional arbitration.', href: '/constitution' },
