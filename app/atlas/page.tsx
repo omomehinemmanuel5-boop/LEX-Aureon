@@ -16,7 +16,60 @@ const surfaces = [
   { title: 'Receipts', text: 'Auditable evidence for governed decisions.', href: '/audit' },
 ];
 
+type AtlasState = {
+  state: {
+    session_id: string;
+    C: number;
+    R: number;
+    S: number;
+    M: number;
+    velocity: number;
+    drift_dir: string;
+    sigma_viol: number;
+    updated_at: string;
+  } | null;
+  receipts: Array<{
+    receipt_id: string;
+    session_id: string;
+    turn: number;
+    m_before: number;
+    m_after: number;
+    governor_mode: string;
+    intervention: boolean;
+    created_at: string;
+  }>;
+};
+
 export default function AtlasPage() {
+  const [runtime, setRuntime] = useState<AtlasState | null>(null);
+  const [runtimeError, setRuntimeError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch('/api/atlas/state', { cache: 'no-store' });
+        if (!response.ok) throw new Error('runtime unavailable');
+        const data = await response.json() as AtlasState;
+        if (active) {
+          setRuntime(data);
+          setRuntimeError(false);
+        }
+      } catch {
+        if (active) setRuntimeError(true);
+      }
+    };
+    void load();
+    const timer = window.setInterval(load, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const state = runtime?.state;
+  const health = state ? (state.M >= 0.25 ? 'OPTIMAL' : state.M >= 0.15 ? 'ALERT' : state.M >= 0.08 ? 'STRESSED' : 'CRITICAL') : 'CONNECTING';
+
   return (
     <main className="min-h-screen" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
