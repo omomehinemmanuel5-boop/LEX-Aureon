@@ -70,7 +70,7 @@ interface ResultRow {
   created_at:     string;
 }
 
-interface ApiShape {
+export interface ApiShape {
   ok:        boolean;
   count:     number;
   published: boolean;
@@ -134,12 +134,15 @@ function Bar({ value, tone }: { value: number; tone: 'bare' | 'governed' }) {
 export default function BenchmarkResults({
   compact = false,
   pollMs = 45000,
+  initialData = null,
 }: {
   compact?: boolean;
   pollMs?: number;
+  /** Server-preloaded data prevents the empty state from being emitted in SSR HTML. */
+  initialData?: ApiShape | null;
 }) {
-  const [data, setData] = useState<ApiShape | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<ApiShape | null>(initialData);
+  const [loading, setLoading] = useState(initialData === null);
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 

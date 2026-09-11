@@ -10,7 +10,7 @@ import EnterpriseSection from '@/components/EnterpriseSection';
 import LiveStatsBar from '@/components/LiveStatsBar';
 import RedTeamSection from '@/components/RedTeamSection';
 import ArchitectureSection from '@/components/ArchitectureSection';
-import BenchmarkResults from '@/components/BenchmarkResults';
+import BenchmarkResults, { type ApiShape as BenchmarkApiShape } from '@/components/BenchmarkResults';
 import CbfInvariancePanel from '@/components/CbfInvariancePanel';
 import CbfSimulator from '@/components/CbfSimulator';
 import type { Metadata } from 'next';
@@ -607,7 +607,13 @@ function ProofPanel() {
   );
 }
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // The benchmark strip is interactive, but its published/empty state must also
+  // be correct in the server-rendered HTML. Without this preload, crawlers and
+  // agents that do not execute the client bundle permanently see the component's
+  // initial empty state even while /api/benchmarks has published rows.
+  const benchmarkData = await fetchData<BenchmarkApiShape>('/api/benchmarks');
+
   return (
     <main className="min-h-screen selection:bg-amber-500/30" style={{ backgroundColor: '#07070d' }}>
       <script
@@ -616,7 +622,7 @@ export default function LandingPage() {
       />
       <LandingNav />
       <Hero />
-      <BenchmarkResults compact />
+      <BenchmarkResults compact initialData={benchmarkData} />
       <ComparisonSection />
       <ArchitectureSection />
       <ResearchStatusSection />
