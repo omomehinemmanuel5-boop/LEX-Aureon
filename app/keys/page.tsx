@@ -141,7 +141,7 @@ export default function KeysPage() {
               </button>
             </div>
             <p style={{ color:'#6b7280', fontSize:11, margin:'0.5rem 0 0' }}>
-              Free tier: 100 governance runs · Upgrade for more
+              Free tier: 1,000 governance runs · Upgrade for more
             </p>
           </div>
         )}
@@ -187,7 +187,7 @@ export default function KeysPage() {
             <div style={{ flex:1, background:'#07070d', borderRadius:6, padding:'0.75rem' }}>
               <p style={{ color:'#e8e8e8', fontSize:13, fontWeight:700, margin:'0 0 0.25rem' }}>Free</p>
               <p style={{ color:'#c9a84c', fontSize:18, fontWeight:700, margin:'0 0 0.25rem' }}>$0</p>
-              <p style={{ color:'#6b7280', fontSize:11, margin:0 }}>100 runs/key · 3 keys max</p>
+              <p style={{ color:'#6b7280', fontSize:11, margin:0 }}>1,000 runs/key · 3 keys max</p>
             </div>
             <div style={{ flex:1, background:'#07070d', border:'1px solid #c9a84c', borderRadius:6, padding:'0.75rem' }}>
               <p style={{ color:'#e8c96d', fontSize:13, fontWeight:700, margin:'0 0 0.25rem' }}>Sovereign</p>

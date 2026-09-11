@@ -25,7 +25,7 @@ export interface ApiKey {
   key: string;
   name: string;
   email: string;
-  plan: 'free' | 'sovereign';
+  plan: 'free' | 'sovereign' | 'private_test';
   runs_used: number;
   runs_limit: number;
   created_at: number;
@@ -33,11 +33,16 @@ export interface ApiKey {
 }
 
 const PLANS = {
-  free:      { limit: 100,   label: 'Free' },
-  sovereign: { limit: 10000, label: 'Sovereign' },
+  free:         { limit: 1000,       label: 'Free' },
+  sovereign:    { limit: 10000,      label: 'Sovereign' },
+  // Effectively unlimited for private testing while retaining a very large
+  // finite ceiling as a last-resort runaway safeguard.
+  private_test: { limit: 1_000_000_000, label: 'Private test' },
 };
 
 // ── Schema ─────────────────────────────────────────────────────────────────
+
+let _freeQuotaMigrated = false;
 
 export async function initApiKeySchema(): Promise<void> {
   const db = getClient();
@@ -50,12 +55,22 @@ export async function initApiKeySchema(): Promise<void> {
       email       TEXT NOT NULL,
       plan        TEXT NOT NULL DEFAULT 'free',
       runs_used   INTEGER NOT NULL DEFAULT 0,
-      runs_limit  INTEGER NOT NULL DEFAULT 100,
+      runs_limit  INTEGER NOT NULL DEFAULT 1000,
       created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
       last_used_at INTEGER
     )`,
     args: [],
   });
+  if (!_freeQuotaMigrated) {
+    // Existing free keys were created with the old 100-run quota. Upgrade them
+    // in place so “Free = 1,000” applies to all free keys, not only new keys.
+    await db.execute(`
+      UPDATE api_keys
+      SET runs_limit = 1000
+      WHERE plan = 'free' AND runs_limit < 1000
+    `);
+    _freeQuotaMigrated = true;
+  }
 }
 
 // ── Generate ───────────────────────────────────────────────────────────────
@@ -63,7 +78,7 @@ export async function initApiKeySchema(): Promise<void> {
 export async function generateApiKey(params: {
   email: string;
   name?: string;
-  plan?: 'free' | 'sovereign';
+  plan?: 'free' | 'sovereign' | 'private_test';
 }): Promise<ApiKey | null> {
   const db = getClient();
   if (!db) return null;
@@ -99,7 +114,7 @@ function rowToApiKey(row: Record<string, unknown>): ApiKey {
     key: row.key as string,
     name: row.name as string,
     email: row.email as string,
-    plan: row.plan as 'free' | 'sovereign',
+    plan: row.plan as 'free' | 'sovereign' | 'private_test',
     runs_used: row.runs_used as number,
     runs_limit: row.runs_limit as number,
     created_at: row.created_at as number,
