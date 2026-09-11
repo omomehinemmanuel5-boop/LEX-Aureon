@@ -125,6 +125,15 @@ export default function AtlasPage() {
           <p className="mt-5 max-w-3xl text-xs leading-5" style={{ color: 'var(--text-muted)' }}>Tool governance is deliberately explicit: the constitutional layer governs not only generated text but the admission and authorization boundary around consequential tool execution.</p>
         </section>
 
+        <section className="mt-6 rounded-2xl border p-5 sm:p-7" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <div className="mb-5 flex items-end justify-between gap-4"><div><div className="font-data text-[10px] tracking-[.2em]" style={{ color: 'var(--text-muted)' }}>LIVE EVIDENCE</div><h2 className="mt-1 text-xl font-bold">Recent governance receipts.</h2></div><span className="font-data text-[10px]" style={{ color: 'var(--text-muted)' }}>{runtime?.receipts.length ?? 0} loaded</span></div>
+          <div className="space-y-2">
+            {runtime?.receipts.map((receipt) => <div key={receipt.receipt_id} className="flex flex-col gap-2 rounded-xl border px-3 py-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,.02)' }}><div className="min-w-0"><div className="font-data text-[10px]" style={{ color: 'var(--gold-light)' }}>{receipt.receipt_id.slice(0, 16)}</div><div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>M {receipt.m_before.toFixed(3)} → {receipt.m_after.toFixed(3)} · {receipt.governor_mode} · {receipt.intervention ? 'intervened' : 'pass-through'}</div></div><div className="font-data text-[10px]" style={{ color: 'var(--text-muted)' }}>{receipt.created_at}</div></div>)}
+            {!runtime?.receipts.length && <div className="rounded-xl border p-4 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Waiting for the first runtime receipt.</div>}
+          </div>
+          <Link href="/audit" className="mt-4 inline-block text-xs font-semibold" style={{ color: 'var(--gold-light)' }}>Open full audit trail →</Link>
+        </section>
+
         <section className="mt-6 grid gap-4 sm:grid-cols-3">
           <Link href="/benchmarks" className="rounded-2xl border p-5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}><div className="font-data text-[10px] tracking-[.18em]" style={{ color: 'var(--text-muted)' }}>EVIDENCE</div><h3 className="mt-2 font-bold">Benchmarks</h3><p className="mt-2 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>Evaluation evidence, methodology, and published results.</p></Link>
           <Link href="/research" className="rounded-2xl border p-5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}><div className="font-data text-[10px] tracking-[.18em]" style={{ color: 'var(--text-muted)' }}>RESEARCH</div><h3 className="mt-2 font-bold">Open Problems</h3><p className="mt-2 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>Separate deployed evidence from unresolved analytical claims.</p></Link>
