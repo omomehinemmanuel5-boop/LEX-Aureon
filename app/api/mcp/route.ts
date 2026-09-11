@@ -13,8 +13,9 @@ import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
 import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
-import { validateAndConsumeKey } from '@/lib/api_keys';
+import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity } from '@/lib/db';
+import { canCallTool, isOperatorSecret, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import crypto from 'crypto';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
@@ -54,6 +55,18 @@ function extractApiKey(req: Request): string | null {
   const queryKey = new URL(req.url).searchParams.get('apiKey');
   if (queryKey) return queryKey.trim();
   return null;
+}
+
+function isOperator(req: Request): boolean {
+  return isOperatorSecret(req.headers.get('x-lex-operator-secret'));
+}
+
+function unauthorized(id: number | string | undefined) {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    error: { code: -32001, message: 'Unauthorized: valid API key required' },
+    id,
+  });
 }
 
 const SERVER_INFO = {
@@ -145,9 +158,21 @@ export async function POST(req: Request) {
   }
 
   if (method === 'tools/list') {
+    const operator = isOperator(req);
+    const profile: McpAccessProfile = operator ? 'operator' : 'public';
+    if (!operator) {
+      const apiKey = extractApiKey(req);
+      if (!apiKey) return unauthorized(id);
+      const keyCheck = await validateApiKey(apiKey);
+      if (!keyCheck.valid) return unauthorized(id);
+    }
+    const allTools = [
+      ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
+      ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    ];
     return NextResponse.json({
       jsonrpc: '2.0',
-      result: { tools: servedTools() },
+      result: { tools: allTools.filter(t => toolsForProfile(profile, [t.name]).length > 0) },
       id,
     });
   }
@@ -164,28 +189,29 @@ export async function POST(req: Request) {
     // open to anyone who knew the URL. Checked BEFORE tool resolution so
     // an unauthenticated caller gets a uniform error regardless of which
     // tool they asked for, and before CRS or tool logic ever runs.
-    const apiKey = extractApiKey(req);
-    if (!apiKey) {
-      return NextResponse.json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32001,
-          message: 'Unauthorized: missing API key. Send x-lex-api-key or Authorization: Bearer. Generate one at https://www.lexaureon.com/keys',
-        },
-        id,
-      });
-    }
-    const keyCheck = await validateAndConsumeKey(apiKey);
-    if (!keyCheck.valid) {
-      return NextResponse.json({
-        jsonrpc: '2.0',
-        error: { code: -32001, message: `Unauthorized: ${keyCheck.error ?? 'invalid API key'}` },
-        id,
-      });
-    }
-
     const toolName = (params?.name as string) ?? '';
     const args = (params?.arguments as Record<string, unknown>) ?? {};
+    const operator = isOperator(req);
+    const profile: McpAccessProfile = operator ? 'operator' : 'public';
+    let ownerId = 'operator';
+    if (!operator) {
+      const apiKey = extractApiKey(req);
+      if (!apiKey) return unauthorized(id);
+      const keyCheck = await validateAndConsumeKey(apiKey);
+      if (!keyCheck.valid) return unauthorized(id);
+      ownerId = String(keyCheck.key?.id ?? 'anonymous');
+    }
+
+    // Capability filtering is enforced again at call time. Hiding a tool from
+    // tools/list is not an authorization boundary by itself because clients
+    // can still guess a tool name.
+    if (!canCallTool(profile, toolName)) {
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        error: { code: -32601, message: `Tool not found: ${toolName}` },
+        id,
+      });
+    }
     const toolFn = resolveTool(toolName);
 
     if (!toolFn) {
@@ -197,8 +223,14 @@ export async function POST(req: Request) {
     }
 
     try {
-      const sessionId = (args.session_id as string | undefined)
+      const clientSessionId = (args.session_id as string | undefined)
         ?? `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+      // Public sessions are namespaced by API-key identity. A caller-supplied
+      // session_id is only a label, never an authorization credential.
+      const sessionId = profile === 'public' ? `${ownerId}:${clientSessionId}` : clientSessionId;
+      const scopedArgs = profile === 'public'
+        ? { ...args, session_id: sessionId }
+        : args;
 
       // Constitutional authorization is the single dispatch boundary for
       // every MCP-exposed tool. Read-only results may be reused by the
@@ -231,7 +263,7 @@ export async function POST(req: Request) {
         const execution = await executeGovernedTrajectoryAction(
           trajectoryState,
           attemptedAction,
-          args,
+          scopedArgs,
           toolFn,
           sessionId,
           args.task_context as string | undefined,
@@ -255,7 +287,7 @@ export async function POST(req: Request) {
 
       const result = await executeGovernedTool(
         toolName,
-        args,
+        scopedArgs,
         toolFn,
         sessionId,
         args.task_context as string | undefined,

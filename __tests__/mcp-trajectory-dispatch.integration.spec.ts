@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+process.env.MCP_OPERATOR_SECRET = 'trajectory-test-operator';
+
 const { executeGovernedTool, executeGovernedTrajectoryAction, dbExecute } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedTrajectoryAction: vi.fn(),
@@ -89,7 +91,11 @@ import { POST } from '../app/api/mcp/route';
 function request(body: Record<string, unknown>) {
   return new Request('http://localhost/api/mcp', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-lex-api-key': 'test-key' },
+    headers: {
+      'content-type': 'application/json',
+      'x-lex-api-key': 'test-key',
+      'x-lex-operator-secret': 'trajectory-test-operator',
+    },
     body: JSON.stringify(body),
   });
 }

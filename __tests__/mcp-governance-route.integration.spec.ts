@@ -4,8 +4,9 @@ const { executeGovernedTool, toolFn, definitions } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   definitions: [
+    { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
+    { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
-    { name: 'write_file', description: 'write', parameters: { type: 'object' } },
   ],
 }));
 
@@ -26,13 +27,15 @@ vi.mock('next/server', () => ({
 
 vi.mock('@/lib/api_keys', () => ({
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
+  validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
 }));
 
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
   TOOL_REGISTRY: {
+    run_governance: toolFn,
+    get_constitutional_state: toolFn,
     read_file: toolFn,
-    write_file: toolFn,
   },
 }));
 
@@ -83,9 +86,8 @@ describe('MCP constitutional dispatch boundary', () => {
 
   it('routes every exposed tool call through the constitutional executor', async () => {
     const tools = [
-      ['read_file', { path: 'README.md' }],
-      ['write_file', { path: 'a.ts', content: 'x' }],
-      ['patch_file', { path: 'a.ts', patch: 'x' }],
+      ['run_governance', { prompt: 'test' }],
+      ['get_constitutional_state', { session_id: 'mine' }],
     ] as const;
 
     for (const [name, args] of tools) {
@@ -100,10 +102,42 @@ describe('MCP constitutional dispatch boundary', () => {
 
     expect(executeGovernedTool).toHaveBeenCalledTimes(tools.length);
     expect(executeGovernedTool.mock.calls.map((call) => call[0])).toEqual([
-      'read_file',
-      'write_file',
-      'patch_file',
+      'run_governance',
+      'get_constitutional_state',
     ]);
+  });
+
+  it('does not expose or execute infrastructure tools for public API keys', async () => {
+    const listResponse = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/list',
+      id: 1,
+    }));
+    const listed = (listResponse.body as unknown as { result: { tools: Array<{ name: string }> } }).result.tools;
+    expect(listed.map(tool => tool.name)).toEqual(['run_governance', 'get_constitutional_state']);
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'read_file', arguments: { path: '.env' } },
+      id: 2,
+    }));
+
+    expect(response.status).toBe(200);
+    expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32601);
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+  });
+
+  it('namespaces public session IDs by the authenticated key', async () => {
+    await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: { session_id: 'shared-label' } },
+      id: 3,
+    }));
+
+    const scopedArgs = executeGovernedTool.mock.calls[0]?.[1] as { session_id?: string };
+    expect(scopedArgs.session_id).toBe('anonymous:shared-label');
   });
 
   it('does not invoke the executor for an unknown tool', async () => {
