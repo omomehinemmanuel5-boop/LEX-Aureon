@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, toolFn, definitions } = vi.hoisted(() => ({
+const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
+  validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
+  validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
   definitions: [
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
@@ -26,8 +28,8 @@ vi.mock('next/server', () => ({
 }));
 
 vi.mock('@/lib/api_keys', () => ({
-  validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
-  validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
+  validateAndConsumeKey,
+  validateApiKey,
 }));
 
 vi.mock('../lib/lex_crs_agent/tools', () => ({
@@ -81,6 +83,8 @@ function request(body: Record<string, unknown>) {
 describe('MCP constitutional dispatch boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    validateApiKey.mockResolvedValue({ valid: true, key: {} });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
     executeGovernedTool.mockResolvedValue('approved:    true\\ncache_hit:   false\\nTOOL_RESULT');
   });
 
@@ -150,5 +154,46 @@ describe('MCP constitutional dispatch boundary', () => {
 
     expect(response.status).toBe(200);
     expect(executeGovernedTool).not.toHaveBeenCalled();
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed tool parameters before quota consumption or execution', async () => {
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'run_governance', arguments: [] },
+      id: 4,
+    }));
+
+    expect(response.status).toBe(200);
+    expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32602);
+    expect(validateApiKey).not.toHaveBeenCalled();
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+  });
+
+  it('does not debit quota for capability-denied calls', async () => {
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'read_file', arguments: { path: '.env' } },
+      id: 5,
+    }));
+
+    expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32601);
+    expect(validateApiKey).toHaveBeenCalledTimes(1);
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid JSON-RPC envelopes before authentication', async () => {
+    const response = await POST(request({
+      jsonrpc: '1.0',
+      method: 'tools/call',
+      id: 6,
+    }));
+
+    expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32600);
+    expect(validateApiKey).not.toHaveBeenCalled();
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
   });
 });
