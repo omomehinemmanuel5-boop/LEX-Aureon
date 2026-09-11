@@ -278,7 +278,7 @@ export default async function AuditPage({ params }: Props) {
                     {entry.id}
                   </div>
                   <div className="text-xs font-mono mt-2" style={{ color: '#a07830' }}>
-                    SHA-256 · Cryptographically Signed · Immutable
+                    SHA-256 · Signature status available in reproducibility export
                   </div>
                 </div>
 
@@ -392,6 +392,9 @@ export default async function AuditPage({ params }: Props) {
                       <Link href="/console" className="text-xs font-mono transition-colors hover:underline" style={{ color: '#3b82f6' }}>
                         Run Governance ↗
                       </Link>
+                      <a href={`/api/audits/${encodeURIComponent(entry.id)}/export`} className="text-xs font-mono transition-colors hover:underline" style={{ color: '#166534' }}>
+                        Download canonical export ↓
+                      </a>
                     </div>
                   </div>
                   <div

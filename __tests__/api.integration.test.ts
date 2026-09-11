@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MAX_PROMPT_CHARS } from '../lib/schemas';
 
 // ── Mock Turso DB ─────────────────────────────────────────────────────────────
+let receiptRows: Record<string, unknown>[] = [];
+
 const mockClient = {
   async execute(arg: string | { sql: string; args?: unknown[] }) {
     const sql = typeof arg === 'string' ? arg : arg.sql;
     if (sql === 'SELECT 1') return { rows: [{ '1': 1 }] };
     if (sql.includes('FROM run_stats')) return { rows: [{ value: 1337 }] };
     if (sql.startsWith('UPDATE run_stats')) return { rows: [{ value: 1338 }] };
-    if (sql.includes('FROM praxis_receipts')) return { rows: [] };
+    if (sql.includes('FROM praxis_receipts')) return { rows: receiptRows };
     return { rows: [] };
   },
   async batch() { return []; },
@@ -58,6 +60,7 @@ vi.mock('../lib/api_keys', () => ({
 describe('API integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    receiptRows = [];
   });
 
   it('GET /api/lex/govern exposes the versioned endpoint contract', async () => {
@@ -168,6 +171,46 @@ describe('API integration', () => {
     expect(res.status).toBe(200);
     const data = await res.json() as { receipts: unknown[] };
     expect(Array.isArray(data.receipts)).toBe(true);
+  });
+
+  it('exports the canonical signing-key provenance for a receipt', async () => {
+    receiptRows = [{
+      receipt_id: 'KRN-EXPORT-1', session_id: 'session-1', turn: 1,
+      pre_eval_label: 'CLEAR', m_before: 0.3, m_after: 0.31,
+      governor_mode: 'kernel-optimal', intervention: 0, slow_drip: 0,
+      governor_effort: 0, sigma_viol: 0, crs_method: 'kernel', health_band: 'OPTIMAL',
+      input_hash: 'input', output_hash: 'output', receipt_hash: 'receipt',
+      signature: 'legacy-signature', signing_key_version: 'v1-fallback',
+      c_after: 0.31, r_after: 0.34, s_after: 0.35, created_at: '2026-09-11T00:00:00.000Z',
+    }];
+    const { GET } = await import('../app/api/audits/[id]/export/route');
+    const response = await GET(new Request('http://localhost/api/audits/KRN-EXPORT-1/export'), {
+      params: Promise.resolve({ id: 'KRN-EXPORT-1' }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      self_check: 'legacy_insecure',
+      receipt: { receipt_id: 'KRN-EXPORT-1', signing_key_version: 'v1-fallback' },
+    });
+  });
+
+  it('does not represent fallback-signed receipts as production-valid', async () => {
+    receiptRows = [{
+      receipt_id: 'KRN-LEGACY-1', session_id: 'session-1', m_after: 0.31,
+      health_band: 'OPTIMAL', governor_mode: 'kernel-optimal', input_hash: 'input',
+      output_hash: 'output', receipt_hash: 'receipt', signature: 'legacy-signature',
+      signing_key_version: 'v1-fallback', c_after: 0.31, r_after: 0.34, s_after: 0.35,
+      created_at: '2026-09-11T00:00:00.000Z',
+    }];
+    const { POST } = await import('../app/api/audits/verify/route');
+    const response = await POST(new Request('http://localhost/api/audits/verify', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ receipt_id: 'KRN-LEGACY-1' }),
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: 'legacy_insecure', signing_key_version: 'v1-fallback',
+    });
   });
 
   it('GET /api/live-state returns aggregate CRS state summing to 1', async () => {
