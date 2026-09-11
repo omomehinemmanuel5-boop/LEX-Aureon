@@ -15,7 +15,7 @@ import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity } from '@/lib/db';
-import { canCallTool, isOperatorSecret, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
+import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import crypto from 'crypto';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
@@ -159,12 +159,13 @@ export async function POST(req: Request) {
 
   if (method === 'tools/list') {
     const operator = isOperator(req);
-    const profile: McpAccessProfile = operator ? 'operator' : 'public';
+    let profile: McpAccessProfile = operator ? 'operator' : 'public';
     if (!operator) {
       const apiKey = extractApiKey(req);
       if (!apiKey) return unauthorized(id);
       const keyCheck = await validateApiKey(apiKey);
       if (!keyCheck.valid) return unauthorized(id);
+      profile = profileForApiKey(keyCheck.key?.plan);
     }
     const allTools = [
       ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
@@ -192,7 +193,7 @@ export async function POST(req: Request) {
     const toolName = (params?.name as string) ?? '';
     const args = (params?.arguments as Record<string, unknown>) ?? {};
     const operator = isOperator(req);
-    const profile: McpAccessProfile = operator ? 'operator' : 'public';
+    let profile: McpAccessProfile = operator ? 'operator' : 'public';
     let ownerId = 'operator';
     if (!operator) {
       const apiKey = extractApiKey(req);
@@ -200,6 +201,7 @@ export async function POST(req: Request) {
       const keyCheck = await validateAndConsumeKey(apiKey);
       if (!keyCheck.valid) return unauthorized(id);
       ownerId = String(keyCheck.key?.id ?? 'anonymous');
+      profile = profileForApiKey(keyCheck.key?.plan);
     }
 
     // Capability filtering is enforced again at call time. Hiding a tool from
@@ -285,13 +287,13 @@ export async function POST(req: Request) {
         });
       }
 
-      const result = await executeGovernedTool(
+      const result = await withDeadline(executeGovernedTool(
         toolName,
         scopedArgs,
         toolFn,
         sessionId,
         args.task_context as string | undefined,
-      );
+      ), 30_000);
 
       return NextResponse.json({
         jsonrpc: '2.0',
@@ -301,7 +303,7 @@ export async function POST(req: Request) {
     } catch (e) {
       return NextResponse.json({
         jsonrpc: '2.0',
-        error: { code: -32603, message: String(e) },
+        error: { code: String(e).includes('timed out') ? -32002 : -32603, message: String(e).includes('timed out') ? 'Tool execution timed out' : 'Tool execution failed' },
         id,
       });
     }
@@ -312,6 +314,20 @@ export async function POST(req: Request) {
     error: { code: -32601, message: `Method not found: ${method}` },
     id,
   });
+}
+
+async function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Tool execution timed out')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function GET() {
