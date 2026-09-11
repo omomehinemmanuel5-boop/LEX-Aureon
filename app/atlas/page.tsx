@@ -90,9 +90,18 @@ export default function AtlasPage() {
           <div className="rounded-2xl border p-5 sm:p-7" style={{ background: 'linear-gradient(145deg, rgba(201,168,76,.08), var(--bg-card))', borderColor: 'rgba(201,168,76,.18)' }}>
             <div className="mb-6 flex items-center justify-between"><div><div className="font-data text-[10px] tracking-[.2em]" style={{ color: 'var(--text-muted)' }}>CONSTITUTIONAL STATE</div><h2 className="mt-1 text-xl font-bold">C · R · S simplex</h2></div><span className="rounded-full px-2.5 py-1 font-data text-[10px]" style={{ background: 'rgba(16,185,129,.1)', color: '#34d399' }}>OPTIMAL*</span></div>
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
-              {pillars.map((p) => <div key={p.key} className="rounded-xl border p-3 sm:p-4" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,.025)' }}><div className="font-data text-2xl font-black" style={{ color: p.color }}>{p.key}</div><div className="mt-2 text-sm font-semibold">{p.name}</div><div className="mt-1 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>{p.value}</div></div>)}
+              {pillars.map((p) => {
+                const value = state ? state[p.key] : null;
+                return <div key={p.key} className="rounded-xl border p-3 sm:p-4" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,.025)' }}><div className="flex items-baseline justify-between gap-2"><div className="font-data text-2xl font-black" style={{ color: p.color }}>{p.key}</div><div className="font-data text-lg font-bold">{value === null ? '—' : value.toFixed(3)}</div></div><div className="mt-2 text-sm font-semibold">{p.name}</div><div className="mt-1 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>{p.value}</div></div>;
+              })}
             </div>
-            <p className="mt-4 text-[11px]" style={{ color: 'var(--text-muted)' }}>*Live values belong to runtime observability; this surface is the navigation layer.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-3 font-data text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              <span>M = {state ? state.M.toFixed(3) : '—'}</span>
+              <span>DRIFT = {state?.drift_dir ?? '—'}</span>
+              <span>σ = {state ? state.sigma_viol.toFixed(3) : '—'}</span>
+              <span className="rounded-full px-2 py-1" style={{ background: health === 'OPTIMAL' ? 'rgba(16,185,129,.1)' : 'rgba(245,158,11,.1)', color: health === 'OPTIMAL' ? '#34d399' : '#fbbf24' }}>{health}</span>
+              {runtimeError && <span style={{ color: '#fbbf24' }}>LIVE LINK DEGRADED</span>}
+            </div>
           </div>
 
           <div className="rounded-2xl border p-5 sm:p-7" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
