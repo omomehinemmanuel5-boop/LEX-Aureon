@@ -702,6 +702,53 @@ export async function clear_trajectory_plan({ session_id }: { session_id?: strin
   return `✓ Cleared trajectory plan for session ${session_id}. Further calls in this session are governed per-call again.`;
 }
 
+// ── Public governance helpers ───────────────────────────────────────────────
+// These tools never execute a downstream action or read Lex infrastructure.
+// They provide a fast, deterministic preflight layer for external agents.
+export async function review_agent_action(input: {
+  tool_name: string;
+  declared_intent?: string;
+  target?: string;
+  reversibility?: string;
+  authority_context?: string;
+}): Promise<string> {
+  const name = String(input.tool_name ?? '').trim();
+  if (!name) return JSON.stringify({ decision: 'deny', reason: 'tool_name is required' });
+  const destructive = /delete|destroy|drop|rotate|transfer|deploy|publish|send|write|modify/i.test(name);
+  const external = /email|slack|webhook|http|github|vercel|payment|billing/i.test(`${name} ${input.target ?? ''}`);
+  const approvalRequired = destructive || external || input.reversibility === 'irreversible';
+  return JSON.stringify({
+    decision: approvalRequired ? 'approval_required' : 'allow',
+    risk: destructive ? 'destructive' : external ? 'external' : 'read',
+    requires_approval: approvalRequired,
+    reasons: approvalRequired ? ['The proposed action may change or communicate with an external system.'] : [],
+    declared_intent: input.declared_intent ?? null,
+    target: input.target ?? null,
+  });
+}
+
+export async function simulate_agent_plan(input: {
+  actions?: Array<{ toolName?: string; risk?: string; target?: string }>;
+}): Promise<string> {
+  const actions = Array.isArray(input.actions) ? input.actions : [];
+  const risks = ['read', 'write', 'external', 'destructive'];
+  const highest = actions.reduce((current, action) => {
+    const index = risks.indexOf(String(action.risk ?? 'read'));
+    return index > risks.indexOf(current) ? String(action.risk) : current;
+  }, 'read');
+  const warnings = actions.flatMap(action => {
+    const tool = String(action.toolName ?? '');
+    return /delete|destroy|drop|rotate|transfer|deploy|publish|send/i.test(`${tool} ${action.target ?? ''}`)
+      ? [`High-impact action requires approval: ${tool}`] : [];
+  });
+  return JSON.stringify({ decision: warnings.length ? 'approval_required' : 'allow', action_count: actions.length, highest_risk: highest, warnings });
+}
+
+export async function explain_denial(input: { reason?: string; tool_name?: string }): Promise<string> {
+  const reason = String(input.reason ?? 'The action did not satisfy the active governance policy.');
+  return JSON.stringify({ summary: reason, tool_name: input.tool_name ?? null, safer_alternative: 'Review the action, declare the required scope, and request approval when the action is external or irreversible.' });
+}
+
 // ── Tool registry (PURE) ────────────────────────────────────────────────────
 // Logic only, no governance wrapping here. Both callers (app/api/mcp/route.ts
 // and lib/lex_crs_agent/loop.ts) apply governance at the dispatch boundary via
@@ -737,6 +784,9 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Pr
   declare_trajectory_plan:   (a) => declare_trajectory_plan(a as Parameters<typeof declare_trajectory_plan>[0]),
   get_trajectory_status:     (a) => get_trajectory_status(a as { session_id?: string }),
   clear_trajectory_plan:     (a) => clear_trajectory_plan(a as { session_id?: string }),
+  review_agent_action:       (a) => review_agent_action(a as Parameters<typeof review_agent_action>[0]),
+  simulate_agent_plan:       (a) => simulate_agent_plan(a as Parameters<typeof simulate_agent_plan>[0]),
+  explain_denial:            (a) => explain_denial(a as Parameters<typeof explain_denial>[0]),
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
@@ -945,5 +995,20 @@ export const TOOL_DEFINITIONS = [
       properties: { session_id: { type: 'string' } },
       required: ['session_id'],
     },
+  },
+  {
+    name: 'review_agent_action',
+    description: 'Review a proposed external agent action without executing it. Returns risk, approval requirement, and reasons.',
+    parameters: { type: 'object', properties: { tool_name: { type: 'string' }, declared_intent: { type: 'string' }, target: { type: 'string' }, reversibility: { type: 'string' }, authority_context: { type: 'string' } }, required: ['tool_name'] },
+  },
+  {
+    name: 'simulate_agent_plan',
+    description: 'Simulate an ordered agent action plan without executing it and identify high-impact steps.',
+    parameters: { type: 'object', properties: { actions: { type: 'array', items: { type: 'object', properties: { toolName: { type: 'string' }, risk: { type: 'string' }, target: { type: 'string' } } } } }, required: ['actions'] },
+  },
+  {
+    name: 'explain_denial',
+    description: 'Turn a governance denial into a concise explanation and safer next step.',
+    parameters: { type: 'object', properties: { reason: { type: 'string' }, tool_name: { type: 'string' } } },
   },
 ];

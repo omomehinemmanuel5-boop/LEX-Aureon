@@ -12,6 +12,9 @@ export const PUBLIC_MCP_TOOLS = new Set([
   'declare_trajectory_plan',
   'get_trajectory_status',
   'clear_trajectory_plan',
+  'review_agent_action',
+  'simulate_agent_plan',
+  'explain_denial',
 ]);
 
 export const OPERATOR_ONLY_MCP_TOOLS = new Set([
@@ -36,6 +39,10 @@ export const OPERATOR_ONLY_MCP_TOOLS = new Set([
 ]);
 
 export type McpAccessProfile = 'public' | 'operator';
+
+export function profileForApiKey(plan: string | undefined): McpAccessProfile {
+  return plan === 'private_test' ? 'operator' : 'public';
+}
 
 export function operatorSecretConfigured(): boolean {
   return Boolean(process.env.MCP_OPERATOR_SECRET || process.env.ADMIN_PASSWORD);

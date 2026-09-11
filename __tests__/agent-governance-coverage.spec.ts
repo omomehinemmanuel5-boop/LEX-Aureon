@@ -14,7 +14,7 @@ describe('agent governance coverage', () => {
     const tools = source('lib/lex_crs_agent/tools.ts');
     const patch = source('lib/lex_crs_agent/tools/patch_file.ts');
 
-    expect(route).toContain('const result = await executeGovernedTool(');
+    expect(route).toContain('const result = await withDeadline(executeGovernedTool(');
     expect(route).toContain('const toolFn = resolveTool(toolName);');
     expect(route).toContain('return main ?? EXTENSION_REGISTRY[name];');
     expect(route).not.toContain('await toolFn(args);');

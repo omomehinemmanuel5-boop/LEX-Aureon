@@ -3,6 +3,7 @@ import {
   canCallTool,
   isOperatorSecret,
   OPERATOR_ONLY_MCP_TOOLS,
+  profileForApiKey,
   PUBLIC_MCP_TOOLS,
   toolsForProfile,
 } from '../lib/lex_crs_agent/mcp_access';
@@ -33,5 +34,11 @@ describe('MCP capability policy', () => {
     expect(isOperatorSecret('operator-test-secret')).toBe(true);
     expect(isOperatorSecret('api-key-value')).toBe(false);
     expect(isOperatorSecret(null)).toBe(false);
+  });
+
+  it('gives only private_test keys the full operator profile', () => {
+    expect(profileForApiKey('private_test')).toBe('operator');
+    expect(profileForApiKey('free')).toBe('public');
+    expect(profileForApiKey(undefined)).toBe('public');
   });
 });
