@@ -400,6 +400,8 @@ npm run build          verify TypeScript
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
 
+[2026-09-11] AUTOMATION: Lex Atlas documentation operating system added under docs/atlas — canonical concept lineage, implementation map, timeline, historical archive, and validation report linked from README; runtime code unchanged.
+
 [2026-03-10] RESEARCH: Aureonics v1 published
 [2026-05-14] RESEARCH: Aureonics v2 published
 [2026-05-14] SYSTEM: PRAXIS v1.0 deployed live
