@@ -1,0 +1,73 @@
+'use client';
+
+import Link from 'next/link';
+
+const pillars = [
+  { key: 'C', name: 'Continuity', value: 'State integrity', color: 'var(--c-color)' },
+  { key: 'R', name: 'Reciprocity', value: 'Non-coercive exchange', color: 'var(--r-color)' },
+  { key: 'S', name: 'Sovereignty', value: 'Boundary integrity', color: 'var(--s-color)' },
+];
+
+const surfaces = [
+  { title: 'PRAXIS', text: 'Turn-level governance and constitutional arbitration.', href: '/constitution' },
+  { title: 'Trajectory', text: 'Plan-level governance across multi-step execution.', href: '/observability' },
+  { title: 'Tool Governance', text: 'MCP admission, authorization, interception, and tool receipts.', href: '/api-docs' },
+  { title: 'Receipts', text: 'Auditable evidence for governed decisions.', href: '/audit' },
+];
+
+export default function AtlasPage() {
+  return (
+    <main className="min-h-screen" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
+        <header className="mb-8 sm:mb-12">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <span className="font-data text-[10px] font-bold tracking-[0.28em]" style={{ color: 'var(--gold-light)' }}>LEX ATLAS · COMMAND CENTER</span>
+            <span className="rounded-full border px-3 py-1 font-data text-[10px] tracking-wider" style={{ borderColor: 'rgba(16,185,129,.3)', color: '#34d399', background: 'rgba(16,185,129,.06)' }}>RUNTIME LINKED</span>
+          </div>
+          <div className="max-w-4xl">
+            <h1 className="text-3xl font-black tracking-tight sm:text-5xl">The constitutional map of Lex Aureon.</h1>
+            <p className="mt-4 max-w-3xl text-sm leading-6 sm:text-base" style={{ color: 'var(--text-secondary)' }}>
+              Atlas connects Lex&apos;s constitutional model to runtime governance, trajectory control, tool authorization, receipts, benchmark evidence, and unresolved research problems.
+            </p>
+          </div>
+        </header>
+
+        <section className="grid gap-4 lg:grid-cols-[1.4fr_.6fr]">
+          <div className="rounded-2xl border p-5 sm:p-7" style={{ background: 'linear-gradient(145deg, rgba(201,168,76,.08), var(--bg-card))', borderColor: 'rgba(201,168,76,.18)' }}>
+            <div className="mb-6 flex items-center justify-between"><div><div className="font-data text-[10px] tracking-[.2em]" style={{ color: 'var(--text-muted)' }}>CONSTITUTIONAL STATE</div><h2 className="mt-1 text-xl font-bold">C · R · S simplex</h2></div><span className="rounded-full px-2.5 py-1 font-data text-[10px]" style={{ background: 'rgba(16,185,129,.1)', color: '#34d399' }}>OPTIMAL*</span></div>
+            <div className="grid grid-cols-3 gap-2 sm:gap-4">
+              {pillars.map((p) => <div key={p.key} className="rounded-xl border p-3 sm:p-4" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,.025)' }}><div className="font-data text-2xl font-black" style={{ color: p.color }}>{p.key}</div><div className="mt-2 text-sm font-semibold">{p.name}</div><div className="mt-1 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>{p.value}</div></div>)}
+            </div>
+            <p className="mt-4 text-[11px]" style={{ color: 'var(--text-muted)' }}>*Live values belong to runtime observability; this surface is the navigation layer.</p>
+          </div>
+
+          <div className="rounded-2xl border p-5 sm:p-7" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            <div className="font-data text-[10px] tracking-[.2em]" style={{ color: 'var(--text-muted)' }}>SYSTEM PATH</div>
+            <div className="mt-5 space-y-2 font-data text-xs">
+              {['REQUEST', 'PRAXIS', 'TRAJECTORY', 'TOOL GOVERNANCE', 'RECEIPT'].map((item, i) => <div key={item} className="flex items-center gap-3"><span className="h-2 w-2 rounded-full" style={{ background: i === 4 ? 'var(--gold)' : '#64748b' }} /><span>{item}</span>{i < 4 && <span className="ml-auto" style={{ color: 'var(--text-muted)' }}>↓</span>}</div>)}
+            </div>
+            <Link href="/observability" className="mt-6 block rounded-xl border px-4 py-3 text-center text-sm font-semibold transition hover:-translate-y-0.5" style={{ borderColor: 'rgba(201,168,76,.3)', color: 'var(--gold-light)' }}>Open live observability →</Link>
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {surfaces.map((surface) => <Link key={surface.title} href={surface.href} className="card-hover rounded-2xl border p-5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}><div className="font-data text-[10px] tracking-[.18em]" style={{ color: 'var(--gold)' }}>{surface.title}</div><p className="mt-3 text-sm leading-5" style={{ color: 'var(--text-secondary)' }}>{surface.text}</p><span className="mt-5 block text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Explore →</span></Link>)}
+        </section>
+
+        <section className="mt-6 rounded-2xl border p-5 sm:p-7" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><div className="font-data text-[10px] tracking-[.2em]" style={{ color: 'var(--text-muted)' }}>GOVERNANCE STACK</div><h2 className="mt-1 text-xl font-bold">From constitutional state to accountable action.</h2></div><span className="font-data text-[10px]" style={{ color: 'var(--text-muted)' }}>ATLAS / V1</span></div>
+          <div className="overflow-x-auto pb-2"><div className="flex min-w-[720px] items-center gap-2">
+            {['CRS', 'PRAXIS', 'TRAJECTORY', 'MCP', 'TOOLS', 'RECEIPTS'].map((node, i) => <div key={node} className="flex flex-1 items-center gap-2"><div className="w-full rounded-xl border px-3 py-4 text-center font-data text-[11px] font-bold" style={{ borderColor: i === 4 ? 'rgba(245,158,11,.35)' : 'var(--border)', background: i === 4 ? 'rgba(245,158,11,.06)' : 'rgba(255,255,255,.02)' }}>{node}</div>{i < 5 && <span style={{ color: 'var(--text-muted)' }}>→</span>}</div>)}
+          </div></div>
+          <p className="mt-5 max-w-3xl text-xs leading-5" style={{ color: 'var(--text-muted)' }}>Tool governance is deliberately explicit: the constitutional layer governs not only generated text but the admission and authorization boundary around consequential tool execution.</p>
+        </section>
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-3">
+          <Link href="/benchmarks" className="rounded-2xl border p-5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}><div className="font-data text-[10px] tracking-[.18em]" style={{ color: 'var(--text-muted)' }}>EVIDENCE</div><h3 className="mt-2 font-bold">Benchmarks</h3><p className="mt-2 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>Evaluation evidence, methodology, and published results.</p></Link>
+          <Link href="/research" className="rounded-2xl border p-5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}><div className="font-data text-[10px] tracking-[.18em]" style={{ color: 'var(--text-muted)' }}>RESEARCH</div><h3 className="mt-2 font-bold">Open Problems</h3><p className="mt-2 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>Separate deployed evidence from unresolved analytical claims.</p></Link>
+          <Link href="/audit" className="rounded-2xl border p-5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}><div className="font-data text-[10px] tracking-[.18em]" style={{ color: 'var(--text-muted)' }}>ACCOUNTABILITY</div><h3 className="mt-2 font-bold">Receipts</h3><p className="mt-2 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>Trace governed decisions back to their constitutional evidence.</p></Link>
+        </section>
+      </div>
+    </main>
+  );
+}
