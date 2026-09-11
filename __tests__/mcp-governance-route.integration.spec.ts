@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey } = vi.hoisted(() => ({
+const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
+  checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 59, retryAfter: 0, storageError: false })),
   definitions: [
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
@@ -20,9 +21,8 @@ vi.mock('next/server', () => ({
       this.body = body;
       this.status = init?.status ?? 200;
     }
-    static json(body: unknown) {
-      const response = new MockNextResponse(body);
-      return response;
+    static json(body: unknown, init?: { status?: number }) {
+      return new MockNextResponse(body, init);
     }
   },
 }));
@@ -31,6 +31,8 @@ vi.mock('@/lib/api_keys', () => ({
   validateAndConsumeKey,
   validateApiKey,
 }));
+
+vi.mock('@/lib/rate_limit', () => ({ checkRateLimit }));
 
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
@@ -65,7 +67,7 @@ vi.mock('../lib/agents/trajectory_session_store', () => ({
 
 import { POST } from '../app/api/mcp/route';
 
-function request(body: Record<string, unknown>) {
+function request(body: Record<string, unknown>, extraHeaders: Record<string, string> = {}) {
   return new Request('http://localhost/api/mcp', {
     method: 'POST',
     headers: {
@@ -75,6 +77,7 @@ function request(body: Record<string, unknown>) {
       // be present, since /api/mcp now rejects any tools/call request
       // with no API key before it ever reaches executeGovernedTool.
       'x-lex-api-key': 'test-key',
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   });
@@ -85,6 +88,7 @@ describe('MCP constitutional dispatch boundary', () => {
     vi.clearAllMocks();
     validateApiKey.mockResolvedValue({ valid: true, key: {} });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
+    checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
     executeGovernedTool.mockResolvedValue('approved:    true\\ncache_hit:   false\\nTOOL_RESULT');
   });
 
@@ -193,6 +197,33 @@ describe('MCP constitutional dispatch boundary', () => {
     }));
 
     expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32600);
+    expect(validateApiKey).not.toHaveBeenCalled();
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before parsing or authenticating when MCP admission is unavailable', async () => {
+    checkRateLimit.mockResolvedValue({ allowed: false, remaining: 0, retryAfter: 5, storageError: true });
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call', params: { name: 'run_governance' }, id: 7,
+    }));
+
+    expect(response.status).toBe(503);
+    expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32003);
+    expect(validateApiKey).not.toHaveBeenCalled();
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized declared request bodies before admission or authentication', async () => {
+    const response = await POST(request(
+      { jsonrpc: '2.0', method: 'tools/call', id: 8 },
+      { 'content-length': String(128 * 1024 + 1) },
+    ));
+
+    expect(response.status).toBe(413);
+    expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32010);
+    expect(checkRateLimit).not.toHaveBeenCalled();
     expect(validateApiKey).not.toHaveBeenCalled();
     expect(validateAndConsumeKey).not.toHaveBeenCalled();
   });

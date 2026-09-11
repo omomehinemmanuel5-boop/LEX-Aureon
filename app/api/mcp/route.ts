@@ -15,6 +15,7 @@ import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity } from '@/lib/db';
+import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import crypto from 'crypto';
 
@@ -120,6 +121,8 @@ type JsonRpcRequest = {
 };
 
 const MAX_SESSION_ID_LENGTH = 128;
+const MAX_MCP_BODY_BYTES = 128 * 1024;
+const MCP_REQUESTS_PER_MINUTE = 60;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -153,7 +156,49 @@ function validSessionId(value: unknown): value is string {
     && value.length <= MAX_SESSION_ID_LENGTH;
 }
 
+function requestTooLarge() {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    error: { code: -32010, message: 'Request body too large' },
+    id: null,
+  }, { status: 413 });
+}
+
+function rateLimited(retryAfter: number, storageError = false) {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    error: {
+      code: storageError ? -32003 : -32029,
+      message: storageError ? 'MCP admission temporarily unavailable' : 'Too many MCP requests',
+    },
+    id: null,
+  }, {
+    status: storageError ? 503 : 429,
+    headers: {
+      'Retry-After': String(retryAfter),
+      'X-RateLimit-Limit': String(MCP_REQUESTS_PER_MINUTE),
+      'X-RateLimit-Remaining': '0',
+    },
+  });
+}
+
 export async function POST(req: Request) {
+  const contentLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(contentLength) && contentLength > MAX_MCP_BODY_BYTES) {
+    return requestTooLarge();
+  }
+
+  // MCP is a high-impact endpoint, including its public initialize method.
+  // Limit it before parsing JSON or touching key/tool state so malformed-call
+  // floods cannot turn validation, telemetry, or quota storage into an
+  // amplification vector. The shared Turso limiter fails closed on outage.
+  const rate = await checkRateLimit(
+    `mcp:request:${ipHash(req)}`,
+    MCP_REQUESTS_PER_MINUTE,
+    60,
+  );
+  if (!rate.allowed) return rateLimited(rate.retryAfter, rate.storageError);
+
   let body: unknown;
   try {
     body = await req.json();

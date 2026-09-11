@@ -515,6 +515,8 @@ npm run build          verify TypeScript
 
 [2026-09-11] FIX: MCP transport boundary hardened — strict JSON-RPC envelope and tool-parameter validation now reject malformed calls before authentication, execution, or quota consumption; public quota is consumed only after tool resolution/capability admission; session labels are bounded; and initialize telemetry writes occur only for authenticated clients/operators. Added MCP route regression coverage for malformed, denied, and invalid-envelope calls.
 
+[2026-09-11] FIX: MCP admission control added — `/api/mcp` now applies a Turso-backed, fail-closed per-IP request limit before JSON parsing, authentication, telemetry, or tool dispatch, and rejects declared bodies above 128 KiB. Regression coverage verifies storage-outage denial does not authenticate, consume quota, or execute a tool.
+
 ---
 
 ## CURRENT STATUS
