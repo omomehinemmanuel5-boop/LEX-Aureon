@@ -15,6 +15,7 @@ import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity } from '@/lib/db';
+import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import crypto from 'crypto';
 
@@ -61,7 +62,7 @@ function isOperator(req: Request): boolean {
   return isOperatorSecret(req.headers.get('x-lex-operator-secret'));
 }
 
-function unauthorized(id: number | string | undefined) {
+function unauthorized(id: number | string | null | undefined) {
   return NextResponse.json({
     jsonrpc: '2.0',
     error: { code: -32001, message: 'Unauthorized: valid API key required' },
@@ -116,11 +117,89 @@ type JsonRpcRequest = {
   jsonrpc: '2.0';
   method: string;
   params?: Record<string, unknown>;
-  id?: number | string;
+  id?: number | string | null;
 };
 
+const MAX_SESSION_ID_LENGTH = 128;
+const MAX_MCP_BODY_BYTES = 128 * 1024;
+const MCP_REQUESTS_PER_MINUTE = 60;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requestId(value: unknown): number | string | null {
+  return typeof value === 'number' || typeof value === 'string' || value === null
+    ? value
+    : null;
+}
+
+function invalidRequest(id: number | string | null = null) {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    error: { code: -32600, message: 'Invalid Request' },
+    id,
+  });
+}
+
+function invalidParams(id: number | string | null, message = 'Invalid params') {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    error: { code: -32602, message },
+    id,
+  });
+}
+
+function validSessionId(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.trim().length > 0
+    && value.length <= MAX_SESSION_ID_LENGTH;
+}
+
+function requestTooLarge() {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    error: { code: -32010, message: 'Request body too large' },
+    id: null,
+  }, { status: 413 });
+}
+
+function rateLimited(retryAfter: number, storageError = false) {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    error: {
+      code: storageError ? -32003 : -32029,
+      message: storageError ? 'MCP admission temporarily unavailable' : 'Too many MCP requests',
+    },
+    id: null,
+  }, {
+    status: storageError ? 503 : 429,
+    headers: {
+      'Retry-After': String(retryAfter),
+      'X-RateLimit-Limit': String(MCP_REQUESTS_PER_MINUTE),
+      'X-RateLimit-Remaining': '0',
+    },
+  });
+}
+
 export async function POST(req: Request) {
-  let body: JsonRpcRequest;
+  const contentLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(contentLength) && contentLength > MAX_MCP_BODY_BYTES) {
+    return requestTooLarge();
+  }
+
+  // MCP is a high-impact endpoint, including its public initialize method.
+  // Limit it before parsing JSON or touching key/tool state so malformed-call
+  // floods cannot turn validation, telemetry, or quota storage into an
+  // amplification vector. The shared Turso limiter fails closed on outage.
+  const rate = await checkRateLimit(
+    `mcp:request:${ipHash(req)}`,
+    MCP_REQUESTS_PER_MINUTE,
+    60,
+  );
+  if (!rate.allowed) return rateLimited(rate.retryAfter, rate.storageError);
+
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
@@ -131,16 +210,37 @@ export async function POST(req: Request) {
     });
   }
 
-  const { method, params, id } = body;
+  // Keep the transport boundary strict. A malformed request previously fell
+  // through to property casts, where arrays/null could produce a generic 500
+  // after authentication or tool dispatch had already started. MCP clients
+  // receive the protocol-defined error instead, and no quota is consumed.
+  if (!isRecord(body) || body.jsonrpc !== '2.0' || typeof body.method !== 'string'
+    || body.method.trim().length === 0 || (body.params !== undefined && !isRecord(body.params))
+    || (body.id !== undefined && requestId(body.id) === null && body.id !== null)) {
+    return invalidRequest(requestId(isRecord(body) ? body.id : undefined));
+  }
+
+  const { method, params, id } = body as JsonRpcRequest;
 
   if (method === 'initialize') {
     // fix (2026-08-24): clientInfo (name/version) arrives here per the MCP
     // protocol spec and was previously never read. Best-effort record —
     // never let this block or fail the actual handshake response.
+    // Initialization is necessarily public in MCP, but telemetry must not
+    // turn it into an unauthenticated database-write endpoint. Record the
+    // optional client identity only for an authenticated key or operator.
     try {
-      const clientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
-      await recordMcpClientIdentity(ipHash(req), clientInfo?.name, clientInfo?.version);
-    } catch { /* non-fatal — see lib/db.ts's other best-effort writes */ }
+      const apiKey = extractApiKey(req);
+      const keyIsValid = apiKey ? (await validateApiKey(apiKey)).valid : false;
+      if (isOperator(req) || keyIsValid) {
+        const clientInfo = isRecord(params?.clientInfo) ? params.clientInfo : undefined;
+        await recordMcpClientIdentity(
+          ipHash(req),
+          typeof clientInfo?.name === 'string' ? clientInfo.name.slice(0, 128) : undefined,
+          typeof clientInfo?.version === 'string' ? clientInfo.version.slice(0, 64) : undefined,
+        );
+      }
+    } catch { /* non-fatal telemetry must never block a handshake */ }
 
     return NextResponse.json({
       jsonrpc: '2.0',
@@ -190,15 +290,27 @@ export async function POST(req: Request) {
     // open to anyone who knew the URL. Checked BEFORE tool resolution so
     // an unauthenticated caller gets a uniform error regardless of which
     // tool they asked for, and before CRS or tool logic ever runs.
-    const toolName = (params?.name as string) ?? '';
-    const args = (params?.arguments as Record<string, unknown>) ?? {};
+    const toolName = params?.name;
+    const suppliedArgs = params?.arguments;
+    if (typeof toolName !== 'string' || toolName.trim().length === 0
+      || (suppliedArgs !== undefined && !isRecord(suppliedArgs))) {
+      return invalidParams(id ?? null);
+    }
+    const args = suppliedArgs ?? {};
+    if (args.session_id !== undefined && !validSessionId(args.session_id)) {
+      return invalidParams(id ?? null, `session_id must be a non-empty string of at most ${MAX_SESSION_ID_LENGTH} characters`);
+    }
     const operator = isOperator(req);
     let profile: McpAccessProfile = operator ? 'operator' : 'public';
     let ownerId = 'operator';
+    let apiKey: string | null = null;
     if (!operator) {
-      const apiKey = extractApiKey(req);
+      apiKey = extractApiKey(req);
       if (!apiKey) return unauthorized(id);
-      const keyCheck = await validateAndConsumeKey(apiKey);
+      // Validate first so malformed, unknown, and unauthorized tool names do
+      // not debit a caller's quota. Consumption remains atomic below, after
+      // all local admission checks have passed and before execution begins.
+      const keyCheck = await validateApiKey(apiKey);
       if (!keyCheck.valid) return unauthorized(id);
       ownerId = String(keyCheck.key?.id ?? 'anonymous');
       profile = profileForApiKey(keyCheck.key?.plan);
@@ -222,6 +334,17 @@ export async function POST(req: Request) {
         error: { code: -32601, message: `Tool not found: ${toolName}` },
         id,
       });
+    }
+
+    if (!operator && apiKey) {
+      const consumption = await validateAndConsumeKey(apiKey);
+      if (!consumption.valid) return unauthorized(id);
+      // Use the atomically re-read key after consumption for ownership and
+      // profile selection, so a concurrent revoke/plan change cannot retain
+      // stale privileges from the preflight validation above.
+      ownerId = String(consumption.key?.id ?? 'anonymous');
+      profile = profileForApiKey(consumption.key?.plan);
+      if (!canCallTool(profile, toolName)) return unauthorized(id);
     }
 
     try {

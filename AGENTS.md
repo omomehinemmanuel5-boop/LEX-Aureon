@@ -513,6 +513,10 @@ npm run build          verify TypeScript
 
 [2026-08-24] FIX (drafted, NOT yet landed — see ACTIVE AGENT CLAIMS below): lib/agents/tool_crs.ts's shell_destroy/sql_destroy patterns run against JSON.stringify(args) for every MCP tool call regardless of tool type, not just ones that execute shell/SQL — confirmed false-positiving on a React template literal and on literally searching for the word this rule matches. Fix drafted (scope to HIGH_RISK_TOOLS, already defined in the same file) but cannot be committed through the MCP write tools: the diff necessarily contains the literal blocked pattern text, so the current unfixed rule blocks its own correction. Needs a human-applied patch or a write path outside this rule's scan.
 
+[2026-09-11] FIX: MCP transport boundary hardened — strict JSON-RPC envelope and tool-parameter validation now reject malformed calls before authentication, execution, or quota consumption; public quota is consumed only after tool resolution/capability admission; session labels are bounded; and initialize telemetry writes occur only for authenticated clients/operators. Added MCP route regression coverage for malformed, denied, and invalid-envelope calls.
+
+[2026-09-11] FIX: MCP admission control added — `/api/mcp` now applies a Turso-backed, fail-closed per-IP request limit before JSON parsing, authentication, telemetry, or tool dispatch, and rejects declared bodies above 128 KiB. Regression coverage verifies storage-outage denial does not authenticate, consume quota, or execute a tool.
+
 ---
 
 ## CURRENT STATUS

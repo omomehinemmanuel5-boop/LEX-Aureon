@@ -26,6 +26,10 @@ vi.mock('@/lib/api_keys', () => ({
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
 }));
 
+vi.mock('@/lib/rate_limit', () => ({
+  checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 59, retryAfter: 0, storageError: false })),
+}));
+
 vi.mock('@/lib/db', () => ({
   recordMcpClientIdentity: vi.fn(async () => {}),
 }));
