@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 const pillars = [
   { key: 'C', name: 'Continuity', value: 'State integrity', color: 'var(--c-color)' },
