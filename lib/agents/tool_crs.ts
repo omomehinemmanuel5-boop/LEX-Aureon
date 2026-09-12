@@ -105,7 +105,13 @@ const BLOCKED_TOOL_PATTERNS: Record<string, RegExp[]> = {
   ],
   // Shell commands — destructive or exfiltrating
   shell_destroy: [
-    /rm\s+-rf?\s*\/?\s*/i,
+    // Recursive rm — catches -r, -rf, -fr, -Rf, -vrf, --recursive, and cases
+    // where the flag isn't immediately adjacent to "rm" (rm file.txt -r).
+    // Force alone was never the trigger here (the original made "f"
+    // optional) — recursive is the catastrophic bit in a non-interactive
+    // shell, so that's preserved, not weakened. \brm\b keeps the word
+    // boundary so this doesn't false-positive on "form"/"perform".
+    /\brm\b(?=[\s\S]*(?:-[a-zA-Z]*[rR][a-zA-Z]*\b|--recursive\b))/i,
     /chmod\s+777/i,
     /\benv\b|\bprintenv\b|\bexport\b.*=.*(\$|process\.env)/i,
     /curl.*\|\s*(bash|sh|zsh|python)/i,
