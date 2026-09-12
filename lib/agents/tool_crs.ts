@@ -126,11 +126,26 @@ const BLOCKED_TOOL_PATTERNS: Record<string, RegExp[]> = {
     /secrets?\.(json|yaml|yml|toml)/i,
     /credentials?\.(json|yaml|yml|toml)/i,
   ],
-  // Exfiltration — passing data to unverified external endpoints
+  // Exfiltration — passing data to unverified external endpoints.
+  //
+  // fix (2026-09-12): two real bypasses found on review, both hard-invariant
+  // gaps, not soft-scoring tradeoffs:
+  // (a) axios/curl only excluded (?!api\.) — ANY domain starting with
+  //     "api." bypassed both checks entirely (https://api.evil.com/steal
+  //     goes straight through), never actually narrowed to the six intended
+  //     providers. fetch's line was already anchored to the real allowlist;
+  //     axios/curl never were wired to it at all.
+  // (b) fetch's allowlist wasn't suffix-anchored — https://api.groq.com.evil.com
+  //     still matches "api\.groq\.com" as a hostname PREFIX (nothing required
+  //     the match to end there), so a subdomain-confusion domain passed the
+  //     same as the real one.
+  // Fixed by giving all three the identical explicit allowlist, anchored so
+  // the matched host must be followed by "/", a quote character, or
+  // end-of-string — not merely present as a prefix of a longer hostname.
   exfiltration: [
-    /fetch\s*\(\s*['"`]https?:\/\/(?!api\.(?:groq|jina|anthropic|gemini|vercel|github)\.com)/i,
-    /axios\.(get|post|put)\s*\(\s*['"`]https?:\/\/(?!api\.)/i,
-    /curl\s+https?:\/\/(?!api\.)/i,
+    /fetch\s*\(\s*['"`]https?:\/\/(?!api\.(?:groq|jina|anthropic|gemini|vercel|github)\.com(?:[/'"`]|$))/i,
+    /axios\.(get|post|put)\s*\(\s*['"`]https?:\/\/(?!api\.(?:groq|jina|anthropic|gemini|vercel|github)\.com(?:[/'"`]|$))/i,
+    /curl\s+https?:\/\/(?!api\.(?:groq|jina|anthropic|gemini|vercel|github)\.com(?:[/'"`]|$))/i,
   ],
 };
 
