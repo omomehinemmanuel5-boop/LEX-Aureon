@@ -764,5 +764,5 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
     else if (s_risk === 'LOW') risk_level = 'LOW';
   }
 
-  return { C, R, S, M, risk_level, injection: false, blocked_pattern: null, semantic_similarity: scan.semantic_similarity };
+  return { C, R, S, M, risk_level, injection: false, blocked_pattern: null, semantic_similarity: scan.semantic_similarity, unclassified };
 }
