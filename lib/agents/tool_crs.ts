@@ -522,7 +522,11 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
     return { score: 0.85, risk: 'LOW' };
   }
 
-  return { score: 0.70, risk: 'LOW' };
+  // Nothing above matched this tool's name at all — genuinely unclassified,
+  // not a reasoned LOW. Previously indistinguishable from a real LOW score;
+  // see the READ_ONLY_TOOLS fix note above for why that gap mattered in
+  // practice (self_reflect, narrate_origin, etc. silently landing here).
+  return { score: 0.70, risk: 'LOW', unclassified: true };
 }
 
 // ── C: Continuity measurement ──────────────────────────────────────────────
