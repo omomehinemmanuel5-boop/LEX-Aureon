@@ -709,6 +709,7 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
   injection: boolean;
   blocked_pattern: string | null;
   semantic_similarity?: number;
+  unclassified?: boolean;
 }> {
   // Step 1: scan arguments for injection and hardcoded patterns
   const scan = await scanArguments(tool.arguments);
