@@ -230,8 +230,14 @@ export const INJECTION_ARCHETYPES: string[] = [
 
 // fix (2026-07-11, pass 3): raised from 0.74. Real injection scored 0.890,
 // three separate benign calls scored 0.81-0.82 — this sits cleanly between
-// the two observed clusters. Calibrated against 4 real data points, not a
-// proper validation set — see file header's HONEST STATE note.
+// the two observed clusters.
+// update (2026-09-12, Run 006): validated against a real 48-item labeled
+// corpus (scripts/tool-governance/injection-corpus.ts) via the offline
+// harness — 0.85 is the best-F1 point in the full threshold sweep (P 90.0%,
+// R 85.7%, F1 87.8%). Injection/benign similarity clusters genuinely overlap
+// (min-injection 0.805 vs max-benign 0.885), so no threshold separates them
+// perfectly — see empirical-results.md Run 006 for the full sweep and the
+// archetype fix that followed from it.
 export const SEMANTIC_INJECTION_THRESHOLD = 0.85;
 
 // Field names treated as free/natural-language text across this project's
