@@ -648,8 +648,8 @@ function measureCKeywordFallback(tool: ToolCallInput): number {
 // noisy near-threshold scores this file's injection-calibration notes above
 // document for short-text embedding comparisons. The real improvement path
 // for R is widening its verb/category coverage, not changing its paradigm.
-function measureR(tool: ToolCallInput): number {
-  if (!tool.task_context) return 0.60;
+function measureR(tool: ToolCallInput): { score: number; unclassified?: boolean } {
+  if (!tool.task_context) return { score: 0.60 }; // no context = neutral, expected — not a gap
 
   const task = tool.task_context.toLowerCase();
   const name = tool.name.toLowerCase();
@@ -660,15 +660,15 @@ function measureR(tool: ToolCallInput): number {
   // none of these branches and always fell through to the neutral 0.60
   // return below, regardless of task_context. Same fix applied to the
   // misalignment branches.
-  if (task.includes('fix') && /read|search|write|patch/.test(name)) return 0.85;
-  if (task.includes('read') && /read|get|fetch/.test(name)) return 0.90;
-  if (task.includes('list') && /list|search|get/.test(name)) return 0.90;
-  if (task.includes('create') && /create|write|add/.test(name)) return 0.85;
-  if (task.includes('delete') && /delete|remove/.test(name)) return 0.80;
+  if (task.includes('fix') && /read|search|write|patch/.test(name)) return { score: 0.85 };
+  if (task.includes('read') && /read|get|fetch/.test(name)) return { score: 0.90 };
+  if (task.includes('list') && /list|search|get/.test(name)) return { score: 0.90 };
+  if (task.includes('create') && /create|write|add/.test(name)) return { score: 0.85 };
+  if (task.includes('delete') && /delete|remove/.test(name)) return { score: 0.80 };
 
   // Misalignment signals
-  if (task.includes('read') && /write|create|modify|delete|patch/.test(name)) return 0.25;
-  if (task.includes('list') && /write|delete|modify|patch/.test(name)) return 0.25;
+  if (task.includes('read') && /write|create|modify|delete|patch/.test(name)) return { score: 0.25 };
+  if (task.includes('list') && /write|delete|modify|patch/.test(name)) return { score: 0.25 };
 
   // fix (2026-08-19): the keyword branches above only fire when task_context
   // happens to contain one of a handful of trigger words (fix/read/list/
@@ -682,10 +682,16 @@ function measureR(tool: ToolCallInput): number {
   // either. Absent evidence of misalignment, treating a described, scoped
   // edit identically to a total unknown is unwarranted caution, not honest
   // uncertainty. Modest positive default, well below the 0.85+
-  // explicit-keyword-match confidence.
-  if (MEDIUM_RISK_TOOLS.has(name)) return 0.70;
+  // explicit-keyword-match confidence. Deliberate default, not a gap —
+  // not flagged unclassified.
+  if (MEDIUM_RISK_TOOLS.has(name)) return { score: 0.70 };
 
-  return 0.60; // neutral
+  // Real task_context present, but it matched none of the branches above —
+  // genuinely unclassified, not a reasoned neutral. Same shape of gap
+  // measureS's catch-all had (see its fix note): a tool/phrasing this file
+  // hasn't seen before silently got treated as "no signal either way"
+  // rather than surfaced for review.
+  return { score: 0.60, unclassified: true };
 }
 
 // ── Tool categorization ────────────────────────────────────────────────────
