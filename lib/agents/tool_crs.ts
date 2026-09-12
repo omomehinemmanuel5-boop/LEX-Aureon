@@ -446,7 +446,7 @@ async function scanArguments(args: Record<string, unknown>): Promise<{
 
 // ── S: Sovereignty measurement ─────────────────────────────────────────────
 // Rule-based. No LLM. Fast.
-function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED' } {
+function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED'; unclassified?: boolean } {
   const name = tool.name.toLowerCase();
   const args = JSON.stringify(tool.arguments).toLowerCase();
 
