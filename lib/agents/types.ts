@@ -117,6 +117,12 @@ export interface ToolCRSState {
   S:          number;   // scope Sovereignty — is this within authorized scope?
   M:          number;   // min(C, R, S) — stability margin
   risk_level: 'ULTRA_LOW' | 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED';
+  // True when measureS and/or measureR fell through every named branch to
+  // their generic catch-all default rather than actually classifying the
+  // call — visible signal for "this tool/task shape wasn't recognized" so
+  // it can be logged and reviewed, instead of silently scoring as if it had
+  // been reasoned about. Absent/false means every pillar matched a real branch.
+  unclassified?: boolean;
 }
 
 /** The interceptor's final verdict on a proposed tool call. */
