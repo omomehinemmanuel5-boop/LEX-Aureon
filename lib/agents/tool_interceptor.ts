@@ -572,11 +572,21 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
     decision = 'APPROVED';
   }
 
+  // Surface measureS/measureR's unclassified flag (see tool_crs.ts) — this
+  // tool/task shape matched no real classification branch, so its score is
+  // a generic default, not a reasoned measurement. Doesn't change
+  // risk_level or block anything; makes the gap visible for review instead
+  // of indistinguishable from a genuinely reasoned score.
+  if (crs.unclassified) {
+    const gapNote = 'CRS classification gap: no rule in measureS/measureR matched this tool/task shape — score is a generic default.';
+    warning = warning ? `${warning} ${gapNote}` : gapNote;
+  }
+
   await updateSessionState(newState);
   await writeReceipt({
     receipt_id, session_id: tool.session_id,
     tool_name: tool.name, args_hash, decision,
-    crs, reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}`,
+    crs, reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}`,
     sigma_viol: newState.sigma_viol,
   });
 
