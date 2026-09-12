@@ -348,8 +348,7 @@ interface SemanticInjectionResult {
 // search_code({query: "executeGovernedTool"}) — a single 20-character
 // camelCase identifier, zero natural-language structure — scored
 // sim=0.851 against archetype "This is a system override...", just over
-// SEMANTIC_INJECTION_THRESHOLD=0.85 (itself calibrated on only 4 points,
-// see file header HONEST STATE note), producing a false DENIED_INJECTION
+// SEMANTIC_INJECTION_THRESHOLD=0.85, producing a false DENIED_INJECTION
 // on a completely benign code search.
 //
 // This gate is also a sound security argument on its own, not just a
