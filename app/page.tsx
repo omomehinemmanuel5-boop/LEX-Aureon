@@ -783,6 +783,7 @@ export default async function LandingPage() {
       <ArchitectureSection />
       <ResearchStatusSection />
       <TechnicalFoundationSection />
+      <AgentGovernanceSection />
       <LiveStatsBar />
       <ProofPanel />
       <section className="py-16 px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
