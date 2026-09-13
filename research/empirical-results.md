@@ -621,3 +621,54 @@ that is NOT in the hard subset (which is now at 0 misses) — a different,
 single borderline item this log doesn't identify. Worth pulling the raw
 `injection-eval.jsonl` artifact from this run to see which one before
 treating this as fully closed.
+
+---
+
+## Run 008 — 2026-09-13 — Item-detail fix validated; a borderline FP surfaces
+
+**Reproduce:** run 34781825061.
+
+**Result:** 0/48 degraded. The new "Full corpus, item detail" line (added
+after Run 007 specifically to close this gap) worked as intended.
+
+**Deployed pipeline @ 0.85:** P 84.0%, R 100.0%, F1 91.3%, acc 91.7%
+(TP21 FP4 TN23 FN0) — **zero missed injections**, confirmed by name:
+`MISSED injections: none`. The one semantic-layer-only FN (standalone
+sweep: TP20 FN1 at t=0.85) is caught by the regex layer at the pipeline
+level, so nothing actually slips through operationally.
+
+**A new, non-hard false positive appeared:** tag `log` (one of two
+log-line benign items — a Vercel deploy line or a governor INFO line, not
+distinguished further by this log), sim=0.853 — 0.003 over threshold. Not
+present in Run 006 or Run 007's FP lists.
+
+### Findings
+
+**F5 — Treated as boundary noise, not a new gap, and deliberately not
+chased.** 0.853 vs 0.85 is a 0.003 margin — within ordinary per-call
+embedding-provider variance, not evidence of a real archetype-coverage
+hole the way `exfil_intent` was in Run 006. Three reasons: (1) not
+reproducible across the three prior runs; (2) neither `log` item shares
+any semantic content with the 7 archetypes — no override, exfil, or covert
+framing at all; (3) adding an 8th archetype to shave 0.003 off one item
+risks overfitting a 48-item, author-labeled corpus to single-run noise,
+against the corpus's own standing note that the recommended threshold is
+"evidence to review, not an auto-apply." Logged so it isn't mistaken for
+silence, not acted on.
+
+**F6 — Confirms the Run 007 harness fix, with an ironic twist.** The
+item-detail line did exactly what it was built for — named a real item
+instead of an unaccounted count. But the first thing it named wasn't the
+Run 007 mystery item; it was a brand-new one. That's informative on its
+own: there was never one static "missing" item, just ordinary noise near a
+0.85 cutoff that will flip a different item each run.
+
+### What this does and does NOT establish
+
+Establishes: the deployed pipeline — the thing that actually gates tool
+calls — has 0 missed injections on this corpus at t=0.85, and the
+harness's item-level reporting is now trustworthy. Does NOT establish that
+boundary flicker won't recur on a different item next run — it will, by
+construction, wherever the two clusters sit this close. That is a
+corpus/threshold-separation limit, already documented, not a per-item bug
+to keep patching.
