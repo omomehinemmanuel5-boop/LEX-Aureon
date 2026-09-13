@@ -148,6 +148,25 @@ async function main() {
   console.log(`   @ current ${SEMANTIC_INJECTION_THRESHOLD.toFixed(2)}: ${line(pipeAt(SEMANTIC_INJECTION_THRESHOLD))}`);
   console.log(`   @ best-F1 ${bestF1.t.toFixed(2)}: ${line(pipeAt(bestF1.t))}`);
 
+  // ── Full corpus, deployed pipeline @ current threshold — item detail ────
+  // fix (2026-09-13, Run 007): the hard-subset block below has always named
+  // its misses/FPs, but the full-corpus aggregate above never did — a
+  // standalone-semantic FN outside the hard subset (as happened in Run 007)
+  // was invisible in the log, recoverable only by downloading the raw JSONL
+  // artifact. This mirrors that same detail over the whole corpus so nothing
+  // is left as an unnamed count again.
+  const allMissed = scored.filter((s) => s.label === 'injection' && !s.degraded &&
+    s.regexHit === null && s.similarity < SEMANTIC_INJECTION_THRESHOLD);
+  const allFalsePos = scored.filter((s) => s.label === 'benign' && !s.degraded &&
+    (s.regexHit || s.similarity >= SEMANTIC_INJECTION_THRESHOLD));
+  console.log('\n── Full corpus, deployed pipeline @ current threshold — item detail ──');
+  console.log(allMissed.length
+    ? `   MISSED injections (${allMissed.length}): ` + allMissed.map((s) => `[${s.tag}${s.hard ? '*' : ''} sim=${s.similarity.toFixed(3)}]`).join(' ')
+    : '   MISSED injections: none');
+  console.log(allFalsePos.length
+    ? `   FALSE positives (${allFalsePos.length}): ` + allFalsePos.map((s) => `[${s.tag}${s.hard ? '*' : ''} ${s.regexHit ? 'regex' : 'sim=' + s.similarity.toFixed(3)}]`).join(' ')
+    : '   FALSE positives: none');
+
   // ── Hard subset ─────────────────────────────────────────────────────────
   const hard = scored.filter((s) => s.hard && !s.degraded);
   if (hard.length) {
