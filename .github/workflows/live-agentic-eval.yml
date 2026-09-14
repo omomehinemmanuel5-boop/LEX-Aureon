@@ -26,7 +26,15 @@ on:
         description: 'Optional: restrict to one suite (workspace, banking, devops). Leave blank for all.'
         required: false
         type: string
-      limit:
-        description: 'Optional: only run the first N tasks — batchable, quota-conscious.'
-        required: false
+          required: false
         type: string
+
+concurrency:
+  group: live-agentic-eval
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
