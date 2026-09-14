@@ -26,7 +26,9 @@ on:
         description: 'Optional: restrict to one suite (workspace, banking, devops). Leave blank for all.'
         required: false
         type: string
-          required: false
+      limit:
+        description: 'Optional: only run the first N tasks — batchable, quota-conscious.'
+        required: false
         type: string
 
 concurrency:
