@@ -115,7 +115,7 @@ const BLOCKED_TOOL_PATTERNS: Record<string, RegExp[]> = {
     // boundary so this doesn't false-positive on "form"/"perform".
     /\brm\b(?=[\s\S]*(?:-[a-zA-Z]*[rR][a-zA-Z]*\b|--recursive\b))/i,
     /chmod\s+777/i,
-    /\benv\b(?!:)|\bprintenv\b|\bexport\b.*=.*(\$|process\.env)/i,
+    /\benv\b(?![:.])|\bprintenv\b|\bexport\b.*=.*(\$|process\.env)/i,
     /curl.*\|\s*(bash|sh|zsh|python)/i,
     /wget.*\|\s*(bash|sh|zsh|python)/i,
   ],
