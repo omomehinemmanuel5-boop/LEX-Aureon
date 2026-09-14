@@ -40,3 +40,29 @@ permissions:
 
 env:
   NODE_VERSION: '20'
+
+jobs:
+  live-eval:
+    name: live agentic harness (real model decisions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install
+        run: npm install
+
+      - name: Live-decision agentic harness
+        env:
+          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
+          JINA_API_KEY:    ${{ secrets.JINA_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          mkdir -p data/eval
+          ARGS=""
+          if [ -n "${{ inputs.suite }}" ]; then ARGS="$ARGS --suite ${{ inputs.suite }}"; fi
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
+          npx tsx scripts/agentdojo-real/live-run.ts $ARGS | tee data/eval/live-agentic-eval.txt
