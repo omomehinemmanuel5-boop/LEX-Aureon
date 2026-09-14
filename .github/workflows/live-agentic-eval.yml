@@ -66,3 +66,11 @@ jobs:
           if [ -n "${{ inputs.suite }}" ]; then ARGS="$ARGS --suite ${{ inputs.suite }}"; fi
           if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
           npx tsx scripts/agentdojo-real/live-run.ts $ARGS | tee data/eval/live-agentic-eval.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-agentic-eval
+          path: data/eval/
+          retention-days: 30
