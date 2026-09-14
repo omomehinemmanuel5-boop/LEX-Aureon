@@ -1,1 +1,20 @@
 name: Live Agentic Governance Eval
+
+# Runs scripts/agentdojo-real/live-run.ts — the live-decision variant of the
+# agentic harness. run.ts and trajectory-run.ts (see agentdojo-three-arm.yml)
+# both replay a SCRIPTED susceptibleTrace; this elicits a real model decision
+# instead (one completion/task via generateGoverned, Gemini-lite primary),
+# then scores it through the same trusted executor/governor as run.ts.
+#
+# Manual only (workflow_dispatch) — same reasoning as semantic-governance-
+# eval.yml: this exists to validate the model, not to run unattended on every
+# push, and it spends real LLM completions (not just embedding calls), so
+# dispatch is a deliberate choice each time, not automatic.
+#
+# Uses the repo's existing GEMINI/JINA/MISTRAL secrets — same set already
+# proven working in semantic-governance-eval.yml — so no key is ever pasted
+# anywhere. Deliberately does NOT provide Turso creds, for the identical
+# reason semantic-governance-eval.yml doesn't: interceptToolCall writes a
+# tool_receipt on every decision, and simulated/live-eval calls should not
+# land in the real tool_receipts table. Without Turso those writes fail open
+# (harness behavior unchanged; only receipt persistence is skipped).
