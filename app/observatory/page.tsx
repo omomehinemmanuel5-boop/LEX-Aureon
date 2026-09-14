@@ -1,6 +1,6 @@
 "use client";
 
-import useSWR from "swr";
+import { useEffect, useState } from "react";
 
 type ObservatoryData = {
   total?: number;
