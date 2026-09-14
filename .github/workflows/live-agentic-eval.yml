@@ -18,3 +18,15 @@ name: Live Agentic Governance Eval
 # tool_receipt on every decision, and simulated/live-eval calls should not
 # land in the real tool_receipts table. Without Turso those writes fail open
 # (harness behavior unchanged; only receipt persistence is skipped).
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Optional: restrict to one suite (workspace, banking, devops). Leave blank for all.'
+        required: false
+        type: string
+      limit:
+        description: 'Optional: only run the first N tasks — batchable, quota-conscious.'
+        required: false
+        type: string
