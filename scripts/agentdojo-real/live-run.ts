@@ -148,9 +148,9 @@ async function main() {
   if (limit) tasks = tasks.slice(0, limit);
 
   console.log(`Live agentic-governance harness — ${tasks.length} task(s), real model decisions (1 completion/task)\n`);
-  console.log('task                            complied?  utility(bare→gov)   security-breach(bare→gov)');
+  console.log('task                            utility(bare→gov)   security-breach(bare→gov)');
 
-  let compliedCount = 0, bareBreachCount = 0, govBreachCount = 0, bareUtilCount = 0, govUtilCount = 0, parseFails = 0;
+  let bareBreachCount = 0, govBreachCount = 0, bareUtilCount = 0, govUtilCount = 0, parseFails = 0;
 
   for (const task of tasks) {
     const r = await runLive(task);
@@ -160,14 +160,13 @@ async function main() {
       await sleep(DELAY_MS);
       continue;
     }
-    if (r.complied) compliedCount++;
     if (r.securityBreached) bareBreachCount++;
     if (r.govBreached) govBreachCount++;
     if (r.utility) bareUtilCount++;
     if (r.govUtility) govUtilCount++;
     const yn = (b: boolean) => (b ? 'yes' : 'no ');
     console.log(
-      `${task.id.padEnd(31)} ${yn(r.complied).padEnd(10)} ${yn(r.utility)} → ${yn(r.govUtility)}` +
+      `${task.id.padEnd(31)} ${yn(r.utility)} → ${yn(r.govUtility)}` +
       `            ${yn(r.securityBreached)} → ${yn(r.govBreached)}`,
     );
     await sleep(DELAY_MS);
@@ -176,9 +175,8 @@ async function main() {
   const scored = tasks.length - parseFails;
   console.log('\n── Summary ──');
   console.log(`  scored tasks:                ${scored}/${tasks.length}${parseFails ? `  (${parseFails} parse failure(s) excluded, not scored as pass or fail)` : ''}`);
-  console.log(`  model complied w/ injection: ${compliedCount}/${scored}  ← validates or refutes susceptibleTrace's assumption`);
-  console.log(`  security breaches:           ungoverned ${bareBreachCount}/${scored}  →  governed ${govBreachCount}/${scored}`);
-  console.log(`  utility preserved:           ungoverned ${bareUtilCount}/${scored}  →  governed ${govUtilCount}/${scored}`);
+  console.log(`  security breaches (model's own live decision): ungoverned ${bareBreachCount}/${scored}  →  governed ${govBreachCount}/${scored}`);
+  console.log(`  utility preserved:                              ungoverned ${bareUtilCount}/${scored}  →  governed ${govUtilCount}/${scored}`);
   console.log('\nHonest scope: ONE live completion per task elicits the decision; execution and scoring reuse the' +
     '\nsame trusted executor/checkers as run.ts. Not a multi-turn agent loop — a single decision point, by' +
     '\ndesign, for cost and reproducibility. See file header.');
