@@ -273,6 +273,13 @@ async function Hero() {
             📄 Read the Paper ↗
           </a>
         </div>
+
+        <Link
+          href="/observatory"
+          className="inline-flex min-h-11 max-w-[92vw] items-center justify-center gap-2 rounded-full border border-indigo-300/30 bg-indigo-300/10 px-4 py-2.5 text-center text-xs font-bold text-indigo-200 transition hover:border-indigo-200/60 hover:bg-indigo-300/15 sm:text-sm"
+        >
+          Explore the Governance Observatory <span aria-hidden="true">→</span>
+        </Link>
       </div>
 
       <div className="relative z-10 flex justify-center items-center w-full mt-6 opacity-80">
