@@ -87,6 +87,7 @@ export default function GovernanceObservatory() {
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setRefreshing(true);
