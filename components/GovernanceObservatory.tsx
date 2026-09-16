@@ -38,15 +38,15 @@ function Gauge({ label, value, color }: { label: string; value: number | null; c
   const safe = Math.max(0, Math.min(1, value ?? 0));
   const radius = 34;
   const circumference = 2 * Math.PI * radius;
-  return <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3 sm:flex-col sm:items-start sm:p-4">
-    <div className="relative h-[76px] w-[76px] shrink-0 sm:h-[94px] sm:w-[94px]">
+  return <div className="flex min-w-0 flex-col items-center rounded-2xl border border-white/10 bg-white/[0.035] p-2.5 text-center sm:flex-1 sm:items-start sm:p-4 sm:text-left">
+    <div className="relative h-[64px] w-[64px] shrink-0 sm:h-[94px] sm:w-[94px]">
       <svg viewBox="0 0 84 84" className="h-full w-full -rotate-90" aria-hidden="true">
         <circle cx="42" cy="42" r={radius} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="7" />
         <circle cx="42" cy="42" r={radius} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - safe)} className="transition-all duration-700" />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center font-mono text-sm font-bold text-white">{pct(value)}</span>
+      <span className="absolute inset-0 flex items-center justify-center font-mono text-xs font-bold text-white sm:text-sm">{pct(value)}</span>
     </div>
-    <div className="min-w-0"><div className="text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">{label}</div><div className="mt-1 text-xs text-slate-500">constitutional pillar</div></div>
+    <div className="mt-2 min-w-0"><div className="truncate text-[9px] font-bold uppercase tracking-[.12em] text-slate-400 sm:text-[10px] sm:tracking-[.18em]">{label}</div><div className="mt-1 hidden text-xs text-slate-500 sm:block">constitutional pillar</div></div>
   </div>;
 }
 
@@ -62,8 +62,10 @@ export default function GovernanceObservatory() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
+    setRefreshing(true);
     try {
       const [r, m, s] = await Promise.all([fetch('/api/audits/recent?limit=8'), fetch('/api/observability/metrics'), fetch('/api/live-state')]);
       if (!r.ok || !m.ok || !s.ok) throw new Error('observatory unavailable');
@@ -72,6 +74,7 @@ export default function GovernanceObservatory() {
       const stateData = await s.json() as { state?: State };
       setReceipts(recent.receipts ?? []); setMetrics(metricData); setState(stateData.state ?? null); setError(false);
     } catch { setError(true); }
+    finally { setRefreshing(false); }
   }, []);
 
   useEffect(() => { void load(); const timer = setInterval(() => void load(), 30000); return () => clearInterval(timer); }, [load]);
@@ -81,16 +84,16 @@ export default function GovernanceObservatory() {
   const healthColor = health === 'OPTIMAL' ? COLORS.teal : health === 'CRITICAL' ? COLORS.red : COLORS.amber;
 
   return <main className="min-h-screen overflow-x-hidden bg-[#07070d] text-slate-200">
-    <div className="mx-auto max-w-7xl px-4 pb-14 pt-24 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom))] pt-24 sm:px-6 sm:pb-14 lg:px-8">
       <header className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-teal-300/20 bg-teal-300/5 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[.16em] text-teal-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-300" /> Live governance surface</div><h1 className="max-w-3xl text-3xl font-black tracking-tight text-white sm:text-5xl">Governance <span className="text-indigo-300">Observatory</span></h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">A verifiable execution history for constitutional decisions, receipts, and runtime state.</p></div>
-        <div className="flex gap-2"><Link href="/console" className="min-h-11 rounded-xl border border-white/10 px-4 py-3 text-center text-xs font-bold text-slate-200 transition hover:border-indigo-300/40 hover:text-white">Run a governed action</Link><button onClick={() => void load()} className="min-h-11 rounded-xl bg-indigo-400 px-4 py-3 text-xs font-bold text-[#101126] transition hover:bg-indigo-300">Refresh</button></div>
+        <div><div className="mb-3 inline-flex max-w-full items-center gap-2 rounded-full border border-teal-300/20 bg-teal-300/5 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[.12em] text-teal-300 sm:tracking-[.16em]"><span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-teal-300" /> Live governance surface</div><h1 className="max-w-3xl text-3xl font-black tracking-tight text-white sm:text-5xl">Governance <span className="text-indigo-300">Observatory</span></h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">A verifiable execution history for constitutional decisions, receipts, and runtime state.</p></div>
+        <div className="grid grid-cols-2 gap-2 sm:flex"><Link href="/console" className="flex min-h-11 items-center justify-center rounded-xl border border-white/10 px-3 py-3 text-center text-[11px] font-bold text-slate-200 transition hover:border-indigo-300/40 hover:text-white sm:px-4 sm:text-xs">Run a governed action</Link><button type="button" onClick={() => void load()} disabled={refreshing} aria-busy={refreshing} className="min-h-11 rounded-xl bg-indigo-400 px-3 py-3 text-xs font-bold text-[#101126] transition hover:bg-indigo-300 disabled:cursor-wait disabled:opacity-70 sm:px-4">{refreshing ? 'Refreshing…' : 'Refresh'}</button></div>
       </header>
 
       {error && <div className="mb-5 flex flex-col gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/5 p-4 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between"><span>Some live sources are unavailable. The Observatory will keep the last known state.</span><button onClick={() => void load()} className="self-start rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-bold sm:self-auto">Retry</button></div>}
 
       <div className="grid gap-4 lg:grid-cols-[1.25fr_.75fr]">
-        <Panel title="Constitutional state" eyebrow="Live CRS dashboard"><div className="flex flex-col gap-4 sm:flex-row"><Gauge label="Continuity" value={state?.C ?? null} color={COLORS.indigo} /><Gauge label="Reciprocity" value={state?.R ?? null} color={COLORS.teal} /><Gauge label="Sovereignty" value={state?.S ?? null} color={COLORS.amber} /></div><div className="mt-4 flex items-center justify-between rounded-xl border border-white/8 bg-black/20 px-3 py-3"><span className="text-xs text-slate-400">Stability margin <span className="font-mono text-white">M = min(C,R,S)</span></span><span className={`font-mono text-sm font-bold text-${tone(state?.M) === 'good' ? 'teal' : tone(state?.M) === 'warn' ? 'amber' : 'rose'}-300`}>{pct(state?.M)}</span></div></Panel>
+        <Panel title="Constitutional state" eyebrow="Live CRS dashboard"><div className="grid grid-cols-3 gap-2 sm:flex sm:gap-4"><Gauge label="Continuity" value={state?.C ?? null} color={COLORS.indigo} /><Gauge label="Reciprocity" value={state?.R ?? null} color={COLORS.teal} /><Gauge label="Sovereignty" value={state?.S ?? null} color={COLORS.amber} /></div><div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-3"><span className="text-xs text-slate-400">Stability margin <span className="font-mono text-white">M = min(C,R,S)</span></span><span className="shrink-0 font-mono text-sm font-bold" style={{ color: tone(state?.M) === 'good' ? COLORS.teal : tone(state?.M) === 'warn' ? COLORS.amber : COLORS.red }}>{pct(state?.M)}</span></div></Panel>
         <Panel title="System pulse" eyebrow="Last 30 minutes"><div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Governed calls</div><div className="mt-2 font-mono text-2xl font-bold text-white">{metrics?.system.total_calls ?? '—'}</div></div><div className="rounded-xl bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Interventions</div><div className="mt-2 font-mono text-2xl font-bold text-amber-300">{metrics?.system.total_interventions ?? '—'}</div></div></div><div className="mt-4 flex items-center justify-between border-t border-white/8 pt-3"><span className="text-xs text-slate-400">Health band</span><span className="font-mono text-xs font-bold" style={{ color: healthColor }}>{health}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-400">Intervention rate</span><span className="font-mono text-xs text-white">{metrics ? `${(metrics.system.intervention_rate * 100).toFixed(1)}%` : '—'}</span></div></Panel>
       </div>
 
