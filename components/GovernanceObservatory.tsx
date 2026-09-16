@@ -103,6 +103,7 @@ export default function GovernanceObservatory() {
     if (stateData.status === 'fulfilled') setState(stateData.value.state ?? null);
     if (sessionData.status === 'fulfilled') setSessions(sessionData.value.sessions ?? []);
     setError(results.some(result => result.status === 'rejected'));
+    setLastUpdated(Date.now());
     setLoading(false);
     setRefreshing(false);
   }, []);
