@@ -31,6 +31,10 @@ import { ToolCallInput, ToolCallDecision, ToolCRSState, ToolSessionState } from 
 import { measureToolCRS } from './tool_crs';
 import { getClient } from '../db';
 import crypto from 'crypto';
+import {
+  commitGovernanceDecision,
+  GovernanceCommitConflict,
+} from './governance_commit';
 
 // ── Constitutional Tool-Call Cache ───────────────────────────────────────────
 // fix (2026-08-03): session-local cache for identical read-only tool calls.
@@ -122,6 +126,7 @@ async function getSessionState(session_id: string): Promise<ToolSessionState> {
         n_stable: N_MIN, // start in clean state
         locked: false,
         tool_calls: 0,
+        state_version: 0,
         updated_at: new Date().toISOString(),
       };
     }
@@ -132,13 +137,14 @@ async function getSessionState(session_id: string): Promise<ToolSessionState> {
       n_stable:     Number(r.n_stable),
       locked:       Boolean(r.locked),
       tool_calls:   Number(r.tool_calls),
+      state_version: Number(r.state_version ?? 0),
       last_high_at: r.last_high_at ? Number(r.last_high_at) : undefined,
       updated_at:   String(r.updated_at),
     };
   } catch {
     return {
       session_id, sigma_viol: 0, n_stable: N_MIN,
-      locked: false, tool_calls: 0, updated_at: new Date().toISOString(),
+      locked: false, tool_calls: 0, state_version: 0, updated_at: new Date().toISOString(),
     };
   }
 }
@@ -155,6 +161,7 @@ async function updateSessionState(state: ToolSessionState): Promise<void> {
               n_stable     = excluded.n_stable,
               locked       = excluded.locked,
               tool_calls   = excluded.tool_calls,
+              state_version = tool_sessions.state_version + 1,
               last_high_at = excluded.last_high_at,
               updated_at   = excluded.updated_at`,
       args: [
@@ -582,13 +589,29 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
     warning = warning ? `${warning} ${gapNote}` : gapNote;
   }
 
-  await updateSessionState(newState);
-  await writeReceipt({
-    receipt_id, session_id: tool.session_id,
-    tool_name: tool.name, args_hash, decision,
-    crs, reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}`,
-    sigma_viol: newState.sigma_viol,
-  });
+  try {
+    newState = await commitGovernanceDecision(newState, session.state_version, {
+      receipt_id, session_id: tool.session_id,
+      tool_name: tool.name, args_hash, decision,
+      crs,
+      reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}`,
+      sigma_viol: newState.sigma_viol,
+    });
+  } catch (error) {
+    const reason = error instanceof GovernanceCommitConflict
+      ? 'Concurrent governance decision detected; tool execution denied and must be retried.'
+      : 'Governance commit unavailable; tool execution denied by fail-closed policy.';
+    return {
+      approved: false,
+      decision: 'DENIED_LOCKED',
+      reason,
+      crs,
+      receipt_id,
+      sigma_viol: session.sigma_viol,
+      health_band: 'CRITICAL',
+      warning: 'Governance state or receipt could not be committed atomically.',
+    };
+  }
 
   return {
     approved:    true,

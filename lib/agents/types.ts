@@ -150,6 +150,7 @@ export interface ToolSessionState {
   n_stable:       number;   // consecutive non-HIGH calls since last HIGH
   locked:         boolean;  // hard lock: two HIGHs in recovery window
   tool_calls:     number;   // total calls this session
+  state_version:  number;   // optimistic-concurrency version for atomic commits
   last_high_at?:  number;   // timestamp of last HIGH action
   updated_at:     string;
 }

@@ -13,6 +13,8 @@ import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
 import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
+import { getAutonomousRun } from '@/lib/agents/autonomous_run_supervisor';
+import type { AutonomousRunContext } from '@/lib/agents/trajectory_executor';
 import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
@@ -356,6 +358,30 @@ export async function POST(req: Request) {
       const scopedArgs = profile === 'public'
         ? { ...args, session_id: sessionId }
         : args;
+      const runId = typeof args.run_id === 'string' ? args.run_id : undefined;
+      const leaseToken = typeof args.lease_token === 'string' ? args.lease_token : undefined;
+      const idempotencyKey = typeof args.idempotency_key === 'string' ? args.idempotency_key : undefined;
+      const hasRunMetadata = runId !== undefined || leaseToken !== undefined || idempotencyKey !== undefined;
+      if (hasRunMetadata && (!runId || !leaseToken || !idempotencyKey)) {
+        return invalidParams(id ?? null, 'run_id, lease_token, and idempotency_key are required together');
+      }
+      const toolArgs = hasRunMetadata
+        ? Object.fromEntries(Object.entries(scopedArgs).filter(([key]) =>
+          !['run_id', 'lease_token', 'idempotency_key', 'risk_cost'].includes(key)))
+        : scopedArgs;
+      let runContext: AutonomousRunContext | undefined;
+      if (runId && leaseToken && idempotencyKey) {
+        const run = await getAutonomousRun(runId);
+        if (!run || run.sessionId !== sessionId) {
+          return NextResponse.json({ jsonrpc: '2.0', error: { code: -32041, message: 'Autonomous run not found for this session' }, id });
+        }
+        runContext = {
+          lease: { runId, leaseToken },
+          idempotencyKey,
+          expectedCheckpointVersion: run.checkpointVersion,
+          riskCost: typeof args.risk_cost === 'number' ? args.risk_cost : 1,
+        };
+      }
 
       // Constitutional authorization is the single dispatch boundary for
       // every MCP-exposed tool. Read-only results may be reused by the
@@ -374,6 +400,9 @@ export async function POST(req: Request) {
       // through to the original bare path.
       const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan']);
       const trajectoryState = TRAJECTORY_META_TOOLS.has(toolName) ? undefined : await getTrajectoryState(sessionId);
+      if (runContext && (!trajectoryState || !isTrajectoryActive(trajectoryState))) {
+        return NextResponse.json({ jsonrpc: '2.0', error: { code: -32042, message: 'Long-horizon actions require an active trajectory checkpoint' }, id });
+      }
 
       if (trajectoryState && isTrajectoryActive(trajectoryState)) {
         const expected = trajectoryState.plan.actions[trajectoryState.currentStep];
@@ -388,10 +417,11 @@ export async function POST(req: Request) {
         const execution = await executeGovernedTrajectoryAction(
           trajectoryState,
           attemptedAction,
-          scopedArgs,
+          toolArgs,
           toolFn,
           sessionId,
           args.task_context as string | undefined,
+          runContext,
         );
 
         if (isTrajectoryActive(execution.state)) {
@@ -412,7 +442,7 @@ export async function POST(req: Request) {
 
       const result = await withDeadline(executeGovernedTool(
         toolName,
-        scopedArgs,
+        toolArgs,
         toolFn,
         sessionId,
         args.task_context as string | undefined,

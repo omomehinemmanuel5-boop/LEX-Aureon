@@ -454,9 +454,11 @@
       n_stable      INTEGER NOT NULL DEFAULT 3,
       locked        INTEGER NOT NULL DEFAULT 0,
       tool_calls    INTEGER NOT NULL DEFAULT 0,
+      state_version INTEGER NOT NULL DEFAULT 0,
       last_high_at  INTEGER,
       updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
+    await safeExec(`ALTER TABLE tool_sessions ADD COLUMN state_version INTEGER NOT NULL DEFAULT 0`);
 
     await safeExec(`CREATE TABLE IF NOT EXISTS tool_receipts (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,

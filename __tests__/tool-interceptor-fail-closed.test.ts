@@ -28,7 +28,9 @@ describe('tool interceptor dependency failures', () => {
 
   it('allows isolated synthetic state only outside production', async () => {
     process.env.LEX_AGENTDOJO_SYNTHETIC_STATE = '1';
-    dbExecute.mockRejectedValue(new Error('database unavailable'));
+    dbExecute
+      .mockRejectedValueOnce(new Error('database unavailable'))
+      .mockResolvedValue({ rowsAffected: 1 });
 
     const decision = await interceptToolCall({
       id: 'synthetic-1',
