@@ -134,6 +134,16 @@ body {
   input, textarea, select { font-size: 16px !important; }
 }
 
+/* Respect device-level motion preferences across live dashboards and animated graphs. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
 /* ── Safe area for sticky bottom ─────────────────────────── */
 .safe-area-pb {
   padding-bottom: max(12px, env(safe-area-inset-bottom));
