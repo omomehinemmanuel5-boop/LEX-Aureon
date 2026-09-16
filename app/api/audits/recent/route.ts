@@ -15,7 +15,8 @@ export async function GET(req: Request) {
     await initSchema();
     const r = await getClient().execute({
       sql: `SELECT receipt_id, session_id, turn, pre_eval_label,
-                   m_before, m_after, governor_mode, intervention,
+                   m_before, m_after, c_after, r_after, s_after,
+                   health_band, governor_mode, intervention,
                    slow_drip, governor_effort, sigma_viol, created_at
             FROM praxis_receipts
             ORDER BY created_at DESC
@@ -30,6 +31,10 @@ export async function GET(req: Request) {
       pre_eval_label: (row.pre_eval_label as string) || 'CLEAR',
       m_before: row.m_before as number,
       m_after: row.m_after as number,
+      c_after: row.c_after as number | null,
+      r_after: row.r_after as number | null,
+      s_after: row.s_after as number | null,
+      health_band: row.health_band as string | null,
       governor_mode: row.governor_mode as string,
       intervention: (row.intervention as number) === 1,
       slow_drip: (row.slow_drip as number) === 1,
