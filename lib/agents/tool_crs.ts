@@ -115,6 +115,16 @@ const BLOCKED_TOOL_PATTERNS: Record<string, RegExp[]> = {
     // boundary so this doesn't false-positive on "form"/"perform".
     /\brm\b(?=[\s\S]*(?:-[a-zA-Z]*[rR][a-zA-Z]*\b|--recursive\b))/i,
     /chmod\s+777/i,
+    // fix (2026-09-16): the previous export check used an unbounded gap on
+    // both sides of the assignment operator, matching any args blob that
+    // merely contained the keyword somewhere before a later assignment and
+    // a later dollar sign or environment-variable reference — true of
+    // ordinary JSX attribute assignments plus template-literal interpolation
+    // elsewhere in the same diff, or a bare REST route ending in that
+    // keyword. Found live: patch_file blocked an unrelated UI touch-target
+    // fix purely because its diff contained an API route path ending in
+    // that word, with no shell command anywhere in it. Tightened below to
+    // require the assignment directly attached to the keyword.
     /\benv\b(?![:.])|\bprintenv\b|\bexport\s+[A-Za-z_]\w*\s*=\s*(\$|process\.env)/i,
     /curl.*\|\s*(bash|sh|zsh|python)/i,
     /wget.*\|\s*(bash|sh|zsh|python)/i,
