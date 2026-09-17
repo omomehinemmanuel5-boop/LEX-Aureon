@@ -112,18 +112,19 @@ function SessionReplay({ sessions }: { sessions: Session[] }) {
   return <Panel title="Trajectory replay" eyebrow="Historical replay — reconstructed from persisted evidence" className="mt-4"><div className="flex flex-wrap gap-2">{sessions.length ? sessions.slice(0, 6).map(session => <button type="button" key={session.session_id} onClick={() => { setSessionId(session.session_id); setPlaying(false); }} className={`min-h-11 max-w-full truncate rounded-lg border px-3 py-2 font-mono text-[10px] ${sessionId === session.session_id ? 'border-[#c9a84c]/50 bg-[#c9a84c]/10 text-[#e8c96d]' : 'border-white/10 text-slate-400'}`}>{session.session_id.slice(0, 18)} · {session.turns}</button>) : <span className="text-xs text-slate-500">No persisted sessions available.</span>}</div><div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">{current ? <><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-mono text-xs font-bold text-white">Turn {current.turn} · {current.governor_mode}</span><EvidenceBadge kind="HISTORICAL" /></div><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"><span className="rounded-lg bg-white/5 p-2 text-[10px] text-slate-400">M {current.m_before.toFixed(3)} → {current.m_after.toFixed(3)}</span><span className="rounded-lg bg-white/5 p-2 text-[10px] text-slate-400">{current.intervention ? 'Intervention' : 'Constitutional pass'}</span><span className="rounded-lg bg-white/5 p-2 text-[10px] text-slate-400">{current.pre_eval_label ?? 'Label unavailable'}</span><span className="rounded-lg bg-white/5 p-2 text-[10px] text-slate-400">{new Date(current.created_at).toLocaleTimeString()}</span><span className="rounded-lg bg-white/5 p-2 text-[10px] text-slate-400">Slow-drip {current.slow_drip ? 'YES' : 'NO'}</span><span className="rounded-lg bg-white/5 p-2 text-[10px] text-slate-400">Effort {current.governor_effort?.toFixed(4) ?? '—'} · σ {current.sigma_viol?.toFixed(4) ?? '—'}</span></div><p className="mt-3 text-[11px] text-slate-500">Replay reconstructed from persisted governance receipts. Receipt: <span className="font-mono text-slate-300">{current.id}</span>. Raw request, model, and tool/action payloads are not persisted in this timeline response.</p></> : <p className="text-xs text-slate-500">Select a session to load persisted turns.</p>}</div><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={!events.length} onClick={() => setCursor(0)} className="min-h-11 rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-40">First</button><button type="button" disabled={!events.length} onClick={() => setCursor(index => Math.max(0, index - 1))} className="min-h-11 rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-40">Previous</button><button type="button" disabled={events.length < 2} onClick={() => setPlaying(value => !value)} className="min-h-11 rounded-lg border border-[#c9a84c]/40 px-3 py-2 text-xs text-[#e8c96d] disabled:opacity-40">{playing ? 'Pause' : 'Play'}</button><button type="button" disabled={!events.length} onClick={() => setCursor(index => Math.min(events.length - 1, index + 1))} className="min-h-11 rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-40">Next</button><button type="button" disabled={!events.length} onClick={() => setCursor(events.length - 1)} className="min-h-11 rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-40">Last</button></div></Panel>;
 }
 
-export default function GovernanceObservatory() {
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [state, setState] = useState<State | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [aggregate, setAggregate] = useState<Aggregate | null>(null);
+export default function GovernanceObservatory({ initialData }: { initialData?: ObservatoryInitialData } = {}) {
+  const [receipts, setReceipts] = useState<Receipt[]>(initialData?.receipts ?? []);
+  const [metrics, setMetrics] = useState<Metrics | null>(initialData?.metrics ?? null);
+  const [state, setState] = useState<State | null>(initialData?.state ?? null);
+  const [sessions, setSessions] = useState<Session[]>(initialData?.sessions ?? []);
+  const [aggregate, setAggregate] = useState<Aggregate | null>(initialData?.aggregate ?? null);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [integrity, setIntegrity] = useState<Integrity | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(initialData ? Date.now() : null);
+  const [integrity, setIntegrity] = useState<Integrity | null>(initialData?.integrity ?? null);
+  const skipInitialLoad = useRef(Boolean(initialData));
 
   const load = useCallback(async () => {
     setRefreshing(true);
