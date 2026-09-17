@@ -67,7 +67,7 @@ function Gauge({ label, value, color }: { label: string; value: number | null; c
       </svg>
       <span className="absolute inset-0 flex items-center justify-center font-mono text-xs font-bold text-white sm:text-sm">{pct(value)}</span>
     </div>
-    <div className="mt-2 min-w-0"><div className="truncate text-[9px] font-bold uppercase tracking-[.12em] text-slate-400 sm:text-[10px] sm:tracking-[.18em]">{label}</div><div className="mt-1 hidden text-xs text-slate-500 sm:block">constitutional pillar</div></div>
+    <div className="mt-2 min-w-0"><div className="truncate text-[10px] font-bold uppercase tracking-[.12em] text-slate-400 sm:tracking-[.18em]">{label}</div><div className="mt-1 hidden text-xs text-slate-500 sm:block">constitutional pillar</div></div>
   </div>;
 }
 
