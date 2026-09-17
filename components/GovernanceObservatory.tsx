@@ -51,8 +51,8 @@ function verificationDescription(status: VerificationStatus) {
   return status === 'valid' ? 'Production signature successfully validated.' : status === 'tampered' ? 'Stored signature does not validate against the stored canonical fields.' : status === 'unsigned' ? 'No production signature is available.' : status === 'legacy_insecure' ? 'Historical fallback signing; retained for audit history but not evidence-grade.' : status === 'not_found' ? 'Receipt does not exist.' : status === 'unavailable' ? 'Verification service could not be reached.' : '';
 }
 function EvidenceBadge({ kind }: { kind: 'LIVE' | 'HISTORICAL' | 'RECONSTRUCTED' | 'DEMO' | 'PLANNED' }) {
-  const styles = { LIVE: 'border-emerald-300/30 bg-emerald-300/10 text-emerald-200', HISTORICAL: 'border-blue-300/30 bg-blue-300/10 text-blue-200', RECONSTRUCTED: 'border-violet-300/30 bg-violet-300/10 text-violet-200', DEMO: 'border-amber-300/30 bg-amber-300/10 text-amber-200', PLANNED: 'border-white/15 bg-white/5 text-slate-400' };
-  return <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[9px] font-bold tracking-wider ${styles[kind]}`}>{kind}</span>;
+  const styles = { LIVE: 'border-emerald-300/30 bg-emerald-300/10 text-emerald-200', HISTORICAL: 'border-blue-300/30 bg-blue-300/10 text-blue-200', RECONSTRUCTED: 'border-violet-300/30 bg-violet-300/10 text-violet-200', DEMO: 'border-slate-400/30 bg-slate-400/10 text-slate-300', PLANNED: 'border-white/15 bg-white/5 text-slate-400' };
+  return <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[10px] font-bold tracking-wider ${styles[kind]}`}>{kind}</span>;
 }
 
 function Gauge({ label, value, color }: { label: string; value: number | null; color: string }) {
