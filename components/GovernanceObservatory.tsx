@@ -32,6 +32,7 @@ type State = { C: number | null; R: number | null; S: number | null; M: number |
 type Session = { session_id: string; last_seen: string; turns: number };
 type Aggregate = { total: number; today: number; sessions: number; real: number; latest?: Array<{ receipt_id: string; health_band: string; created_at: string }> };
 type Integrity = { sources: Record<string, { status: string; seconds?: number | null; count?: number; endpoint?: string }> };
+export type ObservatoryInitialData = { receipts: Receipt[]; metrics: Metrics | null; state: State | null; sessions: Session[]; aggregate: Aggregate | null; integrity: Integrity | null };
 
 const COLORS = { gold: '#c9a84c', goldLight: '#e8c96d', blue: '#3b82f6', teal: '#10b981', amber: '#f59e0b', red: '#ef4444', ink: '#07070d' };
 
