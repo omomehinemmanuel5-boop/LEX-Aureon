@@ -149,7 +149,7 @@ export default function GovernanceObservatory({ initialData }: { initialData?: O
     setRefreshing(false);
   }, []);
 
-  useEffect(() => { void load(); const timer = setInterval(() => void load(), 30000); return () => clearInterval(timer); }, [load]);
+  useEffect(() => { if (!skipInitialLoad.current) void load(); const timer = setInterval(() => void load(), 30000); return () => clearInterval(timer); }, [load]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get('receipt');
     if (requested) setSelectedReceipt(receipts.find(receipt => receipt.id === requested) ?? null);
