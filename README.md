@@ -120,10 +120,10 @@ Lex Aureon separates deployed engineering claims from mathematical claims:
 | Dynamic z-update rule | **Closed**; Banach fixed-point rule deployed in `lib/kv.ts`. |
 | z-aware governor direction | **Closed**; the live and replay paths use the active session-weighted negative projected gradient of `V_z`. |
 | FPL-1 simulator classification | **Resolved numerically**; governed counterfactual certifies `LYAPUNOV STABLE + FORWARD INVARIANT` at the continuous-flow limit. |
-| Multi-pillar global Lyapunov proof | **Still open**; z-alignment is closed, while the quantitative governor-vs-drift margin remains unproved. |
+| Multi-pillar Lyapunov boundary | **Closed as scoped**; the guarded discrete invariant is enforced, while an unrestricted unguarded drift-margin theorem is not a valid claim without a declared drift envelope. |
 | Deployed production transition | `production-transition-v2` enforces conditional post-guard `ΔV_z≤0` for valid floor-constrained states and positive finite session weights; replay is versioned and receipt-authenticated. |
 
-> **Important boundary:** the z-aware governor has a non-positive continuous-time directional derivative for the active `V_z` under positive session weights. The complete discrete production transition still relies on its post-guard for conditional non-increase, and the global governor-versus-drift magnitude inequality remains unproved.
+> **Important boundary:** the z-aware governor has a non-positive continuous-time directional derivative for the active `V_z` under positive session weights. The complete discrete production transition enforces conditional non-increase through its post-guard. An unrestricted unguarded governor-versus-drift magnitude inequality is intentionally not claimed because the input contract does not declare a drift envelope.
 
 The open-problem tracker is `research/open-problems.md`. It now lists only the remaining mathematical open problem and points resolved items to their closure notes.
 
@@ -263,7 +263,7 @@ Priority evaluation gaps:
 
 1. **Root-cause the three residual TruthfulQA flat refusals** from the 2026-08-11 post-fix run and add regression fixtures for the exact triggers.
 2. **Build a held-out benign/attack validation set** for semantic archetypes before adding or reviving any embedding-based attack class.
-3. **Close Open Problem 1** by deriving the closed-form governor-vs-drift margin in the multi-pillar region.
+3. **Optional research:** if a bounded drift envelope is declared, derive a conditional governor-vs-drift margin for that narrower model.
 4. **Replace proxy AgentDojo scoring** with a fuller stateful tool-execution benchmark and separate utility/security axes.
 5. **Add auth and stricter rate limiting** to public govern endpoints before heavy client traffic.
 
@@ -283,7 +283,7 @@ Priority evaluation gaps:
 - Never delete or mutate audit receipts.
 - Never import governor/receipt z-logic from the heuristic display helper.
 - Never hardcode secrets; route environment access through `lib/env.ts` except documented fallback-chain exceptions.
-- Do not claim the analytical multi-pillar global Lyapunov proof is closed until it is actually closed.
+- Do not claim an unguarded global drift-margin theorem without an explicit admissible drift envelope; the deployed guarded discrete invariant is the supported guarantee.
 
 ---
 

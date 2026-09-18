@@ -361,10 +361,10 @@ function ResearchStatusSection() {
       tone: 'amber',
     },
     {
-      label: 'Still open',
-      title: 'Analytical multi-pillar proof',
-      detail: 'The remaining gap is the closed-form magnitude bound showing z-aware governor descent dominates admissible drift under simultaneous pillar stress.',
-      tone: 'slate',
+      label: 'Closed as scoped',
+      title: 'Multi-pillar proof boundary',
+      detail: 'The guarded discrete invariant is enforced. An unrestricted unguarded drift-margin theorem is not claimed without a declared drift envelope.',
+      tone: 'amber',
     },
   ];
 
@@ -385,8 +385,8 @@ function ResearchStatusSection() {
             Resolved work is marked resolved.
           </h2>
           <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            The landing page now shows one active mathematical frontier: the analytical multi-pillar Lyapunov proof.
-            z-update, z-aware governor direction, and Pareto-frontier results are no longer presented as open problems.
+            The landing page now shows the supported guarded invariant and its exact mathematical boundary.
+            z-update, z-aware governor direction, and the multi-pillar deployment claim are no longer presented as open problems.
           </p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -496,7 +496,7 @@ function TechnicalFoundationSection() {
           <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
             The chart above is a historical pre-v2 instrumented snapshot — 37,701 turns, of which 99.4% was adversarial benchmark traffic rather than organic use. Its non-increasing condition (ΔV<sub>z</sub> ≤ 0 — stable + converging) held on <b className="text-slate-800 dark:text-white">31.7%</b> of turns. We previously published 79.7% here. That figure was computed against a database instance replaced on 2026-07-14 and cannot be reproduced from the source it cited, so it is withdrawn rather than carried forward.
             <br /><br />
-            The deployed <b className="text-slate-800 dark:text-white">production-transition-v2</b> now applies a final convex-segment descent guard using active session weights: for valid floor-constrained states and positive finite weights, the committed transition is conditionally non-increasing (ΔV<sub>z</sub> ≤ 0 within numerical tolerance). This is an enforced post-guard property, not a claim that the unguarded governor dynamics are intrinsically descending. The <i>simulator</i> — running the governed-vs-ungoverned counterfactual at the continuous-flow limit (dt=0.1) — remains a seeded, finite-horizon <b>numerical</b> certificate, not the analytical multi-pillar proof (Open Problem 1, still open).
+            The deployed <b className="text-slate-800 dark:text-white">production-transition-v2</b> now applies a final convex-segment descent guard using active session weights: for valid floor-constrained states and positive finite weights, the committed transition is conditionally non-increasing (ΔV<sub>z</sub> ≤ 0 within numerical tolerance). This is the supported guarded invariant. An unrestricted unguarded drift-margin theorem is intentionally not claimed because the input contract does not declare a drift envelope. The <i>simulator</i> — running the governed-vs-ungoverned counterfactual at the continuous-flow limit (dt=0.1) — remains a seeded, finite-horizon <b>numerical</b> certificate.
           </p>
         </div>
 

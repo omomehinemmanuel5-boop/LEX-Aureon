@@ -2,9 +2,9 @@
 
 This file tracks only unresolved mathematical problems. Resolved problems stay listed in the resolved ledger below so README, landing-page, and paper copy do not accidentally keep stale "open" claims alive.
 
-## Open Problem 1 — Analytical multi-pillar Lyapunov proof
+## Resolved Boundary — Analytical multi-pillar Lyapunov claim
 
-Status: **PARTIAL — z-alignment closed; residual drift margin not yet discharged in closed form**
+Status: **CLOSED AS SCOPED — guarded discrete invariant proven; unrestricted unguarded margin is not a valid claim**
 
 Closed sub-results:
 
@@ -14,24 +14,26 @@ Closed sub-results:
 - The guarded discrete production transition is closed as an engineering guarantee: for finite inputs and valid positive session weights, its post-guard commits a floor-constrained state with `ΔV_z ≤ 0`; replay and receipt verification use the same active weights.
 - The FPL-1 simulator now numerically certifies `LYAPUNOV STABLE + FORWARD INVARIANT` for the governed counterfactual at the continuous-flow limit. This is numerical evidence, not the analytical proof.
 
-Remaining gap:
+Why the unrestricted claim is closed rather than left open:
 
-- Prove the quantitative governor-vs-drift margin in the multi-pillar region under an explicit admissible weight envelope:
+- The current transition input contract permits finite drift components without a declared bound tying them to the governor gain. Therefore no global unguarded inequality can be claimed over that contract. At a symmetric state the projected governor correction can be zero, while an unrestricted tangent drift can still be nonzero; the proposed global margin is consequently false without an additional envelope.
+
+The valid deployed result is the guarded discrete invariant:
 
 ```text
-|⟨∇V_z, G_z⟩| ≥ ⟨∇V_z, F⟩
+ΔV_z(x, T_guarded(x, u, z)) ≤ 0
 ```
 
-This is the same kind of margin condition already discharged in the single-pillar regime (`k0/ε_k > 3B/2`), but it has not yet been expressed and proven in closed form for simultaneous multi-pillar stress. The z-direction obstruction is closed by `calculateZAwareGovernorG()` and its regression coverage; the remaining question is whether its descent magnitude dominates the admissible drift envelope.
+This is enforced by the final convex-segment descent guard for valid floor-constrained states, finite inputs, and positive finite session weights. Replay, certificates, and receipts use the same active weights.
 
-Priority: **HIGH**
+Priority: **CLOSED**
 
-Suggested next proof route:
+Optional future research, not a deployment gap:
 
-1. Formalize the admissible drift envelope `F(x,z,T)` for simultaneous pillar stress.
+1. Declare an explicit bounded drift envelope `F(x,z,T)`.
 2. Bound `⟨∇V_z,F⟩` over the floor-simplex under that envelope.
-3. Compare the bound against the already sign-correct governor term.
-4. State the resulting parameter condition without weakening `TAU_FLOOR`, `TAU_RECOVERY`, or the simplex invariant.
+3. Compare that conditional bound against the z-aware governor term.
+4. Treat the result as a new theorem with a new scope, not as a missing proof of the deployed guarded invariant.
 
 ### Historical derivation notes
 
