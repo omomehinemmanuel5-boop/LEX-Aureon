@@ -21,10 +21,20 @@ export default function robots(): MetadataRoute.Robots {
         // compliant crawler or agent from ever seeing them. Allow rules
         // take precedence over a shorter matching disallow (standard
         // robots.txt precedence: most specific path wins), so this opens
-        // only the one confirmed-public endpoint rather than the rest of
+        // only confirmed-public read endpoints rather than the rest of
         // /api/, which includes routes that should stay blocked
         // (admin, auth, billing, cron, keys, etc.).
-        allow: ['/', '/api/benchmarks'],
+        allow: [
+          '/',
+          '/api/benchmarks',
+          '/api/audits/recent',
+          '/api/observatory',
+          '/api/observatory/integrity',
+          '/api/observability/metrics',
+          '/api/observability/sessions',
+          '/api/observability/timeline',
+          '/api/live-state',
+        ],
         disallow: ['/admin', '/admin/*', '/api/', '/api/debug', '/keys'],
       },
     ],
