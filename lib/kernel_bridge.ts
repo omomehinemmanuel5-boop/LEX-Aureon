@@ -94,6 +94,7 @@ async function ensureHashColumns(db: ReturnType<typeof getClient>): Promise<void
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_version TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_input TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_hash TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_signature TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN raw_c REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN raw_r REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN raw_s REAL');
@@ -167,7 +168,17 @@ export function auditorSigningKey(): string {
   return 'lex-aureon-sovereign-key-2026';
 }
 const signingKey = auditorSigningKey;
-
+export const TRANSITION_SIGNATURE_VERSION = 'transition-hmac-v1';
+export function computeTransitionSignature(transitionVersion: string, transitionHash: string): string {
+  const canonical = [TRANSITION_SIGNATURE_VERSION, transitionVersion, transitionHash, SIGNING_KEY_VERSION].join('|');
+  return createHmac('sha256', signingKey()).update(canonical).digest('hex');
+}
+export function verifyTransitionSignature(transitionVersion: string, transitionHash: string, signature: string): boolean {
+  const expected = computeTransitionSignature(transitionVersion, transitionHash);
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(signature, 'hex');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 export function computeReceiptSignature(fields: {
   receiptId: string;
   sessionId: string;
@@ -218,6 +229,7 @@ export async function writeKernelReceipt(
   const db = getClient();
   const receiptId = `KRN-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   const r = result.receipt;
+  const transitionSignature = computeTransitionSignature(r.transition_version, r.transition_hash);
 
   const mBefore = Math.min(result.receipt.raw_state.C, result.receipt.raw_state.R, result.receipt.raw_state.S);
   const sigmaViol = Math.max(0, TAU - mBefore);
@@ -346,7 +358,7 @@ export async function writeKernelReceipt(
                  slow_drip, governor_effort, sigma_viol, crs_method,
                  input_hash, output_hash, receipt_hash, signature,
                  signing_key_version, c_after, r_after, s_after,
-                 transition_version, transition_input, transition_hash,
+                 transition_version, transition_input, transition_hash, transition_signature,
                  raw_c, raw_r, raw_s,
                  lyapunov_v_before, delta_v, lyapunov_status, projection_magnitude,
                  projection_triggered, epsilon_injected, suspension_triggered, created_at)
@@ -372,6 +384,7 @@ export async function writeKernelReceipt(
           r.transition_version,
           JSON.stringify(r.transition_input),
           r.transition_hash,
+          transitionSignature,
           r.raw_state.C,
           r.raw_state.R,
           r.raw_state.S,

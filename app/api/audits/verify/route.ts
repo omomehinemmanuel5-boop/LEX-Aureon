@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getClient, initSchema } from '@/lib/db';
-import { verifyReceiptSignature } from '@/lib/kernel_bridge';
+import { verifyReceiptSignature, verifyTransitionSignature } from '@/lib/kernel_bridge';
 import { verifyProductionReceipt } from '@/lib/production_receipt_verifier';
 import { logger, errorFields } from '@/lib/logger';
 
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       sql: `SELECT receipt_id, session_id, m_after, health_band, governor_mode,
                    input_hash, output_hash, receipt_hash, signature, signing_key_version, created_at,
                    c_after, r_after, s_after,
-                   transition_version, transition_input, transition_hash,
+                   transition_version, transition_input, transition_hash, transition_signature,
                    raw_c, raw_r, raw_s, lyapunov_v_before, delta_v, lyapunov_status,
                    projection_magnitude, projection_triggered, epsilon_injected,
                    suspension_triggered, lyapunov_v
@@ -140,12 +140,16 @@ export async function POST(req: Request) {
         lyapunov_status: String(row.lyapunov_status ?? 'unknown'),
       })
       : null;
+    const transitionSignatureValid = row.transition_version && row.transition_hash && row.transition_signature
+      ? verifyTransitionSignature(String(row.transition_version), String(row.transition_hash), String(row.transition_signature))
+      : null;
     return NextResponse.json({
       ok: true,
       status: valid ? 'valid' : 'tampered',
       receipt_id: receiptId,
       signing_key_version: signingKeyVersion,
       transition_verification: transitionVerification,
+      transition_signature_valid: transitionSignatureValid,
       checked_at: new Date().toISOString(),
     });
   } catch (e) {

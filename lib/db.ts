@@ -418,6 +418,7 @@
       transition_version TEXT,
       transition_input TEXT,
       transition_hash TEXT,
+      transition_signature TEXT,
       raw_c REAL,
       raw_r REAL,
       raw_s REAL,
@@ -529,6 +530,7 @@
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN transition_version TEXT`);
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN transition_input TEXT`);
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN transition_hash TEXT`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN transition_signature TEXT`);
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN raw_c REAL`);
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN raw_r REAL`);
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN raw_s REAL`);
