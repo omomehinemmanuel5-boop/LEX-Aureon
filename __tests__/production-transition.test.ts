@@ -4,6 +4,7 @@ import {
   isSimplexState,
   lyapunovDelta,
   productionStateTransition,
+  productionTransitionPayload,
   type ProductionState,
 } from '../lib/production_transition';
 
@@ -55,7 +56,39 @@ describe('authoritative production CRS transition', () => {
       semanticSeverity: 0.82,
       threatSignal: 0.4,
     };
-    expect(productionStateTransition(input)).toEqual(productionStateTransition(input));
+    const first = productionStateTransition(input);
+    expect(first).toEqual(productionStateTransition(input));
+    expect(productionTransitionPayload(input, first)).toBe(productionTransitionPayload(input, first));
+  });
+
+  it('rejects non-finite and out-of-range control inputs before mutation', () => {
+    expect(() => productionStateTransition({ ...base, state: state(Number.NaN, 0.3, 0.7) })).toThrow(/state\.C must be finite/);
+    expect(() => productionStateTransition({ ...base, state: state(0.3, 0.3, 0.4), semanticSeverity: 1.1 })).toThrow(/semanticSeverity must be in/);
+    expect(() => productionStateTransition({ ...base, state: state(0.3, 0.3, 0.4), threatSignal: -0.1 })).toThrow(/threatSignal must be in/);
+    expect(() => productionStateTransition({ ...base, state: state(0.3, 0.3, 0.4), theta: Number.POSITIVE_INFINITY })).toThrow(/theta must be finite/);
+  });
+
+  it('keeps the input object immutable and records projection movement', () => {
+    const input = {
+      ...base,
+      state: state(0.06, 0.07, 0.87),
+      activeLawDelta: { dc: -5, dr: 0, ds: 5 },
+      semanticAttack: true,
+      semanticSeverity: 1,
+      threatSignal: 1,
+    };
+    const before = JSON.stringify(input);
+    const result = productionStateTransition(input);
+    expect(JSON.stringify(input)).toBe(before);
+    expect(isSimplexState(result.state, TAU, 1e-9)).toBe(true);
+    expect(result.projectionMagnitude).toBeGreaterThan(0);
+  });
+
+  it('reports no projection movement when the raw state is already safe', () => {
+    const result = productionStateTransition({ ...base, state: state(1 / 3, 1 / 3, 1 / 3) });
+    expect(result.projectionTriggered).toBe(false);
+    expect(result.projectionMagnitude).toBe(0);
+    expect(result.rawState).toEqual(result.state);
   });
 
   it('reports the exact deployed Vz delta from previous and next states', () => {

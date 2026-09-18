@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
     import { simulateCbf, simulateCbfComparison } from '@/lib/cbf_simulation';
+    import { cbfQPFilter, projectToSimplex } from '@/lib/aureonics_core';
 
     const EPSILON = 1e-7;
 
@@ -37,5 +38,22 @@ import { describe, expect, it } from 'vitest';
       expect(comparison.governed.steps).toBe(comparison.ungoverned.steps);
       expect(comparison.safety_guarantee_holds).toBe(!comparison.governed.safety_violated);
     });
+    it('preserves control conservation and the hard floor at the CBF boundary', () => {
+      const cases: Array<[[number, number, number], [number, number, number], [number, number, number]]> = [
+        [[0.05, 0.20, 0.75], [0.20, -0.10, -0.10], [-0.40, 0.25, 0.15]],
+        [[0.051, 0.474, 0.475], [-0.30, 0.15, 0.15], [-0.20, 0.10, 0.10]],
+        [[1 / 3, 1 / 3, 1 / 3], [0.50, -0.25, -0.25], [0.30, -0.10, -0.20]],
+      ];
+      for (const [x, f, desired] of cases) {
+        const u = cbfQPFilter(x, f, desired, 0.05, 0.1);
+        expect(u.every(Number.isFinite)).toBe(true);
+        expect(u[0] + u[1] + u[2]).toBeCloseTo(0, 10);
+        for (let i = 0; i < 3; i++) expect(x[i] + 0.1 * (f[i] + u[i])).toBeGreaterThanOrEqual(0.05 - EPSILON);
+      }
     });
-    
+    it('makes floor-constrained simplex projection idempotent', () => {
+      const projected = projectToSimplex([-0.4, 0.2, 1.2], 0.05);
+      const projectedAgain = projectToSimplex(projected, 0.05);
+      expect(projectedAgain).toEqual(projected);
+    });
+    });

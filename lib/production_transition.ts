@@ -41,6 +41,33 @@ export interface ProductionTransitionResult {
 const NORMALIZATION_EPS = 1e-12;
 const CENTER = 1 / 3;
 
+function assertFiniteNumber(value: number, name: string): void {
+  if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite`);
+}
+
+function assertFiniteState(state: ProductionState, name: string): void {
+  for (const key of ['C', 'R', 'S'] as const) assertFiniteNumber(state[key], `${name}.${key}`);
+}
+
+function assertFiniteDelta(delta: ProductionDelta, name: string): void {
+  for (const key of ['dc', 'dr', 'ds'] as const) assertFiniteNumber(delta[key], `${name}.${key}`);
+}
+
+/** Validate the replay boundary before any state mutation or normalization. */
+export function validateProductionTransitionInput(input: ProductionTransitionInput): void {
+  assertFiniteState(input.state, 'state');
+  assertFiniteDelta(input.delta, 'delta');
+  assertFiniteDelta(input.postResponseDelta, 'postResponseDelta');
+  if (input.activeLawDelta) assertFiniteDelta(input.activeLawDelta, 'activeLawDelta');
+  for (const [name, value] of [
+    ['semanticSeverity', input.semanticSeverity], ['advGain', input.advGain],
+    ['effectiveTheta', input.effectiveTheta], ['threatSignal', input.threatSignal], ['theta', input.theta],
+  ] as const) assertFiniteNumber(value, name);
+  if (input.semanticSeverity < 0 || input.semanticSeverity > 1) throw new RangeError('semanticSeverity must be in [0, 1]');
+  if (input.threatSignal < 0 || input.threatSignal > 1) throw new RangeError('threatSignal must be in [0, 1]');
+  if (input.theta < THETA_MIN || input.theta > THETA_MAX) throw new RangeError(`theta must be in [${THETA_MIN}, ${THETA_MAX}]`);
+}
+
 function normalize(state: ProductionState): ProductionState {
   const total = state.C + state.R + state.S;
   return total > NORMALIZATION_EPS
@@ -79,8 +106,9 @@ function projectionMagnitude(before: ProductionState, after: ProductionState): n
  * epsilon injection, high-severity pressure, threat signal, then floor projection.
  */
 export function productionStateTransition(input: ProductionTransitionInput): ProductionTransitionResult {
-  const severity = Math.max(0, Math.min(1, input.semanticSeverity));
-  const threat = Math.max(0, Math.min(1, input.threatSignal));
+  validateProductionTransitionInput(input);
+  const severity = input.semanticSeverity;
+  const threat = input.threatSignal;
   let state = applyMinimumDelta(add(input.state, input.delta), input.delta);
   state = add(state, input.postResponseDelta);
 
@@ -181,5 +209,13 @@ export function lyapunovDelta(
 ): number {
   const candidate = (state: ProductionState) => lyapunovBarrierZ([state.C, state.R, state.S], z);
   return candidate(next) - candidate(previous);
+}
+
+/** Stable, JSON-serializable payload used for receipt hashing and replay. */
+export function productionTransitionPayload(
+  input: ProductionTransitionInput,
+  result: ProductionTransitionResult,
+): string {
+  return JSON.stringify({ version: PRODUCTION_TRANSITION_VERSION, input, result });
 }
 export const PRODUCTION_TRANSITION_VERSION = 'production-transition-v1';

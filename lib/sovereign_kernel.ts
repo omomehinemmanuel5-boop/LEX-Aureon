@@ -219,7 +219,12 @@ import { LEX_IDENTITY, LEX_IDENTITY_MINIMAL, LEX_IDENTITY_STABLE_CORE, LEX_IDENT
 import { getCodebaseSummary } from './codebase_summary';
 import { getCapabilitiesSummary, getDetailedCapabilities } from './capability_discovery';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
-import { productionStateTransition } from './production_transition';
+import {
+  productionStateTransition,
+  productionTransitionPayload,
+  PRODUCTION_TRANSITION_VERSION,
+  type ProductionTransitionInput,
+} from './production_transition';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
 import { getLawImpact } from './kv';
@@ -299,8 +304,12 @@ export interface KernelReceipt {
   effective_theta:             number;
   health_band:                 string;
   theta:                       number;
+  lyapunov_V_before:           number;
   lyapunov_V:                  number;
   delta_V:                     number;
+  // Production discrete descent is measured here; the continuous-flow proof
+  // does not establish ΔV <= 0 for this complete deployed transition.
+  lyapunov_status:             'measured_not_proven';
   stability_ratio:             number;
   epsilon_injected:            boolean;
   suspension_triggered:        boolean;
@@ -331,6 +340,9 @@ export interface KernelReceipt {
   // the receipt shows exactly what self-knowledge the model received,
   // rather than requiring a re-derivation from other receipt fields.
   identity_live_state_line?:    string;
+  transition_version:           string;
+  transition_input:             ProductionTransitionInput;
+  transition_hash:              string;
 }
 
 export interface KernelCycleResult {
@@ -1167,7 +1179,7 @@ export class SovereignKernel {
     if (this.session_decisions.length > 20) { this.session_decisions.shift(); this.session_compliance.shift(); }
     if (this.session_responses.length > 20) this.session_responses.shift();
 
-    const transition = productionStateTransition({
+    const transitionInput: ProductionTransitionInput = {
       state: this.state,
       delta,
       postResponseDelta: { dc: postMetrics.c_delta, dr: postMetrics.r_delta, ds: postMetrics.s_delta },
@@ -1178,7 +1190,8 @@ export class SovereignKernel {
       effectiveTheta,
       threatSignal: clampedThreat,
       theta: this.theta,
-    });
+    };
+    const transition = productionStateTransition(transitionInput);
     this.state = transition.state;
     this.theta = transition.theta;
     const rawState = transition.rawState;
@@ -1191,7 +1204,8 @@ export class SovereignKernel {
     // ── V_z with session-adaptive z ───────────────────────────────────────────
     const activeZ: [number, number, number] = sessionZ ?? Z_RECOVERY;
     const lyapunovV = this.lyapunovCandidate(projectedState, activeZ);
-    const deltaV = lyapunovV - this.prev_lyapunov_V;
+    const lyapunovVBefore = this.prev_lyapunov_V;
+    const deltaV = lyapunovV - lyapunovVBefore;
     this.delta_v_total_steps += 1;
     if (deltaV < 0) this.delta_v_negative_steps++;
     else if (deltaV > 0) this.delta_v_positive_steps++;
@@ -1203,6 +1217,7 @@ export class SovereignKernel {
     const crypto = await import('crypto');
     const sha256 = (data: string) => crypto.createHash('sha256').update(data).digest('hex');
     const [inputHash, outputHash] = [sha256(userPrompt), sha256(governedResponse)];
+    const transitionHash = sha256(productionTransitionPayload(transitionInput, transition));
 
     const receipt: KernelReceipt = {
       timestamp_iso: new Date().toISOString(),
@@ -1219,8 +1234,10 @@ export class SovereignKernel {
       attack_pressure: Math.round(this.attack_pressure * 1e6) / 1e6,
       effective_theta: Math.round(effectiveTheta * 1e6) / 1e6,
       health_band, theta: Math.round(this.theta * 1e6) / 1e6,
+      lyapunov_V_before: Math.round(lyapunovVBefore * 1e8) / 1e8,
       lyapunov_V: Math.round(lyapunovV * 1e8) / 1e8,
       delta_V: Math.round(deltaV * 1e8) / 1e8,
+      lyapunov_status: 'measured_not_proven',
       stability_ratio: Math.round(stabilityRatio * 1e6) / 1e6,
       epsilon_injected: epsilonInjected, suspension_triggered: suspensionTriggered,
       semantic_signal: semanticSignal,
@@ -1236,6 +1253,9 @@ export class SovereignKernel {
       post_response_metrics: postMetrics,
       identity_mode: identityMode,
       identity_live_state_line: dynamicIdentityBlock,
+      transition_version: PRODUCTION_TRANSITION_VERSION,
+      transition_input: transitionInput,
+      transition_hash: transitionHash,
     };
 
     return {
