@@ -349,6 +349,12 @@ function ResearchStatusSection() {
       tone: 'emerald',
     },
     {
+      label: 'Closed',
+      title: 'z-aware governor direction',
+      detail: 'The live and replay paths now use the active session-weighted negative projected gradient of V_z, removing the nonuniform-weight sign obstruction.',
+      tone: 'emerald',
+    },
+    {
       label: 'Resolved numerically',
       title: 'FPL-1 simulator classification',
       detail: 'The governed counterfactual reports stable + forward-invariant behavior at dt=0.1 in a seeded, finite-horizon numerical run.',
@@ -357,7 +363,7 @@ function ResearchStatusSection() {
     {
       label: 'Still open',
       title: 'Analytical multi-pillar proof',
-      detail: 'The remaining gap is the closed-form governor-vs-drift margin in simultaneous pillar stress.',
+      detail: 'The remaining gap is the closed-form magnitude bound showing z-aware governor descent dominates admissible drift under simultaneous pillar stress.',
       tone: 'slate',
     },
   ];
@@ -380,7 +386,7 @@ function ResearchStatusSection() {
           </h2>
           <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
             The landing page now shows one active mathematical frontier: the analytical multi-pillar Lyapunov proof.
-            Closed z-update and Pareto-frontier results are no longer presented as open problems.
+            z-update, z-aware governor direction, and Pareto-frontier results are no longer presented as open problems.
           </p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">

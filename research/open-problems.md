@@ -18,7 +18,7 @@ Remaining gap:
 - Prove the quantitative governor-vs-drift margin in the multi-pillar region under an explicit admissible weight envelope:
 
 ```text
-|⟨∇V_z, G⟩| ≥ ⟨∇V_z, F⟩
+|⟨∇V_z, G_z⟩| ≥ ⟨∇V_z, F⟩
 ```
 
 This is the same kind of margin condition already discharged in the single-pillar regime (`k0/ε_k > 3B/2`), but it has not yet been expressed and proven in closed form for simultaneous multi-pillar stress. The z-direction obstruction is closed by `calculateZAwareGovernorG()` and its regression coverage; the remaining question is whether its descent magnitude dominates the admissible drift envelope.
@@ -31,6 +31,10 @@ Suggested next proof route:
 2. Bound `⟨∇V_z,F⟩` over the floor-simplex under that envelope.
 3. Compare the bound against the already sign-correct governor term.
 4. State the resulting parameter condition without weakening `TAU_FLOOR`, `TAU_RECOVERY`, or the simplex invariant.
+
+### Historical derivation notes
+
+The notes below record the earlier investigation and are retained for provenance. Their claims about a z-independent deployed governor and a two-regime floor-only correction were superseded by the verified live call path and the z-aware governor implementation in `968bf8b`.
 
 ### Progress note (2026-09-06)
 
@@ -53,7 +57,7 @@ admissible envelope" reduces to checking these two specific vectors, not
 an open-ended adversarial search. `multi_attack`'s symmetric direction is
 the natural candidate for the binding case.
 
-**2. The margin condition is not one inequality — it's two, by regime.**
+**2. Historical note — superseded by the z-aware implementation.**
 The deployed governor (`lib/praxis.ts` `applyGovernorCorrection`, the
 function `AGENTS.md`'s PRAXIS pipeline confirms actually runs in
 production) uses `φ_i = max(0, τ-x_i)` with `τ = TAU_FLOOR = 0.05`
@@ -87,7 +91,7 @@ Exact closed-form gradient available for the next step (`lib/aureonics_core.ts`
 ∂V_z/∂x_i = -z_i/x_i - μ·φ_i     (φ_i = max(0, τ-x_i)),  μ = MU = 2.0
 ```
 
-Not yet done: the actual symbolic bound in Regime B for the `multi_attack`
+Not yet done: the actual symbolic bound in the z-aware multi-pillar regime for the `multi_attack`
 direction, checked against `attack_vector_disclosure`, reduced to a
 closed-form parameter condition in `k0, ε_k, μ, τ` matching the shape of
 the closed single-pillar result (`k0/ε_k > 3B/2`).

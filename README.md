@@ -118,11 +118,12 @@ Lex Aureon separates deployed engineering claims from mathematical claims:
 | Single-pillar Lyapunov stability | Closed in the scoped analytical regime. |
 | Nonlinear Pareto frontier | **Closed**; phase transition and brittleness formalized. |
 | Dynamic z-update rule | **Closed**; Banach fixed-point rule deployed in `lib/kv.ts`. |
+| z-aware governor direction | **Closed**; the live and replay paths use the active session-weighted negative projected gradient of `V_z`. |
 | FPL-1 simulator classification | **Resolved numerically**; governed counterfactual certifies `LYAPUNOV STABLE + FORWARD INVARIANT` at the continuous-flow limit. |
-| Multi-pillar global Lyapunov proof | **Still open**; current residual is the closed-form governor-vs-drift margin. |
+| Multi-pillar global Lyapunov proof | **Still open**; z-alignment is closed, while the quantitative governor-vs-drift margin remains unproved. |
 | Deployed production transition | `production-transition-v2` enforces conditional post-guard `ΔV_z≤0` for valid floor-constrained states and positive finite session weights; replay is versioned and receipt-authenticated. |
 
-> **Important boundary:** the v2 result is a conditional post-guard property of the deployed discrete transition. It does not prove that the unguarded governor dynamics are intrinsically descending, and it does not replace the analytical multi-pillar proof for every future transition version.
+> **Important boundary:** the z-aware governor has a non-positive continuous-time directional derivative for the active `V_z` under positive session weights. The complete discrete production transition still relies on its post-guard for conditional non-increase, and the global governor-versus-drift magnitude inequality remains unproved.
 
 The open-problem tracker is `research/open-problems.md`. It now lists only the remaining mathematical open problem and points resolved items to their closure notes.
 
