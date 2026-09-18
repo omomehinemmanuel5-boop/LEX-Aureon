@@ -56,4 +56,25 @@ import { describe, expect, it } from 'vitest';
       const projectedAgain = projectToSimplex(projected, 0.05);
       expect(projectedAgain).toEqual(projected);
     });
+    it('preserves feasibility across a deterministic bounded stress set', () => {
+      let seed = 8811;
+      const next = () => {
+        seed = (1103515245 * seed + 12345) >>> 0;
+        return seed / 0xffffffff;
+      };
+      for (let n = 0; n < 500; n++) {
+        const c = 0.05 + next() * 0.55;
+        const r = 0.05 + next() * (0.90 - c);
+        const x: [number, number, number] = [c, r, 1 - c - r];
+        const f0 = (next() - 0.5) * 0.4;
+        const f1 = (next() - 0.5) * 0.4;
+        const f: [number, number, number] = [f0, f1, -f0 - f1];
+        const u0 = (next() - 0.5) * 0.4;
+        const u1 = (next() - 0.5) * 0.4;
+        const u = cbfQPFilter(x, f, [u0, u1, -u0 - u1], 0.05, 0.1);
+        expect(u.every(Number.isFinite)).toBe(true);
+        expect(u[0] + u[1] + u[2]).toBeCloseTo(0, 9);
+        for (let i = 0; i < 3; i++) expect(x[i] + 0.1 * (f[i] + u[i])).toBeGreaterThanOrEqual(0.05 - EPSILON);
+      }
+    });
     });

@@ -415,6 +415,16 @@
       slow_drip       INTEGER NOT NULL DEFAULT 0,
       governor_effort REAL    NOT NULL DEFAULT 0.0,
       sigma_viol      REAL    NOT NULL DEFAULT 0.0,
+      transition_version TEXT,
+      transition_input TEXT,
+      transition_hash TEXT,
+      lyapunov_v_before REAL,
+      delta_v REAL,
+      lyapunov_status TEXT,
+      projection_magnitude REAL,
+      projection_triggered INTEGER,
+      epsilon_injected INTEGER,
+      suspension_triggered INTEGER,
       created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
 
@@ -513,6 +523,16 @@
 
     await safeExec(`ALTER TABLE z_traj ADD COLUMN attack_pressure REAL NOT NULL DEFAULT 0.0`);
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN crs_method TEXT`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN transition_version TEXT`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN transition_input TEXT`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN transition_hash TEXT`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN lyapunov_v_before REAL`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN delta_v REAL`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN lyapunov_status TEXT`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN projection_magnitude REAL`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN projection_triggered INTEGER`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN epsilon_injected INTEGER`);
+    await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN suspension_triggered INTEGER`);
 
     // ── fix #7: add health_band column to praxis_receipts (2026-06-12) ─────────
     await safeExec(`ALTER TABLE praxis_receipts ADD COLUMN health_band TEXT`);

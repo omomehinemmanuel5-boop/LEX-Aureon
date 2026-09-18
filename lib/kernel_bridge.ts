@@ -91,6 +91,16 @@ async function ensureHashColumns(db: ReturnType<typeof getClient>): Promise<void
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN c_after REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN r_after REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN s_after REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_version TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_input TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_hash TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN lyapunov_v_before REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN delta_v REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN lyapunov_status TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN projection_magnitude REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN projection_triggered INTEGER');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN epsilon_injected INTEGER');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN suspension_triggered INTEGER');
   _hashColsReady = true;
 }
 
@@ -332,8 +342,11 @@ export async function writeKernelReceipt(
                  m_before, m_after, governor_mode, intervention,
                  slow_drip, governor_effort, sigma_viol, crs_method,
                  input_hash, output_hash, receipt_hash, signature,
-                 signing_key_version, c_after, r_after, s_after, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 signing_key_version, c_after, r_after, s_after,
+                 transition_version, transition_input, transition_hash,
+                 lyapunov_v_before, delta_v, lyapunov_status, projection_magnitude,
+                 projection_triggered, epsilon_injected, suspension_triggered, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           receiptId, sessionId, turn, 'CLEAR',
           mBefore,
@@ -352,6 +365,16 @@ export async function writeKernelReceipt(
           result.state.C,
           result.state.R,
           result.state.S,
+          r.transition_version,
+          JSON.stringify(r.transition_input),
+          r.transition_hash,
+          r.lyapunov_V_before,
+          r.delta_V,
+          r.lyapunov_status,
+          result.projection_magnitude,
+          result.receipt.safety_projection_triggered ? 1 : 0,
+          result.epsilon_injected ? 1 : 0,
+          result.suspension_triggered ? 1 : 0,
           createdAt,
         ],
       });

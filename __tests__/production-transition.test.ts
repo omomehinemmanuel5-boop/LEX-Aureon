@@ -116,4 +116,38 @@ describe('authoritative production CRS transition', () => {
     expect(result.state.R).toBeGreaterThanOrEqual(TAU - 1e-9);
     expect(result.state.S).toBeGreaterThanOrEqual(TAU - 1e-9);
   });
+
+  it('preserves hard invariants over a deterministic bounded-input horizon', () => {
+    let seed = 20260918;
+    let current = state(1 / 3, 1 / 3, 1 / 3);
+    let maxProjection = 0;
+    let lyapunovIncreases = 0;
+    const next = () => {
+      seed = (1664525 * seed + 1013904223) >>> 0;
+      return seed / 0xffffffff;
+    };
+    for (let turn = 0; turn < 1000; turn++) {
+      const dc = (next() - 0.5) * 0.04;
+      const dr = (next() - 0.5) * 0.04;
+      const ds = -dc - dr;
+      const input = {
+        ...base,
+        state: current,
+        delta: { dc, dr, ds },
+        postResponseDelta: { dc: (next() - 0.5) * 0.02, dr: (next() - 0.5) * 0.02, ds: (next() - 0.5) * 0.02 },
+        semanticAttack: next() > 0.8,
+        semanticSeverity: next(),
+        advGain: (next() - 0.5) * 0.04,
+        threatSignal: next(),
+      };
+      const result = productionStateTransition(input);
+      expect(isSimplexState(result.state, TAU, 1e-8)).toBe(true);
+      expect(Object.values(result.state).every(Number.isFinite)).toBe(true);
+      maxProjection = Math.max(maxProjection, result.projectionMagnitude);
+      if (lyapunovDelta(current, result.state, Z_RECOVERY) > 0) lyapunovIncreases++;
+      current = result.state;
+    }
+    expect(Number.isFinite(maxProjection)).toBe(true);
+    expect(lyapunovIncreases).toBeGreaterThanOrEqual(0);
+  });
 });

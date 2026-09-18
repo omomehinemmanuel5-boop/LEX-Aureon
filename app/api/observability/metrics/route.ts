@@ -31,6 +31,11 @@ interface MetricsResponse {
     avg_m_before:        number;
     avg_m_after:         number;
     avg_governor_effort: number;
+    projection_rate:     number;
+    avg_projection_magnitude: number;
+    suspension_rate:     number;
+    epsilon_injection_rate: number;
+    lyapunov_increase_rate: number;
   };
   health_distribution: { OPTIMAL: number; ALERT: number; STRESSED: number; CRITICAL: number };
   health_status: 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
@@ -50,6 +55,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 AVG(CAST(m_before        AS REAL))                                  AS avg_m_before,
                 AVG(CAST(m_after         AS REAL))                                  AS avg_m_after,
                 AVG(CAST(governor_effort AS REAL))                                  AS avg_governor_effort,
+                AVG(CASE WHEN projection_triggered = 1 THEN 1.0 ELSE 0.0 END)       AS projection_rate,
+                AVG(COALESCE(CAST(projection_magnitude AS REAL), 0.0))              AS avg_projection_magnitude,
+                AVG(CASE WHEN suspension_triggered = 1 THEN 1.0 ELSE 0.0 END)       AS suspension_rate,
+                AVG(CASE WHEN epsilon_injected = 1 THEN 1.0 ELSE 0.0 END)           AS epsilon_injection_rate,
+                AVG(CASE WHEN lyapunov_v_before IS NOT NULL AND lyapunov_status = 'measured_not_proven'
+                         AND lyapunov_v_before + COALESCE(delta_v, 0.0) > lyapunov_v_before
+                         THEN 1.0 ELSE 0.0 END)                                     AS lyapunov_increase_rate,
                 SUM(CASE WHEN m_after >= 0.25                          THEN 1 ELSE 0 END) AS optimal_count,
                 SUM(CASE WHEN m_after >= 0.15 AND m_after < 0.25       THEN 1 ELSE 0 END) AS alert_count,
                 SUM(CASE WHEN m_after >= 0.08 AND m_after < 0.15       THEN 1 ELSE 0 END) AS stressed_count,
@@ -81,6 +93,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const avgMBefore         = Number(s.avg_m_before         ?? 0);
     const avgMAfter          = Number(s.avg_m_after          ?? 0);
     const avgEffort          = Number(s.avg_governor_effort  ?? 0);
+    const projectionRate     = Number(s.projection_rate ?? 0);
+    const avgProjection      = Number(s.avg_projection_magnitude ?? 0);
+    const suspensionRate     = Number(s.suspension_rate ?? 0);
+    const epsilonRate        = Number(s.epsilon_injection_rate ?? 0);
+    const lyapunovIncreaseRate = Number(s.lyapunov_increase_rate ?? 0);
     const interventionRate   = totalCalls > 0 ? totalInterventions / totalCalls : 0;
 
     let healthStatus: MetricsResponse['health_status'] = 'OPTIMAL';
@@ -113,6 +130,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         avg_m_before:        Math.round(avgMBefore         * 1000)  / 1000,
         avg_m_after:         Math.round(avgMAfter          * 1000)  / 1000,
         avg_governor_effort: Math.round(avgEffort          * 1000)  / 1000,
+        projection_rate: Math.round(projectionRate * 10000) / 10000,
+        avg_projection_magnitude: Math.round(avgProjection * 1e6) / 1e6,
+        suspension_rate: Math.round(suspensionRate * 10000) / 10000,
+        epsilon_injection_rate: Math.round(epsilonRate * 10000) / 10000,
+        lyapunov_increase_rate: Math.round(lyapunovIncreaseRate * 10000) / 10000,
       },
       health_distribution: {
         OPTIMAL:  Number(s.optimal_count  ?? 0),

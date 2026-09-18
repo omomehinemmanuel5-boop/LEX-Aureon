@@ -272,13 +272,15 @@ export function applyDescentGuard(
 
 // ── CBF QP Safety Filter (port from Python cbf_service.py) ───────────────────
 //
-// Discrete-time CBF safety filter (exact QP solution for n=3):
+// Discrete-time CBF safety filter (n=3 active-set implementation):
 //   min ||u - u_des||²  s.t.  u_i ≥ (τ - xᵢ)/dt - fᵢ,  Σu = 0
 //
 // Guarantees: x_i(t+1) = x_i + dt·(f_i + u_i) ≥ τ for all i,
 // while maintaining mass conservation (Σu = 0).
 //
-// This is the Python QP implementation ported to TypeScript.
+// This is the Python active-set implementation ported to TypeScript. Safety
+// and conservation are tested across boundary and stress cases; exact global
+// optimality is not claimed until the finite active-set proof is established.
 // It is stricter than the Duchi projection in projectToSimplex because
 // it constrains the CONTROL INPUT u rather than projecting the state.
 
