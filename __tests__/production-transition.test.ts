@@ -88,7 +88,9 @@ describe('authoritative production CRS transition', () => {
     const result = productionStateTransition({ ...base, state: state(1 / 3, 1 / 3, 1 / 3) });
     expect(result.projectionTriggered).toBe(false);
     expect(result.projectionMagnitude).toBe(0);
-    expect(result.rawState).toEqual(result.state);
+    expect(Object.values(result.rawState).every(Number.isFinite)).toBe(true);
+    expect(result.descentGuardTriggered).toBe(true);
+    expect(result.descentGuardScale).toBeLessThan(1);
   });
 
   it('reports the exact deployed Vz delta from previous and next states', () => {
@@ -115,6 +117,23 @@ describe('authoritative production CRS transition', () => {
     expect(result.state.C).toBeGreaterThanOrEqual(TAU - 1e-9);
     expect(result.state.R).toBeGreaterThanOrEqual(TAU - 1e-9);
     expect(result.state.S).toBeGreaterThanOrEqual(TAU - 1e-9);
+  });
+
+  it('guards a projection-induced positive Lyapunov change', () => {
+    const result = productionStateTransition({
+      ...base,
+      state: state(0.25879935105536117, 0.6795013857712797, 0.061699263173359054),
+      delta: { dc: -0.010062843353967845, dr: -0.004894895578011613, ds: 0.01337487512113873 },
+      postResponseDelta: { dc: -0.008279601079011243, dr: 0.001734651525443105, ds: -0.004452800148737803 },
+      activeLawDelta: { dc: 0.04700444171833909, dr: -0.08449215897929208, ds: -0.06371742164802678 },
+      semanticSeverity: 0.9882000535699074,
+      advGain: 0.017194137749540185,
+      semanticAttack: false,
+      threatSignal: 0.5391464404620105,
+      lyapunovWeights: Z_RECOVERY,
+    });
+    expect(result.descentGuardTriggered).toBe(true);
+    expect(lyapunovDelta(state(0.25879935105536117, 0.6795013857712797, 0.061699263173359054), result.state, Z_RECOVERY)).toBeLessThanOrEqual(1e-10);
   });
 
   it('preserves hard invariants over a deterministic bounded-input horizon', () => {

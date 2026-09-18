@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { lyapunovBarrierZ, TAU, Z_RECOVERY } from '../lib/aureonics_core';
-import { productionStateTransition, productionTransitionPayload, type ProductionState, type ProductionTransitionInput } from '../lib/production_transition';
+import { productionStateTransition, productionTransitionPayload, PRODUCTION_TRANSITION_VERSION, type ProductionState, type ProductionTransitionInput } from '../lib/production_transition';
 import { verifyProductionReceipt, type PersistedTransitionReceipt } from '../lib/production_receipt_verifier';
 import { createHash } from 'crypto';
 
@@ -21,7 +21,7 @@ function makeReceipt(): PersistedTransitionReceipt {
   const previousV = lyapunovBarrierZ([input.state.C, input.state.R, input.state.S], Z_RECOVERY);
   const nextV = lyapunovBarrierZ([result.state.C, result.state.R, result.state.S], Z_RECOVERY);
   return {
-    transition_version: 'production-transition-v1',
+    transition_version: PRODUCTION_TRANSITION_VERSION,
     transition_input: input,
     transition_hash: createHash('sha256').update(productionTransitionPayload(input, result)).digest('hex'),
     projected_state: result.state,

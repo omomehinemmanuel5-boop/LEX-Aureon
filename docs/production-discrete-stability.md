@@ -44,6 +44,8 @@ Because the floor-constrained simplex is convex, the mean-value theorem gives th
 
 The transition certificate computes and tests this bound for each committed transition. It bounds the magnitude of certificate movement; it does **not** determine the sign of the movement and therefore does not prove descent.
 
+The deployed transition now applies a final convex-segment descent guard using the active session weights. If the candidate would increase \(V_z\), the guard retracts it toward the previous committed state by bisection until the measured change is non-positive within tolerance. This establishes a **conditional post-guard non-increase property** for valid floor-constrained input states and positive finite weights. It does not yet constitute a proof for malformed inputs, unsupported weight updates, or every future transition version.
+
 ## Evidence classification
 
 | Property | Current status |
@@ -55,5 +57,6 @@ The transition certificate computes and tests this bound for each committed tran
 | CBF control feasibility | Stress-tested for bounded cases |
 | Per-turn Lyapunov change | Measured and persisted |
 | Conditional certificate-change bound | Computed from floor and displacement assumptions |
+| Post-guard non-increase on valid inputs | Enforced and regression-tested |
 | Global discrete \(\Delta V_z \leq 0\) | Open |
 | Continuous-flow descent argument | Applies only to the idealized flow |

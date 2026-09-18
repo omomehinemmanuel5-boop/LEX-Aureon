@@ -14,6 +14,7 @@ export interface ProductionTransitionCertificate {
   lyapunov_change_bound: number;
   lyapunov_bound_holds: boolean;
   descent_observed: boolean;
+  guarded_non_increase: boolean;
   stability_status: StabilityEvidenceStatus;
   assumptions: {
     bounded_input: boolean;
@@ -80,6 +81,7 @@ export function certifyProductionTransition(
     lyapunov_change_bound: lyapunovChangeBound,
     lyapunov_bound_holds: Math.abs(delta) <= lyapunovChangeBound + 1e-9,
     descent_observed: Number.isFinite(delta) && delta <= 0,
+    guarded_non_increase: Number.isFinite(delta) && delta <= 1e-10,
     stability_status: 'measured_not_proven',
     assumptions: {
       bounded_input: boundedInput,

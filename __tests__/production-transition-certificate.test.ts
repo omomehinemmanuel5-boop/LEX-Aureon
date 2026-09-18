@@ -24,6 +24,7 @@ describe('production transition certificate', () => {
     expect(certificate.assumptions.bounded_input).toBe(true);
     expect(certificate.assumptions.supported_floor).toBe(true);
     expect(certificate.stability_status).toBe('measured_not_proven');
+    expect(certificate.guarded_non_increase).toBe(true);
     expect(Number.isFinite(certificate.lyapunov_delta)).toBe(true);
     expect(certificate.lyapunov_bound_holds).toBe(true);
     expect(certificate.lyapunov_change_bound).toBeGreaterThanOrEqual(Math.abs(certificate.lyapunov_delta));

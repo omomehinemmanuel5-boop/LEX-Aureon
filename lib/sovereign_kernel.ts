@@ -343,6 +343,8 @@ export interface KernelReceipt {
   transition_version:           string;
   transition_input:             ProductionTransitionInput;
   transition_hash:              string;
+  descent_guard_triggered:      boolean;
+  descent_guard_scale:          number;
 }
 
 export interface KernelCycleResult {
@@ -1190,6 +1192,7 @@ export class SovereignKernel {
       effectiveTheta,
       threatSignal: clampedThreat,
       theta: this.theta,
+      lyapunovWeights: sessionZ ?? Z_RECOVERY,
     };
     const transition = productionStateTransition(transitionInput);
     this.state = transition.state;
@@ -1256,6 +1259,8 @@ export class SovereignKernel {
       transition_version: PRODUCTION_TRANSITION_VERSION,
       transition_input: transitionInput,
       transition_hash: transitionHash,
+      descent_guard_triggered: transition.descentGuardTriggered,
+      descent_guard_scale: transition.descentGuardScale,
     };
 
     return {

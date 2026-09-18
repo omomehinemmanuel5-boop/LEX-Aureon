@@ -26,6 +26,7 @@ export interface ProductionTransitionInput {
   effectiveTheta: number;
   threatSignal: number;
   theta: number;
+  lyapunovWeights?: [number, number, number];
 }
 
 export interface ProductionTransitionResult {
@@ -36,6 +37,8 @@ export interface ProductionTransitionResult {
   projectionMagnitude: number;
   suspensionTriggered: boolean;
   epsilonInjected: boolean;
+  descentGuardTriggered: boolean;
+  descentGuardScale: number;
 }
 
 const NORMALIZATION_EPS = 1e-12;
@@ -56,6 +59,7 @@ function assertFiniteDelta(delta: ProductionDelta, name: string): void {
 /** Validate the replay boundary before any state mutation or normalization. */
 export function validateProductionTransitionInput(input: ProductionTransitionInput): void {
   assertFiniteState(input.state, 'state');
+  if (!isSimplexState(input.state, TAU, 1e-9)) throw new RangeError('state must satisfy simplex and floor invariants');
   assertFiniteDelta(input.delta, 'delta');
   assertFiniteDelta(input.postResponseDelta, 'postResponseDelta');
   if (input.activeLawDelta) assertFiniteDelta(input.activeLawDelta, 'activeLawDelta');
@@ -66,6 +70,9 @@ export function validateProductionTransitionInput(input: ProductionTransitionInp
   if (input.semanticSeverity < 0 || input.semanticSeverity > 1) throw new RangeError('semanticSeverity must be in [0, 1]');
   if (input.threatSignal < 0 || input.threatSignal > 1) throw new RangeError('threatSignal must be in [0, 1]');
   if (input.theta < THETA_MIN || input.theta > THETA_MAX) throw new RangeError(`theta must be in [${THETA_MIN}, ${THETA_MAX}]`);
+  if (input.lyapunovWeights && (!input.lyapunovWeights.every(Number.isFinite) || input.lyapunovWeights.some(value => value <= 0))) {
+    throw new RangeError('lyapunovWeights must be finite and positive');
+  }
 }
 
 function normalize(state: ProductionState): ProductionState {
@@ -184,16 +191,46 @@ export function productionStateTransition(input: ProductionTransitionInput): Pro
   const projected = preProjectionBelowFloor
     ? projectToSimplex([state.C, state.R, state.S])
     : [state.C, state.R, state.S] as [number, number, number];
-  state = { C: projected[0], R: projected[1], S: projected[2] };
+  const candidate: ProductionState = { C: projected[0], R: projected[1], S: projected[2] };
+  const projectionDistance = projectionMagnitude(rawState, candidate);
+  const weights = input.lyapunovWeights ?? [1 / 3, 1 / 3, 1 / 3] as [number, number, number];
+  const previousV = lyapunovBarrierZ([input.state.C, input.state.R, input.state.S], weights);
+  const candidateV = lyapunovBarrierZ([candidate.C, candidate.R, candidate.S], weights);
+  let descentGuardTriggered = false;
+  let descentGuardScale = 1;
+  state = candidate;
+  if (candidateV > previousV + 1e-12) {
+    let low = 0;
+    let high = 1;
+    for (let iteration = 0; iteration < 60; iteration++) {
+      const alpha = (low + high) / 2;
+      const interpolated: ProductionState = {
+        C: input.state.C + alpha * (candidate.C - input.state.C),
+        R: input.state.R + alpha * (candidate.R - input.state.R),
+        S: input.state.S + alpha * (candidate.S - input.state.S),
+      };
+      if (lyapunovBarrierZ([interpolated.C, interpolated.R, interpolated.S], weights) <= previousV) low = alpha;
+      else high = alpha;
+    }
+    descentGuardScale = low;
+    state = {
+      C: input.state.C + low * (candidate.C - input.state.C),
+      R: input.state.R + low * (candidate.R - input.state.R),
+      S: input.state.S + low * (candidate.S - input.state.S),
+    };
+    descentGuardTriggered = true;
+  }
 
   return {
     state,
     rawState,
     theta,
     projectionTriggered: preProjectionBelowFloor,
-    projectionMagnitude: projectionMagnitude(rawState, state),
+    projectionMagnitude: projectionDistance,
     suspensionTriggered,
     epsilonInjected,
+    descentGuardTriggered,
+    descentGuardScale,
   };
 }
 
@@ -218,4 +255,4 @@ export function productionTransitionPayload(
 ): string {
   return JSON.stringify({ version: PRODUCTION_TRANSITION_VERSION, input, result });
 }
-export const PRODUCTION_TRANSITION_VERSION = 'production-transition-v1';
+export const PRODUCTION_TRANSITION_VERSION = 'production-transition-v2';
