@@ -28,6 +28,22 @@ There are three acceptable outcomes:
 
 The implementation must not label outcome 2 or 3 as a global Lyapunov proof.
 
+## Conditional result currently implemented
+
+For two committed states on the floor-constrained simplex, the quadratic penalty is inactive and the log-barrier gradient satisfies
+
+\[
+\|\nabla V_z(x)\|_2 \leq \frac{\|z\|_2}{\tau}.
+\]
+
+Because the floor-constrained simplex is convex, the mean-value theorem gives the engineering bound
+
+\[
+|V_z(x')-V_z(x)| \leq \frac{\|z\|_2}{\tau}\,\|x'-x\|_2.
+\]
+
+The transition certificate computes and tests this bound for each committed transition. It bounds the magnitude of certificate movement; it does **not** determine the sign of the movement and therefore does not prove descent.
+
 ## Evidence classification
 
 | Property | Current status |
@@ -38,5 +54,6 @@ The implementation must not label outcome 2 or 3 as a global Lyapunov proof.
 | Deterministic replay | Receipt-verified |
 | CBF control feasibility | Stress-tested for bounded cases |
 | Per-turn Lyapunov change | Measured and persisted |
+| Conditional certificate-change bound | Computed from floor and displacement assumptions |
 | Global discrete \(\Delta V_z \leq 0\) | Open |
 | Continuous-flow descent argument | Applies only to the idealized flow |
