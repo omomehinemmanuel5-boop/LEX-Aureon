@@ -4,24 +4,24 @@ This file tracks only unresolved mathematical problems. Resolved problems stay l
 
 ## Open Problem 1 — Analytical multi-pillar Lyapunov proof
 
-Status: **PARTIAL — residual margin not yet discharged in closed form**
+Status: **PARTIAL — z-alignment closed; residual drift margin not yet discharged in closed form**
 
 Closed sub-results:
 
 - Single-pillar regime is proven under the scoped condition already stated in the project notes.
 - Idealized multi-pillar projected flow is Lyapunov-stable by convexity of `V_z` on the floor-simplex: `ẋ = −Π∇V_z` gives `V̇_z = −‖Π∇V_z‖² ≤ 0` toward the unique minimizer.
-- The deployed governor descent term has no multi-pillar sign obstruction in the checked formulation: `⟨∇V_z, G⟩ ≤ 0`, including two-pillar stressed states.
+- The deployed governor now uses the active z-weighted negative projected gradient, so `⟨∇V_z, G_z⟩ ≤ 0` for arbitrary positive session weights. The previous z-independent governor remains available only as a legacy/reference function.
 - The FPL-1 simulator now numerically certifies `LYAPUNOV STABLE + FORWARD INVARIANT` for the governed counterfactual at the continuous-flow limit. This is numerical evidence, not the analytical proof.
 
 Remaining gap:
 
-- Prove the quantitative governor-vs-drift margin in the multi-pillar region:
+- Prove the quantitative governor-vs-drift margin in the multi-pillar region under an explicit admissible weight envelope:
 
 ```text
 |⟨∇V_z, G⟩| ≥ ⟨∇V_z, F⟩
 ```
 
-This is the same kind of margin condition already discharged in the single-pillar regime (`k0/ε_k > 3B/2`), but it has not yet been expressed and proven in closed form for simultaneous multi-pillar stress.
+This is the same kind of margin condition already discharged in the single-pillar regime (`k0/ε_k > 3B/2`), but it has not yet been expressed and proven in closed form for simultaneous multi-pillar stress. The z-direction obstruction is closed by `calculateZAwareGovernorG()` and its regression coverage; the remaining question is whether its descent magnitude dominates the admissible drift envelope.
 
 Priority: **HIGH**
 
@@ -143,6 +143,10 @@ Not yet done, and now the actual next step: redo the Regime-B-style bound
 above using the real two-term `φ_lin + φ_log`, for both enumerated
 multi-pillar attack vectors, with the confirmed constants
 `(K=4.0, TAU=0.05, TAU_GOV=0.22, MU_BARRIER=0.02, EPS_BARRIER=1e-4)`.
+The derivation must state the allowed range of `z` and the governor gain schedule.
+The unrestricted dynamic-weight sign problem is now removed, but the open
+problem cannot be closed until the z-aware descent magnitude is compared with
+the complete drift envelope.
 Given this is the second correction cycle on a "which function is
 actually deployed" question within the same investigation, this is a
 reasonable point to get a second pass on the confirmed facts above

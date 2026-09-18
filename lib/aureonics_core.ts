@@ -342,6 +342,29 @@ export function calculateGovernorG(
   ] as [number, number, number];
 }
 
+/**
+ * Governor correction aligned with the active z-weighted Lyapunov function.
+ *
+ * The legacy governor above is z-independent, so it cannot guarantee descent
+ * of V_z when session weights are non-uniform. This correction is the
+ * mass-conserving negative projected gradient of V_z. Therefore,
+ * gradVz(x,z) · calculateZAwareGovernorG(x,z)
+ * = -K * ||gradVz(x,z) - mean(gradVz)||² <= 0.
+ */
+export function calculateZAwareGovernorG(
+  x: [number, number, number],
+  z: [number, number, number] = Z_RECOVERY,
+  _tau: number = TAU_GOV,
+): [number, number, number] {
+  const gradient = gradVz(x, z);
+  const mean = (gradient[0] + gradient[1] + gradient[2]) / 3;
+  return [
+    -K * (gradient[0] - mean),
+    -K * (gradient[1] - mean),
+    -K * (gradient[2] - mean),
+  ];
+}
+
 // ── Fitness + Replicator Dynamics ─────────────────────────────────────────────
 
 function calculateFitness(x: [number, number, number], z: number): [number, number, number] {

@@ -7,7 +7,8 @@ import {
   THETA_ETA,
   THETA_MAX,
   THETA_MIN,
-  calculateGovernorG,
+  calculateZAwareGovernorG,
+  Z_RECOVERY,
   lyapunovBarrierZ,
   projectToSimplex,
 } from './aureonics_core';
@@ -131,7 +132,11 @@ export function productionStateTransition(input: ProductionTransitionInput): Pro
 
   const initialMargin = Math.min(state.C, state.R, state.S) - TAU;
   if (initialMargin < TARGET_MARGIN) {
-    const governor = calculateGovernorG([state.C, state.R, state.S], input.effectiveTheta);
+    const governor = calculateZAwareGovernorG(
+      [state.C, state.R, state.S],
+      input.lyapunovWeights ?? Z_RECOVERY,
+      input.effectiveTheta,
+    );
     const scalar = TARGET_MARGIN - initialMargin;
     state = add(state, { dc: governor[0] * scalar, dr: governor[1] * scalar, ds: governor[2] * scalar });
   }

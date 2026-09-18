@@ -73,8 +73,12 @@ export function verifyProductionReceipt(receipt: PersistedTransitionReceipt): Tr
   if (!simplexValid) errors.push('projected state violates simplex or floor invariant');
   const floorValid = receipt.projected_state.C >= TAU - 1e-9 && receipt.projected_state.R >= TAU - 1e-9 && receipt.projected_state.S >= TAU - 1e-9;
   const thetaValid = replay !== null && replay.theta >= THETA_MIN && replay.theta <= THETA_MAX;
-  const expectedLyapunov = lyapunovBarrierZ([receipt.projected_state.C, receipt.projected_state.R, receipt.projected_state.S], Z_RECOVERY);
-  const lyapunovConsistent = Math.abs((receipt.lyapunov_v_before + receipt.delta_v) - receipt.lyapunov_v) <= 1e-7;
+  const weights = input.lyapunovWeights ?? Z_RECOVERY;
+  const expectedBefore = replay === null ? Number.NaN : lyapunovBarrierZ([input.state.C, input.state.R, input.state.S], weights);
+  const expectedLyapunov = lyapunovBarrierZ([receipt.projected_state.C, receipt.projected_state.R, receipt.projected_state.S], weights);
+  const lyapunovConsistent = Math.abs(receipt.lyapunov_v_before - expectedBefore) <= 1e-7 &&
+    Math.abs(receipt.lyapunov_v - expectedLyapunov) <= 1e-7 &&
+    Math.abs((receipt.lyapunov_v_before + receipt.delta_v) - receipt.lyapunov_v) <= 1e-7;
   if (!lyapunovConsistent) errors.push('Lyapunov before/after/delta fields are inconsistent');
 
   return {

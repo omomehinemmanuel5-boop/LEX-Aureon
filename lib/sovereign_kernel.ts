@@ -236,7 +236,7 @@ import {
 import {
   TAU, SOFT_FLOOR, TAU_GOV, TARGET_MARGIN, THETA_0, THETA_MIN, THETA_MAX,
   THETA_ETA, THETA_BETA, SOFT_GAIN, MIN_DELTA, Z_RECOVERY,
-  projectToSimplex, lyapunovBarrierZ, calculateGovernorG,
+  projectToSimplex, lyapunovBarrierZ, calculateZAwareGovernorG,
   computeBasinForceVz, applyDescentGuardVz,
 } from './aureonics_core';
 
@@ -939,7 +939,7 @@ export class SovereignKernel {
     const margin = M - TAU;
     const x0: [number, number, number] = [this.state.C, this.state.R, this.state.S];
     if (margin < TARGET_MARGIN) {
-      const G = calculateGovernorG(x0, effectiveTheta);
+      const G = calculateZAwareGovernorG(x0, sessionZ ?? Z_RECOVERY, effectiveTheta);
       const scalar = TARGET_MARGIN - margin;
       this.state.C += G[0] * scalar;
       this.state.R += G[1] * scalar;
