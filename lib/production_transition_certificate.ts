@@ -34,6 +34,7 @@ function finiteInput(input: ProductionTransitionInput): boolean {
     ...Object.values(input.postResponseDelta),
     ...(input.activeLawDelta ? Object.values(input.activeLawDelta) : []),
     input.semanticSeverity, input.advGain, input.effectiveTheta, input.threatSignal, input.theta,
+    ...(input.lyapunovWeights ?? []),
   ];
   return values.every(Number.isFinite);
 }
@@ -53,7 +54,8 @@ export function certifyProductionTransition(
   const simplexHolds = isSimplexState(result.state, TAU, 1e-9);
   const floorHolds = result.state.C >= TAU - 1e-9 && result.state.R >= TAU - 1e-9 && result.state.S >= TAU - 1e-9;
   const thetaBounded = result.theta >= THETA_MIN && result.theta <= THETA_MAX;
-  const delta = lyapunovDelta(input.state, result.state, z);
+  const activeZ = input.lyapunovWeights ?? z;
+  const delta = lyapunovDelta(input.state, result.state, activeZ);
   const displacement = Math.hypot(
     result.state.C - input.state.C,
     result.state.R - input.state.R,
@@ -62,7 +64,7 @@ export function certifyProductionTransition(
   // On the floor-constrained simplex, the quadratic penalty is inactive and
   // ||∇V_z||₂ <= ||z||₂ / tau. The mean-value bound therefore applies along
   // the convex segment joining two valid committed states.
-  const lyapunovChangeBound = (Math.hypot(...z) / TAU) * displacement;
+  const lyapunovChangeBound = (Math.hypot(...activeZ) / TAU) * displacement;
   const boundedInput = [
     ...Object.values(input.delta),
     ...Object.values(input.postResponseDelta),

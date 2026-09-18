@@ -136,6 +136,24 @@ describe('authoritative production CRS transition', () => {
     expect(lyapunovDelta(state(0.25879935105536117, 0.6795013857712797, 0.061699263173359054), result.state, Z_RECOVERY)).toBeLessThanOrEqual(1e-10);
   });
 
+  it('guards arbitrary positive session weights against severe drift', () => {
+    const previous = state(0.05, 0.7677895, 0.1822105);
+    const weights: [number, number, number] = [0.00041077, 0.00388113, 0.99570810];
+    const result = productionStateTransition({
+      ...base,
+      state: previous,
+      delta: { dc: -4, dr: 2, ds: 2 },
+      postResponseDelta: { dc: 3, dr: -2, ds: -1 },
+      activeLawDelta: { dc: -5, dr: 2, ds: 3 },
+      semanticAttack: true,
+      semanticSeverity: 1,
+      advGain: 0.15,
+      threatSignal: 1,
+      lyapunovWeights: weights,
+    });
+    expect(lyapunovDelta(previous, result.state, weights)).toBeLessThanOrEqual(1e-10);
+  });
+
   it('preserves hard invariants over a deterministic bounded-input horizon', () => {
     let seed = 20260918;
     let current = state(1 / 3, 1 / 3, 1 / 3);

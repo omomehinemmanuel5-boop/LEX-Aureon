@@ -11,6 +11,7 @@ Closed sub-results:
 - Single-pillar regime is proven under the scoped condition already stated in the project notes.
 - Idealized multi-pillar projected flow is Lyapunov-stable by convexity of `V_z` on the floor-simplex: `ẋ = −Π∇V_z` gives `V̇_z = −‖Π∇V_z‖² ≤ 0` toward the unique minimizer.
 - The deployed governor now uses the active z-weighted negative projected gradient, so `⟨∇V_z, G_z⟩ ≤ 0` for arbitrary positive session weights. The previous z-independent governor remains available only as a legacy/reference function.
+- The guarded discrete production transition is closed as an engineering guarantee: for finite inputs and valid positive session weights, its post-guard commits a floor-constrained state with `ΔV_z ≤ 0`; replay and receipt verification use the same active weights.
 - The FPL-1 simulator now numerically certifies `LYAPUNOV STABLE + FORWARD INVARIANT` for the governed counterfactual at the continuous-flow limit. This is numerical evidence, not the analytical proof.
 
 Remaining gap:
@@ -148,9 +149,10 @@ above using the real two-term `φ_lin + φ_log`, for both enumerated
 multi-pillar attack vectors, with the confirmed constants
 `(K=4.0, TAU=0.05, TAU_GOV=0.22, MU_BARRIER=0.02, EPS_BARRIER=1e-4)`.
 The derivation must state the allowed range of `z` and the governor gain schedule.
-The unrestricted dynamic-weight sign problem is now removed, but the open
-problem cannot be closed until the z-aware descent magnitude is compared with
-the complete drift envelope.
+The unrestricted dynamic-weight sign problem and the guarded discrete
+engineering guarantee are now closed. The remaining mathematical question is
+only the unguarded continuous-time magnitude comparison against a complete
+drift envelope; it is not required for the deployed guarded invariant.
 Given this is the second correction cycle on a "which function is
 actually deployed" question within the same investigation, this is a
 reasonable point to get a second pass on the confirmed facts above
