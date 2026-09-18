@@ -120,9 +120,9 @@ Lex Aureon separates deployed engineering claims from mathematical claims:
 | Dynamic z-update rule | **Closed**; Banach fixed-point rule deployed in `lib/kv.ts`. |
 | FPL-1 simulator classification | **Resolved numerically**; governed counterfactual certifies `LYAPUNOV STABLE + FORWARD INVARIANT` at the continuous-flow limit. |
 | Multi-pillar global Lyapunov proof | **Still open**; current residual is the closed-form governor-vs-drift margin. |
-| Deployed production descent rate | Instrumented honestly; production `ΔV_z≤0` does not yet match the idealized continuous-flow proof on all turns. |
+| Deployed production transition | `production-transition-v2` enforces conditional post-guard `ΔV_z≤0` for valid floor-constrained states and positive finite session weights; replay is versioned and receipt-authenticated. |
 
-> **Important boundary:** the simulator certificate is a seeded, finite-horizon numerical certificate. It does not replace the open analytical multi-pillar proof.
+> **Important boundary:** the v2 result is a conditional post-guard property of the deployed discrete transition. It does not prove that the unguarded governor dynamics are intrinsically descending, and it does not replace the analytical multi-pillar proof for every future transition version.
 
 The open-problem tracker is `research/open-problems.md`. It now lists only the remaining mathematical open problem and points resolved items to their closure notes.
 
