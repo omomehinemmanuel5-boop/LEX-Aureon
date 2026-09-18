@@ -522,14 +522,14 @@ export function deterministicScan(args: Record<string, unknown>, toolName?: stri
   return null;
 }
 
-async function scanArguments(args: Record<string, unknown>): Promise<{
+async function scanArguments(args: Record<string, unknown>, toolName?: string): Promise<{
   injection: boolean;
   blocked_pattern: string | null;
   semantic_similarity?: number;
 }> {
   // Fast passes first (injection regex, then hardcoded BLOCKED invariants) —
   // returns immediately on any hit, unchanged latency for the common cases.
-  const det = deterministicScan(args);
+  const det = deterministicScan(args, toolName);
   if (det) return det;
 
   // Second pass: semantic, paraphrase-tolerant injection check — free text
