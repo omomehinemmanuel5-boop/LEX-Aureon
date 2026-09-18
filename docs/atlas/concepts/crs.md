@@ -29,6 +29,6 @@ CRS measurements appear in the frozen PRAXIS empirical record, while broader ben
 
 ## Open questions
 
-The global analytical Lyapunov proof for simultaneous multi-pillar violations remains open. See [`research/open-problems.md`](../../../research/open-problems.md).
+The deployed guarded Lyapunov invariant for simultaneous multi-pillar violations is closed as scoped. An unrestricted unguarded drift-margin theorem is not claimed without an explicit input envelope. See [`research/open-problems.md`](../../../research/open-problems.md).
 
 **Implementation:** [map](../implementation-map.md) · **Research:** [tracker](../../../research/open-problems.md) · **Benchmarks:** [LexBench](../../../LEXBENCH_README.md) · **Related concepts:** [Atlas index](../index.md)

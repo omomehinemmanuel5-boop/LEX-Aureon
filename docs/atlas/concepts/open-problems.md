@@ -17,11 +17,11 @@ Lex Aureon separates a deployed implementation, finite numerical evidence, and a
 
 ## Research lineage
 
-The active tracker preserves the multi-pillar analytical Lyapunov result as open while recording closed or numerically resolved items with their conditions. See [`research/open-problems.md`](../../../research/open-problems.md), [`research/empirical-results.md`](../../../research/empirical-results.md), and [`research/paper-updates.md`](../../../research/paper-updates.md).
+The active tracker records the guarded multi-pillar invariant as closed and documents why an unrestricted unguarded drift-margin theorem is out of scope without an explicit input envelope. See [`research/open-problems.md`](../../../research/open-problems.md), [`research/empirical-results.md`](../../../research/empirical-results.md), and [`research/paper-updates.md`](../../../research/paper-updates.md).
 
 ## Benchmarks and evidence
 
-The finite-horizon simulator evidence is recorded in [`research/empirical-results.md`](../../../research/empirical-results.md). Adversarial benchmark infrastructure lives in [`scripts/lexbench/`](../../../scripts/lexbench/) and published rows are exposed from [`app/api/benchmarks/route.ts`](../../../app/api/benchmarks/route.ts). Neither substitutes for the remaining analytical proof.
+The finite-horizon simulator evidence is recorded in [`research/empirical-results.md`](../../../research/empirical-results.md). Adversarial benchmark infrastructure lives in [`scripts/lexbench/`](../../../scripts/lexbench/) and published rows are exposed from [`app/api/benchmarks/route.ts`](../../../app/api/benchmarks/route.ts). These remain numerical evidence and do not expand the guarded invariant into an unrestricted unguarded theorem.
 
 ## Related concepts
 
@@ -29,6 +29,6 @@ The finite-horizon simulator evidence is recorded in [`research/empirical-result
 
 ## Open questions
 
-The active question is the analytical multi-pillar Lyapunov proof, including the deployed governor-versus-drift margin in the stated regimes. Read the source tracker for its exact current scope rather than relying on a summary. See [`research/open-problems.md`](../../../research/open-problems.md).
+The resolved boundary is the analytical multi-pillar Lyapunov claim: the deployed guarded invariant is supported, while an unrestricted governor-versus-drift margin is not claimed without a declared drift envelope. Read the source tracker for the exact scope. See [`research/open-problems.md`](../../../research/open-problems.md).
 
 **Implementation:** [map](../implementation-map.md) · **Research:** [source tracker](../../../research/open-problems.md) · **Benchmarks:** [empirical record](../../../research/empirical-results.md) · **Related concepts:** [Atlas index](../index.md)

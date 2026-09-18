@@ -22,7 +22,7 @@
 - Audit receipts are append-only and independently verifiable.
 - Internal provider, database, and stack details are logged server-side rather than exposed to anonymous users.
 - Numerical certificates are labeled as finite-horizon seeded evidence.
-- The multi-pillar global Lyapunov proof remains explicitly open until analytically closed.
+- The guarded multi-pillar Lyapunov invariant is enforced and receipt-replayable; no unrestricted unguarded drift-margin theorem is claimed without an explicit input envelope.
 
 ## Operational guidance
 
