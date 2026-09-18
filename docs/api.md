@@ -8,7 +8,7 @@ POST /api/lex/govern accepts JSON with prompt, session_id, turn, and optional id
 
 ## Authentication and limits
 
-Authentication is optional for the public demo, but recommended for integrations: send x-lex-api-key: lex_sk_..., or Authorization: Bearer lex_sk_....
+Authentication is optional for the public demo and required only for higher-throughput keyed integrations: send x-lex-api-key: lex_sk_..., or Authorization: Bearer lex_sk_....
 
 Anonymous requests are limited to 20 requests per IP per minute. Authenticated requests are limited to 120 requests per IP per minute and also consume the API key plan allowance. A 429 response includes Retry-After.
 
@@ -22,7 +22,7 @@ Anonymous requests are limited to 20 requests per IP per minute. Authenticated r
 
 ## Verification
 
-Use `POST /api/audits/verify` with `{ "receipt_id": "KRN-..." }` to verify a governed text receipt, and `GET /api/audits/{receipt_id}/export` to save its canonical audit bundle. Only a `valid` result carrying `signing_key_version: "v1"` is current production HMAC verification; `legacy_insecure` denotes historical fallback-key metadata rather than cryptographic proof. A numerical simulator certificate is not proof of the open multi-pillar analytical result.
+Use `POST /api/audits/verify` with `{ "receipt_id": "KRN-..." }` to verify a governed text receipt, and `GET /api/audits/{receipt_id}/export` to save its canonical audit bundle. Only a `valid` result carrying `signing_key_version: "v1"` is current production HMAC verification; `legacy_insecure` denotes historical fallback-key metadata rather than cryptographic proof. The deployed production transition has a guarded `ΔV_z ≤ 0` invariant; numerical simulator output remains finite-horizon evidence and does not claim an unrestricted unguarded drift-margin theorem.
 
 ## SDKs
 
