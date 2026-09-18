@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getClient, initSchema } from '@/lib/db';
 import { verifyReceiptSignature } from '@/lib/kernel_bridge';
+import { verifyProductionReceipt } from '@/lib/production_receipt_verifier';
 import { logger, errorFields } from '@/lib/logger';
 
 /**
@@ -48,7 +49,11 @@ export async function POST(req: Request) {
     const r = await getClient().execute({
       sql: `SELECT receipt_id, session_id, m_after, health_band, governor_mode,
                    input_hash, output_hash, receipt_hash, signature, signing_key_version, created_at,
-                   c_after, r_after, s_after
+                   c_after, r_after, s_after,
+                   transition_version, transition_input, transition_hash,
+                   raw_c, raw_r, raw_s, lyapunov_v_before, delta_v, lyapunov_status,
+                   projection_magnitude, projection_triggered, epsilon_injected,
+                   suspension_triggered, lyapunov_v
             FROM praxis_receipts
             WHERE receipt_id = ?
             LIMIT 1`,
@@ -117,11 +122,30 @@ export async function POST(req: Request) {
       signature,
     );
 
+    const transitionVerification = row.transition_version && row.transition_input && row.transition_hash
+      && row.raw_c !== null && row.raw_r !== null && row.raw_s !== null
+      ? verifyProductionReceipt({
+        transition_version: String(row.transition_version),
+        transition_input: String(row.transition_input),
+        transition_hash: String(row.transition_hash),
+        projected_state: { C: Number(row.c_after), R: Number(row.r_after), S: Number(row.s_after) },
+        raw_state: { C: Number(row.raw_c), R: Number(row.raw_r), S: Number(row.raw_s) },
+        projection_magnitude: Number(row.projection_magnitude ?? 0),
+        projection_triggered: Number(row.projection_triggered ?? 0),
+        epsilon_injected: Number(row.epsilon_injected ?? 0),
+        suspension_triggered: Number(row.suspension_triggered ?? 0),
+        lyapunov_v_before: Number(row.lyapunov_v_before ?? 0),
+        lyapunov_v: Number(row.lyapunov_v ?? 0),
+        delta_v: Number(row.delta_v ?? 0),
+        lyapunov_status: String(row.lyapunov_status ?? 'unknown'),
+      })
+      : null;
     return NextResponse.json({
       ok: true,
       status: valid ? 'valid' : 'tampered',
       receipt_id: receiptId,
       signing_key_version: signingKeyVersion,
+      transition_verification: transitionVerification,
       checked_at: new Date().toISOString(),
     });
   } catch (e) {

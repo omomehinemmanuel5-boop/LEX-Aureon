@@ -94,6 +94,9 @@ async function ensureHashColumns(db: ReturnType<typeof getClient>): Promise<void
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_version TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_input TEXT');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN transition_hash TEXT');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN raw_c REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN raw_r REAL');
+  await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN raw_s REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN lyapunov_v_before REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN delta_v REAL');
   await safeAlter('ALTER TABLE praxis_receipts ADD COLUMN lyapunov_status TEXT');
@@ -344,9 +347,10 @@ export async function writeKernelReceipt(
                  input_hash, output_hash, receipt_hash, signature,
                  signing_key_version, c_after, r_after, s_after,
                  transition_version, transition_input, transition_hash,
+                 raw_c, raw_r, raw_s,
                  lyapunov_v_before, delta_v, lyapunov_status, projection_magnitude,
                  projection_triggered, epsilon_injected, suspension_triggered, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           receiptId, sessionId, turn, 'CLEAR',
           mBefore,
@@ -368,6 +372,9 @@ export async function writeKernelReceipt(
           r.transition_version,
           JSON.stringify(r.transition_input),
           r.transition_hash,
+          r.raw_state.C,
+          r.raw_state.R,
+          r.raw_state.S,
           r.lyapunov_V_before,
           r.delta_V,
           r.lyapunov_status,
