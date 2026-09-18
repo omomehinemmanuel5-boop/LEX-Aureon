@@ -815,7 +815,7 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
   unclassified?: boolean;
 }> {
   // Step 1: scan arguments for injection and hardcoded patterns
-  const scan = await scanArguments(tool.arguments);
+  const scan = await scanArguments(tool.arguments, tool.name);
 
   if (scan.injection) {
     return {
