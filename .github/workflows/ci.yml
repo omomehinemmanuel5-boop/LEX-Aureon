@@ -63,6 +63,17 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npm run test -- --run
 
+      - name: Mathematical transition invariants
+        env:
+          GROQ_API_KEY: stub
+          JINA_API_KEY: stub
+          TURSO_DATABASE_URL: libsql://stub.turso.io
+          TURSO_AUTH_TOKEN: stub
+          ADMIN_PASSWORD: stub
+          CRON_SECRET: stub
+          NEXT_PUBLIC_SITE_URL: https://lexaureon.com
+        run: npx vitest run __tests__/production-transition.test.ts __tests__/math.test.ts __tests__/constitution.test.ts
+
       - name: Coverage
         env:
           GROQ_API_KEY: stub

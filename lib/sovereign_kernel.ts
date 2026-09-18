@@ -219,6 +219,7 @@ import { LEX_IDENTITY, LEX_IDENTITY_MINIMAL, LEX_IDENTITY_STABLE_CORE, LEX_IDENT
 import { getCodebaseSummary } from './codebase_summary';
 import { getCapabilitiesSummary, getDetailedCapabilities } from './capability_discovery';
 import { measurePostResponse, type PostResponseCRS } from './constitutional_metrics';
+import { productionStateTransition } from './production_transition';
 import { SOVEREIGN_LAWS } from './sovereign_laws';
 import { computeSelfReferentialCRS } from './self_referential_crs';
 import { getLawImpact } from './kv';
@@ -1166,86 +1167,26 @@ export class SovereignKernel {
     if (this.session_decisions.length > 20) { this.session_decisions.shift(); this.session_compliance.shift(); }
     if (this.session_responses.length > 20) this.session_responses.shift();
 
-    this.state.C += delta.dc; this.state.R += delta.dr; this.state.S += delta.ds;
-    for (const k of ['C', 'R', 'S'] as (keyof KernelState)[]) {
-      const d = k === 'C' ? delta.dc : k === 'R' ? delta.dr : delta.ds;
-      if (Math.abs(d) < MIN_DELTA) this.state[k] += (d !== 0 ? Math.sign(d) : 1) * MIN_DELTA;
-    }
-
-    // fix (2026-07-12): apply the paper-exact CCP/IEC/ADV deltas that
-    // measurePostResponse() computes every turn — previously computed and
-    // discarded (`void postMetrics;`), so the live state was driven entirely
-    // by transduce()'s heuristic above, never by the actual §5 operationalization.
-    // Added alongside transduce()'s deltas, not replacing them — see file
-    // header for why. weight=0.15 is baked into measurePostResponse itself.
-    this.state.C += postMetrics.c_delta;
-    this.state.R += postMetrics.r_delta;
-    this.state.S += postMetrics.s_delta;
-
-    if (activeLawData?.deltas) {
-      const s = semanticSignal.severity;
-      this.state.C += activeLawData.deltas.dc * s;
-      this.state.R += activeLawData.deltas.dr * s;
-      this.state.S += activeLawData.deltas.ds * s;
-      this.normalizeState();
-    }
-
-    this.state.S += advGain;
-    this.governorUpdate(effectiveTheta, sessionZ);
-
-    if (semanticSignal.attack_type !== 'none') {
-      const pressure = 0.08 * semanticSignal.severity;
-      this.state.C -= pressure; this.state.R -= pressure * 0.6; this.state.S += pressure * 1.6;
-    }
-
-    const center = 1.0 / 3.0;
-    const M1 = Math.min(this.state.C, this.state.R, this.state.S);
-    const biasStrength = 0.1 + 0.3 * (1.0 - M1);
-    for (const k of ['C', 'R', 'S'] as (keyof KernelState)[]) this.state[k] += biasStrength * (center - this.state[k]);
-
-    this.normalizeState();
-    let suspensionTriggered = false;
-    if (semanticSignal.severity < 0.7) suspensionTriggered = this.applySuspensionLayer();
-
-    const M2 = Math.min(this.state.C, this.state.R, this.state.S);
-    let epsilonInjected = false;
-    if (M2 < 0.15) {
-      const eps = 0.01 * (0.15 - M2);
-      this.state.C += eps; this.state.R += eps; this.state.S += eps;
-      const total = this.state.C + this.state.R + this.state.S;
-      this.state.C /= total; this.state.R /= total; this.state.S = 1.0 - this.state.C - this.state.R;
-      epsilonInjected = true; this.assertConsistency();
-    }
-
-    if (semanticSignal.severity >= 0.7) { this.state.C -= 0.20; this.state.R -= 0.10; this.state.S += 0.30; }
-
-    // fix (2026-07-12, fourth pass): the actual, structurally-meaningful
-    // application of threatSignal — placed here, AFTER recentering, for the
-    // same reason the block directly above survives to M_final while
-    // transduce()'s early-stage delta mostly doesn't. See file header for
-    // the calibration reasoning and the weight choice (0.30 base, split
-    // 0.55/0.30/0.85 across C/R/S — comparable order of magnitude to the
-    // severity>=0.7 block above, deliberately softer so threat alone does
-    // not automatically force CRITICAL from a healthy starting state).
-    if (clampedThreat > 0) {
-      const tp = 0.30 * clampedThreat;
-      this.state.C -= tp * 0.55;
-      this.state.R -= tp * 0.30;
-      this.state.S += tp * 0.85;
-    }
-
-    const rawState = { ...this.state };
-    const preProjBelow = Object.values(rawState).some(v => v < TAU);
-    const projectionTriggered = this.projectToSimplex();
-    this.assertConsistency();
-
+    const transition = productionStateTransition({
+      state: this.state,
+      delta,
+      postResponseDelta: { dc: postMetrics.c_delta, dr: postMetrics.r_delta, ds: postMetrics.s_delta },
+      activeLawDelta: activeLawData?.deltas ?? null,
+      semanticAttack: semanticSignal.attack_type !== 'none',
+      semanticSeverity: semanticSignal.severity,
+      advGain,
+      effectiveTheta,
+      threatSignal: clampedThreat,
+      theta: this.theta,
+    });
+    this.state = transition.state;
+    this.theta = transition.theta;
+    const rawState = transition.rawState;
     const projectedState = { ...this.state };
-    if (preProjBelow && Object.values(projectedState).some(v => v < TAU)) this.invariance_violations += 1;
-    const projMag = Math.sqrt((['C', 'R', 'S'] as (keyof KernelState)[]).reduce((s, k) => s + (projectedState[k] - rawState[k]) ** 2, 0));
-
-    if (Math.abs(this.state.C + this.state.R + this.state.S - 1.0) > 1e-6 || Math.min(this.state.C, this.state.R, this.state.S) < TAU) {
-      this.projectToSimplex(); this.assertConsistency();
-    }
+    const projectionTriggered = transition.projectionTriggered;
+    const projMag = transition.projectionMagnitude;
+    const suspensionTriggered = transition.suspensionTriggered;
+    const epsilonInjected = transition.epsilonInjected;
 
     // ── V_z with session-adaptive z ───────────────────────────────────────────
     const activeZ: [number, number, number] = sessionZ ?? Z_RECOVERY;
