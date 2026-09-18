@@ -432,6 +432,56 @@ const MEDIUM_RISK_TOOLS = new Set([
 // cases); semanticInjectionCheck only runs when the regex pass found
 // nothing, as the paraphrase-tolerant second opinion, and only on the
 // extracted free-text fields (see file header, second-pass fix).
+// fix (2026-09-18): shell_destroy and credential_access were scanned
+// against the ENTIRE JSON.stringify(args) blob for every tool, not just
+// tools that actually execute shell commands. For file-write tools
+// (patch_file, write_file, etc.) that blob includes old_str/new_str diff
+// content and the human-readable commit message — ordinary source code and
+// prose, not a command to be executed. Confirmed live twice in the same
+// session: a patch_file diff containing the REST route path
+// "/api/.../export" (an ordinary Next.js API route) and a commit message
+// that merely referenced Node's standard configuration accessor both
+// hard-blocked routine UI edits with zero shell command anywhere in either
+// diff — the route matched the old bare export alternative, and the
+// configuration reference matched the bare-word alternative since it
+// wasn't glued to an assignment.
+//
+// Root issue is a category error, not a bounds error: shell_destroy
+// encodes "this text, if run as a shell command, would be destructive" —
+// that only applies to tools whose arguments genuinely ARE shell command
+// text (HIGH_RISK_TOOLS). For every other tool, the diff/message fields
+// are written verbatim to a file or shown to a person, never executed, so
+// shell syntax appearing in them carries no shell_destroy risk at all.
+// Tightening the regex further wouldn't fix this — the check was aimed at
+// the wrong data for that tool class.
+//
+// credential_access is a real risk for any tool (a file-write tool CAN
+// write to a credentials directory), but the risk lives in WHICH FILE is
+// being touched, not in what prose happens to appear in the diff body.
+// measureS() below already scans the path/file argument alone for exactly
+// this (isProtected) — this hard-invariant check now matches that same
+// scope for non-shell tools, instead of the whole blob.
+//
+// Fix: deterministicScan is now tool-aware. shell_destroy only runs for
+// HIGH_RISK_TOOLS (real shell/exec calls, where the full args blob
+// genuinely is the command). credential_access always scans the full blob
+// for HIGH_RISK_TOOLS (a shell command can still read a credential file
+// with no path field at all) but scans only the extracted path/file text
+// for every other tool. sql_destroy and exfiltration are unchanged — no
+// false positive reported for either, and both are structurally tied to
+// fields (sql/url) that don't collide with ordinary prose the way export,
+// dotenv-style paths, and environment-variable references do. Unknown tool
+// name (e.g. the landing-page counterfactual demo, which calls this
+// directly with no real tool context) preserves the original full-blob
+// scan for every category — no behavior change for that caller.
+const PATH_FIELDS = ['path', 'file'];
+function extractPathText(args: Record<string, unknown>): string {
+  return PATH_FIELDS
+    .map(k => args[k])
+    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    .join('\n');
+}
+
 /**
  * Deterministic scan = the two fast passes (injection regex, then the hardcoded
  * BLOCKED invariants). Pure, synchronous, network-free — NO embeddings, NO DB.
@@ -439,8 +489,11 @@ const MEDIUM_RISK_TOOLS = new Set([
  * case the caller runs the semantic pass). Exported so a side-effect-free
  * surface — e.g. the landing-page agentic counterfactual route — can show the
  * real invariants firing without writing a receipt or spending embed quota.
+ * toolName is optional and scopes shell_destroy/credential_access to the
+ * tool actually calling this (see fix note above); omit it to scan the full
+ * args blob for every category, as before.
  */
-export function deterministicScan(args: Record<string, unknown>): { injection: boolean; blocked_pattern: string } | null {
+export function deterministicScan(args: Record<string, unknown>, toolName?: string): { injection: boolean; blocked_pattern: string } | null {
   const content = JSON.stringify(args).toLowerCase();
   const full = JSON.stringify(args);
 
@@ -450,11 +503,18 @@ export function deterministicScan(args: Record<string, unknown>): { injection: b
   const regexHit = matchInjectionRegex(full);
   if (regexHit) return { injection: true, blocked_pattern: `injection:${regexHit}` };
 
+  const isShellExecuting = toolName === undefined || HIGH_RISK_TOOLS.has(toolName.toLowerCase());
+  const pathTextRaw = extractPathText(args);
+  const pathText = pathTextRaw.toLowerCase();
+
   // Fast pass: hardcoded blocked patterns (sql/shell/credential/exfiltration —
   // build_files intentionally excluded, see file header)
   for (const [category, patterns] of Object.entries(BLOCKED_TOOL_PATTERNS)) {
+    if (category === 'shell_destroy' && !isShellExecuting) continue;
+    const scanFull = category === 'credential_access' && !isShellExecuting ? pathTextRaw : full;
+    const scanLower = category === 'credential_access' && !isShellExecuting ? pathText : content;
     for (const pattern of patterns) {
-      if (pattern.test(full) || pattern.test(content)) {
+      if (pattern.test(scanFull) || pattern.test(scanLower)) {
         return { injection: false, blocked_pattern: `${category}:${pattern.source.slice(0, 40)}` };
       }
     }
