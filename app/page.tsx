@@ -464,7 +464,6 @@ export default async function LandingPage() {
       <AgentGovernanceSection />
       <BenchmarkResults compact initialData={benchmarkData} />
       <ComparisonSection />
-      <ArchitectureSection />
       <ResearchHandoffSection />
       <LiveStatsBar />
       <ProofPanel />
@@ -483,7 +482,17 @@ export default async function LandingPage() {
           <LandingEmailCapture />
         </div>
       </section>
-      <RedTeamSection />
+      <section className="py-10 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
+        <div className="max-w-2xl mx-auto text-center">
+          <p className="text-sm text-slate-400 leading-relaxed">
+            Tested against <span className="text-white font-bold">550 adversarial vectors</span> across{' '}
+            <span className="text-white font-bold">8 attack classes</span> — internal suite, graded by the kernel itself.{' '}
+            <Link href="/research#adversarial-taxonomy" className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors">
+              See the taxonomy
+            </Link>.
+          </p>
+        </div>
+      </section>
       <EnterpriseSection />
       <PricingSection />
 
