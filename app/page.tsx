@@ -11,8 +11,6 @@ import LiveStatsBar from '@/components/LiveStatsBar';
 import RedTeamSection from '@/components/RedTeamSection';
 import ArchitectureSection from '@/components/ArchitectureSection';
 import BenchmarkResults, { type ApiShape as BenchmarkApiShape } from '@/components/BenchmarkResults';
-import CbfInvariancePanel from '@/components/CbfInvariancePanel';
-import CbfSimulator from '@/components/CbfSimulator';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
@@ -334,204 +332,42 @@ function ComparisonSection() {
 }
 
 
-function ResearchStatusSection() {
-  const items = [
-    {
-      label: 'Closed',
-      title: 'Dynamic z-update rule',
-      detail: 'Banach fixed-point update is deployed in Turso and stamped into receipts as session z-weights.',
-      tone: 'emerald',
-    },
-    {
-      label: 'Closed',
-      title: 'Nonlinear Pareto frontier',
-      detail: 'The λ phase transition and brittleness term are no longer active open problems.',
-      tone: 'emerald',
-    },
-    {
-      label: 'Closed',
-      title: 'z-aware governor direction',
-      detail: 'The live and replay paths now use the active session-weighted negative projected gradient of V_z, removing the nonuniform-weight sign obstruction.',
-      tone: 'emerald',
-    },
-    {
-      label: 'Resolved numerically',
-      title: 'FPL-1 simulator classification',
-      detail: 'The governed counterfactual reports stable + forward-invariant behavior at dt=0.1 in a seeded, finite-horizon numerical run.',
-      tone: 'amber',
-    },
-    {
-      label: 'Closed as scoped',
-      title: 'Multi-pillar proof boundary',
-      detail: 'The guarded discrete invariant is enforced. An unrestricted unguarded drift-margin theorem is not claimed without a declared drift envelope.',
-      tone: 'amber',
-    },
-  ];
-
-  const toneClass = {
-    emerald: 'border-emerald-500/25 bg-emerald-500/[0.07] text-emerald-300',
-    amber: 'border-amber-500/25 bg-amber-500/[0.07] text-amber-300',
-    slate: 'border-slate-500/25 bg-white/[0.04] text-slate-300',
-  } as const;
-
+/* ── Research handoff ──────────────────────────────────────────── */
+function ResearchHandoffSection() {
   return (
     <section className="py-14 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-            Research status — cleaned up
-          </div>
-          <h2 className="text-2xl sm:text-4xl font-black text-white mb-3">
-            Resolved work is marked resolved.
-          </h2>
-          <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            The landing page now shows the supported guarded invariant and its exact mathematical boundary.
-            z-update, z-aware governor direction, and the multi-pillar deployment claim are no longer presented as open problems.
-          </p>
+      <div className="max-w-3xl mx-auto rounded-2xl border border-[#c9a84c30] bg-[#c9a84c08] p-6 sm:p-8 text-center">
+        <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
+          Research and evidence
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {items.map(item => (
-            <div key={item.title} className={`rounded-2xl border p-4 ${toneClass[item.tone as keyof typeof toneClass]}`}>
-              <div className="text-[10px] font-mono uppercase tracking-widest font-black mb-3 opacity-90">{item.label}</div>
-              <h3 className="text-sm font-black text-white mb-2 leading-tight">{item.title}</h3>
-              <p className="text-[11px] leading-relaxed text-slate-400">{item.detail}</p>
-            </div>
-          ))}
-        </div>
-        <p className="text-center text-[11px] font-mono text-slate-500 mt-5">
-          Canonical tracker: <Link href="/research" className="text-amber-400 hover:text-amber-300 transition-colors">research page</Link> · <span className="text-slate-400">research/open-problems.md</span>
+        <h2 className="text-2xl sm:text-3xl font-black text-white mb-3">
+          The product is concise. The evidence is not.
+        </h2>
+        <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed mb-6">
+          The research page is the canonical home for the mathematical framework, proof boundaries,
+          numerical certificates, open problems, and reproducibility notes. Benchmarks and live audit
+          records have their own pages so each result can be read in context.
         </p>
-      </div>
-    </section>
-  );
-}
-
-/* ── Technical Foundation — for the control-theory literate ──────
-   Added 2026-07-07 per direct request: a precise, honest CBF/Lyapunov
-   section aimed at readers who'd recognize sloppy vs. correct use of this
-   terminology.
-   fix (2026-07-27) — THE 79.7% FIGURE IS WITHDRAWN. This comment previously
-   asserted it was "REAL, queried directly from governor_log.drift_dir ...
-   across ~47,000 logged turns — not an estimate". It can no longer be
-   reproduced from that source. Querying governor_log.drift_dir today returns
-   diverging 22,654 / converging 9,582 / stable 2,093 over 34,329 rows, i.e.
-   ΔV_z ≤ 0 on 34.0%, not 79.7% — and no combination of those buckets yields
-   79.7%. The Turso instance was replaced on 2026-07-14 and prior rows are gone,
-   so the figure describes a database that no longer exists.
-   The accompanying hypothesis — that divergence concentrates in attack-response
-   turns — was also tested and does NOT hold: divergence is 71.4% on turns with
-   an intervention and 63.7% on turns without, so it is the majority behaviour in
-   both. The panel now states the measured 34.0%, labels the population honestly
-   (99.4% of rows are lexbench-% sessions; the chat_% pattern the frontend
-   generates matches ZERO rows, so "real traffic" was wrong), and names the
-   deployed descent gap as the remaining open analytical/production alignment question.
-   Any future edit to these numbers should re-query governor_log rather than
-   trusting this comment — that is precisely how the stale figure survived.
-   fix (2026-07-13) — LIGHT-THEME CONTRAST: labels here used text-slate-500
-   dark:text-slate-500 / text-slate-500 dark:text-slate-600 — slate-500 on
-   white measures ~4.47:1, just under the 4.5:1 WCAG AA minimum at this font
-   size. This section's background genuinely IS responsive (bg-slate-50
-   dark:bg-[#0d0d1a]), so the fix here is a straightforward contrast bump,
-   not the dark-on-dark bug found and fixed separately in PricingSection.tsx.
-   feat (2026-07-18) — added <CbfInvariancePanel/> as a third card. The two
-   cards above cover the proof (idealized) and the real empirical measurement
-   (production ΔV_z). Neither can show the governed-vs-ungoverned
-   counterfactual — production never runs without the barrier, for real
-   users, so there's no ethical way to demonstrate what it prevents except a
-   controlled simulation. See that component's own header for the honesty
-   constraints applied to its copy. */
-function TechnicalFoundationSection() {
-  return (
-    <section className="py-16 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
-      <div className="max-w-3xl mx-auto">
-        <div className="text-center mb-10">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-            For the control theory literate
-          </div>
-          <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white mb-4">
-            A control barrier function,{' '}
-            <span className="text-slate-600 dark:text-slate-500 font-light">not a prompt trick.</span>
-          </h2>
-          <p className="text-slate-600 dark:text-slate-400 text-sm max-w-xl mx-auto leading-relaxed">
-            Constitutional state is a point on the probability simplex. Safety is enforced by a barrier function. Stability is argued with a Lyapunov function. Here is the actual math, and how closely the deployed system tracks it — measured, not asserted.
-          </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link href="/research" className="px-5 py-2.5 rounded-xl text-sm font-bold transition-all" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
+            Read the research
+          </Link>
+          <Link href="/benchmarks" className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-300 border border-white/10 hover:bg-white/5 transition-all">
+            View benchmarks
+          </Link>
+          <Link href="/audit" className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-300 border border-white/10 hover:bg-white/5 transition-all">
+            Inspect audit receipts
+          </Link>
         </div>
-
-        <div className="rounded-2xl border p-6 sm:p-8 bg-white dark:bg-black/30 border-slate-200 dark:border-white/10 mb-6">
-          <div className="text-slate-600 dark:text-slate-500 text-xs uppercase tracking-widest mb-4 font-bold font-mono">The z-weighted Lyapunov barrier</div>
-          <div className="text-slate-800 dark:text-slate-200 text-base sm:text-lg mb-4 overflow-x-auto whitespace-nowrap font-mono">
-            V<sub>z</sub>(x) = −Σ z<sub>i</sub>·log(x<sub>i</sub>) + (μ/2)·Σ max(0, τ−x<sub>i</sub>)²
-          </div>
-          <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed mb-4">
-            An interior-point log-barrier term plus a quadratic penalty that activates only inside the safety margin τ — the same structural family as a control barrier function (Ames et al., 2019). <b className="text-slate-800 dark:text-white">Proven:</b> under the idealized continuous flow ẋ = −Π<sub>Σ</sub>∇V<sub>z</sub>(x) (gradient descent projected onto the simplex), V̇<sub>z</sub> ≤ 0 — a standard Lyapunov descent argument.
-          </p>
-          <div className="h-px bg-slate-200 dark:bg-white/10 my-4" />
-          <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
-            <b className="text-slate-800 dark:text-white">Engineered:</b> the deployed governor is a discrete approximation of that descent, not a literal implementation of the continuous flow. We say this plainly rather than let a proof about the idealized system imply more than the shipped one does.
-          </p>
-        </div>
-
-        <div className="rounded-2xl border p-6 sm:p-8 bg-white dark:bg-black/30 border-slate-200 dark:border-white/10">
-          <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
-            <span className="text-xs uppercase tracking-widest font-bold text-slate-600 dark:text-slate-500 font-mono">Measured, not asserted</span>
-            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-600">Historical pre-v2 snapshot · 37,701 logged turns · simulator: numerical, finite-horizon</span>
-          </div>
-          <div className="flex items-end gap-2 h-24 mb-5">
-            <div className="flex-1 flex flex-col items-center gap-1.5">
-              <div className="w-full rounded-t-md" style={{ height: '6%', background: `${G.R}b0` }} />
-              <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 font-bold">5.8%</span>
-              <span className="text-[9px] font-mono text-slate-500">stable</span>
-            </div>
-            <div className="flex-1 flex flex-col items-center gap-1.5">
-              <div className="w-full rounded-t-md" style={{ height: '26%', background: `${G.R}60` }} />
-              <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 font-bold">25.8%</span>
-              <span className="text-[9px] font-mono text-slate-500">converging</span>
-            </div>
-            <div className="flex-1 flex flex-col items-center gap-1.5">
-              <div className="w-full rounded-t-md bg-red-500/50" style={{ height: '68%' }} />
-              <span className="text-[10px] font-mono text-slate-700 dark:text-slate-300 font-bold">68.3%</span>
-              <span className="text-[9px] font-mono text-slate-500">diverging</span>
-            </div>
-          </div>
-          <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
-            The chart above is a historical pre-v2 instrumented snapshot — 37,701 turns, of which 99.4% was adversarial benchmark traffic rather than organic use. Its non-increasing condition (ΔV<sub>z</sub> ≤ 0 — stable + converging) held on <b className="text-slate-800 dark:text-white">31.7%</b> of turns. We previously published 79.7% here. That figure was computed against a database instance replaced on 2026-07-14 and cannot be reproduced from the source it cited, so it is withdrawn rather than carried forward.
-            <br /><br />
-            The deployed <b className="text-slate-800 dark:text-white">production-transition-v2</b> now applies a final convex-segment descent guard using active session weights: for valid floor-constrained states and positive finite weights, the committed transition is conditionally non-increasing (ΔV<sub>z</sub> ≤ 0 within numerical tolerance). This is the supported guarded invariant. An unrestricted unguarded drift-margin theorem is intentionally not claimed because the input contract does not declare a drift envelope. The <i>simulator</i> — running the governed-vs-ungoverned counterfactual at the continuous-flow limit (dt=0.1) — remains a seeded, finite-horizon <b>numerical</b> certificate.
-          </p>
-        </div>
-
-        <CbfInvariancePanel />
-
-        <div className="mt-6">
-          <CbfSimulator />
-        </div>
-
-        <p className="text-center text-[11px] font-mono text-slate-600 dark:text-slate-600 mt-6">
-          Full derivation and the CBF floor (τ = 0.05) in the{' '}
-          <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors underline underline-offset-2">paper</a>.
-          Every receipt records the constitutional state — <Link href="/verify" className="text-amber-500 hover:text-amber-400 transition-colors">verify it live</Link>.
-        </p>
       </div>
     </section>
   );
 }
 
 /* ── Agent Tool-Call Governance ───────────────────────────────────
-   Added 2026-09-13. Everything above this point on the page tells one
-   story: conversational governance (CRS state over a chat exchange).
-   Nothing described the SEPARATE tool-call governance layer
-   (lib/agents/tool_crs.ts, tool_interceptor.ts) — hardcoded invariants
-   plus a semantic injection detector — despite it now being the most
-   rigorously validated part of the system: a real labeled corpus, a
-   dual-axis (utility + security) harness that executes actual tool
-   calls rather than proxying through text, and three independently
-   reproduced CI runs. Numbers sourced from research/empirical-results.md
-   Run 008 (2026-09-13, workflow run 34781825061) — corpus and harness
-   linked below for direct reproduction. Same discipline as
-   TechnicalFoundationSection above: state the corpus size honestly, name
-   the known false positives, don't round up. The bare-vs-governed trace
-   below is the real workspace_credential_exfil task from
-   scripts/agentdojo-real/suite.ts, not a paraphrase. */
+   The landing page gives this capability a concise product explanation;
+   corpus details and reproducibility notes belong on the research and
+   benchmark pages. */
 function AgentGovernanceSection() {
   return (
     <section className="py-16 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
@@ -794,8 +630,7 @@ export default async function LandingPage() {
       <BenchmarkResults compact initialData={benchmarkData} />
       <ComparisonSection />
       <ArchitectureSection />
-      <ResearchStatusSection />
-      <TechnicalFoundationSection />
+      <ResearchHandoffSection />
       <AgentGovernanceSection />
       <LiveStatsBar />
       <ProofPanel />

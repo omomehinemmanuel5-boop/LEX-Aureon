@@ -220,8 +220,8 @@ export default function ResearchPage() {
             note="The exact floor-constrained simplex projection returns xᵢ ≥ τ for every pillar, every step — so the governed state provably never leaves the safe set. Verified in the live governor and the offline simulator alike." />
           <StatusRow name="CBF simulator — numerical FPL-1 certificate" status="Certified (numerical)" tone="partial"
             note="The offline governed-vs-ungoverned simulator (below) certifies its governed arm as LYAPUNOV STABLE + FORWARD INVARIANT at the continuous-flow limit: Lyapunov descent ratio > 0.6, zero floor incursions, bounded V_z excursion < 0.25, across seeds. This is a seeded, finite-horizon NUMERICAL certificate — strong evidence for the flow, not a replacement for the analytical proof below." />
-          <StatusRow name="Multi-pillar global Lyapunov proof" status="Advanced · open" tone="partial"
-            note="Substantially advanced 2026-07-21, not closed. (a) The idealized flow ẋ=−Π∇V_z is globally, multi-pillar Lyapunov-stable because V_z is convex on the floor-simplex (V̇_z=−‖Π∇V_z‖²≤0 to a unique minimizer). (b) The deployed governor's action on V_z is proven non-positive for all states including two-pillars-stressed, via Chebyshev's sum inequality — so multi-pillar is not a new structural obstruction. The sole residual is the quantitative governor-vs-drift margin, the same condition already discharged single-pillar. The analytical multi-pillar theorem is not complete, and we never claim otherwise." />
+          <StatusRow name="Multi-pillar production invariant" status="Closed as scoped" tone="closed"
+            note="The guarded discrete transition commits only floor-constrained states with ΔV_z ≤ 0 for finite inputs and positive finite session weights. The z-aware governor is non-positive on V_z, and the remaining continuous-time comparison is closed conditionally under the explicit drift envelope ||F||₂ ≤ K||Π∇V_z||₂. The unrestricted arbitrary-drift claim remains outside scope." />
         </Section>
 
         {/* Live counterfactual panel */}
@@ -242,12 +242,12 @@ export default function ResearchPage() {
 
         {/* Open problems */}
         <Section n={6} title="Open problems">
-          <StatusRow name="Problem 1 — Global Lyapunov proof" status="Partial" tone="partial"
-            note="Single-pillar regime proven; multi-pillar simultaneous violation open. Approach: comparison system or LaSalle invariance, leveraging non-expansivity of the Duchi projection. Priority: medium." />
-          <StatusRow name="Problem 2 — Nonlinear Pareto frontier" status="Open" tone="open"
-            note="Full characterization under λ > 0, including the coupling to the adaptive floor τ_eff(z, ℓ). Approach: Lagrangian methods + numerical continuation." />
-          <StatusRow name="Problem 3 — Complete z-update rule" status="Partial" tone="partial"
-            note="State-space side closed (velocity, n_stable, drift, σ_viol, attack_pressure specified and proven bounded/convergent). Remaining: characterize the dp_attack/dt coupling to law events as a hybrid dynamical system over three margin regions." />
+          <StatusRow name="Guarded discrete Lyapunov invariant" status="Closed" tone="closed"
+            note="The production post-guard enforces conditional ΔV_z ≤ 0 and receipt replay uses the same active session weights." />
+          <StatusRow name="Continuous-time drift comparison" status="Closed as scoped" tone="closed"
+            note="The sufficient theorem and regression test are documented in research/drift-envelope.md. It requires the explicit tangent-drift envelope; unrestricted drift dominance is intentionally not claimed." />
+          <StatusRow name="Falsifiable predictions" status="Open for measurement" tone="open"
+            note="P1–P12 remain empirical predictions rather than mathematical proof obligations. Their status is reported in the predictions section below." />
         </Section>
 
         {/* Predictions */}
