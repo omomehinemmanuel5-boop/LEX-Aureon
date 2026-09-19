@@ -2,6 +2,8 @@
 
 This file tracks only unresolved mathematical problems. Resolved problems stay listed in the resolved ledger below so README, landing-page, and paper copy do not accidentally keep stale "open" claims alive.
 
+The cross-cutting closure plan for empirical predictions, agent-action evidence, and optional product extensions is documented in [`research/closure-program.md`](closure-program.md). It defines the evidence required to mark each remaining item measured, implemented, or retired.
+
 ## Resolved Boundary — Analytical multi-pillar Lyapunov claim
 
 Status: **CLOSED AS SCOPED — guarded discrete invariant proven; unrestricted unguarded margin is not a valid claim**
