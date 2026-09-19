@@ -301,6 +301,37 @@ export default function ResearchPage() {
             live, dated results as they publish). Attack-success is measured over harmful prompts only;
             over-refusal on benign prompts is reported separately, never netted against it.
           </p>
+
+          <div className="h-px bg-white/8 my-5" />
+          <div className="text-sm font-bold text-white mb-3">Agent tool-call governance</div>
+          <p className="text-slate-400 text-xs leading-relaxed mb-3">
+            The same C/R/S measurement extends to agent tool calls, with four hardcoded invariants —
+            credential-file access, destructive SQL, shell-delete, exfiltration to unlisted domains —
+            blocked unconditionally regardless of score or stated justification. Everything else is scored
+            per call (task alignment, intent match, scope), plus a two-stage injection detector
+            (deterministic regex, then semantic embedding), validated against a labeled corpus.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            {[
+              ['0', 'missed injections, deployed pipeline'],
+              ['91.3%', 'F1, deployed pipeline @ 0.85'],
+              ['4/4', 'real attack tasks blocked, executed traces'],
+              ['1/4', 'blocked with utility preserved'],
+            ].map(([n, d]) => (
+              <div key={String(n)} className="rounded-xl border border-[var(--border)] p-3" style={{ background: 'var(--bg-hover)' }}>
+                <div className="text-xl font-black font-mono" style={{ color: G.gold }}>{n}</div>
+                <div className="text-[10px] text-slate-500 mt-1 leading-snug">{d}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-slate-600 text-[11px] leading-relaxed">
+            Corpus is author-labeled and modest — 48 items, dozens not thousands — with known, documented
+            borderline false positives, not hidden. In the four-task executed harness (credential-file
+            exfiltration hidden inside a file the agent was asked to summarize), all four security
+            breaches were blocked; utility was preserved on 1/4 tasks — the other three deliberately
+            targeted the same action the benign task needed, so blocking them also costs utility. This is
+            evidence of the current boundary, not a general agent-safety guarantee.
+          </p>
         </Section>
 
         {/* PRAXIS pipeline */}
