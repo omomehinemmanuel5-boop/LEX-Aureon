@@ -382,6 +382,13 @@ export default function ResearchPage() {
         </div>
       </main>
 
+      <div id="system-architecture" className="scroll-mt-20">
+        <ArchitectureSection />
+      </div>
+      <div id="adversarial-taxonomy" className="scroll-mt-20">
+        <RedTeamSection />
+      </div>
+
       {/* Footer */}
       <footer className="border-t border-[var(--border)] py-8 px-4 mt-8">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-700">
