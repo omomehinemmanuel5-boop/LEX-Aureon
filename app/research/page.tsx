@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import CbfInvariancePanel from '@/components/CbfInvariancePanel';
+import CbfSimulator from '@/components/CbfSimulator';
 
 export const metadata: Metadata = {
   title: 'Aureonics Research Foundation — Lex Aureon',
@@ -233,6 +234,15 @@ export default function ResearchPage() {
             from <span className="font-mono" style={{ color: G.gold }}>/api/cbf-simulation</span>.
           </p>
           <CbfInvariancePanel />
+          <div className="mt-8">
+            <h3 className="mb-2 text-lg font-bold text-white">Interactive CBF simulator</h3>
+            <p className="mb-4 text-sm leading-relaxed text-slate-400">
+              Replay the same seeded disturbance with and without the barrier. This interactive view
+              exposes the trajectory, simplex position, safety margin, and finite-horizon certificate
+              used in the numerical analysis.
+            </p>
+            <CbfSimulator />
+          </div>
           <p className="text-slate-600 text-[11px] leading-relaxed mt-4">
             Reproduce the classification and the discretization analysis behind it:
             {' '}<span className="font-mono" style={{ color: G.gold }}>npx tsx scripts/cbf/fpl1-dt-sweep.ts</span>.

@@ -1,6 +1,6 @@
 'use client';
 
-/** Mobile-first landing-page presentation of the reference CBF simulator. */
+/** Interactive presentation of the reference CBF simulator for research and product pages. */
 import { useEffect, useMemo, useState } from 'react';
 import { simulateCbf, simulateCbfComparison } from '@/lib/cbf_simulation';
 
@@ -153,7 +153,7 @@ export default function CbfSimulator() {
         <div className="rounded-xl border border-white/10 bg-black/20 p-3">
           <div className="mb-3 flex items-center justify-between"><span className="text-[9px] font-mono uppercase tracking-[0.14em] text-slate-500">Numerical certificate</span><span className={`rounded-full border px-2 py-1 text-[8px] font-mono ${safe ? 'border-[#c9a84c]/30 bg-[#c9a84c]/10 text-[#e8c96d]' : 'border-red-500/20 bg-red-500/10 text-red-400'}`}>{safe ? 'FORWARD INVARIANT' : 'NOT PROVEN'}</span></div>
           <div className="space-y-3 text-[10px] font-mono"><div className="flex justify-between gap-3"><span className="text-slate-500">FPL-1</span><span className="text-right text-slate-200">{certificate.fpl1_classification}</span></div><div className="flex justify-between"><span className="text-slate-500">Descent ratio</span><span className="text-[#e8c96d]">{certificate.stability_ratio.toFixed(3)}</span></div><div className="flex justify-between"><span className="text-slate-500">Max ΔV excursion</span><span className="text-slate-200">{certificate.max_deviation.toFixed(3)}</span></div><div className="flex justify-between"><span className="text-slate-500">Integration</span><span className="text-slate-200">dt = {certificate.dt} · T = {certificate.steps}</span></div></div>
-          <p className="mt-4 border-t border-white/10 pt-3 text-[9px] leading-relaxed text-slate-500">Seeded finite-horizon numerical certificate. It does not close the analytical global-proof problem.</p>
+          <p className="mt-4 border-t border-white/10 pt-3 text-[9px] leading-relaxed text-slate-500">Seeded finite-horizon numerical certificate. It supports the scoped drift-envelope result but does not establish unrestricted arbitrary-drift descent.</p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap justify-between gap-2 text-[9px] font-mono text-slate-500"><span>Seed {SEED} · {STEPS} display steps · same forcing</span><span className="text-[#c9a84c]">Δ min-M: {comparison.improvement_min_M.toFixed(3)}</span></div>

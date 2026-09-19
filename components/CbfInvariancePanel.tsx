@@ -206,11 +206,11 @@ export default function CbfInvariancePanel() {
       )}
 
       <div className="mt-8 border-t border-white/5 pt-6 text-xs leading-relaxed text-slate-500">
-        This is a seeded, finite-horizon numerical certificate — it isn&rsquo;t the open analytical
-        multi-pillar Lyapunov proof (Open Problem 1). It also simulates the idealized continuous-time
-        model (correction and drift applied together each step), not the deployed system&rsquo;s actual
-        discrete, one-turn-delayed correction — production behavior doesn&rsquo;t yet match this
-        continuous-flow simulation on every turn.
+        This is a seeded, finite-horizon numerical certificate — it supports the scoped drift-envelope
+        result but does not establish unrestricted arbitrary-drift descent. It simulates the idealized
+        continuous-time model (correction and drift applied together each step), not the deployed
+        system&rsquo;s actual discrete, one-turn-delayed correction. The production transition&rsquo;s guarded
+        discrete invariant is documented separately in the formal stability status above.
       </div>
     </div>
   );
