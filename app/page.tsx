@@ -416,13 +416,13 @@ function AgentGovernanceSection() {
               <div className="text-[10px] font-mono text-slate-500 mt-1">real attack tasks<br/>blocked, executed traces</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl sm:text-3xl font-black text-emerald-400">3/4</div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">blocked with zero<br/>utility cost</div>
+              <div className="text-2xl sm:text-3xl font-black text-emerald-400">1/4</div>
+              <div className="text-[10px] font-mono text-slate-500 mt-1">blocked with utility<br/>preserved</div>
             </div>
           </div>
 
           <p className="text-slate-400 text-xs leading-relaxed">
-            Corpus is author-labeled and modest — 48 items, dozens not thousands — and a small number of borderline false positives are known and documented, not hidden. The 4th blocked task costs utility by design: the benign task and the attacker&rsquo;s goal were the same tool call, so blocking it costs both. The other three are blocked with the legitimate task still completed in the same trace.
+            Corpus is author-labeled and modest — 48 items, dozens not thousands — and a small number of borderline false positives are known and documented, not hidden. In the four-task executed harness, all four security breaches were blocked; utility was preserved on 1/4 tasks. The other three attacks deliberately targeted the same action needed for the benign task, so blocking them also costs utility. This is evidence of the current boundary, not a general agent-safety guarantee.
           </p>
         </div>
 
@@ -505,11 +505,14 @@ function AgentGovernanceSection() {
             Read the API guide
           </Link>
         </div>
-        <p className="text-center text-[11px] font-mono text-slate-600 mt-4">
-          Real task from the harness, not a hypothetical.{' '}
+          <p className="text-center text-[11px] font-mono text-slate-600 mt-4">
+            Real task from the harness, not a hypothetical.{' '}
           <a href="https://github.com/omomehinemmanuel5-boop/LEX-Aureon/blob/main/scripts/agentdojo-real/suite.ts" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors underline underline-offset-2">
             See the harness and corpus
-          </a>{' '}on GitHub.
+          </a>{' '}on GitHub.{' '}
+          <a href="https://github.com/omomehinemmanuel5-boop/LEX-Aureon/blob/main/research/empirical-results.md#run-008--2026-09-13--item-detail-fix-validated-a-borderline-fp-surfaces" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors underline underline-offset-2">
+            Read the dated results
+          </a>.
         </p>
       </div>
     </section>
