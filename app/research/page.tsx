@@ -3,6 +3,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import CbfInvariancePanel from '@/components/CbfInvariancePanel';
 import CbfSimulator from '@/components/CbfSimulator';
+import ArchitectureSection from '@/components/ArchitectureSection';
+import RedTeamSection from '@/components/RedTeamSection';
 
 export const metadata: Metadata = {
   title: 'Aureonics Research Foundation — Lex Aureon',
