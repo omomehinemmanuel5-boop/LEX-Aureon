@@ -125,7 +125,7 @@ Lex Aureon separates deployed engineering claims from mathematical claims:
 
 > **Important boundary:** the z-aware governor has a non-positive continuous-time directional derivative for the active `V_z` under positive session weights. The complete discrete production transition enforces conditional non-increase through its post-guard. An unrestricted unguarded governor-versus-drift magnitude inequality is intentionally not claimed because the input contract does not declare a drift envelope.
 
-The open-problem tracker is `research/open-problems.md`. It now lists only the remaining mathematical open problem and points resolved items to their closure notes.
+The research-boundary tracker is `research/open-problems.md`. The remaining unrestricted theorem and unmeasured predictions are closed as out of scope for the current deployment contract; they remain optional research topics and are not product guarantees.
 
 ---
 

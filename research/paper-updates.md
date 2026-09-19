@@ -6,6 +6,13 @@ since Paper v3 (DOI 10.5281/zenodo.18944242, May 2026).
 Each suggestion cites the code that motivates it so reviewers can verify the
 math against the implementation.
 
+> **Status note (2026-09-19):** The historical suggestions below predate the
+> verified closure of Resolved Problem 3. The dynamic z-update rule is now
+> closed and deployed through the Banach fixed-point construction documented in
+> [`research/open-problems.md`](open-problems.md). References below to an
+> “open” or “missing” Problem 3 should be read as historical proposals, not as
+> current unresolved claims.
+
 ---
 
 ## 1. Effective τ — adaptive constitutional floor
@@ -80,7 +87,7 @@ not after. This changes the operational definition of "drift."
   the accumulation threshold; explain the design choice — slow-drip is
   a *predictor* of CBF breach, so it must fire in the Lyapunov-penalty
   band (`τ_floor < M ≤ τ_LYP`), not after the CBF has already engaged.
-- This refines **Open Problem 3** (z-update rule): `σ_viol` is now
+- Historical suggestion — this originally refined **Open Problem 3** (z-update rule): `σ_viol` is now
   coupled to τ_LYP, so the hybrid-system formulation must distinguish
   three regions (M > τ_LYP, τ_floor < M ≤ τ_LYP, M ≤ τ_floor) rather
   than two.
@@ -102,10 +109,10 @@ across turns and feeds `τ_eff` (Suggestion 1).
 - §4 (State Space): formalize the trajectory state
   `z = (velocity, n_stable, drift_dir, σ_viol, M, C, R, S, p_attack)`
   and write its update map `z_{t+1} = h(x_t, z_t, ℓ_t)` explicitly.
-- This is **the missing piece of Open Problem 3**. With `p_attack`
-  added, the z-update rule is now complete modulo the law-event coupling.
-  Suggest reframing Open Problem 3 as: "characterize the coupling
-  `dp_attack / dt` to `law_events`."
+- Historical suggestion — this was previously described as **the missing piece
+  of Open Problem 3**. The current rule is closed; `p_attack` and law-event
+  coupling are included in the deployed `updateZTraj()` path. Any further work
+  here is an optional refinement, not an unresolved closure requirement.
 
 ---
 
@@ -158,9 +165,10 @@ Reflecting the above:
 - **Open Problem 1 — Global Lyapunov:** non-expansive Π_S (Suggestion 2)
   gives the missing step-decrease bound. **Downgrade priority from
   HIGH to MEDIUM.**
-- **Open Problem 3 — z-update rule:** `p_attack` closes the state-space
-  side (Suggestion 4). The remaining open question is the law-event
-  coupling. **Rephrase: "Characterize dp_attack/dt under law_events."**
+- **Resolved Problem 3 — z-update rule:** the deployed Banach fixed-point rule
+  closes the state-space and law-event coupling claim under its documented
+  assumptions. Further characterization of `dp_attack/dt` under `law_events`
+  is optional follow-up research, not an open deployment problem.
 - **Predictions:** add P10 (per-session adversarial collapse), P11
   (faster slow-drip detection under τ_LYP rule), P12 (taxonomy
   partition completeness).

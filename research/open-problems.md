@@ -1,6 +1,6 @@
-# Aureonics Open Mathematical Problems
+# Aureonics Research Boundaries and Resolved Problems
 
-This file tracks only unresolved mathematical problems. Resolved problems stay listed in the resolved ledger below so README, landing-page, and paper copy do not accidentally keep stale "open" claims alive.
+This file tracks research boundaries and resolved problems. The unrestricted arbitrary-drift theorem and the unexecuted falsifiable predictions are retired from the current deployment contract; they remain optional research topics rather than open deployment blockers. Resolved problems stay listed in the ledger below so README, landing-page, and paper copy do not accidentally keep stale "open" claims alive.
 
 The cross-cutting closure plan for empirical predictions, agent-action evidence, and optional product extensions is documented in [`research/closure-program.md`](closure-program.md). It defines the evidence required to mark each remaining item measured, implemented, or retired.
 
@@ -30,7 +30,7 @@ This is enforced by the final convex-segment descent guard for valid floor-const
 
 The remaining continuous-time comparison now has a scoped sufficient result in [`research/drift-envelope.md`](drift-envelope.md): if tangent drift satisfies `||F||₂ ≤ K||Π∇V_z||₂`, the z-aware governor guarantees a non-positive directional derivative. The unrestricted claim remains intentionally unproven because no such drift envelope is part of the general input contract.
 
-Priority: **CLOSED**
+Priority: **CLOSED AS OUT OF SCOPE FOR THE CURRENT DEPLOYMENT CONTRACT**
 
 Optional future research, not a deployment gap:
 
@@ -200,14 +200,23 @@ The prior `NOT PROVEN` simulator classification was traced to two implementation
 
 ## Falsifiable predictions status
 
-P1: Untested  P2: Untested  P3: Untested
-P4: Untested  P5: Untested  P6: Untested
-P7: Untested  P8: Untested  P9: Untested
+Status: **RETIRED FROM THE CURRENT DEPLOYMENT CONTRACT**
+
+P1–P9 are not required to establish the deployed guarded invariant. P10–P12
+have reproducible audit infrastructure but no qualifying evidence artifact in
+this revision. They are therefore not claimed as supported or falsified; all
+prediction claims are retired from the deployment promise and remain optional
+research follow-up. The audit runner must continue to report `INCONCLUSIVE`
+when its pre-registered evidence is absent.
+
+P1: Retired  P2: Retired  P3: Retired
+P4: Retired  P5: Retired  P6: Retired
+P7: Retired  P8: Retired  P9: Retired
 
 ### Proposed v3 predictions
 
-P10 — Per-session adversarial collapse: repeated adversarial turns within a single session collapse `M(x)` faster than the same prompts across independent sessions, because attack pressure raises effective recovery demand over time.
+P10 — Optional research: per-session adversarial collapse. Repeated adversarial turns within a single session may collapse `M(x)` faster than the same prompts across independent sessions, because attack pressure raises effective recovery demand over time.
 
-P11 — Faster slow-drip detection under the recovery-margin rule: time-to-detection of slow-drip attacks is shorter when `sigma_viol` accumulates at the recovery margin than at the hard floor.
+P11 — Optional research: faster slow-drip detection under the recovery-margin rule. Time-to-detection may be shorter when `sigma_viol` accumulates at the recovery margin than at the hard floor.
 
-P12 — Taxonomy partition completeness: the empirical distribution of `law_fired` on production traffic matches the attack taxonomy partition assumed in the paper, with no unexplained residual class needed.
+P12 — Optional research: taxonomy partition completeness. The empirical distribution of `law_fired` on production traffic may match the attack taxonomy partition assumed in the paper, with no unexplained residual class needed.

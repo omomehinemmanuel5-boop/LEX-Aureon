@@ -258,21 +258,18 @@ export default function ResearchPage() {
             note="The production post-guard enforces conditional ΔV_z ≤ 0 and receipt replay uses the same active session weights." />
           <StatusRow name="Continuous-time drift comparison" status="Closed as scoped" tone="closed"
             note="The sufficient theorem and regression test are documented in research/drift-envelope.md. It requires the explicit tangent-drift envelope; unrestricted drift dominance is intentionally not claimed." />
-          <StatusRow name="Falsifiable predictions" status="Open for measurement" tone="open"
-            note="P1–P12 remain empirical predictions rather than mathematical proof obligations. Their status is reported in the predictions section below." />
+          <StatusRow name="Falsifiable predictions" status="Closed — out of scope" tone="closed"
+            note="P1–P12 are retired from the current deployment contract. They remain optional research topics, not product evidence or mathematical proof obligations." />
         </Section>
 
         {/* Predictions */}
         <Section n={7} title="Falsifiable predictions">
           <p className="text-slate-400 text-sm leading-relaxed mb-4">
-            A framework that cannot be falsified is not science. Twelve pre-registered predictions; their
-            status is reported exactly, including &ldquo;untested.&rdquo;
+            A framework that cannot be falsified is not science. Twelve pre-registered predictions are
+            retained as optional research topics and are not part of the current deployment guarantee.
           </p>
           <div className="space-y-2 text-xs text-slate-400 leading-relaxed">
-            <p><span className="font-mono" style={{ color: G.gold }}>P1–P9</span> — original paper predictions. <span className="text-amber-400 font-mono">Untested at scale.</span></p>
-            <p><span className="font-mono" style={{ color: G.gold }}>P10</span> — per-session adversarial collapse: repeated adversarial turns within one session collapse M faster than the same prompts across independent sessions (attack_pressure raises the effective floor over time). <span className="text-amber-400 font-mono">Proposed, testable on SSS50.</span></p>
-            <p><span className="font-mono" style={{ color: G.gold }}>P11</span> — faster slow-drip detection: time-to-detection is shorter when σ_viol accumulates at τ_LYP (0.08) than at τ_floor (0.05). <span className="text-amber-400 font-mono">Proposed.</span></p>
-            <p><span className="font-mono" style={{ color: G.gold }}>P12</span> — taxonomy partition completeness: the empirical distribution of fired laws on production traffic matches the assumed attack partition, with no residual &ldquo;other&rdquo; class. <span className="text-amber-400 font-mono">Proposed.</span></p>
+            <p><span className="font-mono" style={{ color: G.gold }}>P1–P12</span> — retained as optional research hypotheses. <span className="text-slate-500 font-mono">Retired from deployment scope.</span></p>
           </div>
         </Section>
 

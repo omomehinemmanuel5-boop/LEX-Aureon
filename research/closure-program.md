@@ -19,13 +19,13 @@ The unrestricted arbitrary-drift theorem is not a missing deployment proof. It i
 | Nonlinear Pareto frontier | Closed | Preserve derivation and citation boundary | Documentation audit |
 | Dynamic z-update rule | Closed | Preserve contraction test and receipt stamping | Documentation audit |
 | FPL-1 simulator | Closed numerically | Keep finite-horizon and numerical labels visible | Research-page audit |
-| P1–P9 paper predictions | Untested or not fully reported | Run the pre-specified experiment, or formally retire the prediction with a reason | Build an experiment manifest |
-| P10 per-session adversarial collapse | Proposed | Compare repeated within-session attacks with independent sessions under a fixed protocol | Implement benchmark |
-| P11 slow-drip detection speed | Proposed | Compare time-to-detection at the two specified accumulation thresholds | Implement benchmark |
-| P12 taxonomy partition completeness | Proposed | Measure production or evaluation traffic and report residual classes | Implement instrumentation and benchmark |
+| P1–P9 paper predictions | Retired from deployment contract | Preserve as optional research hypotheses; do not present as product evidence | No deployment action |
+| P10 per-session adversarial collapse | Retired from deployment contract | Preserve audit runner and optional research protocol | No deployment action |
+| P11 slow-drip detection speed | Retired from deployment contract | Preserve audit runner and optional research protocol | No deployment action |
+| P12 taxonomy partition completeness | Retired from deployment contract | Preserve audit runner and optional research protocol | No deployment action |
 | Agent tool-governance corpus | Evidence-limited | Expand beyond four hand-built tasks and report paired utility/security results | Add independent task families |
 | Governance Passport and policy provenance | Planned product work | Implement, test, and document the runtime contract, or explicitly remove from the deployment promise | Product decision |
-| Unrestricted arbitrary-drift theorem | Not claimed by design | Requires a new input contract with an explicit drift envelope | Do not label as a current gap |
+| Unrestricted arbitrary-drift theorem | Retired from deployment contract | Requires a new input contract with an explicit drift envelope for optional future research | No deployment action |
 
 ## Work sequence
 
@@ -58,7 +58,7 @@ The project may describe the closure program as complete only when every item ha
 3. **Measured:** a falsifiable prediction with a reproducible result, including a null result where applicable.
 4. **Retired or out of scope:** a documented decision that removes the item from the deployment contract.
 
-“Open” must remain reserved for work that has no result and no retirement decision. “Closed as scoped” must continue to identify claims that are valid only under an explicit assumption.
+“Open” must remain reserved for work that has no result and no retirement decision. “Closed as scoped” must continue to identify claims that are valid only under an explicit assumption. “Retired from the deployment contract” identifies research that is intentionally not required for the current product guarantee.
 
 ## References
 
