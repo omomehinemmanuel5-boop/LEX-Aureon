@@ -370,23 +370,23 @@ function ResearchHandoffSection() {
    benchmark pages. */
 function AgentGovernanceSection() {
   return (
-    <section className="py-16 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
+    <section id="agent-governance" className="py-16 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-            Agent tool-call governance
+            Agent action control
           </div>
           <h2 className="text-2xl sm:text-4xl font-black text-white mb-4">
-            Governs what the agent does,{' '}
-            <span className="text-slate-500 font-light">not just what it says.</span>
+            Govern every action,{' '}
+            <span className="text-slate-500 font-light">not just every answer.</span>
           </h2>
           <p className="text-slate-400 text-sm max-w-xl mx-auto leading-relaxed">
-            A separate governance pass sits between the agent and every tool call it makes — file reads, SQL, shell commands, outbound requests. Most tool-governance evals only ask whether an attack was blocked. Ours also asks whether the real task still got done, scored from the same executed trace, so the comparison is causal, not simulated.
+            Put a constitutional control layer between an agent and its tools — file reads, SQL, shell commands, and outbound requests. Lex Aureon blocks unsafe actions while checking that the legitimate task still gets done.
           </p>
         </div>
 
         <div className="rounded-2xl border p-6 sm:p-8 bg-white/[0.03] border-white/10 mb-6">
-          <div className="text-slate-500 text-xs uppercase tracking-widest mb-4 font-bold font-mono">Two-layer defense</div>
+          <div className="text-slate-500 text-xs uppercase tracking-widest mb-4 font-bold font-mono">Two-layer defense · before execution</div>
           <p className="text-slate-400 text-xs leading-relaxed mb-4">
             <b className="text-white">Unconditional:</b> four hardcoded invariants — credential-file access, destructive SQL, shell-delete, exfiltration to unlisted domains — are blocked regardless of C/R/S score or surrounding justification. No stated context lets one of these four through.
           </p>
@@ -497,7 +497,15 @@ function AgentGovernanceSection() {
           </div>
         </div>
 
-        <p className="text-center text-[11px] font-mono text-slate-600">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-6">
+          <Link href="/console" className="px-5 py-2.5 rounded-xl text-sm font-bold transition-all" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
+            Try the governed console
+          </Link>
+          <Link href="/api-docs" className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-300 border border-white/10 hover:bg-white/5 transition-all">
+            Read the API guide
+          </Link>
+        </div>
+        <p className="text-center text-[11px] font-mono text-slate-600 mt-4">
           Real task from the harness, not a hypothetical.{' '}
           <a href="https://github.com/omomehinemmanuel5-boop/LEX-Aureon/blob/main/scripts/agentdojo-real/suite.ts" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors underline underline-offset-2">
             See the harness and corpus
@@ -627,11 +635,11 @@ export default async function LandingPage() {
       />
       <LandingNav />
       <Hero />
+      <AgentGovernanceSection />
       <BenchmarkResults compact initialData={benchmarkData} />
       <ComparisonSection />
       <ArchitectureSection />
       <ResearchHandoffSection />
-      <AgentGovernanceSection />
       <LiveStatsBar />
       <ProofPanel />
       <section className="py-16 px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
