@@ -8,7 +8,7 @@ const limit = Number.isFinite(limitArg) ? Math.max(1, Math.min(100000, Math.floo
 async function main() {
   await initSchema();
   const result = await getClient().execute({
-    sql: `SELECT session_id, turn, m_after, sigma_viol, law_fired,
+    sql: `SELECT session_id, turn, m_after, sigma_viol, law_fired, attack_type,
                  attack_pressure, lyp_detection_turn, floor_detection_turn, created_at
           FROM governor_log
           ORDER BY created_at ASC
@@ -21,6 +21,7 @@ async function main() {
       session_id: String(row.session_id),
       turn: Number(row.turn ?? 0),
       law_fired: law,
+      attack_type: row.attack_type == null ? null : String(row.attack_type),
       attack_pressure: row.attack_pressure == null ? null : Number(row.attack_pressure),
       sigma_viol: row.sigma_viol == null ? null : Number(row.sigma_viol),
       m_after: row.m_after == null ? null : Number(row.m_after),

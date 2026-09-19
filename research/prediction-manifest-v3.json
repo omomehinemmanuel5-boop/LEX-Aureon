@@ -17,8 +17,8 @@
     },
     "P12": {
       "hypothesis": "The observed law_fired distribution matches the declared attack partition with no residual other class.",
-      "required_fields": ["session_id", "turn", "law_fired"],
-      "closure_rule": "SUPPORTED only when the residual unlabeled/other rate is zero; FALSIFIED when it is nonzero; INCONCLUSIVE when no labeled events are supplied."
+      "required_fields": ["session_id", "turn", "attack_type"],
+      "closure_rule": "SUPPORTED only when the residual raw attack_type rate outside the six declared classes is zero; FALSIFIED when it is nonzero; INCONCLUSIVE when no attack events are supplied."
     }
   },
   "exclusions": [

@@ -398,11 +398,12 @@
       session_id    TEXT    NOT NULL,
       turn          INTEGER NOT NULL DEFAULT 0,
       m_before      REAL, m_after REAL, drift_dir TEXT, sigma_viol REAL,
-      intervention  TEXT, law_fired TEXT, attack_pressure REAL DEFAULT 0.0,
+      intervention  TEXT, law_fired TEXT, attack_type TEXT, attack_pressure REAL DEFAULT 0.0,
       lyp_detection_turn INTEGER, floor_detection_turn INTEGER,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
     await safeExec(`ALTER TABLE governor_log ADD COLUMN attack_pressure REAL DEFAULT 0.0`);
+    await safeExec(`ALTER TABLE governor_log ADD COLUMN attack_type TEXT`);
     await safeExec(`ALTER TABLE governor_log ADD COLUMN lyp_detection_turn INTEGER`);
     await safeExec(`ALTER TABLE governor_log ADD COLUMN floor_detection_turn INTEGER`);
 
