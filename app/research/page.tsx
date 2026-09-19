@@ -17,6 +17,7 @@ const SECTIONS = [
   'Abstract', 'Mathematical framework', 'Constitutional constants', 'Formal stability',
   'Live counterfactual', 'Open problems', 'Falsifiable predictions', 'Empirical evidence',
   'Governance pipeline', 'Reproducibility', 'Cite this work',
+  'System architecture', 'Adversarial taxonomy',
 ] as const;
 
 function slug(s: string) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
