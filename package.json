@@ -26,6 +26,7 @@
     "advbench:score": "npx tsx scripts/advbench/score.ts",
     "agentdojo": "npx tsx scripts/agentdojo/run.ts",
     "agentdojo:score": "npx tsx scripts/agentdojo/score.ts",
+    "predictions:v3": "npx tsx scripts/predictions/v3-audit.ts",
     "truthfulqa": "npx tsx scripts/truthfulqa/run.ts",
     "truthfulqa:fast": "npx tsx scripts/truthfulqa/run-parallel.ts",
     "truthfulqa:direct": "npx tsx scripts/truthfulqa/run-direct.ts",
