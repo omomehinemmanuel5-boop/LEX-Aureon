@@ -26,6 +26,8 @@ The valid deployed result is the guarded discrete invariant:
 
 This is enforced by the final convex-segment descent guard for valid floor-constrained states, finite inputs, and positive finite session weights. Replay, certificates, and receipts use the same active weights.
 
+The remaining continuous-time comparison now has a scoped sufficient result in [`research/drift-envelope.md`](drift-envelope.md): if tangent drift satisfies `||F||₂ ≤ K||Π∇V_z||₂`, the z-aware governor guarantees a non-positive directional derivative. The unrestricted claim remains intentionally unproven because no such drift envelope is part of the general input contract.
+
 Priority: **CLOSED**
 
 Optional future research, not a deployment gap:
