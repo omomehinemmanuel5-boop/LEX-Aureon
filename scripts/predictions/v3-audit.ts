@@ -73,7 +73,7 @@ function p11(events: Event[]): Finding {
     const key = event.attack_class ?? 'unknown';
     byClass.set(key, [...(byClass.get(key) ?? []), event]);
   }
-  const slowDrip = byClass.get('slow_drip') ?? [];
+  const slowDrip = byClass.get('tau_lyp') ?? [];
   const floor = byClass.get('tau_floor') ?? [];
   if (!slowDrip.length || !floor.length) {
     return { prediction: 'P11', status: 'INCONCLUSIVE', sample_size: usable.length, reason: 'Requires labeled tau_LYP and tau_floor cohorts with detection_turn or a reproducible detection rule.', metrics: {} };

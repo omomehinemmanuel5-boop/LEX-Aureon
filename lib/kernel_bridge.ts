@@ -43,7 +43,7 @@ import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { getClient } from './db';
 import { KernelCycleResult, KernelState } from './sovereign_kernel';
 import { TAU, Z_RECOVERY } from './aureonics_core';
-import { updateZTraj, getZTraj, SIGMA_THRESHOLD } from './kv';
+import { updateZTraj, getZTraj, SIGMA_THRESHOLD, TAU_LYP, TAU_FLOOR } from './kv';
 import { logger, errorFields } from './logger';
 import { env } from './env';
 import { sendOpsAlert } from './notify';
@@ -330,6 +330,18 @@ export async function writeKernelReceipt(
   } catch { /* non-fatal */ }
 
   const slowDrip = Math.max(semanticSlowDrip, accumulatorSlowDrip);
+  let priorLypDetection: number | null = null;
+  let priorFloorDetection: number | null = null;
+  try {
+    const prior = await db.execute({
+      sql: 'SELECT lyp_detection_turn, floor_detection_turn FROM governor_log WHERE session_id = ? ORDER BY turn DESC LIMIT 1',
+      args: [sessionId],
+    });
+    priorLypDetection = prior.rows[0]?.lyp_detection_turn == null ? null : Number(prior.rows[0].lyp_detection_turn);
+    priorFloorDetection = prior.rows[0]?.floor_detection_turn == null ? null : Number(prior.rows[0].floor_detection_turn);
+  } catch { /* legacy database before threshold columns are migrated */ }
+  const lypDetectionTurn = priorLypDetection ?? (result.M < TAU_LYP ? turn : null);
+  const floorDetectionTurn = priorFloorDetection ?? (result.M < TAU_FLOOR ? turn : null);
 
   // fix (2026-08-22): single source for both intervention columns below.
   // Previously governorIntervened (praxis_receipts.intervention, a bool) and
@@ -422,8 +434,9 @@ export async function writeKernelReceipt(
     await db.execute({
       sql: `INSERT INTO governor_log
               (session_id, turn, m_before, m_after, drift_dir,
-               sigma_viol, intervention, law_fired, attack_pressure, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               sigma_viol, intervention, law_fired, attack_pressure,
+               lyp_detection_turn, floor_detection_turn, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         sessionId, turn,
         mBefore, result.M, driftDir, sigmaViol,
@@ -431,6 +444,8 @@ export async function writeKernelReceipt(
         result.receipt.active_law || (result.semantic_signal.attack_type !== 'none'
           ? `semantic:${result.semantic_signal.attack_type}` : null),
         result.attack_pressure,
+        lypDetectionTurn,
+        floorDetectionTurn,
         new Date().toISOString(),
       ],
     });
