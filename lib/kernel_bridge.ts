@@ -422,14 +422,15 @@ export async function writeKernelReceipt(
     await db.execute({
       sql: `INSERT INTO governor_log
               (session_id, turn, m_before, m_after, drift_dir,
-               sigma_viol, intervention, law_fired, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               sigma_viol, intervention, law_fired, attack_pressure, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         sessionId, turn,
         mBefore, result.M, driftDir, sigmaViol,
         interventionCategory,
         result.receipt.active_law || (result.semantic_signal.attack_type !== 'none'
           ? `semantic:${result.semantic_signal.attack_type}` : null),
+        result.attack_pressure,
         new Date().toISOString(),
       ],
     });
