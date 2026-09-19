@@ -8,8 +8,6 @@ import LandingNav from '@/components/LandingNav';
 import LandingEmailCapture from '@/components/LandingEmailCapture';
 import EnterpriseSection from '@/components/EnterpriseSection';
 import LiveStatsBar from '@/components/LiveStatsBar';
-import RedTeamSection from '@/components/RedTeamSection';
-import ArchitectureSection from '@/components/ArchitectureSection';
 import BenchmarkResults, { type ApiShape as BenchmarkApiShape } from '@/components/BenchmarkResults';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
