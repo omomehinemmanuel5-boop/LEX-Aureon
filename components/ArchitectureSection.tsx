@@ -111,6 +111,29 @@ export default function ArchitectureSection() {
           </p>
         </div>
 
+        {/* Architecture at a glance — the detailed eight-stage pipeline follows below. */}
+        <div className="mb-8 rounded-2xl border p-4 sm:p-5" style={{ borderColor: `${G.gold}30`, background: `${G.gold}08` }}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-[10px] font-mono uppercase tracking-widest font-bold" style={{ color: G.goldL }}>Architecture at a glance</div>
+            <div className="text-[10px] font-mono text-slate-400">input → decision → proof</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-0">
+            {[
+              ['01', 'Sense', 'Prompt + memory', G.C],
+              ['02', 'Model', 'SovereignKernel', G.gold],
+              ['03', 'Govern', 'Governor + CBF', G.S],
+              ['04', 'Prove', 'Receipt + output', G.R],
+            ].map(([step, title, detail, color], index, phases) => (
+              <div key={step} className="relative rounded-xl border border-white/10 bg-black/20 p-3 sm:rounded-none sm:border-0 sm:bg-transparent sm:px-3 sm:first:pl-0 sm:last:pr-0">
+                {index < phases.length - 1 && <div className="absolute -right-1.5 top-1/2 hidden h-px w-3 sm:block" style={{ background: `${G.gold}80` }} />}
+                <div className="font-mono text-[10px] font-bold" style={{ color: `${color}dd` }}>{step}</div>
+                <div className="mt-1 text-sm font-black text-white">{title}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-slate-300">{detail}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Constitutional pillars — always first */}
         <div className="mb-8">
           <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-3 font-bold px-1">
