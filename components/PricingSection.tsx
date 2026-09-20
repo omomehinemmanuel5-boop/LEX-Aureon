@@ -8,9 +8,11 @@ import {
 } from '@/lib/pricing';
 
 const G = {
-  gold:  '#c9a84c',
+  gold: '#c9a84c',
   goldL: '#e8c96d',
   goldD: '#a07830',
+  ink: '#07070d',
+  panel: '#0d0d1a',
 };
 
 export default function PricingSection() {
@@ -19,6 +21,7 @@ export default function PricingSection() {
   const plans = [
     {
       name: 'Explorer',
+      kicker: 'Start with the essentials',
       price: '$0',
       period: undefined,
       badge: undefined,
@@ -40,6 +43,7 @@ export default function PricingSection() {
     },
     {
       name: 'Sovereign',
+      kicker: 'For serious builders',
       price: '$29',
       period: '/mo',
       badge: 'Most Popular',
@@ -61,6 +65,7 @@ export default function PricingSection() {
     },
     {
       name: 'Team / Agency',
+      kicker: 'Scale governed work',
       price: '$99',
       period: '/mo',
       badge: 'For teams',
@@ -80,6 +85,7 @@ export default function PricingSection() {
     },
     {
       name: 'Enterprise / Custom',
+      kicker: 'Governance for organizations',
       price: 'Custom',
       period: undefined,
       badge: 'For organizations',
@@ -100,115 +106,64 @@ export default function PricingSection() {
   ];
 
   return (
-    <section id="pricing" className="scroll-mt-20 py-24 px-5" style={{ backgroundColor: '#07070d' }}>
+    <section id="pricing" className="pricing-section scroll-mt-20 py-24 px-5" style={{ backgroundColor: G.ink }}>
       {showBtcModal && <BitcoinUpgradeModal onClose={() => setShowBtcModal(false)} />}
       <div className="max-w-7xl mx-auto">
-
-        {/* Header */}
-        <div className="text-center mb-10">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-            Pricing
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.2em] font-bold" style={{ borderColor: `${G.gold}55`, background: `${G.gold}0d`, color: G.goldL }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: G.goldL }} />
+            Governance tiers
           </div>
-          {/*
-            fix (2026-07-13) — DARK-ON-DARK: this section's background is
-            unconditionally #07070d (see style prop above, no dark: variant,
-            no light-mode override anywhere in this component). The text
-            below previously used `text-slate-900 dark:text-white` /
-            `text-slate-700 dark:text-slate-300` style hybrids — in light
-            mode, that resolves to text-slate-900 (near-black) against a
-            background that is ALWAYS near-black regardless of theme. Not
-            low-contrast — close to invisible. The Hero section (same
-            always-dark-background pattern) already established the correct
-            approach: use unconditional light colors here, since the
-            background never actually goes light. Every text color in this
-            component below is now unconditional for that reason, not an
-            oversight of the dark: variant.
-          */}
-          <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">
-            Choose your governance tier
-          </h2>
-          <p className="text-sm text-slate-400 font-mono">
-            Early supporter pricing — first 50 customers lock in this rate forever.
+          <h2 className="mt-5 text-3xl sm:text-5xl font-black text-white mb-3">Choose your governance tier</h2>
+          <p className="text-sm text-slate-400 font-mono max-w-xl mx-auto leading-relaxed">
+            Start free, then scale the same constitutional control layer from one console session to organization-wide oversight.
           </p>
         </div>
 
-        {/* Plans */}
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="pricing-grid grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {plans.map(plan => (
             <div
               key={plan.name}
-              className="rounded-2xl border p-6 flex flex-col relative"
+              className={`pricing-card rounded-2xl border p-6 flex flex-col relative ${plan.highlight ? 'pricing-card-featured' : ''}`}
               style={{
-                borderColor:  plan.highlight ? G.gold : 'rgba(0,0,0,0.08)',
-                background:   plan.highlight ? `${G.gold}08` : 'rgba(0,0,0,0.02)',
-                boxShadow:    plan.highlight ? `0 0 48px ${G.gold}18` : 'none',
+                borderColor: plan.highlight ? G.gold : `${G.gold}35`,
+                background: plan.highlight ? `linear-gradient(180deg, ${G.gold}16 0%, rgba(255,255,255,.035) 42%, rgba(255,255,255,.02) 100%)` : 'linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.018))',
+                boxShadow: plan.highlight ? `0 0 0 1px ${G.gold}30, 0 0 56px ${G.gold}18` : `0 18px 50px rgba(0,0,0,.18)`,
               }}
             >
               {plan.badge && (
-                <div
-                  className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap"
-                  style={{
-                    background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`,
-                    color: '#07070d',
-                  }}
-                >
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full whitespace-nowrap" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: G.ink }}>
                   {plan.badge}
                 </div>
               )}
 
-              {/* Name + price */}
-              <div className="mb-5">
-                <div
-                  className="text-xs font-mono uppercase tracking-widest mb-2 font-black"
-                  style={{ color: plan.highlight ? G.gold : '#64748b' }}
-                >
-                  {plan.name}
+              <div className="mb-6">
+                <div className="text-[10px] font-mono uppercase tracking-[0.16em] mb-2 font-bold" style={{ color: plan.highlight ? G.goldL : G.gold }}>
+                  {plan.kicker}
                 </div>
+                <h3 className="text-xl font-black text-white mb-4">{plan.name}</h3>
                 <div className="flex items-baseline gap-1">
                   <span className="text-3xl font-black text-white">{plan.price}</span>
-                  {plan.period && (
-                    <span className="text-slate-500 text-sm font-bold">{plan.period}</span>
-                  )}
+                  {plan.period && <span className="text-slate-400 text-sm font-bold">{plan.period}</span>}
                 </div>
               </div>
 
-              {/* Features */}
-              <ul className="space-y-2 flex-1 mb-6">
+              <div className="h-px mb-6" style={{ background: `linear-gradient(90deg, ${G.gold}80, transparent)` }} />
+
+              <ul className="space-y-2.5 flex-1 mb-7">
                 {plan.features.map(f => (
                   <li key={f} className="flex items-start gap-2 text-sm text-slate-200 font-medium leading-relaxed">
-                    <span
-                      className="flex-shrink-0 mt-0.5 font-black"
-                      style={{ color: plan.highlight ? G.gold : '#10b981' }}
-                    >
-                      ✓
-                    </span>
-                    {f}
+                    <span className="flex-shrink-0 mt-0.5 font-black" style={{ color: G.goldL }}>✓</span>
+                    <span>{f}</span>
                   </li>
                 ))}
               </ul>
 
-              {/* CTA */}
               <a
                 href={plan.href}
-                onClick={
-                  plan.href === '#upgrade-sovereign'
-                    ? (e) => { e.preventDefault(); setShowBtcModal(true); }
-                    : undefined
-                }
+                onClick={plan.href === '#upgrade-sovereign' ? (e) => { e.preventDefault(); setShowBtcModal(true); } : undefined}
                 className="block text-center py-3 rounded-xl text-sm font-bold transition-all active:scale-95"
-                style={
-                  plan.highlight
-                    ? {
-                        background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`,
-                        color: '#07070d',
-                        boxShadow: `0 4px 20px ${G.gold}30`,
-                      }
-                    : {
-                        border: '1px solid rgba(0,0,0,0.1)',
-                        color: '#475569',
-                        background: 'rgba(0,0,0,0.02)',
-                      }
-                }
+                style={plan.highlight ? { background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: G.ink, boxShadow: `0 4px 20px ${G.gold}30` } : { border: `1px solid ${G.gold}55`, color: G.goldL, background: `${G.gold}0a` }}
               >
                 {plan.cta}
               </a>
@@ -216,41 +171,19 @@ export default function PricingSection() {
           ))}
         </div>
 
-        {/* What changed banner */}
-        <div
-          className="mt-8 rounded-2xl border px-5 py-4 text-center"
-          style={{ borderColor: `${G.gold}25`, background: `${G.gold}06` }}
-        >
-          <div className="text-xs font-mono font-bold mb-1" style={{ color: G.gold }}>
-            What changed in v2
-          </div>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            Sovereign is now $29/mo — with advanced response governance, live web sensing,
-            cross-session memory, cryptographic receipts, and developer API access.
-            Anyone who subscribed at $19 keeps that price forever.
-          </p>
+        <div className="mt-8 rounded-2xl border px-5 py-4 text-center" style={{ borderColor: `${G.gold}25`, background: `${G.gold}06` }}>
+          <div className="text-xs font-mono font-bold mb-1" style={{ color: G.goldL }}>Early supporter pricing</div>
+          <p className="text-sm text-slate-400 leading-relaxed">First 50 customers lock in this rate forever. Sovereign is now $29/mo; anyone who subscribed at $19 keeps that price forever.</p>
         </div>
 
-        <div
-          className="mt-4 rounded-2xl border px-5 py-4"
-          style={{ borderColor: 'rgba(16,185,129,0.25)', background: 'rgba(16,185,129,0.05)' }}
-        >
-          <div className="text-xs font-mono font-bold mb-1 text-center" style={{ color: '#34d399' }}>
-            What Explorer includes for free
-          </div>
+        <div className="mt-4 rounded-2xl border px-5 py-4" style={{ borderColor: 'rgba(16,185,129,0.25)', background: 'rgba(16,185,129,0.05)' }}>
+          <div className="text-xs font-mono font-bold mb-1 text-center text-emerald-300">What Explorer includes for free</div>
           <p className="text-sm text-slate-300 leading-relaxed text-center">
-            Explorer includes {FREE_TEXT_RUNS_PER_DAY} text-governance runs per day in Console and{' '}
-            {FREE_AGENT_TOOL_RUN_LIMIT.toLocaleString('en-US')} agent tool-governance runs through the Free API key.
-            Text governance evaluates model responses; agent governance evaluates tool calls before execution.
-            Free agent-tool turns still receive prompt-injection detection, constitutional approval or denial, CRS
-            health context, and a SHA-256 governance receipt.
+            Explorer includes {FREE_TEXT_RUNS_PER_DAY} text-governance runs per day in Console and {FREE_AGENT_TOOL_RUN_LIMIT.toLocaleString('en-US')} agent tool-governance runs through the Free API key. Text governance evaluates model responses; agent governance evaluates tool calls before execution.
           </p>
         </div>
 
-        <div className="mt-4 text-center text-sm text-slate-400 font-mono font-bold uppercase tracking-tighter">
-          All plans include cryptographic audit receipts · AI governance always provable
-        </div>
-
+        <div className="mt-5 text-center text-[10px] text-slate-500 font-mono font-bold uppercase tracking-[0.16em]">All plans include cryptographic audit receipts · AI governance always provable</div>
       </div>
     </section>
   );

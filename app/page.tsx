@@ -271,8 +271,13 @@ async function Hero() {
 
         <Link
           href="/observatory"
-          className="inline-flex min-h-11 max-w-[92vw] items-center justify-center gap-2 rounded-full border border-indigo-300/30 bg-indigo-300/10 px-4 py-2.5 text-center text-xs font-bold text-indigo-200 transition hover:border-indigo-200/60 hover:bg-indigo-300/15 sm:text-sm"
+          className="inline-flex min-h-11 max-w-[92vw] items-center justify-center gap-2 rounded-full border border-[#c9a84c]/40 bg-[#c9a84c]/10 px-4 py-2.5 text-center text-xs font-bold text-[#e8c96d] transition hover:border-[#e8c96d]/70 hover:bg-[#c9a84c]/20 sm:text-sm"
         >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="8.5" />
+            <path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3M7.8 16.2l2.1-6.3 6.3-2.1-2.1 6.3-6.3 2.1Z" />
+            <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+          </svg>
           Explore the Governance Observatory <span aria-hidden="true">→</span>
         </Link>
       </div>
@@ -505,10 +510,10 @@ export default async function LandingPage() {
       <ComparisonSection />
       <AgentGovernanceSection />
       <EnterpriseSection />
-      <PricingSection />
       <BenchmarkResults compact initialData={benchmarkData} />
       <LiveStatsBar />
       <ResearchHandoffSection />
+      <PricingSection />
 
       <footer className="py-16 px-5 border-t border-white/5" style={{ backgroundColor: '#07070d' }}>
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-10">
