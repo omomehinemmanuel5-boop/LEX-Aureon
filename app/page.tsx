@@ -365,39 +365,39 @@ function ComparisonSection() {
   ];
   const groups = ['Govern text', 'Govern agents', 'Prove and operate'];
   return (
-    <section className="py-20 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950">
+    <section className="comparison-section py-20 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#0d0d1a' }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600 dark:text-slate-500 font-bold">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
             What Lex Aureon combines
           </div>
-          <h2 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white mb-4">
+          <h2 className="text-3xl sm:text-5xl font-black text-white mb-4">
             One governance layer{' '}
-            <span className="text-slate-600 dark:text-slate-500 font-light">for text, agents, and tools.</span>
+            <span className="text-slate-300 font-light">for text, agents, and tools.</span>
           </h2>
         </div>
         <div className="space-y-8">
           {groups.map(group => (
             <div key={group}>
-              <h3 className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600 dark:text-slate-500 font-bold">{group}</h3>
+              <h3 className="text-xs font-mono uppercase tracking-widest mb-3 text-[#e8c96d] font-bold">{group}</h3>
               <div className="grid sm:grid-cols-2 gap-3">
                 {caps.filter(cap => cap.group === group).map(({ n, d }) => (
                   <div
                     key={n}
-                    className="rounded-2xl border p-5 bg-white dark:bg-[#c9a84c06] border-slate-200 dark:border-[#c9a84c20] shadow-sm dark:shadow-none card-hover"
+                    className="rounded-2xl border p-5 bg-white/[0.035] border-[#c9a84c]/25 card-hover"
                   >
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-emerald-600 dark:text-emerald-400 font-black text-sm">✓</span>
+                      <span className="text-[#e8c96d] font-black text-sm">✓</span>
                       <span className="text-sm font-mono font-black" style={{ color: G.gold }}>{n}</span>
                     </div>
-                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{d}</p>
+                    <p className="text-sm text-slate-200 leading-relaxed">{d}</p>
                   </div>
                 ))}
               </div>
             </div>
           ))}
         </div>
-        <p className="text-center text-sm font-mono text-slate-700 dark:text-slate-400 mt-6">
+        <p className="text-center text-sm font-mono text-slate-300 mt-6">
           Text governance and agent tool governance, combined in one layer — above any LLM, with no retraining or fine-tuning.
         </p>
       </div>
@@ -449,6 +449,42 @@ function GovernanceFlowSection() {
             <p className="mt-4 text-xs leading-relaxed text-slate-500">Every governed turn can carry its constitutional state, intervention outcome, and integrity record into reviewable evidence.</p>
           </div>
           <Link href="/audit" className="flex min-h-12 items-center justify-center rounded-xl border border-[#c9a84c]/45 px-5 text-sm font-bold text-[#e8c96d] transition hover:bg-[#c9a84c]/10">Inspect audit receipts →</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProofBoundarySection() {
+  return (
+    <section className="px-4 py-8 sm:px-5 sm:py-10" style={{ backgroundColor: '#07070d' }}>
+      <div className="mx-auto max-w-5xl rounded-2xl border border-[#c9a84c]/25 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
+        <div className="grid gap-5 md:grid-cols-[auto_1fr_1fr] md:items-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#c9a84c]/40 bg-[#c9a84c]/10 font-mono text-lg font-black text-[#e8c96d]">◎</div>
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">Evidence boundary</div>
+            <h2 className="mt-1 text-lg font-black text-white">Strong claims, clearly scoped.</h2>
+          </div>
+          <div className="grid gap-2 text-xs leading-relaxed sm:grid-cols-2 md:col-span-1">
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-emerald-300">PROVEN</span><br />Single-pillar Lyapunov result and numerical CBF certificate.</div>
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-amber-300">OPEN</span><br />General multi-pillar analytical proof remains an active research boundary.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalConversionSection() {
+  return (
+    <section className="px-4 py-10 sm:px-5 sm:py-14" style={{ backgroundColor: '#07070d' }}>
+      <div className="mx-auto max-w-4xl rounded-3xl border border-[#c9a84c]/35 bg-[#c9a84c]/[0.06] p-7 text-center sm:p-10">
+        <div className="text-xs font-mono uppercase tracking-[0.2em] font-bold text-[#e8c96d]">Your next governed run</div>
+        <h2 className="mt-4 text-2xl font-black text-white sm:text-4xl">Start with governance you can inspect.</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">Try Explorer free, inspect the evidence, and move to Sovereign when your AI system reaches production.</p>
+        <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link href="/console" className="w-full rounded-xl px-6 py-3 text-sm font-black transition-all sm:w-auto" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d', boxShadow: `0 8px 28px ${G.gold}30` }}>Try Explorer free →</Link>
+          <Link href="/research" className="w-full rounded-xl border border-white/15 px-6 py-3 text-sm font-bold text-slate-200 transition hover:border-[#e8c96d]/60 hover:text-white sm:w-auto">Read the evidence</Link>
         </div>
       </div>
     </section>
@@ -570,8 +606,10 @@ export default async function LandingPage() {
       <BenchmarkResults compact initialData={benchmarkData} />
       <LiveStatsBar />
       <GovernanceFlowSection />
+      <ProofBoundarySection />
       <ResearchHandoffSection />
       <PricingSection />
+      <FinalConversionSection />
 
       <footer className="py-16 px-5 border-t border-white/5" style={{ backgroundColor: '#07070d' }}>
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-10">

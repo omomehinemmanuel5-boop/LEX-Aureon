@@ -358,3 +358,20 @@ body {
   background-size: 72px 72px;
   mask-image: linear-gradient(to bottom, black, transparent 85%);
 }
+.comparison-section {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-image: radial-gradient(circle at 50% 0%, rgba(201,168,76,0.05), transparent 32rem);
+}
+.comparison-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.12;
+  background-image: linear-gradient(rgba(201,168,76,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(201,168,76,0.18) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, black, transparent 80%);
+}
