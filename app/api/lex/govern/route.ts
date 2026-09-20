@@ -15,7 +15,7 @@ import { executeGovern, type GovernRequest, type GovernResponse } from '@/lib/go
 import type { IdentityMode } from '@/lib/sovereign_kernel';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { consumeApiKey, validateApiKey } from '@/lib/api_keys';
-import { ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE } from '@/lib/pricing';
+import { FREE_TEXT_RUNS_PER_DAY } from '@/lib/pricing';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -26,9 +26,10 @@ async function ensureDB() {
 
 const VALID_IDENTITY_MODES: IdentityMode[] = ['full', 'minimal', 'dynamic', 'none'];
 const MAX_BODY_BYTES = 70_000;
-const ANONYMOUS_LIMIT = ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE;
+const ANONYMOUS_LIMIT = FREE_TEXT_RUNS_PER_DAY;
 const AUTHENTICATED_LIMIT = 120;
-const WINDOW_SECONDS = 60;
+const ANONYMOUS_WINDOW_SECONDS = 24 * 60 * 60;
+const AUTHENTICATED_WINDOW_SECONDS = 60;
 
 function resolveIdentityMode(raw: unknown): IdentityMode {
   return typeof raw === 'string' && (VALID_IDENTITY_MODES as string[]).includes(raw)
@@ -128,7 +129,7 @@ export async function POST(req: Request) {
   const rate = await checkRateLimit(
     `lex.govern:ip:${ip}`,
     authenticated ? AUTHENTICATED_LIMIT : ANONYMOUS_LIMIT,
-    WINDOW_SECONDS,
+    authenticated ? AUTHENTICATED_WINDOW_SECONDS : ANONYMOUS_WINDOW_SECONDS,
   );
   if (rate.storageError) return admissionUnavailable();
   if (!rate.allowed) {

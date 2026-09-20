@@ -4,7 +4,7 @@
  */
 
 import { getClient } from './db';
-import { FREE_API_RUN_LIMIT } from './pricing';
+import { FREE_AGENT_TOOL_RUN_LIMIT } from './pricing';
 
 // Use Web Crypto for edge-compatible random key generation
 function generateSecureRandom(bytes: number): string {
@@ -34,7 +34,7 @@ export interface ApiKey {
 }
 
 const PLANS = {
-  free:         { limit: FREE_API_RUN_LIMIT, label: 'Free' },
+  free:         { limit: FREE_AGENT_TOOL_RUN_LIMIT, label: 'Free' },
   sovereign:    { limit: 10000,      label: 'Sovereign' },
   // Effectively unlimited for private testing while retaining a very large
   // finite ceiling as a last-resort runaway safeguard.

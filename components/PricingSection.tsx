@@ -2,8 +2,8 @@
 import React from 'react';
 import BitcoinUpgradeModal from '@/components/BitcoinUpgradeModal';
 import {
-  ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE,
-  FREE_API_RUN_LIMIT,
+  FREE_AGENT_TOOL_RUN_LIMIT,
+  FREE_TEXT_RUNS_PER_DAY,
   FREE_TOOL_GOVERNANCE_FEATURES,
 } from '@/lib/pricing';
 
@@ -26,8 +26,8 @@ export default function PricingSection() {
       cta: 'Start Free →',
       href: '/console',
       features: [
-        `${FREE_API_RUN_LIMIT.toLocaleString('en-US')} governed API runs included`,
-        `${ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE} free console/API requests per minute (anonymous demo)`,
+        `${FREE_TEXT_RUNS_PER_DAY} free text-governance runs / day in Console`,
+        `${FREE_AGENT_TOOL_RUN_LIMIT.toLocaleString('en-US')} agent tool-governance runs included`,
         'Live M-score dashboard',
         FREE_TOOL_GOVERNANCE_FEATURES[0],
         FREE_TOOL_GOVERNANCE_FEATURES[1],
@@ -220,10 +220,11 @@ export default function PricingSection() {
             What Explorer includes for free
           </div>
           <p className="text-xs text-slate-400 leading-relaxed text-center">
-            Start with {FREE_API_RUN_LIMIT.toLocaleString('en-US')} governed API runs on a Free API key, or use the
-            anonymous console demo at up to {ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE} governance requests per minute.
-            Every free governed turn still receives prompt-injection detection, constitutional tool approval or
-            denial, CRS health context, and a SHA-256 governance receipt.
+            Explorer includes {FREE_TEXT_RUNS_PER_DAY} text-governance runs per day in Console and{' '}
+            {FREE_AGENT_TOOL_RUN_LIMIT.toLocaleString('en-US')} agent tool-governance runs through the Free API key.
+            Text governance evaluates model responses; agent governance evaluates tool calls before execution.
+            Free agent-tool turns still receive prompt-injection detection, constitutional approval or denial, CRS
+            health context, and a SHA-256 governance receipt.
           </p>
         </div>
 
