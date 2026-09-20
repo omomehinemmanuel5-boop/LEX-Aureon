@@ -285,15 +285,18 @@ async function Hero() {
   );
 }
 
-/* ── Six Capabilities ──────────────────────────────────────────── */
+/* ── Product Capabilities ──────────────────────────────────────── */
 function ComparisonSection() {
   const caps = [
-    { n: 'Continuous state vector',  d: 'Tracks (C, R, S) as a live constitutional state across the whole exchange — not a single pass/fail flag on one message.' },
-    { n: 'Embedding-based measurement', d: 'Constitutional state is measured from embeddings — cosine similarity of the output to a constitutional anchor — not keyword matching. Provider-agnostic (currently Gemini gemini-embedding-001), the same embedding-based method described in the paper.' },
-    { n: 'Log-Barrier Dynamics',     d: 'Uses an interior-point log-barrier correction to push the state away from constitutional boundaries, designed for smooth and stable behaviour.' },
-    { n: 'Cryptographic receipts',   d: 'Every governed turn writes a SHA-256 receipt — the input hash, the output hash, and a bound hash over the constitutional state — persisted append-only on the same row, so any decision can be independently re-verified after the fact.' },
-    { n: 'Constitutional memory',    d: 'z-trajectory memory tracks which pillars are under sustained pressure across turns, so the governor responds to persistent pressure rather than only the current message.' },
-    { n: 'No retraining required',   d: 'Runs as a layer above any LLM — GPT, Claude, Gemini, Llama, Mistral — with no fine-tuning and no model changes.' },
+    { n: 'Text-response governance', d: 'Evaluates model responses for constitutional alignment before they are returned, with explicit refusal and intervention decisions instead of a hidden safety score.' },
+    { n: 'Agent tool-call governance', d: 'Intercepts file operations, database queries, shell commands, outbound requests, and other tool calls before execution.' },
+    { n: 'Prompt-injection detection', d: 'Checks prompts and tool arguments for adversarial instructions, destructive operations, credential access, and suspicious changes of scope.' },
+    { n: 'Continuous constitutional state', d: 'Tracks Continuity, Reciprocity, and Sovereignty across the whole interaction rather than reducing one exchange to a single pass/fail flag.' },
+    { n: 'Multi-step trajectory control', d: 'Governs planned sequences of agent actions, validates their scope and order, and can hard-lock a session after repeated high-risk behaviour.' },
+    { n: 'Safety and stability checks', d: 'Combines constitutional measurement with CBF safety projection and Lyapunov stability signals to keep decisions inside safer operating boundaries.' },
+    { n: 'Cryptographic audit receipts', d: 'Creates a SHA-256 receipt for each governed text turn and agent tool action, so decisions can be independently verified after the fact.' },
+    { n: 'Session memory and observability', d: 'Tracks constitutional pressure, interventions, agent trajectories, health bands, and replayable governance history across sessions.' },
+    { n: 'Model-agnostic integration', d: 'Runs above GPT, Claude, Gemini, Llama, Mistral, and external MCP-compatible tools without retraining or changing the underlying model.' },
   ];
   return (
     <section className="py-20 sm:py-24 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950">
@@ -303,8 +306,8 @@ function ComparisonSection() {
             What Lex Aureon combines
           </div>
           <h2 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white mb-4">
-            Six capabilities,{' '}
-            <span className="text-slate-600 dark:text-slate-500 font-light">one governance layer.</span>
+            One governance layer{' '}
+            <span className="text-slate-600 dark:text-slate-500 font-light">for text, agents, and tools.</span>
           </h2>
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -322,7 +325,7 @@ function ComparisonSection() {
           ))}
         </div>
         <p className="text-center text-xs font-mono text-slate-600 dark:text-slate-600 mt-6">
-          Combined in one layer — above any LLM, with no retraining or fine-tuning.
+          Text governance and agent tool governance, combined in one layer — above any LLM, with no retraining or fine-tuning.
         </p>
       </div>
     </section>
