@@ -47,15 +47,15 @@ export default function PricingSection() {
       cta: 'Upgrade to Sovereign →',
       href: '#upgrade-sovereign',
       features: [
-        'Unlimited governed runs',
-        'Async Governor G(x,z) — attractor basin steering',
-        'IEC-filtered search sensing — ρ(t) reliability',
-        'Full Lyapunov + CBF projection metrics',
-        'z-trajectory memory across sessions',
-        'SHA-256 audit receipt every turn',
-        'Trust receipt exports (JSON)',
-        'API access — /api-docs',
-        'TruthfulQA + HarmBench benchmark reports',
+        '10,000 governed API runs for text and agent workflows',
+        'Advanced text-response governance with Async Governor controls',
+        'Live web sensing with reliability filtering',
+        'Full safety metrics with Lyapunov + CBF checks',
+        'Conversation and agent memory across sessions',
+        'Cryptographic receipt for every governed run',
+        'Exportable audit receipts (JSON)',
+        'Developer API access and integration docs',
+        'Evaluation and safety benchmark reports',
         'Priority email support',
       ],
     },
@@ -79,22 +79,22 @@ export default function PricingSection() {
       ],
     },
     {
-      name: 'Constitutional',
+      name: 'Enterprise / Custom',
       price: 'Custom',
       period: undefined,
-      badge: undefined,
+      badge: 'For organizations',
       highlight: false,
-      cta: 'Talk to Emmanuel →',
-      href: 'mailto:lexaureon@gmail.com?subject=Enterprise Inquiry - Lex Aureon',
+      cta: 'Contact sales →',
+      href: 'mailto:lexaureon@gmail.com?subject=Enterprise%20%2F%20Custom%20Plan%20Inquiry%20-%20Lex%20Aureon',
       features: [
-        'Everything in Sovereign',
-        'Custom τ, ρ_min + ε parameters',
-        'Dedicated SERPER search budget for sensing',
-        'White-label governor sensing API',
-        'Dedicated kernel instance',
-        'SLA + compliance documentation',
-        'Direct line to Emmanuel King',
-        'White-label option',
+        'Everything in Team / Agency',
+        'Custom governance policies for your organization',
+        'Custom thresholds, risk rules, and tool permissions',
+        'Dedicated deployment or isolated kernel instance',
+        'White-label governance API and customer-facing controls',
+        'Security, compliance, and SLA documentation',
+        'Implementation support and architecture guidance',
+        'Custom usage, retention, and integration terms',
       ],
     },
   ];
@@ -225,8 +225,8 @@ export default function PricingSection() {
             What changed in v2
           </div>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Sovereign raised to $29/mo — now includes the Async Governor G(x,z), IEC-filtered
-            search sensing, z-trajectory memory, and published TruthfulQA + HarmBench results.
+            Sovereign is now $29/mo — with advanced response governance, live web sensing,
+            cross-session memory, cryptographic receipts, and developer API access.
             Anyone who subscribed at $19 keeps that price forever.
           </p>
         </div>
