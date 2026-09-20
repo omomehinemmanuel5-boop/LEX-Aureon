@@ -60,6 +60,25 @@ export default function PricingSection() {
       ],
     },
     {
+      name: 'Team / Agency',
+      price: '$99',
+      period: '/mo',
+      badge: 'For teams',
+      highlight: false,
+      cta: 'Start Team / Agency →',
+      href: 'mailto:lexaureon@gmail.com?subject=Team%20%2F%20Agency%20Plan%20-%20%2499%2Fmo',
+      features: [
+        'Everything in Sovereign',
+        'Shared team workspace for governed projects',
+        'Shared API keys with team-level ownership',
+        'Agent tool governance across your team',
+        'Shared tool policies, allowlists + risk controls',
+        'Centralized audit receipts and usage visibility',
+        'Multi-agent session and trajectory oversight',
+        'Priority implementation support',
+      ],
+    },
+    {
       name: 'Constitutional',
       price: 'Custom',
       period: undefined,
@@ -83,7 +102,7 @@ export default function PricingSection() {
   return (
     <section id="pricing" className="py-24 px-5" style={{ backgroundColor: '#07070d' }}>
       {showBtcModal && <BitcoinUpgradeModal onClose={() => setShowBtcModal(false)} />}
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
 
         {/* Header */}
         <div className="text-center mb-10">
@@ -114,7 +133,7 @@ export default function PricingSection() {
         </div>
 
         {/* Plans */}
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {plans.map(plan => (
             <div
               key={plan.name}
