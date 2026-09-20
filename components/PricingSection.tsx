@@ -22,6 +22,7 @@ export default function PricingSection() {
     {
       name: 'Explorer',
       kicker: 'Start with the essentials',
+      bestFor: 'Best for evaluating the control layer',
       price: '$0',
       period: undefined,
       badge: undefined,
@@ -44,6 +45,7 @@ export default function PricingSection() {
     {
       name: 'Sovereign',
       kicker: 'For serious builders',
+      bestFor: 'Best for individual builders shipping to production',
       price: '$29',
       period: '/mo',
       badge: 'Most Popular',
@@ -66,6 +68,7 @@ export default function PricingSection() {
     {
       name: 'Team / Agency',
       kicker: 'Scale governed work',
+      bestFor: 'Best for shared projects and multi-agent teams',
       price: '$99',
       period: '/mo',
       badge: 'For teams',
@@ -86,6 +89,7 @@ export default function PricingSection() {
     {
       name: 'Enterprise / Custom',
       kicker: 'Governance for organizations',
+      bestFor: 'Best for bespoke controls, deployment, and compliance',
       price: 'Custom',
       period: undefined,
       badge: 'For organizations',
@@ -120,6 +124,20 @@ export default function PricingSection() {
           </p>
         </div>
 
+        <div className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/15 sm:grid-cols-4">
+          {[
+            ['PROVABLE', 'Cryptographic receipts'],
+            ['DROP-IN', 'No model retraining'],
+            ['MODEL-AGNOSTIC', 'Works above any LLM'],
+            ['LAGOS-BUILT', 'Independent engineering'],
+          ].map(([label, detail]) => (
+            <div key={label} className="bg-[#0d0d1a]/90 px-3 py-3.5 text-center sm:px-4">
+              <div className="text-[10px] font-mono font-bold tracking-[0.15em]" style={{ color: G.goldL }}>{label}</div>
+              <div className="mt-1 text-[11px] text-slate-400">{detail}</div>
+            </div>
+          ))}
+        </div>
+
         <div className="pricing-grid grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {plans.map(plan => (
             <div
@@ -142,6 +160,7 @@ export default function PricingSection() {
                   {plan.kicker}
                 </div>
                 <h3 className="text-xl font-black text-white mb-4">{plan.name}</h3>
+                <p className="min-h-10 text-xs leading-relaxed text-slate-400">{plan.bestFor}</p>
                 <div className="flex items-baseline gap-1">
                   <span className="text-3xl font-black text-white">{plan.price}</span>
                   {plan.period && <span className="text-slate-400 text-sm font-bold">{plan.period}</span>}
