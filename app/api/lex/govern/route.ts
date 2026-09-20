@@ -15,6 +15,7 @@ import { executeGovern, type GovernRequest, type GovernResponse } from '@/lib/go
 import type { IdentityMode } from '@/lib/sovereign_kernel';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { consumeApiKey, validateApiKey } from '@/lib/api_keys';
+import { ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE } from '@/lib/pricing';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -25,7 +26,7 @@ async function ensureDB() {
 
 const VALID_IDENTITY_MODES: IdentityMode[] = ['full', 'minimal', 'dynamic', 'none'];
 const MAX_BODY_BYTES = 70_000;
-const ANONYMOUS_LIMIT = 20;
+const ANONYMOUS_LIMIT = ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE;
 const AUTHENTICATED_LIMIT = 120;
 const WINDOW_SECONDS = 60;
 

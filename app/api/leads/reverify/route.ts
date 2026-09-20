@@ -15,9 +15,10 @@ import { getClient } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger, errorFields } from '@/lib/logger';
 import { verifyPayment, type CoinId } from '@/lib/crypto_verify';
-import { getCoinConfig } from '@/lib/crypto_coins';
+import { amountForPrice, getCoinConfig } from '@/lib/crypto_coins';
 import { generateApiKey } from '@/lib/api_keys';
 import { sendKeyDeliveryEmail } from '@/lib/notify';
+import { SOVEREIGN_PRICE_USD } from '@/lib/pricing';
 
 function checkAdminAuth(req: Request): boolean {
   const adminPassword = env.ADMIN_PASSWORD;
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
   if (!coinConfig) return NextResponse.json({ error: `unrecognized coin: ${lead.coin}` }, { status: 400 });
 
   try {
-    const result = await verifyPayment(coinConfig.id as CoinId, lead.tx_id, coinConfig.address, coinConfig.amount);
+    const result = await verifyPayment(coinConfig.id as CoinId, lead.tx_id, coinConfig.address, amountForPrice(coinConfig, SOVEREIGN_PRICE_USD));
     let issuedKey: string | null = null;
 
     if (result.status === 'verified') {

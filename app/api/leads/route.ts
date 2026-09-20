@@ -35,9 +35,10 @@ import { getClient } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger, errorFields } from '@/lib/logger';
 import { verifyPayment, type CoinId } from '@/lib/crypto_verify';
-import { getCoinConfig } from '@/lib/crypto_coins';
+import { amountForPrice, getCoinConfig } from '@/lib/crypto_coins';
 import { generateApiKey } from '@/lib/api_keys';
 import { sendKeyDeliveryEmail } from '@/lib/notify';
+import { SOVEREIGN_PRICE_USD } from '@/lib/pricing';
 
 const LeadSchema = z.object({
   email:  z.string().email().max(254),
@@ -106,7 +107,7 @@ export async function POST(req: Request) {
       verification = { status: 'needs_review', reason: `Unrecognized coin "${coin}" — verify manually.` };
     } else {
       try {
-        const result = await verifyPayment(coinConfig.id as CoinId, txId.trim(), coinConfig.address, coinConfig.amount);
+        const result = await verifyPayment(coinConfig.id as CoinId, txId.trim(), coinConfig.address, amountForPrice(coinConfig, SOVEREIGN_PRICE_USD));
         verification = { status: result.status, reason: result.reason };
 
         if (result.status === 'verified') {

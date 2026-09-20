@@ -1,6 +1,11 @@
 'use client';
 import React from 'react';
 import BitcoinUpgradeModal from '@/components/BitcoinUpgradeModal';
+import {
+  ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE,
+  FREE_API_RUN_LIMIT,
+  FREE_TOOL_GOVERNANCE_FEATURES,
+} from '@/lib/pricing';
 
 const G = {
   gold:  '#c9a84c',
@@ -21,9 +26,13 @@ export default function PricingSection() {
       cta: 'Start Free →',
       href: '/console',
       features: [
-        '10 governed runs / day',
+        `${FREE_API_RUN_LIMIT.toLocaleString('en-US')} governed API runs included`,
+        `${ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE} free console/API requests per minute (anonymous demo)`,
         'Live M-score dashboard',
-        'Pre-eval attack signals',
+        FREE_TOOL_GOVERNANCE_FEATURES[0],
+        FREE_TOOL_GOVERNANCE_FEATURES[1],
+        FREE_TOOL_GOVERNANCE_FEATURES[2],
+        FREE_TOOL_GOVERNANCE_FEATURES[3],
         'Basic audit trail',
         'Constitutional simplex visualiser',
         'Community access',
@@ -200,6 +209,21 @@ export default function PricingSection() {
             Sovereign raised to $29/mo — now includes the Async Governor G(x,z), IEC-filtered
             search sensing, z-trajectory memory, and published TruthfulQA + HarmBench results.
             Anyone who subscribed at $19 keeps that price forever.
+          </p>
+        </div>
+
+        <div
+          className="mt-4 rounded-2xl border px-5 py-4"
+          style={{ borderColor: 'rgba(16,185,129,0.25)', background: 'rgba(16,185,129,0.05)' }}
+        >
+          <div className="text-xs font-mono font-bold mb-1 text-center" style={{ color: '#34d399' }}>
+            What Explorer includes for free
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed text-center">
+            Start with {FREE_API_RUN_LIMIT.toLocaleString('en-US')} governed API runs on a Free API key, or use the
+            anonymous console demo at up to {ANONYMOUS_GOVERN_REQUESTS_PER_MINUTE} governance requests per minute.
+            Every free governed turn still receives prompt-injection detection, constitutional tool approval or
+            denial, CRS health context, and a SHA-256 governance receipt.
           </p>
         </div>
 

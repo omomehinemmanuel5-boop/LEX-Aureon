@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
-import { COINS } from '@/lib/crypto_coins';
+import { amountForPrice, COINS } from '@/lib/crypto_coins';
+import { SOVEREIGN_PRICE_USD } from '@/lib/pricing';
 
 const G = { gold: '#c9a84c', goldL: '#e8c96d', navy: '#07070d', surface: '#0f1017', border: '#1a2030' };
 
@@ -29,7 +30,7 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
         body: JSON.stringify({
           email, source: 'crypto_upgrade',
           txId: txId.trim(), coin: selected.symbol,
-          plan: 'sovereign', amount: `${selected.amount} ${selected.symbol}`,
+          plan: 'sovereign', amount: `${amountForPrice(selected, SOVEREIGN_PRICE_USD)} ${selected.symbol}`,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -87,9 +88,9 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
               {/* Amount preview */}
               <div className="rounded-xl p-3 mb-5 flex justify-between items-center"
                 style={{ background: `${selected.color}10`, border: `1px solid ${selected.color}30` }}>
-                <span className="text-slate-400 text-sm">$19/month equivalent</span>
+                <span className="text-slate-400 text-sm">${SOVEREIGN_PRICE_USD}/month equivalent</span>
                 <span style={{ color: selected.color, fontFamily: 'monospace', fontWeight: 700 }}>
-                  ≈ {selected.amount} {selected.symbol}
+                  ≈ {amountForPrice(selected, SOVEREIGN_PRICE_USD)} {selected.symbol}
                 </span>
               </div>
 
@@ -131,7 +132,7 @@ export default function BitcoinUpgradeModal({ onClose }: { onClose: () => void }
                 style={{ background: `${selected.color}10`, border: `1px solid ${selected.color}30` }}>
                 <span className="text-slate-400 text-sm">Send exactly</span>
                 <span style={{ color: selected.color, fontFamily: 'monospace', fontWeight: 700 }}>
-                  {selected.amount} {selected.symbol}
+                  {amountForPrice(selected, SOVEREIGN_PRICE_USD)} {selected.symbol}
                 </span>
               </div>
 
