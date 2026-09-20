@@ -64,42 +64,29 @@ export default function EnterpriseSection() {
 
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: '#10b981' }}>
-            Agentic Constitutional Governance
+            Team / Agency governance
           </div>
           <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-4">
-            Constitutional proxy<br />
-            <span className="text-slate-500 dark:text-slate-500 font-light">for AI agent tool calls.</span>
+            Give every project<br />
+            <span className="text-slate-500 dark:text-slate-500 font-light">the same governance controls.</span>
           </h2>
           <p className="text-slate-600 dark:text-slate-400 text-sm max-w-xl mx-auto leading-relaxed font-medium">
-            Constitutional interception for AI agent tool calls.
-            Injection blocked. Destructive ops denied. Slow-drip attacks
-            detected across sessions. SHA-256 receipt on every governed call.
+            Shared workspaces, team-owned API keys, common tool policies, and centralized audit visibility
+            for agencies and product teams running multiple AI projects.
           </p>
         </div>
 
-        {/* Position statement — the actual claim, and the honest boundary of it */}
-        <div className="rounded-2xl border p-6 mb-10" style={{ backgroundColor: '#07070d', borderColor: `${G.gold}28` }}>
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-            Our position
-          </div>
-          <p className="text-sm text-slate-300 leading-relaxed mb-4">
-            Constitutional governance doesn&rsquo;t stop at generated text. The same C+R+S
-            framework that governs a model&rsquo;s responses can score and gate what an
-            agent actually <em>does</em> — before a tool call executes, not after. This
-            isn&rsquo;t a diagram: the tool-call governor was tested against the AI system
-            that builds this codebase, live, in the same session it was built —
-            including catching that same AI&rsquo;s own miscalibrated detector on real
-            calls before either of them reached anything that mattered.
-          </p>
-          <div className="h-px bg-white/10 my-4" />
-          <p className="text-sm text-slate-400 leading-relaxed">
-            <b className="text-slate-200">What we&rsquo;re exploring next, not claiming yet:</b>{' '}
-            whether this same constitutional structure lets a smaller model match or
-            exceed the agentic capability of much larger ones — not by being smarter,
-            but by being verifiably accountable regardless of size. This is an open
-            research question. We&rsquo;ll say so plainly if and when it&rsquo;s answered,
-            the same way every other number on this site is reported.
-          </p>
+        <div className="grid sm:grid-cols-3 gap-4 mb-10">
+          {[
+            { title: 'Shared controls', desc: 'Set tool policies, allowlists, and risk rules once for every governed project.' },
+            { title: 'Shared visibility', desc: 'Give your team one place to review receipts, decisions, interventions, and usage.' },
+            { title: 'Shared delivery', desc: 'Use one governance layer across client projects, agents, models, and MCP tools.' },
+          ].map(({ title, desc }) => (
+            <div key={title} className="rounded-2xl border p-5 card-hover shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.08)' }}>
+              <div className="text-sm font-bold text-white mb-1">{title}</div>
+              <div className="text-xs text-slate-400 leading-relaxed font-medium">{desc}</div>
+            </div>
+          ))}
         </div>
 
         {/* Threat cards — background hardcoded dark, so text is always-light */}
