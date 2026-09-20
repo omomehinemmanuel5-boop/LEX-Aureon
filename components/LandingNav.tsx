@@ -11,13 +11,12 @@ const G = {
 };
 
 const NAV_LINKS = [
-  ['Benchmarks', '/benchmarks'],
-  ['Observability', '/observability'],
-  ['Constitution', '/constitution'],
-  ['Research', '/research'],
-  ['API', '/api-docs'],
-  ['Keys', '/keys'],
+  ['Product', '#product'],
+  ['Agent governance', '#agent-governance'],
+  ['Team / Agency', '#team-agency'],
   ['Pricing', '#pricing'],
+  ['Research', '/research'],
+  ['API docs', '/api-docs'],
 ] as const;
 
 // The nav is intentionally dark on BOTH themes — a translucent near-black bar
@@ -48,15 +47,13 @@ export default function LandingNav() {
         {/* Desktop links */}
         <div className="hidden sm:flex items-center gap-5 text-xs text-slate-300 font-black tracking-tight">
           {NAV_LINKS.map(([label, href]) => (
-            <a
+            <Link
               key={label}
               href={href}
               className="hover:text-white transition-colors"
-              target={href.startsWith('http') ? '_blank' : undefined}
-              rel={href.startsWith('http') ? 'noopener noreferrer' : undefined}
             >
               {label}
-            </a>
+            </Link>
           ))}
         </div>
 
@@ -95,14 +92,14 @@ export default function LandingNav() {
           style={{ background: 'rgba(7,7,13,0.98)' }}
         >
           {NAV_LINKS.map(([label, href]) => (
-            <a
+            <Link
               key={label}
               href={href}
               onClick={() => setOpen(false)}
               className="text-sm text-slate-300 hover:text-white active:text-white transition-colors font-mono font-bold py-3 border-b border-white/5"
             >
               {label}
-            </a>
+            </Link>
           ))}
           <Link
             href="/console"

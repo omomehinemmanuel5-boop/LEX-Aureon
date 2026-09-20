@@ -100,7 +100,7 @@ export default function PricingSection() {
   ];
 
   return (
-    <section id="pricing" className="py-24 px-5" style={{ backgroundColor: '#07070d' }}>
+    <section id="pricing" className="scroll-mt-20 py-24 px-5" style={{ backgroundColor: '#07070d' }}>
       {showBtcModal && <BitcoinUpgradeModal onClose={() => setShowBtcModal(false)} />}
       <div className="max-w-7xl mx-auto">
 
@@ -127,7 +127,7 @@ export default function PricingSection() {
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">
             Choose your governance tier
           </h2>
-          <p className="text-xs text-slate-500 font-mono">
+          <p className="text-sm text-slate-400 font-mono">
             Early supporter pricing — first 50 customers lock in this rate forever.
           </p>
         </div>
@@ -175,7 +175,7 @@ export default function PricingSection() {
               {/* Features */}
               <ul className="space-y-2 flex-1 mb-6">
                 {plan.features.map(f => (
-                  <li key={f} className="flex items-start gap-2 text-xs text-slate-300 font-medium leading-relaxed">
+                  <li key={f} className="flex items-start gap-2 text-sm text-slate-200 font-medium leading-relaxed">
                     <span
                       className="flex-shrink-0 mt-0.5 font-black"
                       style={{ color: plan.highlight ? G.gold : '#10b981' }}
@@ -224,7 +224,7 @@ export default function PricingSection() {
           <div className="text-xs font-mono font-bold mb-1" style={{ color: G.gold }}>
             What changed in v2
           </div>
-          <p className="text-xs text-slate-500 leading-relaxed">
+          <p className="text-sm text-slate-400 leading-relaxed">
             Sovereign is now $29/mo — with advanced response governance, live web sensing,
             cross-session memory, cryptographic receipts, and developer API access.
             Anyone who subscribed at $19 keeps that price forever.
@@ -238,7 +238,7 @@ export default function PricingSection() {
           <div className="text-xs font-mono font-bold mb-1 text-center" style={{ color: '#34d399' }}>
             What Explorer includes for free
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed text-center">
+          <p className="text-sm text-slate-300 leading-relaxed text-center">
             Explorer includes {FREE_TEXT_RUNS_PER_DAY} text-governance runs per day in Console and{' '}
             {FREE_AGENT_TOOL_RUN_LIMIT.toLocaleString('en-US')} agent tool-governance runs through the Free API key.
             Text governance evaluates model responses; agent governance evaluates tool calls before execution.
@@ -247,7 +247,7 @@ export default function PricingSection() {
           </p>
         </div>
 
-        <div className="mt-4 text-center text-xs text-slate-500 font-mono font-bold uppercase tracking-tighter">
+        <div className="mt-4 text-center text-sm text-slate-400 font-mono font-bold uppercase tracking-tighter">
           All plans include cryptographic audit receipts · AI governance always provable
         </div>
 

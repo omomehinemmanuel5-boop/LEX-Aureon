@@ -59,7 +59,7 @@ export default function EnterpriseSection() {
   const t = examples[active];
 
   return (
-    <section className="py-24 px-5 bg-black/[0.03] dark:bg-slate-950">
+    <section id="team-agency" className="scroll-mt-20 py-24 px-5 bg-black/[0.03] dark:bg-slate-950">
       <div className="max-w-4xl mx-auto">
 
         <div className="text-center mb-10">
@@ -70,7 +70,7 @@ export default function EnterpriseSection() {
             Give every project<br />
             <span className="text-slate-500 dark:text-slate-500 font-light">the same governance controls.</span>
           </h2>
-          <p className="text-slate-600 dark:text-slate-400 text-sm max-w-xl mx-auto leading-relaxed font-medium">
+          <p className="text-slate-700 dark:text-slate-300 text-base max-w-xl mx-auto leading-relaxed font-medium">
             Shared workspaces, team-owned API keys, common tool policies, and centralized audit visibility
             for agencies and product teams running multiple AI projects.
           </p>
@@ -84,7 +84,7 @@ export default function EnterpriseSection() {
           ].map(({ title, desc }) => (
             <div key={title} className="rounded-2xl border p-5 card-hover shadow-sm" style={{ backgroundColor: '#07070d', borderColor: 'rgba(255,255,255,0.08)' }}>
               <div className="text-sm font-bold text-white mb-1">{title}</div>
-              <div className="text-xs text-slate-400 leading-relaxed font-medium">{desc}</div>
+              <div className="text-sm text-slate-300 leading-relaxed font-medium">{desc}</div>
             </div>
           ))}
         </div>

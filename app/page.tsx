@@ -287,7 +287,7 @@ async function Hero() {
 /* ── Product Modes ──────────────────────────────────────────────── */
 function ProductModesSection() {
   return (
-    <section className="py-16 sm:py-20 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
+    <section id="product" className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600 dark:text-slate-500 font-bold">
@@ -296,7 +296,7 @@ function ProductModesSection() {
           <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-3">
             Govern responses and actions.
           </h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-base text-slate-700 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Lex Aureon protects the answer an AI produces and the action an agent takes. These are
             separate governance surfaces, with separate free allowances and separate product value.
           </p>
@@ -307,7 +307,7 @@ function ProductModesSection() {
               Text governance
             </div>
             <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3">Make model responses accountable.</h3>
-            <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            <ul className="space-y-2 text-base text-slate-700 dark:text-slate-300 leading-relaxed">
               <li>✓ Evaluates responses before they are returned</li>
               <li>✓ Detects manipulation, drift, and constitutional pressure</li>
               <li>✓ Applies refusal and intervention decisions when needed</li>
@@ -322,7 +322,7 @@ function ProductModesSection() {
               Agent tool governance
             </div>
             <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3">Control what agents do.</h3>
-            <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            <ul className="space-y-2 text-base text-slate-700 dark:text-slate-300 leading-relaxed">
               <li>✓ Intercepts tools before file, database, shell, or web actions execute</li>
               <li>✓ Blocks prompt injection and destructive operations</li>
               <li>✓ Governs multi-step plans and high-risk trajectories</li>
@@ -378,14 +378,14 @@ function ComparisonSection() {
                       <span className="text-emerald-600 dark:text-emerald-400 font-black text-sm">✓</span>
                       <span className="text-sm font-mono font-black" style={{ color: G.gold }}>{n}</span>
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">{d}</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{d}</p>
                   </div>
                 ))}
               </div>
             </div>
           ))}
         </div>
-        <p className="text-center text-xs font-mono text-slate-600 dark:text-slate-600 mt-6">
+        <p className="text-center text-sm font-mono text-slate-700 dark:text-slate-400 mt-6">
           Text governance and agent tool governance, combined in one layer — above any LLM, with no retraining or fine-tuning.
         </p>
       </div>
@@ -432,7 +432,7 @@ function ResearchHandoffSection() {
    section of /research, alongside the rest of the corpus discussion. */
 function AgentGovernanceSection() {
   return (
-    <section id="agent-governance" className="py-16 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
+    <section id="agent-governance" className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
@@ -486,30 +486,6 @@ function AgentGovernanceSection() {
   );
 }
 
-/* ── Proof Panel — bare vs governed, same request ──────────────── */
-function ProofPanel() {
-  return (
-    <section className="py-14 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
-      <div className="max-w-2xl mx-auto text-center">
-        <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-          Live Governance Example
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-black text-white mb-4">
-          Same prompt, bare model vs governed —{' '}
-          <span className="text-slate-500 font-light">see it live, not in a screenshot.</span>
-        </h2>
-        <p className="text-slate-400 text-sm max-w-xl mx-auto leading-relaxed mb-6">
-          Send a manipulation attempt to the console and watch the bare and governed outputs return
-          side by side, with the stability margin and receipt for the governed arm.
-        </p>
-        <Link href="/console" className="inline-block px-6 py-3 rounded-xl text-sm font-bold transition-all" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
-          Try it in the console
-        </Link>
-      </div>
-    </section>
-  );
-}
-
 export default async function LandingPage() {
   // The benchmark strip is interactive, but its published/empty state must also
   // be correct in the server-rendered HTML. Without this preload, crawlers and
@@ -528,7 +504,6 @@ export default async function LandingPage() {
       <ProductModesSection />
       <ComparisonSection />
       <AgentGovernanceSection />
-      <ProofPanel />
       <EnterpriseSection />
       <PricingSection />
       <BenchmarkResults compact initialData={benchmarkData} />
