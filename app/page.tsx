@@ -398,6 +398,56 @@ function ComparisonSection() {
   );
 }
 
+/* ── Explain and prove ─────────────────────────────────────────── */
+function GovernanceFlowSection() {
+  const steps = [
+    { number: '01', title: 'Intercept', text: 'Place the control layer above any LLM or before an agent tool executes.', accent: G.C },
+    { number: '02', title: 'Measure', text: 'Evaluate Continuity, Reciprocity, Sovereignty, and stability against constitutional thresholds.', accent: G.R },
+    { number: '03', title: 'Prove', text: 'Record the decision, state, and outcome in a cryptographic audit receipt.', accent: G.gold },
+  ];
+
+  return (
+    <section className="py-20 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>Understand the control loop</div>
+          <h2 className="text-3xl sm:text-5xl font-black text-white mb-4">Intercept. Measure. Prove.</h2>
+          <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            Lex Aureon turns an invisible safety decision into an inspectable operating path — without retraining the model or hiding the boundary of the evidence.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-4 mb-5">
+          {steps.map((step, index) => (
+            <div key={step.number} className="relative rounded-2xl border border-[#c9a84c]/25 bg-white/[0.035] p-6 card-hover">
+              {index < steps.length - 1 && <div className="hidden md:block absolute top-10 -right-3 z-10 h-px w-6" style={{ background: `linear-gradient(90deg, ${G.gold}80, transparent)` }} />}
+              <div className="flex items-center justify-between mb-5">
+                <span className="font-mono text-xs font-bold tracking-[0.2em]" style={{ color: G.goldL }}>{step.number}</span>
+                <span className="h-2 w-2 rounded-full" style={{ background: step.accent, boxShadow: `0 0 14px ${step.accent}99` }} />
+              </div>
+              <h3 className="text-xl font-black text-white mb-2">{step.title}</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">{step.text}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid lg:grid-cols-[1fr_auto] gap-4 items-stretch">
+          <div className="rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
+            <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold mb-3" style={{ color: G.goldL }}>Audit receipt preview</div>
+            <div className="grid sm:grid-cols-3 gap-2 text-xs font-mono">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">decision</div><div className="mt-1 text-emerald-300">constitutional pass</div></div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">state</div><div className="mt-1 text-[#e8c96d]">C + R + S = 1</div></div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">integrity</div><div className="mt-1 text-[#e8c96d]">SHA-256 receipt</div></div>
+            </div>
+            <p className="mt-4 text-xs leading-relaxed text-slate-500">Every governed turn can carry its constitutional state, intervention outcome, and integrity record into reviewable evidence.</p>
+          </div>
+          <Link href="/audit" className="flex min-h-12 items-center justify-center rounded-xl border border-[#c9a84c]/45 px-5 text-sm font-bold text-[#e8c96d] transition hover:bg-[#c9a84c]/10">Inspect audit receipts →</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 /* ── Research handoff ──────────────────────────────────────────── */
 function ResearchHandoffSection() {
@@ -512,6 +562,7 @@ export default async function LandingPage() {
       <EnterpriseSection />
       <BenchmarkResults compact initialData={benchmarkData} />
       <LiveStatsBar />
+      <GovernanceFlowSection />
       <ResearchHandoffSection />
       <PricingSection />
 
