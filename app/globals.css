@@ -341,3 +341,20 @@ body {
 .pricing-card-featured:hover {
   box-shadow: 0 0 0 1px rgba(232,201,109,0.4), 0 0 64px rgba(201,168,76,0.24) !important;
 }
+.product-modes-section {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-image: radial-gradient(circle at 50% 0%, rgba(201,168,76,0.06), transparent 30rem);
+}
+.product-modes-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image: linear-gradient(rgba(201,168,76,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(201,168,76,0.18) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, black, transparent 85%);
+}

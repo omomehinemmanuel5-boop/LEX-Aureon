@@ -292,48 +292,55 @@ async function Hero() {
 /* ── Product Modes ──────────────────────────────────────────────── */
 function ProductModesSection() {
   return (
-    <section id="product" className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-5 bg-slate-50 dark:bg-slate-950 border-y border-slate-100 dark:border-white/5">
+    <section id="product" className="product-modes-section scroll-mt-20 py-16 sm:py-20 px-4 sm:px-5 border-y border-[#c9a84c]/15" style={{ backgroundColor: '#0d0d1a' }}>
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-10">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 text-slate-600 dark:text-slate-500 font-bold">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#c9a84c]/30 bg-[#c9a84c]/[0.06] px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#e8c96d]" />
             Two products · one control layer
           </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mb-3">
+          <h2 className="mt-5 text-3xl sm:text-4xl font-black text-white mb-3">
             Govern responses and actions.
           </h2>
-          <p className="text-base text-slate-700 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Lex Aureon protects the answer an AI produces and the action an agent takes. These are
             separate governance surfaces, with separate free allowances and separate product value.
           </p>
         </div>
         <div className="grid md:grid-cols-2 gap-4">
-          <div id="text-governance" className="rounded-2xl border p-6 bg-white dark:bg-[#c9a84c06] border-slate-200 dark:border-[#c9a84c20]">
-            <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.C }}>
+          <div id="text-governance" className="rounded-2xl border p-6 bg-white/[0.035] border-[#c9a84c]/30 card-hover" style={{ boxShadow: `0 18px 50px rgba(0,0,0,.18)` }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold" style={{ color: G.C }}>
               Text governance
+              </div>
+              <span className="rounded-full border border-blue-400/30 bg-blue-400/10 px-2 py-1 text-[10px] font-mono font-bold text-blue-300">SURFACE 01</span>
             </div>
-            <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3">Make model responses accountable.</h3>
-            <ul className="space-y-2 text-base text-slate-700 dark:text-slate-300 leading-relaxed">
+            <h3 className="text-xl font-black text-white mb-3">Make model responses accountable.</h3>
+            <ul className="space-y-2 text-base text-slate-200 leading-relaxed">
               <li>✓ Evaluates responses before they are returned</li>
               <li>✓ Detects manipulation, drift, and constitutional pressure</li>
               <li>✓ Applies refusal and intervention decisions when needed</li>
               <li>✓ Explorer includes 10 free Console runs per day</li>
             </ul>
-            <Link href="/console" className="inline-block mt-5 text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline">
+            <Link href="/console" className="inline-block mt-5 text-sm font-bold text-[#e8c96d] hover:text-white transition-colors">
               Try text governance in Console →
             </Link>
           </div>
-          <div className="rounded-2xl border p-6 bg-white dark:bg-[#c9a84c06] border-slate-200 dark:border-[#c9a84c20]">
-            <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.R }}>
+          <div className="rounded-2xl border p-6 bg-white/[0.035] border-[#c9a84c]/30 card-hover" style={{ boxShadow: `0 18px 50px rgba(0,0,0,.18)` }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold" style={{ color: G.R }}>
               Agent tool governance
+              </div>
+              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-mono font-bold text-emerald-300">SURFACE 02</span>
             </div>
-            <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3">Control what agents do.</h3>
-            <ul className="space-y-2 text-base text-slate-700 dark:text-slate-300 leading-relaxed">
+            <h3 className="text-xl font-black text-white mb-3">Control what agents do.</h3>
+            <ul className="space-y-2 text-base text-slate-200 leading-relaxed">
               <li>✓ Intercepts tools before file, database, shell, or web actions execute</li>
               <li>✓ Blocks prompt injection and destructive operations</li>
               <li>✓ Governs multi-step plans and high-risk trajectories</li>
               <li>✓ Explorer includes 1,000 agent-tool runs through the Free API key</li>
             </ul>
-            <Link href="#agent-governance" className="inline-block mt-5 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:underline">
+            <Link href="#agent-governance" className="inline-block mt-5 text-sm font-bold text-[#e8c96d] hover:text-white transition-colors">
               See agent governance →
             </Link>
           </div>
