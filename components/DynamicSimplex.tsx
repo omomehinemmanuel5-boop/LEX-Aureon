@@ -260,7 +260,7 @@ export default function DynamicSimplex({
 
         {/* Tau label */}
         <text x={top.x} y={top.y + off * 1.2 - 4} textAnchor="middle"
-          fill="rgba(59,130,246,0.45)" fontSize="7">τ=8%</text>
+          fill="rgba(59,130,246,0.45)" fontSize="7">τ_floor=5%</text>
 
         {/* Bottom */}
         <text x={W/2} y={H-3} textAnchor="middle" fill="#1e293b" fontSize="7">
