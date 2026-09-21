@@ -323,7 +323,7 @@ function GovernanceFlowSection() {
   const steps = [
     { number: '01', title: 'Detect', text: 'Identify constitutional pressure before an output is returned or an agent tool executes.', accent: G.C },
     { number: '02', title: 'Correct', text: 'Apply the minimum necessary intervention at the control boundary, not after the incident.', accent: G.R },
-    { number: '03', title: 'Prove', text: 'Record the decision, state, and outcome in a cryptographic audit receipt.', accent: G.gold },
+    { number: '03', title: 'Prove', text: 'Record the decision, state, and outcome in a SHA-256 audit receipt that can be replayed and verified offline.', accent: G.gold },
   ];
 
   return (
