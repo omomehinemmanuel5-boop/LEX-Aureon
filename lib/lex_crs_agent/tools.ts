@@ -452,7 +452,7 @@ export async function run_governance({
     const M = Number(d.M ?? Math.min(C, R, S));
     return JSON.stringify({
       governed_output: d.governed_output ?? '',
-      decision: d.governed_output ? 'GOVERNED' : 'NO_OUTPUT',
+      decision: (d as { refused?: boolean }).refused ? 'REFUSED' : 'ALLOWED',
       health_band: d.health_band ?? 'UNKNOWN',
       constitutional_state: {
         C: Number(C.toFixed(3)),
