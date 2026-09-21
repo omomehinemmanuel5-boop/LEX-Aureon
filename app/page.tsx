@@ -8,6 +8,7 @@ import LandingNav from '@/components/LandingNav';
 import EnterpriseSection from '@/components/EnterpriseSection';
 import LiveStatsBar from '@/components/LiveStatsBar';
 import BenchmarkResults, { type ApiShape as BenchmarkApiShape } from '@/components/BenchmarkResults';
+import DecisionLab from '@/components/DecisionLab';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
@@ -213,9 +214,9 @@ async function Hero() {
         </div>
 
         <h1 className="text-4xl sm:text-7xl font-black leading-tight sm:leading-none tracking-tight text-white mb-6">
-          AI systems lie, manipulate,<br className="hidden sm:block" /> and drift.{' '}
+          Govern every consequential<br className="hidden sm:block" /> AI decision.{' '}
           <span className="shimmer-gold">
-            Lex Aureon governs it.
+            Prove what happened.
           </span>
         </h1>
 
@@ -224,9 +225,8 @@ async function Hero() {
         </p>
 
         <p className="text-slate-300 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-          A mathematical constitutional control layer for language models and agentic pipelines.
-          Numerically certified CBF simulator, append-only audit receipts, and explicit open-proof boundaries.
-          Not guardrails, not filters. Drop-in API. Any LLM. Any agent framework.
+          Lex is the decision and evidence layer between an AI system and the world.
+          Evaluate model responses and agent actions before they reach users, tools, or production systems — then inspect the receipt.
         </p>
 
         <div className="mx-auto mb-8 max-w-2xl rounded-2xl border border-[#c9a84c]/35 bg-[#c9a84c]/[0.08] px-5 py-4">
@@ -253,7 +253,7 @@ async function Hero() {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
           <Link
-            href="/console"
+            href="#decision-lab"
             className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-black transition-all active:scale-95 cta-pulse flex items-center justify-center gap-2"
             style={{
               background: `linear-gradient(135deg, ${G.gold}, ${G.goldL}, ${G.gold})`,
@@ -262,7 +262,7 @@ async function Hero() {
               boxShadow: `0 8px 32px ${G.gold}40`,
             }}
           >
-            ⚡ Try Lex Console — Free
+            ⚡ Run a governed decision
           </Link>
           <a
             href="https://doi.org/10.5281/zenodo.18944242"
@@ -604,6 +604,7 @@ export default async function LandingPage() {
       />
       <LandingNav />
       <Hero />
+      <DecisionLab />
       <ProductModesSection />
       <ComparisonSection />
       <AgentGovernanceSection />
