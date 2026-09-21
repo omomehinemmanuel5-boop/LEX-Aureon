@@ -115,7 +115,7 @@ export default function DecisionLab() {
 
   useEffect(() => { const media = window.matchMedia('(prefers-reduced-motion: reduce)'); const update = () => setReducedMotion(media.matches); update(); media.addEventListener('change', update); return () => media.removeEventListener('change', update); }, []);
   useEffect(() => { setStep(reducedMotion ? active.states.length - 1 : 0); setPlaying(!reducedMotion); }, [activeId, active.states.length, reducedMotion]);
-  useEffect(() => { if (!playing || reducedMotion || step >= active.states.length - 1) return; const timer = window.setTimeout(() => setStep(v => v + 1), activeId === 'random' ? 260 : 1000); return () => window.clearTimeout(timer); }, [active.states.length, activeId, playing, reducedMotion, step]);
+  useEffect(() => { if (!playing || reducedMotion || step >= active.states.length - 1) return; const timer = window.setTimeout(() => setStep(v => v + 1), activeId === 'random' ? 420 : 1000); return () => window.clearTimeout(timer); }, [active.states.length, activeId, playing, reducedMotion, step]);
   const select = (id: string) => { if (id === 'random') setRandomScenario(makeRandom()); setActiveId(id); setStep(0); setPlaying(!reducedMotion); };
   const replay = () => { if (activeId === 'random') setRandomScenario(makeRandom()); setStep(0); setPlaying(!reducedMotion); };
 
