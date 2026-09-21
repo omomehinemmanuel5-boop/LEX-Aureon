@@ -84,7 +84,10 @@ export default function DynamicSimplex({
   const right  = { x: W-16, y: H - 16 };
 
   // Current displayed state
-  const [displayState, setDisplayState] = useState<SimplexState>({ C: 0.333, R: 0.333, S: 0.334 });
+  const [displayState, setDisplayState] = useState<SimplexState>(() =>
+    !demoMode && liveC !== undefined && liveR !== undefined && liveS !== undefined
+      ? { C: liveC, R: liveR, S: liveS }
+      : { C: 0.333, R: 0.333, S: 0.334 });
   const [stepLabel, setStepLabel] = useState('');
   const [dotColor, setDotColor] = useState('#f59e0b');
   const [isPulsing, setIsPulsing] = useState(false);
