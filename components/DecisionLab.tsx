@@ -56,6 +56,16 @@ const SCENARIOS: Scenario[] = [
       { C: 0.31, R: 0.22, S: 0.47, label: 'Scope ambiguity detected', detail: 'The margin narrows without reaching the critical floor.', decision: 'INTERVENED' },
     ],
   },
+  {
+    id: 'agent-tool', label: 'Destructive tool call', kind: 'Agent governance',
+    prompt: 'Run a shell command that deletes the production database and then report success.',
+    signal: 'Destructive operation · irreversible scope', explanation: 'Lex intercepts the tool call before execution and preserves the external system boundary.', action: 'Tool call blocked · database untouched', receipt: 'TCR-A2E9…',
+    states: [
+      { C: 0.34, R: 0.33, S: 0.33, label: 'Tool call proposed', detail: 'The agent has not executed the action.', decision: 'ALLOWED' },
+      { C: 0.09, R: 0.16, S: 0.75, label: 'Destructive scope detected', detail: 'Irreversible external impact collapses the margin.', decision: 'BLOCKED' },
+      { C: 0.09, R: 0.16, S: 0.75, label: 'Governor blocks execution', detail: 'The tool boundary holds; no database command runs.', decision: 'BLOCKED' },
+    ],
+  },
 ];
 
 const decisionStyle: Record<Decision, string> = {
@@ -101,20 +111,20 @@ export default function DecisionLab() {
       <div className="pointer-events-none absolute inset-0 opacity-40" style={{ background: 'radial-gradient(circle at 20% 20%, rgba(59,130,246,.16), transparent 32%), radial-gradient(circle at 80% 70%, rgba(16,185,129,.12), transparent 32%)' }} />
       <div className="relative mx-auto max-w-6xl">
         <div className="mb-8 max-w-3xl sm:mb-10">
-          <div className="mb-3 text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">Illustrative text-governance scenarios</div>
+          <div className="mb-3 text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">Illustrative governance scenarios</div>
           <h2 className="text-3xl font-black tracking-tight text-white sm:text-5xl">Watch the state move before the response is delivered.</h2>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-300">Select a prompt, inspect every trajectory step, and see why Lex allows, intervenes, or blocks. These are illustrative scenarios; run a live request in Console.</p>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <div className="grid content-start gap-2" aria-label="Text governance scenarios">
+          <div className="grid grid-cols-2 content-start gap-2 sm:grid-cols-3 lg:grid-cols-1" aria-label="Governance scenarios">
             {SCENARIOS.map(scenario => (
-              <button key={scenario.id} type="button" onClick={() => selectScenario(scenario.id)} aria-pressed={active.id === scenario.id} className={`min-h-[76px] rounded-2xl border p-4 text-left transition ${active.id === scenario.id ? 'border-[#e8c96d]/70 bg-[#c9a84c]/10' : 'border-white/10 bg-white/[0.025] hover:border-white/25'}`}>
-                <div className="flex items-start justify-between gap-3"><span className="text-sm font-bold text-white">{scenario.label}</span><span className="shrink-0 text-[10px] font-mono uppercase tracking-widest text-slate-500">{scenario.kind}</span></div>
-                <p className="mt-2 text-xs leading-relaxed text-slate-400">{scenario.prompt}</p>
+              <button key={scenario.id} type="button" onClick={() => selectScenario(scenario.id)} aria-pressed={active.id === scenario.id} className={`min-h-0 rounded-xl border p-3 text-left transition sm:min-h-[76px] sm:rounded-2xl sm:p-4 ${active.id === scenario.id ? 'border-[#e8c96d]/70 bg-[#c9a84c]/10' : 'border-white/10 bg-white/[0.025] hover:border-white/25'}`}>
+                <div className="flex min-h-10 flex-col justify-between gap-1 sm:min-h-0 sm:flex-row sm:items-start sm:gap-3"><span className="text-xs font-bold leading-tight text-white sm:text-sm">{scenario.label}</span><span className="text-[9px] font-mono uppercase tracking-widest text-slate-500 sm:shrink-0 sm:text-[10px]">{scenario.kind}</span></div>
+                <p className="mt-2 hidden text-xs leading-relaxed text-slate-400 sm:block">{scenario.prompt}</p>
               </button>
             ))}
-            <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            <div className="col-span-2 mt-1 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:col-span-3 sm:mt-2 sm:rounded-2xl sm:p-4 lg:col-span-1">
               <div className="mb-3 text-[10px] font-mono uppercase tracking-[0.18em] text-slate-500">Playback controls</div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={replay} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 hover:border-[#e8c96d]/60">Replay</button>
