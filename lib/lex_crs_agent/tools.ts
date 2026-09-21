@@ -453,6 +453,10 @@ export async function run_governance({
     return JSON.stringify({
       governed_output: d.governed_output ?? '',
       decision: (d as { refused?: boolean }).refused ? 'REFUSED' : 'ALLOWED',
+      refused: Boolean((d as { refused?: boolean }).refused),
+      refusal_reasons: (d as { refusal_reasons?: string[] }).refusal_reasons ?? [],
+      primary_refusal_reason: (d as { primary_refusal_reason?: string | null }).primary_refusal_reason ?? null,
+      intervention_triggered: Boolean((d as { intervention_triggered?: boolean }).intervention_triggered),
       health_band: d.health_band ?? 'UNKNOWN',
       constitutional_state: {
         C: Number(C.toFixed(3)),
