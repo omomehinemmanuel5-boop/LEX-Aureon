@@ -19,10 +19,87 @@ const BASE_SCENARIOS: Scenario[] = [
 
 const decisionStyle: Record<Decision, string> = { ALLOWED: 'text-emerald-300 border-emerald-400/30 bg-emerald-400/10', INTERVENED: 'text-amber-300 border-amber-400/30 bg-amber-400/10', BLOCKED: 'text-rose-300 border-rose-400/30 bg-rose-400/10' };
 
+// Random-trajectory simulator. Thresholds match the legend shown in the UI
+// (floor 5%, recovery 15%) and the production constants TAU_FLOOR / TAU_RECOVERY.
+const TAU_FLOOR = 0.05;
+const TAU_RECOVERY = 0.15;
+const PILLARS = ['Continuity', 'Reciprocity', 'Sovereignty'] as const;
+type Vec = [number, number, number];
+const CENTER: Vec = [1 / 3, 1 / 3, 1 / 3];
+// Convex combination of two simplex points is a simplex point, so C+R+S stays 1.
+const mixVec = (a: Vec, b: Vec, t: number): Vec => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const normVec = (v: Vec): Vec => { const c0 = Math.max(0.005, v[0]); const c1 = Math.max(0.005, v[1]); const c2 = Math.max(0.005, v[2]); const t = c0 + c1 + c2; return [c0 / t, c1 / t, c2 / t]; };
+// Uniform sample on the simplex (normalised exponentials).
+const uniformPoint = (): Vec => { const e = () => -Math.log(1 - Math.random()); return normVec([e(), e(), e()]); };
+const vertexOf = (k: number): Vec => [k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0];
+const decide = (m: number): Decision => (m < TAU_FLOOR ? 'BLOCKED' : m < TAU_RECOVERY ? 'INTERVENED' : 'ALLOWED');
+
+function buildRandom(): Scenario {
+  const total = 11;
+  // Start anywhere safe: halfway between a uniform point and the centre keeps M >= 0.167.
+  let cur: Vec = mixVec(uniformPoint(), CENTER, 0.5);
+  let prev: Decision = 'ALLOWED';
+  let lastRecovery = false;
+  const states: State[] = [];
+  for (let i = 0; i < total; i++) {
+    let recovering = false;
+    let label = 'Random walk begins';
+    if (i > 0) {
+      const mustRecover = prev === 'BLOCKED' || (prev === 'INTERVENED' && Math.random() < 0.6) || (i === total - 1 && prev !== 'ALLOWED');
+      if (mustRecover && !lastRecovery) {
+        cur = mixVec(cur, CENTER, 0.45 + Math.random() * 0.2);
+        recovering = true;
+        label = 'Governor recovery';
+      } else {
+        const roll = Math.random();
+        if (roll < 0.4) {
+          cur = mixVec(cur, uniformPoint(), 0.15 + Math.random() * 0.2);
+          label = 'Free drift';
+        } else if (roll < 0.75) {
+          const k = Math.floor(Math.random() * 3);
+          cur = mixVec(cur, vertexOf(k), 0.3 + Math.random() * 0.4);
+          label = `${PILLARS[k]} pressure`;
+        } else {
+          const k = Math.floor(Math.random() * 3);
+          const edge = mixVec(vertexOf(k), vertexOf((k + 1 + Math.floor(Math.random() * 2)) % 3), 0.5);
+          cur = mixVec(cur, edge, 0.3 + Math.random() * 0.3);
+          label = 'Edge swing';
+        }
+        cur = normVec(cur);
+      }
+    }
+    const C = cur[0];
+    const R = cur[1];
+    const S = cur[2];
+    const m = Math.min(C, R, S);
+    const weakest = PILLARS[[C, R, S].indexOf(m)];
+    const decision: Decision = recovering ? 'INTERVENED' : decide(m);
+    const note = recovering
+      ? 'governor pulls toward balance'
+      : decision === 'BLOCKED'
+        ? `${weakest} below the floor · governor holds the boundary`
+        : decision === 'INTERVENED'
+          ? `${weakest} in the recovery band · governor increases scrutiny`
+          : 'trajectory remains inside bounds';
+    const stepLabel = recovering ? label : decision === 'BLOCKED' ? 'Critical pressure' : decision === 'INTERVENED' ? 'Intervention band' : label;
+    states.push({ C, R, S, label: stepLabel, detail: `M = ${m.toFixed(2)} · ${note}.`, decision, recovering });
+    prev = decision;
+    lastRecovery = recovering;
+  }
+  const id = Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0');
+  return { id: 'random', label: 'Random trajectory', kind: 'Fast sim', prompt: 'A bounded random walk across the whole simplex tests how the governor responds in motion.', signal: 'Bounded stochastic walk · full simplex · illustrative only', explanation: 'The governor watches every step: free drift inside bounds, intervention below the 15% recovery margin, a block below the 5% floor.', action: 'Simulation only · no live response or tool action', receipt: `SIM-${id}…`, states };
+}
+
+// Regenerate until the walk is worth watching: it must escalate at least once and
+// reach a corner region (max pillar >= 0.6), so it never just wobbles at the centre.
 function makeRandom(): Scenario {
-  const raw = Array.from({ length: 7 }, (_, i) => { const drift = Math.sin(i * 1.7) * .12; const c = Math.max(.06, .34 + drift); const r = Math.max(.06, .33 + Math.cos(i * 1.4) * .12); const total = c + r + .33; return { C: c / total, R: r / total, S: .33 / total }; });
-  const states = raw.map((v, i) => { const m = Math.min(v.C, v.R, v.S); const critical = m < .1; const warn = m < .18; return { ...v, label: critical ? 'Critical pressure' : warn ? 'Intervention band' : i === 0 ? 'Random walk begins' : 'Stable drift', detail: `M = ${m.toFixed(2)} · ${critical ? 'governor holds the boundary' : warn ? 'governor increases scrutiny' : 'trajectory remains inside bounds'}.`, decision: critical ? 'BLOCKED' as Decision : warn ? 'INTERVENED' as Decision : 'ALLOWED' as Decision, recovering: i === raw.length - 1 }; });
-  return { id: 'random', label: 'Random trajectory', kind: 'Fast sim', prompt: 'A bounded stream of small state changes tests how the governor responds in motion.', signal: 'Bounded stochastic drift · illustrative only', explanation: 'The governor monitors each step and either permits drift, intervenes near the boundary, or blocks a critical trajectory.', action: 'Simulation only · no live response or tool action', receipt: 'SIM-RANDOM…', states };
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const candidate = buildRandom();
+    const escalated = candidate.states.some(s => s.decision !== 'ALLOWED');
+    const reach = Math.max(...candidate.states.map(s => Math.max(s.C, s.R, s.S)));
+    if (escalated && reach >= 0.6) return candidate;
+  }
+  return buildRandom();
 }
 
 export default function DecisionLab() {
