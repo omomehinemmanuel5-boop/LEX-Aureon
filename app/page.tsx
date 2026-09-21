@@ -229,6 +229,11 @@ async function Hero() {
           Not guardrails, not filters. Drop-in API. Any LLM. Any agent framework.
         </p>
 
+        <div className="mx-auto mb-8 max-w-2xl rounded-2xl border border-[#c9a84c]/35 bg-[#c9a84c]/[0.08] px-5 py-4">
+          <div className="text-sm font-mono font-black tracking-[0.12em] text-[#e8c96d] sm:text-base">CORRECT BEFORE THE FACT. PROVE AFTER.</div>
+          <p className="mt-2 text-xs leading-relaxed text-slate-300 sm:text-sm">Lex Aureon intervenes before an unsafe answer is returned or a risky agent action executes — then records what happened in an inspectable receipt.</p>
+        </div>
+
         <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/15 bg-white/[0.07]">
           <span className="inline-flex items-center gap-2 sm:gap-3 shrink-0">
             <span style={{ color: G.C }} className="font-bold">C</span>
@@ -297,14 +302,14 @@ function ProductModesSection() {
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#c9a84c]/30 bg-[#c9a84c]/[0.06] px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#e8c96d]" />
-            Two products · one control layer
+            Two control points · one constitutional layer
           </div>
           <h2 className="mt-5 text-3xl sm:text-4xl font-black text-white mb-3">
             Govern responses and actions.
           </h2>
           <p className="text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
-            Lex Aureon protects the answer an AI produces and the action an agent takes. These are
-            separate governance surfaces, with separate free allowances and separate product value.
+            Responses are governed before delivery. Agent actions are governed before execution. One
+            constitutional layer controls both surfaces and proves the decision afterward.
           </p>
         </div>
         <div className="grid md:grid-cols-2 gap-4">
@@ -408,8 +413,8 @@ function ComparisonSection() {
 /* ── Explain and prove ─────────────────────────────────────────── */
 function GovernanceFlowSection() {
   const steps = [
-    { number: '01', title: 'Intercept', text: 'Place the control layer above any LLM or before an agent tool executes.', accent: G.C },
-    { number: '02', title: 'Measure', text: 'Evaluate Continuity, Reciprocity, Sovereignty, and stability against constitutional thresholds.', accent: G.R },
+    { number: '01', title: 'Detect', text: 'Identify constitutional pressure before an output is returned or an agent tool executes.', accent: G.C },
+    { number: '02', title: 'Correct', text: 'Apply the minimum necessary intervention at the control boundary, not after the incident.', accent: G.R },
     { number: '03', title: 'Prove', text: 'Record the decision, state, and outcome in a cryptographic audit receipt.', accent: G.gold },
   ];
 
@@ -417,8 +422,8 @@ function GovernanceFlowSection() {
     <section className="py-20 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>Understand the control loop</div>
-          <h2 className="text-3xl sm:text-5xl font-black text-white mb-4">Intercept. Measure. Prove.</h2>
+          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>Before the fact · not after the incident</div>
+          <h2 className="text-3xl sm:text-5xl font-black text-white mb-4">Detect. Correct. Prove.</h2>
           <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
             Lex Aureon turns an invisible safety decision into an inspectable operating path — without retraining the model or hiding the boundary of the evidence.
           </p>
@@ -480,8 +485,8 @@ function FinalConversionSection() {
     <section className="px-4 py-10 sm:px-5 sm:py-14" style={{ backgroundColor: '#07070d' }}>
       <div className="mx-auto max-w-4xl rounded-3xl border border-[#c9a84c]/35 bg-[#c9a84c]/[0.06] p-7 text-center sm:p-10">
         <div className="text-xs font-mono uppercase tracking-[0.2em] font-bold text-[#e8c96d]">Your next governed run</div>
-        <h2 className="mt-4 text-2xl font-black text-white sm:text-4xl">Start with governance you can inspect.</h2>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">Try Explorer free, inspect the evidence, and move to Sovereign when your AI system reaches production.</p>
+        <h2 className="mt-4 text-2xl font-black text-white sm:text-4xl">Correct before the fact. Prove after.</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">Try Explorer free, see the control point in action, and move to Sovereign when your AI system reaches production.</p>
         <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link href="/console" className="w-full rounded-xl px-6 py-3 text-sm font-black transition-all sm:w-auto" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d', boxShadow: `0 8px 28px ${G.gold}30` }}>Try Explorer free →</Link>
           <Link href="/research" className="w-full rounded-xl border border-white/15 px-6 py-3 text-sm font-bold text-slate-200 transition hover:border-[#e8c96d]/60 hover:text-white sm:w-auto">Read the evidence</Link>
