@@ -379,7 +379,7 @@ function ProofBoundarySection() {
             <h2 className="mt-1 text-lg font-black text-white">Strong claims, clearly scoped.</h2>
           </div>
           <div className="grid gap-2 text-xs leading-relaxed sm:grid-cols-2 md:col-span-1">
-            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-emerald-300">PROVEN</span><br />Single-pillar Lyapunov result and numerical CBF certificate.</div>
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-emerald-300">PROVEN</span><br />Single-pillar Lyapunov result.</div>
             <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-amber-300">OPEN</span><br />General multi-pillar analytical proof remains an active research boundary.</div>
           </div>
         </div>
