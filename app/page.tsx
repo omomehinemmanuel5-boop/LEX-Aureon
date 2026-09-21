@@ -1,13 +1,9 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import PricingSection from '@/components/PricingSection';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import SimplexVisualizer from '@/components/SimplexVisualizer';
 import HeroTicker from '@/components/HeroTicker';
 import LandingNav from '@/components/LandingNav';
-import EnterpriseSection from '@/components/EnterpriseSection';
-import LiveStatsBar from '@/components/LiveStatsBar';
-import BenchmarkResults, { type ApiShape as BenchmarkApiShape } from '@/components/BenchmarkResults';
 import DecisionLab from '@/components/DecisionLab';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
@@ -297,57 +293,25 @@ async function Hero() {
 /* ── Product Modes ──────────────────────────────────────────────── */
 function ProductModesSection() {
   return (
-    <section id="product" className="product-modes-section scroll-mt-20 py-16 sm:py-20 px-4 sm:px-5 border-y border-[#c9a84c]/15" style={{ backgroundColor: '#0d0d1a' }}>
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#c9a84c]/30 bg-[#c9a84c]/[0.06] px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#e8c96d]" />
-            Two control points · one constitutional layer
-          </div>
-          <h2 className="mt-5 text-3xl sm:text-4xl font-black text-white mb-3">
-            Govern responses and actions.
-          </h2>
-          <p className="text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
-            Responses are governed before delivery. Agent actions are governed before execution. One
-            constitutional layer controls both surfaces and proves the decision afterward.
-          </p>
+    <section id="product" className="scroll-mt-20 border-y border-[#c9a84c]/15 bg-[#0d0d1a] px-4 py-16 sm:px-5 sm:py-20">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-10 text-center">
+          <div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">One layer · two control points</div>
+          <h2 className="mt-4 text-3xl font-black text-white sm:text-5xl">Govern the response. Govern the action.</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-300">Lex sits at the boundary where an AI decision becomes visible to a person or executable by a tool.</p>
         </div>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div id="text-governance" className="rounded-2xl border p-6 bg-white/[0.035] border-[#c9a84c]/30 card-hover" style={{ boxShadow: `0 18px 50px rgba(0,0,0,.18)` }}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold" style={{ color: G.C }}>
-              Text governance
-              </div>
-              <span className="rounded-full border border-blue-400/30 bg-blue-400/10 px-2 py-1 text-[10px] font-mono font-bold text-blue-300">SURFACE 01</span>
-            </div>
-            <h3 className="text-xl font-black text-white mb-3">Make model responses accountable.</h3>
-            <ul className="space-y-2 text-base text-slate-200 leading-relaxed">
-              <li>✓ Evaluates responses before they are returned</li>
-              <li>✓ Detects manipulation, drift, and constitutional pressure</li>
-              <li>✓ Applies refusal and intervention decisions when needed</li>
-              <li>✓ Explorer includes 10 free Console runs per day</li>
-            </ul>
-            <Link href="/console" className="inline-block mt-5 text-sm font-bold text-[#e8c96d] hover:text-white transition-colors">
-              Try text governance in Console →
-            </Link>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-blue-400/25 bg-blue-400/[0.05] p-6">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-blue-300">01 · Response boundary</div>
+            <h3 className="mt-3 text-xl font-black text-white">Before an answer reaches a user.</h3>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">Evaluate model output for manipulation, drift, and constitutional pressure, then return the answer, an intervention, or a clear refusal.</p>
+            <Link href="/console" className="mt-5 inline-block text-sm font-bold text-[#e8c96d]">Try text governance →</Link>
           </div>
-          <div className="rounded-2xl border p-6 bg-white/[0.035] border-[#c9a84c]/30 card-hover" style={{ boxShadow: `0 18px 50px rgba(0,0,0,.18)` }}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold" style={{ color: G.R }}>
-              Agent tool governance
-              </div>
-              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-mono font-bold text-emerald-300">SURFACE 02</span>
-            </div>
-            <h3 className="text-xl font-black text-white mb-3">Control what agents do.</h3>
-            <ul className="space-y-2 text-base text-slate-200 leading-relaxed">
-              <li>✓ Intercepts tools before file, database, shell, or web actions execute</li>
-              <li>✓ Blocks prompt injection and destructive operations</li>
-              <li>✓ Governs multi-step plans and high-risk trajectories</li>
-              <li>✓ Explorer includes 1,000 agent-tool runs through the Free API key</li>
-            </ul>
-            <Link href="#agent-governance" className="inline-block mt-5 text-sm font-bold text-[#e8c96d] hover:text-white transition-colors">
-              See agent governance →
-            </Link>
+          <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.05] p-6">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-emerald-300">02 · Action boundary</div>
+            <h3 className="mt-3 text-xl font-black text-white">Before an action reaches a tool.</h3>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">Intercept file, database, shell, web, and multi-step agent actions before execution, with scope, risk, and trajectory checks.</p>
+            <Link href="#paths" className="mt-5 inline-block text-sm font-bold text-[#e8c96d]">Explore agent governance →</Link>
           </div>
         </div>
       </div>
@@ -355,62 +319,6 @@ function ProductModesSection() {
   );
 }
 
-/* ── Product Capabilities ──────────────────────────────────────── */
-function ComparisonSection() {
-  const caps = [
-    { group: 'Govern text', n: 'Text-response governance', d: 'Evaluates model responses for constitutional alignment before they are returned, with explicit refusal and intervention decisions instead of a hidden safety score.' },
-    { group: 'Govern text', n: 'Continuous constitutional state', d: 'Tracks Continuity, Reciprocity, and Sovereignty across the whole interaction rather than reducing one exchange to a single pass/fail flag.' },
-    { group: 'Govern text', n: 'Safety and stability checks', d: 'Combines constitutional measurement with CBF safety projection and Lyapunov stability signals to keep decisions inside safer operating boundaries.' },
-    { group: 'Govern agents', n: 'Agent tool-call governance', d: 'Intercepts file operations, database queries, shell commands, outbound requests, and other tool calls before execution.' },
-    { group: 'Govern agents', n: 'Prompt-injection detection', d: 'Checks prompts and tool arguments for adversarial instructions, destructive operations, credential access, and suspicious changes of scope.' },
-    { group: 'Govern agents', n: 'Multi-step trajectory control', d: 'Governs planned sequences of agent actions, validates their scope and order, and can hard-lock a session after repeated high-risk behaviour.' },
-    { group: 'Prove and operate', n: 'Cryptographic audit receipts', d: 'Creates a SHA-256 receipt for each governed text turn and agent tool action, so decisions can be independently verified after the fact.' },
-    { group: 'Prove and operate', n: 'Session memory and observability', d: 'Tracks constitutional pressure, interventions, agent trajectories, health bands, and replayable governance history across sessions.' },
-    { group: 'Prove and operate', n: 'Model-agnostic integration', d: 'Runs above GPT, Claude, Gemini, Llama, Mistral, and external MCP-compatible tools without retraining or changing the underlying model.' },
-  ];
-  const groups = ['Govern text', 'Govern agents', 'Prove and operate'];
-  return (
-    <section className="comparison-section py-20 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#0d0d1a' }}>
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-            What Lex Aureon combines
-          </div>
-          <h2 className="text-3xl sm:text-5xl font-black text-white mb-4">
-            One governance layer{' '}
-            <span className="text-slate-300 font-light">for text, agents, and tools.</span>
-          </h2>
-        </div>
-        <div className="space-y-8">
-          {groups.map(group => (
-            <div key={group}>
-              <h3 className="text-xs font-mono uppercase tracking-widest mb-3 text-[#e8c96d] font-bold">{group}</h3>
-              <div className="grid sm:grid-cols-2 gap-3">
-                {caps.filter(cap => cap.group === group).map(({ n, d }) => (
-                  <div
-                    key={n}
-                    className="rounded-2xl border p-5 bg-white/[0.035] border-[#c9a84c]/25 card-hover"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[#e8c96d] font-black text-sm">✓</span>
-                      <span className="text-sm font-mono font-black" style={{ color: G.gold }}>{n}</span>
-                    </div>
-                    <p className="text-sm text-slate-200 leading-relaxed">{d}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="text-center text-sm font-mono text-slate-300 mt-6">
-          Text governance and agent tool governance, combined in one layer — above any LLM, with no retraining or fine-tuning.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/* ── Explain and prove ─────────────────────────────────────────── */
 function GovernanceFlowSection() {
   const steps = [
     { number: '01', title: 'Detect', text: 'Identify constitutional pressure before an output is returned or an agent tool executes.', accent: G.C },
@@ -497,92 +405,19 @@ function FinalConversionSection() {
 }
 
 
-/* ── Research handoff ──────────────────────────────────────────── */
-function ResearchHandoffSection() {
+function ProductPathsSection() {
+  const paths = [
+    { title: 'Build with Lex', text: 'Connect through the API, MCP, and developer keys.', href: '/api-docs', label: 'Read API docs' },
+    { title: 'Govern agents', text: 'Inspect tool interception, trajectories, and executed traces.', href: '/research#empirical-evidence', label: 'See agent evidence' },
+    { title: 'Inspect the evidence', text: 'Read the research boundary, benchmarks, and audit receipts in context.', href: '/research', label: 'Open research' },
+    { title: 'Deploy with a team', text: 'Explore shared controls, observability, and enterprise access.', href: 'mailto:lexaureon@gmail.com', label: 'Contact the team' },
+  ];
   return (
-    <section className="py-14 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
-      <div className="max-w-3xl mx-auto rounded-2xl border border-[#c9a84c30] bg-[#c9a84c08] p-6 sm:p-8 text-center">
-        <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-          Research and evidence
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-black text-white mb-3">
-          The product is concise. The evidence is not.
-        </h2>
-        <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed mb-6">
-          The research page is the canonical home for the mathematical framework, proof boundaries,
-          numerical certificates, open problems, and reproducibility notes. Benchmarks and live audit
-          records have their own pages so each result can be read in context.
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link href="/research" className="px-5 py-2.5 rounded-xl text-sm font-bold transition-all" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
-            Read the research
-          </Link>
-          <Link href="/benchmarks" className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-300 border border-white/10 hover:bg-white/5 transition-all">
-            View benchmarks
-          </Link>
-          <Link href="/audit" className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-300 border border-white/10 hover:bg-white/5 transition-all">
-            Inspect audit receipts
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ── Agent Tool-Call Governance ───────────────────────────────────
-   Trimmed to headline + stat tiles; the two-layer-defense methodology and
-   the full executed-trace breakdown now live in the Empirical Evidence
-   section of /research, alongside the rest of the corpus discussion. */
-function AgentGovernanceSection() {
-  return (
-    <section id="agent-governance" className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
-      <div className="max-w-3xl mx-auto">
-        <div className="text-center mb-10">
-          <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>
-            Agent action control
-          </div>
-          <h2 className="text-2xl sm:text-4xl font-black text-white mb-4">
-            Govern every action,{' '}
-            <span className="text-slate-500 font-light">not just every answer.</span>
-          </h2>
-          <p className="text-slate-400 text-sm max-w-xl mx-auto leading-relaxed">
-            Put a constitutional control layer between an agent and its tools — file reads, SQL, shell commands, and outbound requests. Four invariants are blocked unconditionally; everything else is scored per call.
-          </p>
-        </div>
-
-        <div className="rounded-2xl border p-6 sm:p-8 bg-white/[0.03] border-white/10 mb-6">
-          <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
-            <span className="text-xs uppercase tracking-widest font-bold text-slate-500 font-mono">Measured, not asserted</span>
-            <span className="text-[10px] font-mono text-slate-600">48-item labeled corpus · dual-axis executed-tool-call harness</span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="text-center">
-              <div className="text-2xl sm:text-3xl font-black" style={{ color: G.gold }}>0</div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">missed injections<br/>deployed pipeline</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl sm:text-3xl font-black" style={{ color: G.gold }}>91.3%</div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">F1 · deployed<br/>pipeline @ 0.85</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl sm:text-3xl font-black text-emerald-400">4/4</div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">real attack tasks<br/>blocked, executed traces</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl sm:text-3xl font-black text-emerald-400">1/4</div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">blocked with utility<br/>preserved</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link href="/console" className="px-5 py-2.5 rounded-xl text-sm font-bold transition-all" style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
-            Try the governed console
-          </Link>
-          <Link href="/research#empirical-evidence" className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-300 border border-white/10 hover:bg-white/5 transition-all">
-            See the full breakdown
-          </Link>
+    <section id="paths" className="bg-[#07070d] px-4 py-16 sm:px-5 sm:py-20">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-9 text-center"><div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">Choose your next step</div><h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Go deeper only where you need to.</h2></div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {paths.map((path) => <Link key={path.title} href={path.href} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-[#e8c96d]/50 hover:bg-[#c9a84c]/[0.06]"><div className="text-lg font-black text-white">{path.title}</div><p className="mt-2 text-sm leading-relaxed text-slate-400">{path.text}</p><div className="mt-4 text-sm font-bold text-[#e8c96d] group-hover:text-white">{path.label} →</div></Link>)}
         </div>
       </div>
     </section>
@@ -594,8 +429,6 @@ export default async function LandingPage() {
   // be correct in the server-rendered HTML. Without this preload, crawlers and
   // agents that do not execute the client bundle permanently see the component's
   // initial empty state even while /api/benchmarks has published rows.
-  const benchmarkData = await fetchData<BenchmarkApiShape>('/api/benchmarks');
-
   return (
     <main className="min-h-screen selection:bg-amber-500/30" style={{ backgroundColor: '#07070d' }}>
       <script
@@ -606,15 +439,9 @@ export default async function LandingPage() {
       <Hero />
       <DecisionLab />
       <ProductModesSection />
-      <ComparisonSection />
-      <AgentGovernanceSection />
-      <EnterpriseSection />
-      <BenchmarkResults compact initialData={benchmarkData} />
-      <LiveStatsBar />
       <GovernanceFlowSection />
       <ProofBoundarySection />
-      <ResearchHandoffSection />
-      <PricingSection />
+      <ProductPathsSection />
       <FinalConversionSection />
 
       <footer className="py-16 px-5 border-t border-white/5" style={{ backgroundColor: '#07070d' }}>
