@@ -380,7 +380,7 @@ function ProofBoundarySection() {
           </div>
           <div className="grid gap-2 text-xs leading-relaxed sm:grid-cols-2 md:col-span-1">
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-emerald-300">PROVEN</span><br />Single-pillar Lyapunov result.</div>
-            <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-amber-300">OPEN</span><br />General multi-pillar analytical proof remains an active research boundary.</div><div className="rounded-xl border border-sky-400/20 bg-sky-400/[0.06] p-3 text-slate-200 sm:col-span-2"><span className="font-mono font-bold text-sky-300">NUMERICAL</span><br />CBF / Lyapunov certificate for the governed counterfactual: verified in simulation, not an analytical proof.</div>
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-slate-200"><span className="font-mono font-bold text-amber-300">OPEN</span><br />Unrestricted multi-pillar analytical claim stays unproven without a declared drift envelope. Deployed guarantee: the guarded discrete descent invariant.</div><div className="rounded-xl border border-sky-400/20 bg-sky-400/[0.06] p-3 text-slate-200 sm:col-span-2"><span className="font-mono font-bold text-sky-300">NUMERICAL</span><br />CBF / Lyapunov certificate for the governed counterfactual: verified in simulation, not an analytical proof.</div>
           </div>
         </div>
       </div>
