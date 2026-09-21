@@ -249,7 +249,7 @@ async function Hero() {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
           <Link
-            href="#decision-lab"
+            href="/console"
             className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-black transition-all active:scale-95 cta-pulse flex items-center justify-center gap-2"
             style={{
               background: `linear-gradient(135deg, ${G.gold}, ${G.goldL}, ${G.gold})`,
