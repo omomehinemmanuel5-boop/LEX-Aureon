@@ -16,6 +16,7 @@ interface DynamicSimplexProps {
   liveS?: number;
   liveM?: number;
   intervention?: boolean;
+  recovering?: boolean;
   healthBand?: string;
   animating?: boolean;
   // Demo mode — autonomous animation
@@ -72,6 +73,7 @@ const DEMO_SCENARIOS: {
 export default function DynamicSimplex({
   liveC, liveR, liveS, liveM,
   intervention = false,
+  recovering = false,
   healthBand = 'OPTIMAL',
   animating = false,
   demoMode = false,
@@ -209,10 +211,10 @@ export default function DynamicSimplex({
           <polyline
             points={trajectory.map(p => `${p.x},${p.y}`).join(' ')}
             fill="none"
-            stroke={dotColor}
-            strokeWidth="1"
+            stroke={recovering ? '#f8fafc' : dotColor}
+            strokeWidth={recovering ? '2' : '1'}
             strokeDasharray="3,2"
-            opacity="0.4"
+            opacity={recovering ? '0.85' : '0.4'}
           />
         )}
 
