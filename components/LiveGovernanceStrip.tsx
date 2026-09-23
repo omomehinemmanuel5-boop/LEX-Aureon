@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-type GovernanceState = { status: string; m: number; C?: number; R?: number; S?: number; c?: number; r?: number; s?: number };
+type GovernanceState = {
+  status: string;
+  runtime_state: { C: number; R: number; S: number; M: number; updated_at: string } | null;
+};
 
 export default function LiveGovernanceStrip(){
   const [state,setState]=useState<GovernanceState|null>(null);
@@ -12,11 +15,13 @@ export default function LiveGovernanceStrip(){
     let active=true;
     const load=async()=>{
       try{
-        const res=await fetch("/api/lex/health",{cache:"no-store"});
+        const res=await fetch("/api/health",{cache:"no-store"});
         if(!res.ok) throw new Error("health request failed");
         const data=await res.json();
-        if(active && typeof data?.status === "string" && typeof data?.m === "number"){setState(data);setStatus(data.status);}
-        else if(active) setStatus("NO LIVE STATE");
+        if(active && typeof data?.status === "string"){
+          setState(data);
+          setStatus(data.status.toUpperCase());
+        } else if(active) setStatus("NO LIVE STATE");
       }catch{if(active)setStatus("UNAVAILABLE");}
     };
     load();
