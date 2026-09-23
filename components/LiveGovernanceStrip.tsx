@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type GovernanceState = { C: number; R: number; S: number; health_band?: string; receipt_id?: string };
+type GovernanceState = { status: string; m: number };
 
 export default function LiveGovernanceStrip(){
   const [state,setState]=useState<GovernanceState|null>(null);
