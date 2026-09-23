@@ -11,10 +11,9 @@ const G = {
 };
 
 const NAV_LINKS = [
-  ['Product', '#product'],
-  ['Agent governance', '#agent-governance'],
-  ['Team / Agency', '#team-agency'],
-  ['Pricing', '#pricing'],
+  ['Audit', '/audit'],
+  ['Benchmarks', '/benchmarks'],
+  ['Observatory', '/observatory'],
   ['Research', '/research'],
   ['API docs', '/api-docs'],
 ] as const;
