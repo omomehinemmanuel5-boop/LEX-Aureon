@@ -158,6 +158,10 @@ export default function GovernanceObservatory({ initialData }: { initialData?: O
   const heat = useMemo(() => receipts.slice(0, 42).map(receipt => receipt.m_after), [receipts]);
   const health = metrics?.health_status ?? 'NO DATA';
   const healthColor = health === 'OPTIMAL' ? COLORS.teal : health === 'CRITICAL' ? COLORS.red : COLORS.amber;
+  // Derive the displayed stability margin from the displayed CRS pillars so M can never drift from min(C,R,S).
+  const stabilityMargin = state?.C != null && state.R != null && state.S != null
+    ? Math.min(state.C, state.R, state.S)
+    : null;
 
   return <main className="min-h-screen overflow-x-hidden bg-[#07070d] text-slate-200">
     <div className="mx-auto max-w-7xl px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom))] pt-24 sm:px-6 sm:pb-14 lg:px-8">
