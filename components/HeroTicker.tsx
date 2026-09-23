@@ -40,8 +40,11 @@ export default function HeroTicker() {
         // reasoning already applied to LiveStatsBar on 2026-07-10).
         const r = await fetch('/api/live-state');
         if (!r.ok) { setFailures(f => f + 1); return; }
-        const d = await r.json() as { state?: { M?: number | null } };
-        const newM = d.state?.M ?? null;
+        const d = await r.json() as { state?: { C?: number | null; R?: number | null; S?: number | null } };
+        const { C, R, S } = d.state ?? {};
+        // Canonical Hero M-score is defined from the three constitutional pillars,
+        // never from a separately averaged/stored M field: M = min(C,R,S).
+        const newM = C != null && R != null && S != null ? Math.min(C, R, S) : null;
         if (newM === null) { setFailures(f => f + 1); return; }
         setFailures(0);
         setM(newM);
