@@ -16,12 +16,11 @@ export default function LiveGovernanceStrip(){
     const load=async()=>{
       try{
         const res=await fetch("/api/health",{cache:"no-store"});
-        if(!res.ok) throw new Error("health request failed");
-        const data=await res.json();
-        if(active && typeof data?.status === "string"){
+        const data=await res.json().catch(()=>null);
+        if(active && data && typeof data?.status === "string"){
           setState(data);
           setStatus(data.status.toUpperCase());
-        } else if(active) setStatus("NO LIVE STATE");
+        } else if(active) setStatus(res.ok ? "NO LIVE STATE" : "UNAVAILABLE");
       }catch{if(active)setStatus("UNAVAILABLE");}
     };
     load();
