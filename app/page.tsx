@@ -354,15 +354,15 @@ function GovernanceFlowSection() {
 
         <div className="grid lg:grid-cols-[1fr_auto] gap-4 items-stretch">
           <div className="rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
-            <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold mb-3" style={{ color: G.goldL }}>Audit receipt preview</div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold mb-3" style={{ color: G.goldL }}>Receipt schema · live evidence</div>
             <div className="grid sm:grid-cols-3 gap-2 text-xs font-mono">
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">decision</div><div className="mt-1 text-emerald-300">constitutional pass</div></div>
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">state</div><div className="mt-1 text-[#e8c96d]">C + R + S = 1</div></div>
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">integrity</div><div className="mt-1 text-[#e8c96d]">SHA-256 receipt</div></div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">decision</div><div className="mt-1 text-slate-200">governance outcome</div></div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">state</div><div className="mt-1 text-slate-200">C · R · S · M</div></div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-500">integrity</div><div className="mt-1 text-slate-200">cryptographic receipt</div></div>
             </div>
-            <p className="mt-4 text-xs leading-relaxed text-slate-500">Every governed turn can carry its constitutional state, intervention outcome, and integrity record into reviewable evidence.</p>
+            <p className="mt-4 text-xs leading-relaxed text-slate-500">The landing page describes the receipt contract without inventing a sample verdict. Real governed receipts are inspectable in the public audit surface.</p>
           </div>
-          <Link href="/audit" className="flex min-h-12 items-center justify-center rounded-xl border border-[#c9a84c]/45 px-5 text-sm font-bold text-[#e8c96d] transition hover:bg-[#c9a84c]/10">Inspect audit receipts →</Link>
+          <Link href="/audit" className="flex min-h-12 items-center justify-center rounded-xl border border-[#c9a84c]/45 px-5 text-sm font-bold text-[#e8c96d] transition hover:bg-[#c9a84c]/10">Inspect live receipts →</Link>
         </div>
       </div>
     </section>
