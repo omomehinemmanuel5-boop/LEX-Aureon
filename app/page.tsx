@@ -437,8 +437,8 @@ export default async function LandingPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
       />
       <LandingNav />
-      <LiveGovernanceStrip />
       <Hero />
+      <LiveGovernanceStrip />
       <DecisionLab />
       <ProductModesSection />
       <GovernanceFlowSection />
