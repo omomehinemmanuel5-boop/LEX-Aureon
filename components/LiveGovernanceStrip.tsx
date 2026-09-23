@@ -24,5 +24,12 @@ export default function LiveGovernanceStrip(){
     return()=>{active=false;window.clearInterval(timer)};
   },[]);
 
-  return (<section className="border-y border-[#c9a84c]/15 bg-[#07070d] px-4 py-6"><div className="mx-auto max-w-6xl rounded-2xl border border-[#c9a84c]/20 bg-[#0d0d1a] p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#e8c96d]">Live Governance</div><h3 className="mt-1 text-xl font-black text-white">Current Constitutional State</h3><p className="mt-1 text-xs text-white/45">Runtime state polled from the Lex health surface.</p></div><span className="w-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-mono text-emerald-300">{status}</span></div><div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] font-mono text-white/40">Minimum CRS</div><div className="mt-1 text-lg font-bold text-white">{state?state.m.toFixed(3):"—"}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] font-mono text-white/40">Runtime</div><div className="mt-1 text-lg font-bold text-white">{state?"LIVE":"—"}</div></div></div></div></section>);
+  return (<section className="border-y border-[#c9a84c]/15 bg-[#07070d] px-4 py-6"><div className="mx-auto max-w-6xl rounded-2xl border border-[#c9a84c]/20 bg-[#0d0d1a] p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#e8c96d]">Live Governance</div><h3 className="mt-1 text-xl font-black text-white">Current Constitutional State</h3><p className="mt-1 text-xs text-white/45">Runtime state polled from the Lex health surface.</p></div><span className="w-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-mono text-emerald-300">{status}</span></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+  {([["C", state?.C ?? state?.c], ["R", state?.R ?? state?.r], ["S", state?.S ?? state?.s], ["M", state?.m]] as const).map(([key, value]) => (
+    <div key={key} className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="text-[10px] font-mono text-white/40">{key}</div>
+      <div className="mt-1 text-lg font-bold text-white">{typeof value === "number" ? value.toFixed(3) : "—"}</div>
+    </div>
+  ))}
+</div></div></section>);
 }
