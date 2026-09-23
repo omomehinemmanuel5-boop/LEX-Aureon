@@ -15,7 +15,7 @@ export default function LiveGovernanceStrip(){
         const res=await fetch("/api/lex/health",{cache:"no-store"});
         if(!res.ok) throw new Error("health request failed");
         const data=await res.json();
-        if(active && data?.C!=null && data?.R!=null && data?.S!=null){setState(data);setStatus(data.health_band ?? "LIVE");}
+        if(active && typeof data?.status === "string" && typeof data?.m === "number"){setState(data);setStatus(data.status);}
         else if(active) setStatus("NO LIVE STATE");
       }catch{if(active)setStatus("UNAVAILABLE");}
     };
