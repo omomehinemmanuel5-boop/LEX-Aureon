@@ -37,6 +37,26 @@ export async function GET(req: Request) {
     total_runs = (r.rows[0]?.value as number) ?? 0;
   } catch { /* table may not exist yet */ }
 
+  let runtime_state: { C: number; R: number; S: number; M: number; updated_at: string } | null = null;
+  try {
+    const r = await getClient().execute(`
+      SELECT last_c, last_r, last_s, last_m, updated_at
+      FROM z_traj
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `);
+    const row = r.rows[0];
+    if (row) {
+      runtime_state = {
+        C: Number(row.last_c ?? 0),
+        R: Number(row.last_r ?? 0),
+        S: Number(row.last_s ?? 0),
+        M: Number(row.last_m ?? 0),
+        updated_at: String(row.updated_at ?? new Date().toISOString()),
+      };
+    }
+  } catch { /* runtime trajectory may not exist yet */ }
+
   let groqConfigured = false, jinaConfigured = false;
   try { groqConfigured = !!env.GROQ_API_KEY; } catch { /* missing */ }
   try { jinaConfigured = !!env.JINA_API_KEY; } catch { /* missing */ }
