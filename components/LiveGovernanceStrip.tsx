@@ -17,9 +17,17 @@ export default function LiveGovernanceStrip(){
       try{
         const res=await fetch("/api/health",{cache:"no-store"});
         const data=await res.json().catch(()=>null);
-        if(active && data && typeof data?.status === "string"){
-          setState(data);
-          setStatus(data.status.toUpperCase());
+        let liveData=data;
+        if (!liveData?.runtime_state) {
+          const trajectoryRes=await fetch("/api/atlas/state",{cache:"no-store"});
+          const trajectoryData=await trajectoryRes.json().catch(()=>null);
+          if (trajectoryData?.state) {
+            liveData={...liveData,runtime_state:trajectoryData.state};
+          }
+        }
+        if(active && liveData && typeof liveData?.status === "string"){
+          setState(liveData);
+          setStatus(liveData.status.toUpperCase());
         } else if(active) setStatus(res.ok ? "NO LIVE STATE" : "UNAVAILABLE");
       }catch{if(active)setStatus("UNAVAILABLE");}
     };
