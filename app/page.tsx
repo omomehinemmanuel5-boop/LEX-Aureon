@@ -5,6 +5,7 @@ import SimplexVisualizer from '@/components/SimplexVisualizer';
 import HeroTicker from '@/components/HeroTicker';
 import LandingNav from '@/components/LandingNav';
 import DecisionLab from '@/components/DecisionLab';
+import LiveGovernanceStrip from '@/components/LiveGovernanceStrip';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
