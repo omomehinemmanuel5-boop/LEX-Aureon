@@ -44,5 +44,5 @@ export default function LiveGovernanceStrip(){
       <div className="mt-1 text-lg font-bold text-white">{typeof value === "number" ? value.toFixed(3) : "—"}</div>
     </div>
   ))}
-</div>{state?.runtime_state?.updated_at && <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="text-[10px] font-mono text-white/35">Live state updated {new Date(state.runtime_state.updated_at).toLocaleTimeString()}</div><a href="/audit" className="w-fit rounded-lg border border-[#c9a84c]/20 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#e8c96d] transition hover:border-[#c9a84c]/40 hover:bg-[#c9a84c]/5">View audit evidence →</a></div>}</div></section>);
+</div>{state?.runtime_state?.updated_at && <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="text-[10px] font-mono text-white/35">Live state updated {new Date(state.runtime_state.updated_at).toLocaleTimeString()}</div><Link href="/audit" className="w-fit rounded-lg border border-[#c9a84c]/20 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#e8c96d] transition hover:border-[#c9a84c]/40 hover:bg-[#c9a84c]/5">View audit evidence →</Link></div>}</div></section>);
 }
