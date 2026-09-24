@@ -168,7 +168,7 @@ async function fetchData<T>(path: string): Promise<T | null> {
    closes the gap between what the title tag promises and what the page says. */
 async function Hero() {
   return (
-    <section className="relative min-h-[88vh] flex flex-col items-center justify-center px-5 pt-16 pb-12 overflow-hidden" style={{ backgroundColor: '#07070d' }}>
+    <section className="relative min-h-[78vh] sm:min-h-[88vh] flex flex-col items-center justify-center px-5 pt-14 pb-8 sm:pt-16 sm:pb-12 overflow-hidden" style={{ backgroundColor: '#07070d' }}>
 
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 opacity-[0.025]"
