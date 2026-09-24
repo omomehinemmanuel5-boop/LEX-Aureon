@@ -264,6 +264,12 @@ async function Hero() {
           </svg>
           Explore the Governance Observatory <span aria-hidden="true">→</span>
         </Link>
+
+        <p className="mt-8 font-mono text-[11px] leading-relaxed text-slate-400 sm:text-xs">
+          <span style={{ color: G.C }} className="font-bold">C</span> + <span style={{ color: G.R }} className="font-bold">R</span> + <span style={{ color: G.S }} className="font-bold">S</span> = 1 · M = min(C,R,S) &lt; τ → Governor fires
+          <br />
+          Continuity · Reciprocity · Sovereignty — three constitutional pillars
+        </p>
       </div>
 
       <div className="relative z-10 flex justify-center items-center w-full mt-6 opacity-80">
