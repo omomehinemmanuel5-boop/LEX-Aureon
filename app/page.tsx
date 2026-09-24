@@ -226,10 +226,7 @@ async function Hero() {
           Evaluate model responses and agent actions before they reach users, tools, or production systems — then inspect the receipt.
         </p>
 
-        <div className="mx-auto mb-8 max-w-2xl rounded-2xl border border-[#c9a84c]/35 bg-[#c9a84c]/[0.08] px-5 py-4">
-          <div className="text-sm font-mono font-black tracking-[0.12em] text-[#e8c96d] sm:text-base">CORRECT BEFORE THE FACT. PROVE AFTER.</div>
-          <p className="mt-2 text-xs leading-relaxed text-slate-300 sm:text-sm">Lex Aureon intervenes before an unsafe answer is returned or a risky agent action executes — then records what happened in an inspectable receipt.</p>
-        </div>
+        
 
         <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/15 bg-white/[0.07]">
           <span className="inline-flex items-center gap-2 sm:gap-3 shrink-0">
