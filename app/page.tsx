@@ -411,7 +411,7 @@ function ProductPathsSection() {
     { title: 'Deploy with a team', text: 'Explore shared controls, observability, and enterprise access.', href: 'mailto:lexaureon@gmail.com', label: 'Contact the team' },
   ];
   return (
-    <section id="paths" className="bg-[#07070d] px-4 py-16 sm:px-5 sm:py-20">
+    <section id="paths" className="bg-[#07070d] px-4 py-12 sm:px-5 sm:py-16">
       <div className="mx-auto max-w-5xl">
         <div className="mb-9 text-center"><div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">Choose your next step</div><h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Go deeper only where you need to.</h2></div>
         <div className="grid gap-3 sm:grid-cols-2">
