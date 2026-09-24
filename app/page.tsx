@@ -260,7 +260,7 @@ async function Hero() {
         </p>
       </div>
 
-      <div className="relative z-10 flex justify-center items-center w-full mt-6 opacity-80">
+      <div className="relative z-10 flex justify-center items-center w-full mt-8">
         <ErrorBoundary label="Simplex"><SimplexVisualizer /></ErrorBoundary>
       </div>
     </section>
