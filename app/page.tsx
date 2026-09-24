@@ -402,10 +402,7 @@ function ProductPathsSection() {
 }
 
 export default async function LandingPage() {
-  // The benchmark strip is interactive, but its published/empty state must also
-  // be correct in the server-rendered HTML. Without this preload, crawlers and
-  // agents that do not execute the client bundle permanently see the component's
-  // initial empty state even while /api/benchmarks has published rows.
+  
   return (
     <main className="min-h-screen selection:bg-amber-500/30" style={{ backgroundColor: '#07070d' }}>
       <script
