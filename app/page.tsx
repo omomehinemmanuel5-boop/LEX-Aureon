@@ -207,7 +207,7 @@ async function Hero() {
           style={{ borderColor: `${G.gold}55`, background: `${G.gold}0f`, color: G.gold }}
         >
           <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: G.gold }} />
-          <span>SovereignKernel v2 · Unified Agent Pipeline · Log-Barrier Dynamics · Cryptographic Audit Receipts</span>
+          <span>Constitutional AI governance for LLMs and agents</span>
         </div>
 
         <h1 className="text-4xl sm:text-7xl font-black leading-tight sm:leading-none tracking-tight text-white mb-6">
