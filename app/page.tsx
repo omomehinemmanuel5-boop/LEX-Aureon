@@ -291,7 +291,7 @@ async function Hero() {
 /* ── Product Modes ──────────────────────────────────────────────── */
 function ProductModesSection() {
   return (
-    <section id="product" className="scroll-mt-20 border-y border-[#c9a84c]/15 bg-[#0d0d1a] px-4 py-16 sm:px-5 sm:py-20">
+    <section id="product" className="scroll-mt-20 border-y border-[#c9a84c]/15 bg-[#0d0d1a] px-4 py-12 sm:px-5 sm:py-16">
       <div className="mx-auto max-w-5xl">
         <div className="mb-10 text-center">
           <div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">One layer · two control points</div>
