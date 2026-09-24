@@ -325,7 +325,7 @@ function GovernanceFlowSection() {
   ];
 
   return (
-    <section className="py-20 sm:py-24 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
+    <section className="py-14 sm:py-20 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>Before the fact · not after the incident</div>
