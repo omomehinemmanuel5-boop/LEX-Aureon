@@ -368,7 +368,7 @@ function GovernanceFlowSection() {
 
 function ProofBoundarySection() {
   return (
-    <section className="px-4 py-8 sm:px-5 sm:py-10" style={{ backgroundColor: '#07070d' }}>
+    <section className="px-4 py-6 sm:px-5 sm:py-8" style={{ backgroundColor: '#07070d' }}>
       <div className="mx-auto max-w-5xl rounded-2xl border border-[#c9a84c]/25 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
         <div className="grid gap-5 md:grid-cols-[auto_1fr_1fr] md:items-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#c9a84c]/40 bg-[#c9a84c]/10 font-mono text-lg font-black text-[#e8c96d]">◎</div>
