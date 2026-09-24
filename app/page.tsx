@@ -241,7 +241,7 @@ async function Hero() {
               boxShadow: `0 8px 32px ${G.gold}40`,
             }}
           >
-            ⚡ Run a governed decision
+            Run a governed decision — free
           </Link>
           <a
             href="https://doi.org/10.5281/zenodo.18944242"
