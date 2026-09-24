@@ -278,8 +278,8 @@ function ProductModesSection() {
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-300">Lex sits at the boundary where an AI decision becomes visible to a person or executable by a tool.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-blue-400/25 bg-blue-400/[0.05] p-6">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-blue-300">01 · Response boundary</div>
+          <div className="rounded-2xl border border-[#c9a84c]/25 bg-[#c9a84c]/[0.05] p-6">
+            <div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">01 · Response boundary</div>
             <h3 className="mt-3 text-xl font-black text-white">Before an answer reaches a user.</h3>
             <p className="mt-3 text-sm leading-relaxed text-slate-300">Evaluate model output for manipulation, drift, and constitutional pressure, then return the answer, an intervention, or a clear refusal.</p>
             <Link href="/console" className="mt-5 inline-block text-sm font-bold text-[#e8c96d]">Try text governance →</Link>
