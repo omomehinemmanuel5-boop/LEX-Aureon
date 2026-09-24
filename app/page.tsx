@@ -133,19 +133,7 @@ const G = {
   S: '#f59e0b',
 };
 
-async function fetchData<T>(path: string): Promise<T | null> {
-  try {
-    const h = await headers();
-    const host = h.get('host');
-    const protocol = host?.includes('localhost') ? 'http' : 'https';
-    const res = await fetch(`${protocol}://${host}${path}`, { next: { revalidate: 60 } });
-    if (!res.ok) return null;
-    return res.json() as Promise<T>;
-  } catch (e) {
-    console.error(`Failed to fetch ${path}:`, e);
-    return null;
-  }
-}
+
 
 /* ── Hero ─────────────────────────────────────────────────────── */
 /* Background is always #07070d, so ALL hero text/borders are always-light —
