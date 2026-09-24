@@ -228,22 +228,7 @@ async function Hero() {
 
         
 
-        <div className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1 max-w-[90vw] px-5 py-2.5 rounded-2xl sm:rounded-full border mb-2 font-mono text-xs sm:text-sm border-white/15 bg-white/[0.07]">
-          <span className="inline-flex items-center gap-2 sm:gap-3 shrink-0">
-            <span style={{ color: G.C }} className="font-bold">C</span>
-            <span className="text-slate-500">+</span>
-            <span style={{ color: G.R }} className="font-bold">R</span>
-            <span className="text-slate-500">+</span>
-            <span style={{ color: G.S }} className="font-bold">S</span>
-            <span className="text-slate-500">=</span>
-            <span className="text-white font-bold">1</span>
-          </span>
-          <span className="text-slate-600 hidden sm:inline">·</span>
-          <span className="text-slate-300 whitespace-nowrap">M = min(C,R,S) &lt; τ → Governor fires</span>
-        </div>
-        <p className="text-[11px] font-mono text-slate-400 mb-10">
-          Continuity · Reciprocity · Sovereignty — three constitutional pillars
-        </p>
+        
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
           <Link
