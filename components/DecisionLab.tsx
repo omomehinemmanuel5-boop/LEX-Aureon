@@ -120,7 +120,7 @@ export default function DecisionLab() {
   const replay = () => { if (activeId === 'random') setRandomScenario(makeRandom()); setStep(0); setPlaying(!reducedMotion); };
 
   return (
-    <section id="decision-lab" className="relative overflow-hidden border-y border-[#c9a84c]/20 bg-[#0a0b14] px-3 py-12 sm:px-5 sm:py-24">
+    <section id="decision-lab" className="relative overflow-hidden border-y border-[#c9a84c]/20 bg-[#0a0b14] px-3 py-10 sm:px-5 sm:py-20">
       <div className="pointer-events-none absolute inset-0 opacity-40" style={{ background: 'radial-gradient(circle at 20% 20%, rgba(59,130,246,.16), transparent 32%), radial-gradient(circle at 80% 70%, rgba(16,185,129,.12), transparent 32%)' }} />
       <div className="relative mx-auto max-w-6xl">
         <div className="mb-7 max-w-3xl sm:mb-10"><div className="mb-3 text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-[#e8c96d] sm:text-xs">Decision Lab · M-score in motion</div><h2 className="text-3xl font-black tracking-tight text-white sm:text-5xl">Watch Lex allow, reshape, or block.</h2><p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:mt-4 sm:text-base">The M-score is the governing margin. Choose a scenario and watch C, R, and S move through the simplex as Lex detects pressure, intervenes, and records the transition.</p></div>
