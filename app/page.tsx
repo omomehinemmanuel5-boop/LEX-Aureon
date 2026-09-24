@@ -411,10 +411,10 @@ export default async function LandingPage() {
       />
       <LandingNav />
       <Hero />
-      <LiveGovernanceStrip />
-      <DecisionLab />
       <ProductModesSection />
       <GovernanceFlowSection />
+      <LiveGovernanceStrip />
+      <DecisionLab />
       <ProofBoundarySection />
       <ProductPathsSection />
       <FinalConversionSection />
