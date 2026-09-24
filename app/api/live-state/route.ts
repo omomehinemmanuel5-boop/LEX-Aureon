@@ -11,8 +11,13 @@ export async function GET() {
     getTotalRuns(),
   ]);
 
+  // Use the aggregate state as the deterministic fallback when CI/edge
+  // has no live z_traj row. A live trajectory, when present, remains canonical.
   let state: { C: number | null; R: number | null; S: number | null; M: number | null } = {
-    C: null, R: null, S: null, M: null,
+    C: aggregate.C,
+    R: aggregate.R,
+    S: aggregate.S,
+    M: aggregate.M,
   };
 
   try {
