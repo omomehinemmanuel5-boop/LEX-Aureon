@@ -284,8 +284,8 @@ function ProductModesSection() {
             <p className="mt-3 text-sm leading-relaxed text-slate-300">Evaluate model output for manipulation, drift, and constitutional pressure, then return the answer, an intervention, or a clear refusal.</p>
             <Link href="/console" className="mt-5 inline-block text-sm font-bold text-[#e8c96d]">Try text governance →</Link>
           </div>
-          <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.05] p-6">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-emerald-300">02 · Action boundary</div>
+          <div className="rounded-2xl border border-[#c9a84c]/25 bg-[#c9a84c]/[0.05] p-6">
+            <div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">02 · Action boundary</div>
             <h3 className="mt-3 text-xl font-black text-white">Before an action reaches a tool.</h3>
             <p className="mt-3 text-sm leading-relaxed text-slate-300">Intercept file, database, shell, web, and multi-step agent actions before execution, with scope, risk, and trajectory checks.</p>
             <Link href="#paths" className="mt-5 inline-block text-sm font-bold text-[#e8c96d]">Explore agent governance →</Link>
