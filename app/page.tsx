@@ -8,9 +8,10 @@ import DecisionLab from '@/components/DecisionLab';
 import LiveGovernanceStrip from '@/components/LiveGovernanceStrip';
 import type { Metadata } from 'next';
 
-// Force dynamic rendering — this page calls headers() to resolve
-// the host for internal API fetches, so static generation is not possible.
-export const dynamic = 'force-dynamic';
+// Statically rendered and refreshed every 60s. All live data (ticker, governance
+// strip, decision lab) is fetched client-side, so nothing on this page needs
+// per-request server rendering. Faster first byte, served from the CDN.
+export const revalidate = 60;
 
 // Canonical host is https://www.lexaureon.com (the apex 307-redirects to www).
 // metadataBase + alternates.canonical make every generated URL and the canonical
