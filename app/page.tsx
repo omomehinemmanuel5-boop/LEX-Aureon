@@ -249,7 +249,7 @@ async function Hero() {
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-bold text-slate-300 hover:text-white border border-white/10 hover:bg-white/5 transition-all text-center"
           >
-            📄 Read the Paper ↗
+            Read the paper ↗
           </a>
         </div>
 
