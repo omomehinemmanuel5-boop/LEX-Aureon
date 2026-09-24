@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAggregateConstitutionalState, getTotalRuns } from '@/lib/db';
+import { getAggregateConstitutionalState, getTotalRuns, getClient } from '@/lib/db';
 
 // fix (2026-07-10, take two): `export const revalidate` did not produce
 // verified cache HITs on Vercel's edge for this route (same finding as
