@@ -352,7 +352,7 @@ function ProofBoundarySection() {
         <div className="grid gap-5 md:grid-cols-[auto_1fr_1fr] md:items-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#c9a84c]/40 bg-[#c9a84c]/10 font-mono text-lg font-black text-[#e8c96d]">◎</div>
           <div>
-            <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">Evidence boundary</div>
+            <div className="text-xs font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">Evidence boundary</div>
             <h2 className="mt-1 text-lg font-black text-white">Strong claims, clearly scoped.</h2>
           </div>
           <div className="grid gap-2 text-xs leading-relaxed sm:grid-cols-2 md:col-span-1">
