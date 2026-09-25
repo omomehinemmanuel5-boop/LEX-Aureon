@@ -329,7 +329,9 @@ function GovernanceFlowSection() {
           ))}
         </div>
 
-        <div className="grid lg:grid-cols-[1fr_auto] gap-4 items-stretch">
+        <BenchmarkStatsStrip />
+
+        <div className="grid lg:grid-cols-[1fr_auto] gap-4 items-stretch mt-5">
           <div className="rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
             <div className="text-xs font-mono uppercase tracking-[0.18em] font-bold mb-3" style={{ color: G.goldL }}>Receipt schema · live evidence</div>
             <div className="grid sm:grid-cols-3 gap-2 text-xs font-mono">
