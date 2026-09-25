@@ -6,6 +6,7 @@ import HeroTicker from '@/components/HeroTicker';
 import LandingNav from '@/components/LandingNav';
 import DecisionLab from '@/components/DecisionLab';
 import LiveGovernanceStrip from '@/components/LiveGovernanceStrip';
+import BenchmarkStatsStrip from '@/components/BenchmarkStatsStrip';
 import type { Metadata } from 'next';
 
 // Statically rendered and refreshed every 60s. All live data (ticker, governance
