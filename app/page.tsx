@@ -330,7 +330,7 @@ function GovernanceFlowSection() {
 
         <div className="grid lg:grid-cols-[1fr_auto] gap-4 items-stretch">
           <div className="rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
-            <div className="text-[10px] font-mono uppercase tracking-[0.18em] font-bold mb-3" style={{ color: G.goldL }}>Receipt schema · live evidence</div>
+            <div className="text-xs font-mono uppercase tracking-[0.18em] font-bold mb-3" style={{ color: G.goldL }}>Receipt schema · live evidence</div>
             <div className="grid sm:grid-cols-3 gap-2 text-xs font-mono">
               <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-400">decision</div><div className="mt-1 text-slate-200">governance outcome</div></div>
               <div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-slate-400">state</div><div className="mt-1 text-slate-200">C · R · S · M</div></div>
