@@ -3,6 +3,7 @@ import {
   canCallTool,
   isOperatorSecret,
   OPERATOR_ONLY_MCP_TOOLS,
+  PRIVATE_TEST_MCP_TOOLS,
   profileForApiKey,
   PUBLIC_MCP_TOOLS,
   toolsForProfile,
@@ -37,8 +38,13 @@ describe('MCP capability policy', () => {
     expect(isOperatorSecret(null)).toBe(false);
   });
 
-  it('never treats an API-key plan as operator identity', () => {
-    expect(profileForApiKey('private_test')).toBe('public');
+  it('gives admin-issued private-test keys a diagnostic-only profile', () => {
+    expect(profileForApiKey('private_test')).toBe('private_test');
+    expect(canCallTool('private_test', 'read_file')).toBe(true);
+    expect(canCallTool('private_test', 'run_self_test')).toBe(true);
+    expect(canCallTool('private_test', 'write_file')).toBe(false);
+    expect(canCallTool('private_test', 'query_database')).toBe(false);
+    expect(PRIVATE_TEST_MCP_TOOLS.has('patch_file')).toBe(false);
     expect(profileForApiKey('sovereign')).toBe('public');
     expect(profileForApiKey('free')).toBe('public');
     expect(profileForApiKey(undefined)).toBe('public');
