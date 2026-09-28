@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
 
 const { interceptToolCall, dbExecute } = vi.hoisted(() => ({
   interceptToolCall: vi.fn(),
@@ -46,7 +47,8 @@ describe('governed tool execution integration boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     interceptToolCall.mockResolvedValue(approvedDecision());
-    dbExecute.mockResolvedValue({ rows: [{ last_m: 1.0 }] });
+    dbExecute.mockResolvedValue({ rows: [{ last_m: 1.0 }], rowsAffected: 1 });
+    vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'integration-approval-secret');
   });
 
   it('authorizes before reusing a cached read result', async () => {
@@ -90,8 +92,11 @@ describe('governed tool execution integration boundary', () => {
       return 'WRITE_OK';
     };
 
-    await executeGovernedTool('write_file', { path: 'a.ts', content: 'x' }, write, 'integration-write-session');
-    await executeGovernedTool('write_file', { path: 'a.ts', content: 'x' }, write, 'integration-write-session');
+    const baseArgs = { path: 'a.ts', content: 'x' };
+    const token1 = createGovernanceApprovalToken({ actorId: 'internal-agent', sessionId: 'integration-write-session', toolName: 'write_file', args: baseArgs });
+    const token2 = createGovernanceApprovalToken({ actorId: 'internal-agent', sessionId: 'integration-write-session', toolName: 'write_file', args: baseArgs });
+    await executeGovernedTool('write_file', { ...baseArgs, approval_token: token1 }, write, 'integration-write-session');
+    await executeGovernedTool('write_file', { ...baseArgs, approval_token: token2 }, write, 'integration-write-session');
 
     expect(executions).toBe(2);
     expect(interceptToolCall).toHaveBeenCalledTimes(2);
@@ -112,7 +117,7 @@ describe('governed tool execution integration boundary', () => {
 
     const result = await executeGovernedToolStructured(
       'write_file',
-      { path: 'safe.ts', content: 'export {}' },
+      { path: 'safe.ts', content: 'export {}', approval_token: createGovernanceApprovalToken({ actorId: 'internal-agent', sessionId: 'structured-approval-session', toolName: 'write_file', args: { path: 'safe.ts', content: 'export {}' } }) },
       tool,
       'structured-approval-session',
     );
