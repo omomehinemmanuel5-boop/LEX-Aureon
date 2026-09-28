@@ -13,6 +13,15 @@ import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
 import type { ToolCallDecision } from './types';
+import {
+  evaluateToolGovernance,
+  hashGovernanceArguments,
+  redactGovernanceText,
+  redactGovernanceValue,
+  verifyToolResult,
+  type GovernancePolicyDecision,
+  type PostActionVerification,
+} from './tool_governance_gateway';
 
 const READ_TOOLS = new Set([
   'read_file', 'read_directory', 'list_directory', 'list_files', 'read_memory',
@@ -61,14 +70,18 @@ function dependencyFailureDecision(toolName: string): ToolCallDecision {
 }
 
 function keyFor(sessionId: string, toolName: string, args: Record<string, unknown>): string {
-  const argsHash = crypto.createHash('sha256')
-    .update(JSON.stringify(args))
-    .digest('hex')
-    .slice(0, 32);
+  const argsHash = hashGovernanceArguments(args).slice(0, 32);
   return `${sessionId}:${toolName}:${argsHash}`;
 }
 
-function report(toolName: string, decision: ToolCallDecision, result?: string, cacheHit = false): string {
+function report(
+  toolName: string,
+  decision: ToolCallDecision,
+  result?: string,
+  cacheHit = false,
+  policy?: GovernancePolicyDecision,
+  verification?: PostActionVerification,
+): string {
   const lines = [
     `── Constitutional tool-call decision [${toolName}]${cacheHit ? ' — CACHED EXECUTION' : ''} ──`,
     `decision:    ${decision.decision}`,
@@ -81,11 +94,37 @@ function report(toolName: string, decision: ToolCallDecision, result?: string, c
     `reason:      ${decision.reason}`,
     ...(decision.warning ? [`warning:     ${decision.warning}`] : []),
     `authorization_rechecked: true`,
+    ...(policy ? [
+      `policy_decision: ${policy.decision}`,
+      `policy_version: ${policy.policyVersion}`,
+      `governance_risk: ${policy.risk}`,
+      `approval_required: ${policy.requiresApproval}`,
+    ] : []),
     `cache_hit:   ${cacheHit}`,
+    ...(verification ? [
+      `post_action_verification: ${verification.status}`,
+      `verification_summary: ${verification.summary}`,
+    ] : []),
     '',
   ];
   if (result !== undefined) lines.push(result);
   return lines.join('\n');
+}
+
+function safeTaskContext(
+  toolName: string,
+  args: Record<string, unknown>,
+  taskContext?: string,
+): string {
+  const candidate = taskContext
+    ?? (args.message as string | undefined)
+    ?? (args.query as string | undefined)
+    ?? (args.sql as string | undefined)
+    ?? `Tool call: ${toolName}`;
+  const redacted = redactGovernanceValue(candidate);
+  return typeof redacted === 'string'
+    ? redactGovernanceText(redacted).slice(0, 4096)
+    : `Tool call: ${toolName}`;
 }
 
 export interface GovernedToolExecution {
@@ -93,6 +132,9 @@ export interface GovernedToolExecution {
   approved: boolean;
   decision: string;
   receiptId: string | null;
+  risk?: string;
+  policy?: GovernancePolicyDecision;
+  verification?: PostActionVerification;
 }
 
 export async function executeGovernedToolStructured(
@@ -110,19 +152,49 @@ export async function executeGovernedToolStructured(
     arguments: args,
     session_id: sessionId,
     actor_id: actorId,
-    task_context: taskContext
-      ?? (args.message as string | undefined)
-      ?? (args.query as string | undefined)
-      ?? (args.sql as string | undefined)
-      ?? `Tool call: ${toolName}. Target: ${JSON.stringify(args).slice(0, 200)}`,
+    task_context: safeTaskContext(toolName, args, taskContext),
+  });
+  const policy = evaluateToolGovernance({
+    toolName,
+    args,
+    sessionId,
+    actorId,
+    authorized: true,
+    // Operator identity is already a separately authenticated delegated
+    // authority. Other high-impact calls require an action-bound approval id.
+    approvalGranted: actorId === 'operator' || typeof args.approval_id === 'string',
   });
 
   if (!decision.approved) {
+    const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, decision),
+      result: report(toolName, decision, undefined, false, policy, verification),
       approved: false,
       decision: decision.decision,
       receiptId: decision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification,
+    };
+  }
+
+  if (policy.decision !== 'allow') {
+    const approvalDecision: ToolCallDecision = {
+      ...decision,
+      approved: false,
+      decision: 'DENIED_BLOCKED',
+      reason: policy.reasons.join(' '),
+      warning: 'The centralized tool policy requires an action-bound approval before this risk class can execute.',
+    };
+    const verification = verifyToolResult(toolName, undefined, policy.risk);
+    return {
+      result: report(toolName, approvalDecision, undefined, false, policy, verification),
+      approved: false,
+      decision: approvalDecision.decision,
+      receiptId: approvalDecision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification,
     };
   }
 
@@ -133,7 +205,7 @@ export async function executeGovernedToolStructured(
     const kernelState = await getCurrentKernelM(sessionId);
     if (!kernelState.available) {
       const unavailableDecision = dependencyFailureDecision(toolName);
-      const argsHash = crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex').slice(0, 32);
+      const argsHash = hashGovernanceArguments(args).slice(0, 32);
       try {
         await writeGovernanceReceipt({
           receipt_id: unavailableDecision.receipt_id,
@@ -150,10 +222,13 @@ export async function executeGovernedToolStructured(
         unavailableDecision.warning = 'Governance state unavailable; execution denied, but the denial receipt could not be persisted.';
       }
       return {
-        result: report(toolName, unavailableDecision),
+        result: report(toolName, unavailableDecision, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk)),
         approved: false,
         decision: unavailableDecision.decision,
         receiptId: unavailableDecision.receipt_id,
+        risk: policy.risk,
+        policy,
+        verification: verifyToolResult(toolName, undefined, policy.risk),
       };
     }
     if (kernelState.m < KERNEL_CRITICAL) {
@@ -163,27 +238,30 @@ export async function executeGovernedToolStructured(
         arguments: args,
         session_id: sessionId,
         actor_id: actorId,
-        task_context: taskContext
-          ?? (args.message as string | undefined)
-          ?? (args.query as string | undefined)
-          ?? (args.sql as string | undefined)
-          ?? `Tool call: ${toolName}. Target: ${JSON.stringify(args).slice(0, 200)}`,
+        task_context: safeTaskContext(toolName, args, taskContext),
       });
       return {
-        result: report(toolName, criticalDecision),
+        result: report(toolName, criticalDecision, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk)),
         approved: false,
         decision: criticalDecision.decision,
         receiptId: criticalDecision.receipt_id ?? null,
+        risk: policy.risk,
+        policy,
+        verification: verifyToolResult(toolName, undefined, policy.risk),
       };
     }
   }
 
   if (signal?.aborted) {
+    const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, decision, 'EXECUTION_STATUS=not_started_after_cancellation; the authorization decision was recorded, but the tool function was not invoked.'),
+      result: report(toolName, decision, 'EXECUTION_STATUS=not_started_after_cancellation; the authorization decision was recorded, but the tool function was not invoked.', false, policy, verification),
       approved: false,
       decision: 'EXECUTION_CANCELLED_BEFORE_START',
       receiptId: decision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification,
     };
   }
 
@@ -194,11 +272,15 @@ export async function executeGovernedToolStructured(
     execute: () => toolFn(args, signal),
   });
 
+  const verification = verifyToolResult(toolName, cached.value, policy.risk);
   return {
-    result: report(toolName, cached.decision, cached.value, cached.cacheHit),
+    result: report(toolName, cached.decision, cached.value, cached.cacheHit, policy, verification),
     approved: cached.decision.approved,
     decision: cached.decision.decision,
     receiptId: cached.decision.receipt_id ?? null,
+    risk: policy.risk,
+    policy,
+    verification,
   };
 }
 

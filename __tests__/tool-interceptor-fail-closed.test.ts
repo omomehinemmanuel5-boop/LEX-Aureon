@@ -27,21 +27,27 @@ describe('tool interceptor dependency failures', () => {
   });
 
   it('allows isolated synthetic state only outside production', async () => {
+    const previousSynthetic = process.env.LEX_AGENTDOJO_SYNTHETIC_STATE;
+    vi.stubEnv('NODE_ENV', 'test');
     process.env.LEX_AGENTDOJO_SYNTHETIC_STATE = '1';
-    dbExecute
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValue({ rowsAffected: 1 });
+    try {
+      dbExecute
+        .mockResolvedValue({ rows: [] });
 
-    const decision = await interceptToolCall({
-      id: 'synthetic-1',
-      name: 'list_files',
-      arguments: {},
-      session_id: 'synthetic-session',
-      task_context: 'list the files in the working directory',
-    });
+      const decision = await interceptToolCall({
+        id: 'synthetic-1',
+        name: 'list_files',
+        arguments: {},
+        session_id: 'synthetic-session',
+        task_context: 'list the files in the working directory',
+      });
 
-    expect(decision.approved).toBe(true);
-    delete process.env.LEX_AGENTDOJO_SYNTHETIC_STATE;
+      expect(decision.approved).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      if (previousSynthetic === undefined) delete process.env.LEX_AGENTDOJO_SYNTHETIC_STATE;
+      else process.env.LEX_AGENTDOJO_SYNTHETIC_STATE = previousSynthetic;
+    }
   });
 
   it('denies when tool-session state cannot be read instead of assuming a clean session', async () => {
