@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { getClient } from '../db';
 
 export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
 export type VerificationStatus = 'verified' | 'unknown' | 'not_started' | 'failed';
@@ -144,7 +145,7 @@ function verifyGovernanceApprovalToken(input: {
   toolName: string;
   args: Record<string, unknown>;
   nowMs?: number;
-}): { valid: boolean; approvalId?: string; reason: string } {
+}): { valid: boolean; approvalId?: string; expiresAt?: number; reason: string } {
   const secret = approvalSigningSecret();
   if (!secret) return { valid: false, reason: 'Approval signing secret is not configured.' };
   if (typeof input.token !== 'string') return { valid: false, reason: 'No signed approval token was supplied.' };
@@ -177,7 +178,55 @@ function verifyGovernanceApprovalToken(input: {
   if (claims.argsHash !== hashGovernanceArguments(input.args)) {
     return { valid: false, reason: 'Approval token is bound to different action arguments.' };
   }
-  return { valid: true, approvalId: claims.jti, reason: 'Signed approval token is valid and action-bound.' };
+  return { valid: true, approvalId: claims.jti, expiresAt: claims.exp, reason: 'Signed approval token is valid and action-bound.' };
+}
+
+/**
+ * Atomically consumes a valid approval ID. The unique primary key makes the
+ * check-and-consume operation safe across concurrent application instances.
+ */
+export async function consumeGovernanceApprovalToken(input: {
+  token: unknown;
+  actorId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  nowMs?: number;
+}): Promise<{ consumed: boolean; approvalId?: string; reason: string }> {
+  const verified = verifyGovernanceApprovalToken(input);
+  if (!verified.valid || !verified.approvalId || !verified.expiresAt) {
+    return { consumed: false, reason: verified.reason };
+  }
+  try {
+    const db = getClient();
+    await db.execute({
+      sql: `CREATE TABLE IF NOT EXISTS governance_approval_consumptions (
+        approval_id TEXT PRIMARY KEY,
+        actor_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        consumed_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      )`,
+      args: [],
+    });
+    await db.execute({
+      sql: 'DELETE FROM governance_approval_consumptions WHERE expires_at < ?',
+      args: [input.nowMs ?? Date.now()],
+    });
+    const inserted = await db.execute({
+      sql: `INSERT OR IGNORE INTO governance_approval_consumptions
+        (approval_id, actor_id, session_id, tool_name, consumed_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [verified.approvalId, input.actorId, input.sessionId, input.toolName, input.nowMs ?? Date.now(), verified.expiresAt],
+    });
+    if ((inserted.rowsAffected ?? 0) !== 1) {
+      return { consumed: false, approvalId: verified.approvalId, reason: 'Approval token has already been consumed.' };
+    }
+    return { consumed: true, approvalId: verified.approvalId, reason: 'Approval token consumed exactly once.' };
+  } catch {
+    return { consumed: false, approvalId: verified.approvalId, reason: 'Approval consumption store unavailable; execution denied by fail-closed policy.' };
+  }
 }
 
 export function classifyGovernanceRisk(toolName: string): GovernanceRisk {

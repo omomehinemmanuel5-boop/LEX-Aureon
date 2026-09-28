@@ -14,6 +14,7 @@ import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
 import type { ToolCallDecision } from './types';
 import {
+  consumeGovernanceApprovalToken,
   evaluateToolGovernance,
   hashGovernanceArguments,
   redactGovernanceText,
@@ -195,6 +196,35 @@ export async function executeGovernedToolStructured(
       policy,
       verification,
     };
+  }
+
+  if (policy.requiresApproval) {
+    const consumed = await consumeGovernanceApprovalToken({
+      token: args.approval_token,
+      actorId,
+      sessionId,
+      toolName,
+      args,
+    });
+    if (!consumed.consumed) {
+      const replayDecision: ToolCallDecision = {
+        ...decision,
+        approved: false,
+        decision: 'DENIED_BLOCKED',
+        reason: consumed.reason,
+        warning: 'The action-bound approval could not be consumed exactly once; the tool function was not invoked.',
+      };
+      const verification = verifyToolResult(toolName, undefined, policy.risk);
+      return {
+        result: report(toolName, replayDecision, undefined, false, policy, verification),
+        approved: false,
+        decision: replayDecision.decision,
+        receiptId: replayDecision.receipt_id ?? null,
+        risk: policy.risk,
+        policy,
+        verification,
+      };
+    }
   }
 
   // The cached value itself is never an authorization artifact. Recheck the
