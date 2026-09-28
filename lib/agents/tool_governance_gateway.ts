@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getClient } from '../db';
+import { getToolCapability } from './tool_capability_registry';
 
 export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
 export type VerificationStatus = 'verified' | 'unknown' | 'not_started' | 'failed';
@@ -27,7 +28,7 @@ const POLICY_VERSION = 'tool-gateway-2026-09-28.2';
 const APPROVAL_TOKEN_VERSION = 'approval-v1';
 const APPROVAL_TTL_MS = 15 * 60 * 1000;
 const CLOCK_SKEW_MS = 30 * 1000;
-const READ_TOOLS = new Set([
+const LEGACY_READ_TOOLS = new Set([
   'read_file', 'read_directory', 'list_directory', 'list_files', 'read_memory',
   'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file', 'cat', 'head',
   'tail', 'grep', 'find', 'ls', 'dir', 'glob', 'read_json', 'parse_csv',
@@ -36,14 +37,7 @@ const READ_TOOLS = new Set([
   'clear_trajectory_plan', 'get_build_status', 'get_workflow_run',
   'get_workflow_log', 'get_workflow_artifact', 'get_recent_receipts',
 ]);
-const EXTERNAL_TOOLS = new Set([
-  'dispatch_workflow', 'send_email', 'publish_post', 'create_issue', 'create_pull_request',
-  'deploy', 'create_deployment', 'http_post', 'http_put', 'http_patch', 'curl_post',
-]);
-const DESTRUCTIVE_TOOLS = new Set([
-  'delete_file', 'delete_directory', 'delete_repository', 'delete_branch', 'revoke_key',
-  'change_access', 'change_billing', 'drop_table', 'execute_destructive_sql',
-]);
+
 const SECRET_KEY = /(?:pass(?:word|phrase)?|secret|token|api[_-]?key|authorization|cookie|credential|private[_-]?key|access[_-]?key)/i;
 const MAX_REDACTION_DEPTH = 8;
 
@@ -230,15 +224,27 @@ export async function consumeGovernanceApprovalToken(input: {
 }
 
 export function classifyGovernanceRisk(toolName: string): GovernanceRisk {
-  if (DESTRUCTIVE_TOOLS.has(toolName) || /(?:delete|destroy|drop|revoke|billing|access)/i.test(toolName)) {
-    return 'destructive';
+  const registered = getToolCapability(toolName);
+  if (registered) {
+    switch (registered.capability) {
+      case 'read': return 'read';
+      case 'write': return 'write';
+      case 'external':
+      case 'network':
+      case 'delegate': return 'external';
+      case 'destructive':
+      case 'execute':
+      case 'financial':
+      case 'identity': return 'destructive';
+    }
   }
-  if (EXTERNAL_TOOLS.has(toolName) || /(?:dispatch|publish|deploy|send|create_.*(?:issue|pull|deployment))/i.test(toolName)) {
-    return 'external';
-  }
-  if (READ_TOOLS.has(toolName) || /^(?:get|list|read|search|review|simulate|explain|check|verify)/i.test(toolName)) {
-    return 'read';
-  }
+  // Legacy compatibility is intentionally conservative. Unknown tools are
+  // admitted only by the reference monitor before execution; this fallback
+  // keeps standalone policy classification safe for callers that inspect an
+  // unregistered name without executing it.
+  if (LEGACY_READ_TOOLS.has(toolName) || /^(?:get|list|read|search|review|simulate|explain|check|verify)/i.test(toolName)) return 'read';
+  if (DESTRUCTIVE_TOOLS.has(toolName) || /(?:delete|destroy|drop|revoke|billing|access)/i.test(toolName)) return 'destructive';
+  if (EXTERNAL_TOOLS.has(toolName) || /(?:dispatch|publish|deploy|send|create_.*(?:issue|pull|deployment))/i.test(toolName)) return 'external';
   return 'write';
 }
 
@@ -257,7 +263,7 @@ export function evaluateToolGovernance(input: {
   nowMs?: number;
 }): GovernancePolicyDecision {
   const risk = classifyGovernanceRisk(input.toolName);
-  const requiresApproval = risk === 'external' || risk === 'destructive';
+  const requiresApproval = risk !== 'read';
   const reasons: string[] = [];
   if (!input.authorized) {
     reasons.push('Caller or capability scope does not authorize this tool.');
