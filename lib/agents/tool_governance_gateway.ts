@@ -2,6 +2,9 @@ import crypto from 'crypto';
 import { getClient } from '../db';
 import { getToolCapability } from './tool_capability_registry';
 
+const DESTRUCTIVE_TOOLS = new Set(['delete_file', 'delete_directory', 'delete_repository', 'delete_branch', 'revoke_key', 'change_access', 'change_billing', 'drop_table', 'execute_destructive_sql']);
+const EXTERNAL_TOOLS = new Set(['dispatch_workflow', 'send_email', 'publish_post', 'create_issue', 'create_pull_request', 'deploy', 'create_deployment', 'http_post', 'http_put', 'http_patch', 'curl_post']);
+
 export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
 export type VerificationStatus = 'verified' | 'unknown' | 'not_started' | 'failed';
 
