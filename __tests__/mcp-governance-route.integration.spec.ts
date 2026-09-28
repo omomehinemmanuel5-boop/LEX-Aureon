@@ -50,7 +50,13 @@ import { POST } from '../app/api/mcp/route';
 function request(body: Record<string, unknown>) {
   return new Request('http://localhost/api/mcp', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      // /api/mcp requires an API key before dispatching any tools/call.
+      // The route's key validator is mocked above, so this value only
+      // exercises the same authenticated boundary used in production.
+      'x-lex-api-key': 'test-key',
+    },
     body: JSON.stringify(body),
   });
 }
