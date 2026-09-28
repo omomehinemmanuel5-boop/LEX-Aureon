@@ -99,6 +99,7 @@ function report(
       `policy_version: ${policy.policyVersion}`,
       `governance_risk: ${policy.risk}`,
       `approval_required: ${policy.requiresApproval}`,
+      ...(policy.approvalId ? [`approval_id: ${policy.approvalId}`] : []),
     ] : []),
     `cache_hit:   ${cacheHit}`,
     ...(verification ? [
@@ -160,9 +161,7 @@ export async function executeGovernedToolStructured(
     sessionId,
     actorId,
     authorized: true,
-    // Operator identity is already a separately authenticated delegated
-    // authority. Other high-impact calls require an action-bound approval id.
-    approvalGranted: actorId === 'operator' || typeof args.approval_id === 'string',
+    approvalToken: args.approval_token,
   });
 
   if (!decision.approved) {

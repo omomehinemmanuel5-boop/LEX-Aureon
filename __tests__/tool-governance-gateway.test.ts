@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   classifyGovernanceRisk,
+  createGovernanceApprovalToken,
   evaluateToolGovernance,
   hashGovernanceArguments,
   redactGovernanceText,
@@ -16,7 +17,7 @@ describe('central tool governance gateway', () => {
     expect(classifyGovernanceRisk('delete_repository')).toBe('destructive');
   });
 
-  it('requires action-bound approval for external and destructive actions', () => {
+  it('requires a valid signed approval bound to the exact action', () => {
     const denied = evaluateToolGovernance({
       toolName: 'dispatch_workflow',
       args: { workflow: 'ci.yml' },
@@ -27,15 +28,53 @@ describe('central tool governance gateway', () => {
     expect(denied.decision).toBe('approval_required');
     expect(denied.requiresApproval).toBe(true);
 
+    vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'test-approval-secret');
+    const nowMs = 1_700_000_000_000;
+    const actionArgs = { workflow: 'ci.yml' };
+    const token = createGovernanceApprovalToken({
+      actorId: 'internal-agent',
+      sessionId: 'session-1',
+      toolName: 'dispatch_workflow',
+      args: actionArgs,
+      nowMs,
+      approvalId: 'approval-1',
+    });
     const approved = evaluateToolGovernance({
       toolName: 'dispatch_workflow',
-      args: { workflow: 'ci.yml', approval_id: 'approval-1' },
+      args: { ...actionArgs, approval_token: token },
       sessionId: 'session-1',
       actorId: 'internal-agent',
       authorized: true,
-      approvalGranted: true,
+      approvalToken: token,
+      nowMs,
     });
     expect(approved.decision).toBe('allow');
+    expect(approved.approvalId).toBe('approval-1');
+
+    const mismatched = evaluateToolGovernance({
+      toolName: 'dispatch_workflow',
+      args: { workflow: 'other.yml', approval_token: token },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+      approvalToken: token,
+      nowMs,
+    });
+    expect(mismatched.decision).toBe('approval_required');
+    expect(mismatched.reasons.join(' ')).toContain('different action arguments');
+
+    const expired = evaluateToolGovernance({
+      toolName: 'dispatch_workflow',
+      args: { ...actionArgs, approval_token: token },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+      approvalToken: token,
+      nowMs: nowMs + 15 * 60 * 1000 + 1,
+    });
+    expect(expired.decision).toBe('approval_required');
+    expect(expired.reasons.join(' ')).toContain('expired');
+    vi.unstubAllEnvs();
   });
 
   it('redacts credential-shaped keys recursively', () => {

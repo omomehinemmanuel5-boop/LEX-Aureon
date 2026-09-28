@@ -9,6 +9,7 @@ export interface GovernancePolicyDecision {
   requiresApproval: boolean;
   policyVersion: string;
   reasons: string[];
+  approvalId?: string;
   constraints: {
     actorId: string;
     sessionId: string;
@@ -21,7 +22,10 @@ export interface PostActionVerification {
   summary: string;
 }
 
-const POLICY_VERSION = 'tool-gateway-2026-09-28.1';
+const POLICY_VERSION = 'tool-gateway-2026-09-28.2';
+const APPROVAL_TOKEN_VERSION = 'approval-v1';
+const APPROVAL_TTL_MS = 15 * 60 * 1000;
+const CLOCK_SKEW_MS = 30 * 1000;
 const READ_TOOLS = new Set([
   'read_file', 'read_directory', 'list_directory', 'list_files', 'read_memory',
   'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file', 'cat', 'head',
@@ -77,7 +81,103 @@ export function redactGovernanceText(text: string): string {
 
 /** Stable hash for receipts and cache keys; raw arguments never enter the receipt text. */
 export function hashGovernanceArguments(args: Record<string, unknown>): string {
-  return crypto.createHash('sha256').update(JSON.stringify(stableValue(args))).digest('hex');
+  const actionArgs = Object.fromEntries(Object.entries(args)
+    .filter(([key]) => key !== 'approval_token' && key !== 'approval_id'));
+  return crypto.createHash('sha256').update(JSON.stringify(stableValue(actionArgs))).digest('hex');
+}
+
+interface GovernanceApprovalClaims {
+  v: typeof APPROVAL_TOKEN_VERSION;
+  jti: string;
+  actorId: string;
+  sessionId: string;
+  toolName: string;
+  argsHash: string;
+  iat: number;
+  exp: number;
+}
+
+function approvalSigningSecret(): string | undefined {
+  return process.env.LEX_APPROVAL_SIGNING_SECRET || process.env.AUDITOR_SECRET || undefined;
+}
+
+function encodeApprovalPart(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+function approvalSignature(signingInput: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(signingInput).digest('base64url');
+}
+
+/** Creates a short-lived approval bound to one actor, session, tool, and action. */
+export function createGovernanceApprovalToken(input: {
+  actorId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  approvalId?: string;
+  nowMs?: number;
+  ttlMs?: number;
+}): string {
+  const secret = approvalSigningSecret();
+  if (!secret) throw new Error('Approval signing secret is not configured.');
+  const now = input.nowMs ?? Date.now();
+  const claims: GovernanceApprovalClaims = {
+    v: APPROVAL_TOKEN_VERSION,
+    jti: input.approvalId ?? crypto.randomUUID(),
+    actorId: input.actorId,
+    sessionId: input.sessionId,
+    toolName: input.toolName,
+    argsHash: hashGovernanceArguments(input.args),
+    iat: now,
+    exp: now + Math.min(input.ttlMs ?? APPROVAL_TTL_MS, APPROVAL_TTL_MS),
+  };
+  const encodedClaims = encodeApprovalPart(claims);
+  const signingInput = `${APPROVAL_TOKEN_VERSION}.${encodedClaims}`;
+  return `${signingInput}.${approvalSignature(signingInput, secret)}`;
+}
+
+function verifyGovernanceApprovalToken(input: {
+  token: unknown;
+  actorId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  nowMs?: number;
+}): { valid: boolean; approvalId?: string; reason: string } {
+  const secret = approvalSigningSecret();
+  if (!secret) return { valid: false, reason: 'Approval signing secret is not configured.' };
+  if (typeof input.token !== 'string') return { valid: false, reason: 'No signed approval token was supplied.' };
+  const parts = input.token.split('.');
+  if (parts.length !== 3 || parts[0] !== APPROVAL_TOKEN_VERSION) {
+    return { valid: false, reason: 'Approval token format or version is invalid.' };
+  }
+  const signingInput = `${parts[0]}.${parts[1]}`;
+  const expected = Buffer.from(approvalSignature(signingInput, secret));
+  const received = Buffer.from(parts[2]);
+  if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
+    return { valid: false, reason: 'Approval token signature is invalid.' };
+  }
+  let claims: GovernanceApprovalClaims;
+  try {
+    claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as GovernanceApprovalClaims;
+  } catch {
+    return { valid: false, reason: 'Approval token claims are not valid JSON.' };
+  }
+  const now = input.nowMs ?? Date.now();
+  if (claims.v !== APPROVAL_TOKEN_VERSION || !claims.jti || !Number.isFinite(claims.iat) || !Number.isFinite(claims.exp)) {
+    return { valid: false, reason: 'Approval token claims are incomplete.' };
+  }
+  if (claims.iat > now + CLOCK_SKEW_MS || claims.exp <= now) {
+    return { valid: false, reason: 'Approval token is expired or not yet valid.' };
+  }
+  if (claims.actorId !== input.actorId || claims.sessionId !== input.sessionId || claims.toolName !== input.toolName) {
+    return { valid: false, reason: 'Approval token is bound to a different actor, session, or tool.' };
+  }
+  if (claims.argsHash !== hashGovernanceArguments(input.args)) {
+    return { valid: false, reason: 'Approval token is bound to different action arguments.' };
+  }
+  return { valid: true, approvalId: claims.jti, reason: 'Signed approval token is valid and action-bound.' };
 }
 
 export function classifyGovernanceRisk(toolName: string): GovernanceRisk {
@@ -104,7 +204,8 @@ export function evaluateToolGovernance(input: {
   sessionId: string;
   actorId: string;
   authorized: boolean;
-  approvalGranted?: boolean;
+  approvalToken?: unknown;
+  nowMs?: number;
 }): GovernancePolicyDecision {
   const risk = classifyGovernanceRisk(input.toolName);
   const requiresApproval = risk === 'external' || risk === 'destructive';
@@ -116,8 +217,18 @@ export function evaluateToolGovernance(input: {
       constraints: { actorId: input.actorId, sessionId: input.sessionId, toolName: input.toolName },
     };
   }
-  if (requiresApproval && !input.approvalGranted) {
-    reasons.push(`Risk level ${risk} requires an explicit approval bound to this action.`);
+  const approval = requiresApproval
+    ? verifyGovernanceApprovalToken({
+      token: input.approvalToken,
+      actorId: input.actorId,
+      sessionId: input.sessionId,
+      toolName: input.toolName,
+      args: input.args,
+      nowMs: input.nowMs,
+    })
+    : { valid: true, reason: 'Approval is not required for this risk class.' };
+  if (requiresApproval && !approval.valid) {
+    reasons.push(approval.reason);
     return {
       decision: 'approval_required', risk, requiresApproval, policyVersion: POLICY_VERSION, reasons,
       constraints: { actorId: input.actorId, sessionId: input.sessionId, toolName: input.toolName },
@@ -125,8 +236,10 @@ export function evaluateToolGovernance(input: {
   }
   reasons.push(`Caller is authorized for ${input.toolName}.`);
   reasons.push(`Classified as ${risk}; arguments are receipt-hashed without diagnostic disclosure.`);
+  if (approval.approvalId) reasons.push(`Signed approval ${approval.approvalId} is bound to this action.`);
   return {
     decision: 'allow', risk, requiresApproval, policyVersion: POLICY_VERSION, reasons,
+    ...(approval.approvalId ? { approvalId: approval.approvalId } : {}),
     constraints: { actorId: input.actorId, sessionId: input.sessionId, toolName: input.toolName },
   };
 }
