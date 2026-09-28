@@ -15,6 +15,15 @@ Agent actions can have effects beyond generated text. The MCP boundary makes too
 - [`lib/agents/tool_crs.ts`](../../../lib/agents/tool_crs.ts) measures tool-call CRS and scans arguments.
 - [`lib/agents/constitutional_tool_executor.ts`](../../../lib/agents/constitutional_tool_executor.ts) is part of the internal governed tool-execution path.
 
+## Current boundary rules
+
+- API-key plans do not grant operator privileges. Operator-only tools require the separate `MCP_OPERATOR_SECRET`; the admin password is not an MCP credential.
+- Unknown tool names fail closed until their side effects have an explicit CRS risk classification. The legacy interceptor cache path was removed; only the shared executor may reuse read results after a fresh authorization decision.
+- `/api/tool-proxy` independently authenticates callers, rate-limits and bounds requests, namespaces API-key sessions, and stores a non-secret actor ID on tool receipts. Optional forwarding is disabled by default and requires an exact `TOOL_PROXY_ALLOWED_HOSTS` hostname, HTTPS, a public DNS result, and no redirects.
+- Bare and trajectory-governed MCP calls have bounded deadlines with cancellation signals. A timeout, transport error, redirect, non-2xx response, or JSON-RPC error after tool-proxy dispatch is reported as an unknown remote outcome; it must not be treated as a denial or automatically retried without checking the target.
+
+These controls cover only requests that pass through the governed routes; repository changes made through independent integrations remain outside this enforcement and audit boundary.
+
 ## Research lineage
 
 The project’s action-governance design record is preserved as a design document and must not be read as evidence that every proposed field or policy is deployed. See [`docs/action-governance-spec.md`](../../action-governance-spec.md). The coordination case study records a separate limitation: systems outside the MCP gate are not visible to that gate. See [`docs/multi-agent-governance.md`](../../multi-agent-governance.md).

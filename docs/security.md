@@ -6,9 +6,17 @@ Public governance requests are protected by JSON body-size limits, prompt and se
 
 Anonymous callers receive a smaller budget than authenticated API-key callers. API keys also have plan-level run allowances tracked in Turso.
 
+## Tool governance boundaries
+
+`/api/mcp` and `/api/tool-proxy` are distinct authenticated boundaries. On `/api/mcp`, API keys grant public MCP capabilities only; Lex infrastructure tools require the independent `MCP_OPERATOR_SECRET`, never `ADMIN_PASSWORD`. The separate tool proxy bounds JSON bodies, applies IP rate limits before governance work, consumes valid API-key quota atomically, and namespaces sessions by API-key identity. Rate-limit and governance-state failures fail closed.
+
+Outbound forwarding from `/api/tool-proxy` is disabled unless `TOOL_PROXY_ALLOWED_HOSTS` contains exact hostnames. Targets must use HTTPS, omit URL credentials, use the default HTTPS port, resolve only to public addresses, and are not allowed to redirect. The connection pins the validated DNS address while preserving TLS hostname verification. A timeout, transport error, redirect, non-2xx response, or JSON-RPC error after dispatch is an **unknown remote outcome**, not a denial or a safe-to-retry signal; clients must verify target state before retrying.
+
+Tool receipts store an authenticated actor identifier (`operator`, `api_key:<key-id>`, or `internal-agent`) and a hash of arguments, never the raw credential or raw arguments. This identifies the authenticated principal, not necessarily the human or model behind a shared key.
+
 ## Sensitive areas
 
-Admin, benchmark publishing, cron, key management, debug, and tool-proxy routes require separate review. Do not expose these routes through the public demo without an explicit authentication decision.
+Admin, benchmark publishing, cron, key management, and debug routes remain sensitive and require their own authorization review. These controls do not make actions outside the governed tool entry points visible to the tool governor.
 
 ## Reporting a vulnerability
 

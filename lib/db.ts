@@ -365,7 +365,19 @@
 
   // ── Z-Traj Migrations ─────────────────────────────────────────────────────────
 
-  export async function runZTrajMigrations(): Promise<void> {
+  let zTrajMigrationPromise: Promise<void> | null = null;
+
+  export function runZTrajMigrations(): Promise<void> {
+    if (!zTrajMigrationPromise) {
+      zTrajMigrationPromise = runZTrajMigrationsOnce().catch((error: unknown) => {
+        zTrajMigrationPromise = null;
+        throw error;
+      });
+    }
+    return zTrajMigrationPromise;
+  }
+
+  async function runZTrajMigrationsOnce(): Promise<void> {
     const c = getClient();
     const safeExec = async (sql: string, args: (string | number | null)[] = []) => {
       try { await c.execute({ sql, args }); } catch { /* idempotent */ }
@@ -483,6 +495,7 @@
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       receipt_id    TEXT    NOT NULL UNIQUE,
       session_id    TEXT    NOT NULL,
+      actor_id      TEXT    NOT NULL DEFAULT 'unknown',
       tool_name     TEXT    NOT NULL,
       args_hash     TEXT    NOT NULL,
       decision      TEXT    NOT NULL,
@@ -495,6 +508,7 @@
       sigma_viol    REAL    NOT NULL DEFAULT 0.0,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
+    await safeExec(`ALTER TABLE tool_receipts ADD COLUMN actor_id TEXT NOT NULL DEFAULT 'unknown'`);
 
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_receipts_session ON tool_receipts(session_id)`);
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_sessions_updated ON tool_sessions(updated_at)`);

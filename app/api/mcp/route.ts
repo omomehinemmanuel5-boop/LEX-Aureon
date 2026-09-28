@@ -16,7 +16,7 @@ import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTraject
 import { getAutonomousRun } from '@/lib/agents/autonomous_run_supervisor';
 import type { AutonomousRunContext } from '@/lib/agents/trajectory_executor';
 import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
-import { recordMcpClientIdentity } from '@/lib/db';
+import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import crypto from 'crypto';
@@ -79,7 +79,7 @@ const SERVER_INFO = {
 
 const CAPABILITIES = { tools: {} };
 
-type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
+type ToolHandler = (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
 
 const EXTENSION_DEFINITIONS = [PATCH_FILE_DEFINITION] as const;
 
@@ -90,8 +90,9 @@ const EXTENSION_DEFINITIONS = [PATCH_FILE_DEFINITION] as const;
  * same authorization boundary used by the main registry.
  */
 const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
-  patch_file: (args) => patch_file(
-    args as unknown as Parameters<typeof patch_file>[0]
+  patch_file: (args, signal) => patch_file(
+    args as unknown as Parameters<typeof patch_file>[0],
+    signal,
   ),
 };
 
@@ -305,6 +306,7 @@ export async function POST(req: Request) {
     const operator = isOperator(req);
     let profile: McpAccessProfile = operator ? 'operator' : 'public';
     let ownerId = 'operator';
+    let actorId = 'operator';
     let apiKey: string | null = null;
     if (!operator) {
       apiKey = extractApiKey(req);
@@ -315,6 +317,7 @@ export async function POST(req: Request) {
       const keyCheck = await validateApiKey(apiKey);
       if (!keyCheck.valid) return unauthorized(id);
       ownerId = String(keyCheck.key?.id ?? 'anonymous');
+      actorId = `api_key:${ownerId}`;
       profile = profileForApiKey(keyCheck.key?.plan);
     }
 
@@ -345,8 +348,19 @@ export async function POST(req: Request) {
       // profile selection, so a concurrent revoke/plan change cannot retain
       // stale privileges from the preflight validation above.
       ownerId = String(consumption.key?.id ?? 'anonymous');
+      actorId = `api_key:${ownerId}`;
       profile = profileForApiKey(consumption.key?.plan);
       if (!canCallTool(profile, toolName)) return unauthorized(id);
+    }
+
+    try {
+      await runZTrajMigrations();
+    } catch {
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        error: { code: -32003, message: 'Governance storage temporarily unavailable' },
+        id,
+      }, { status: 503 });
     }
 
     try {
@@ -414,7 +428,8 @@ export async function POST(req: Request) {
           target: expected?.target,
         };
 
-        const execution = await executeGovernedTrajectoryAction(
+        const trajectoryController = new AbortController();
+        const trajectoryOutcome = await withDeadline(executeGovernedTrajectoryAction(
           trajectoryState,
           attemptedAction,
           toolArgs,
@@ -422,7 +437,21 @@ export async function POST(req: Request) {
           sessionId,
           args.task_context as string | undefined,
           runContext,
-        );
+          actorId,
+          trajectoryController.signal,
+        ), 30_000, trajectoryController);
+
+        if (trajectoryOutcome.timedOut) {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            result: { content: [{
+              type: 'text',
+              text: 'EXECUTION_STATUS=unknown_after_deadline. Trajectory execution was cancelled where supported, but the tool or remote system may already have completed the action. Verify its state and receipt before retrying.',
+            }] },
+            id,
+          });
+        }
+        const execution = trajectoryOutcome.value;
 
         if (isTrajectoryActive(execution.state)) {
           await setTrajectoryState(sessionId, execution.state);
@@ -440,13 +469,20 @@ export async function POST(req: Request) {
         });
       }
 
-      const result = await withDeadline(executeGovernedTool(
+      const controller = new AbortController();
+      const outcome = await withDeadline(executeGovernedTool(
         toolName,
         toolArgs,
         toolFn,
         sessionId,
         args.task_context as string | undefined,
-      ), 30_000);
+        actorId,
+        controller.signal,
+      ), 30_000, controller);
+
+      const result = outcome.timedOut
+        ? 'EXECUTION_STATUS=unknown_after_deadline. Cancellation was requested, but the tool or remote system may already have completed the action. Verify its state and receipt before retrying.'
+        : outcome.value;
 
       return NextResponse.json({
         jsonrpc: '2.0',
@@ -469,13 +505,20 @@ export async function POST(req: Request) {
   });
 }
 
-async function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+async function withDeadline<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  controller: AbortController,
+): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Tool execution timed out')), timeoutMs);
+      promise.then(value => ({ timedOut: false as const, value })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve({ timedOut: true });
+        }, timeoutMs);
       }),
     ]);
   } finally {

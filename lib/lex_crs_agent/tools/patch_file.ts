@@ -232,8 +232,9 @@ export async function patch_file({
   repo?: string;
   replace_all?: boolean;
   dry_run?: boolean;
-}): Promise<string> {
-  const head = await ghFetch(`/repos/${repo}/contents/${path}`);
+}, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  const head = await ghFetch(`/repos/${repo}/contents/${path}`, { signal });
   if (!head.ok) return `Error: ${head.status} — file not found at ${path} in ${repo}`;
   const meta = (await head.json()) as { content?: string; sha?: string };
   if (!meta.content || !meta.sha) return 'Error: no content or sha returned by GitHub';
@@ -266,8 +267,12 @@ export async function patch_file({
     return report.join('\n');
   }
 
+  // The authorization deadline may expire during the read/parse gate; never
+  // start the irreversible GitHub commit after cancellation.
+  signal?.throwIfAborted();
   const res = await ghFetch(`/repos/${repo}/contents/${path}`, {
     method: 'PUT',
+    signal,
     body: JSON.stringify({
       message: `[Lex CRS Agent] ${message}`,
       content: Buffer.from(outcome.content).toString('base64'),

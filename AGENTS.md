@@ -306,7 +306,6 @@ Convention:
 
 | Agent | Started (UTC) | Scope (files / branch) | Task |
 |---|---|---|---|
-| Claude (chat session) | 2026-08-24 | `AGENTS.md`, `docs/multi-agent-governance.md` | Building multi-agent coordination convention + case-study writeup, motivated by the observability-contracts collision documented above |
 
 ---
 
@@ -399,6 +398,8 @@ npm run build          verify TypeScript
 ---
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
+
+[2026-09-28] SECURITY: Hardened `/api/mcp` and `/api/tool-proxy` with a dedicated operator secret, API-key actor attribution, fail-closed governance state/receipt commits, unknown-tool default denial, bounded admission, and exact-host public-HTTPS egress pinned to its validated DNS address. Remote failures are explicitly indeterminate; GitHub mutations receive cancellation signals. Focused boundary regressions are documented separately from comparative benchmark claims. Full validation: 276 Vitest tests, typecheck, and lint passed.
 
 [2026-09-11] AUTOMATION: Lex Atlas documentation operating system added under docs/atlas — canonical concept lineage, implementation map, timeline, historical archive, and validation report linked from README; runtime code unchanged.
 
@@ -531,6 +532,10 @@ Governor:   PRAXIS v1.0 — Turso hard-required. LLM generation runs a
             multi-provider fallback chain (Groq/Cerebras/Mistral/Gemini —
             see lib/llm_provider.ts); only GROQ_API_KEY and JINA_API_KEY
             are hard-required env vars, the rest degrade gracefully if unset
+Tool Gov:   MCP routes authenticate callers, fail closed on unavailable
+            governance state, write actor-attributed receipts, and report
+            remote outcomes as unknown when completion cannot be established;
+            independent integrations remain outside these route guarantees
 z-weights:  Session-adaptive z_c/z_r/z_s live in z_traj, flowing into V_z receipts
 Lyapunov:   V_z(x, z_session) certified on every governed turn since 2026-06-29
 Open Probs: Problem 3 CLOSED. Problem 2 CLOSED. Problem 1 single-pillar CLOSED, multi-pillar OPEN.

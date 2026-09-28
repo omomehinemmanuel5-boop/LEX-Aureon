@@ -34,6 +34,11 @@ vi.mock('@/lib/api_keys', () => ({
 
 vi.mock('@/lib/rate_limit', () => ({ checkRateLimit }));
 
+vi.mock('@/lib/db', () => ({
+  recordMcpClientIdentity: vi.fn(async () => {}),
+  runZTrajMigrations: vi.fn(async () => {}),
+}));
+
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
   TOOL_REGISTRY: {

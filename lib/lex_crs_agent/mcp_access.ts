@@ -6,6 +6,8 @@
  * and are available only to an operator with the separate MCP_OPERATOR_SECRET.
  */
 
+import { env } from '../env';
+
 export const PUBLIC_MCP_TOOLS = new Set([
   'run_governance',
   'get_constitutional_state',
@@ -40,19 +42,18 @@ export const OPERATOR_ONLY_MCP_TOOLS = new Set([
 
 export type McpAccessProfile = 'public' | 'operator';
 
-export function profileForApiKey(plan: string | undefined): McpAccessProfile {
-  return plan === 'private_test' ? 'operator' : 'public';
+export function profileForApiKey(_plan: string | undefined): McpAccessProfile {
+  // API-key plans describe quota/product access, not operator identity.
+  // Infrastructure tools require the independent x-lex-operator-secret.
+  return 'public';
 }
 
 export function operatorSecretConfigured(): boolean {
-  return Boolean(process.env.MCP_OPERATOR_SECRET || process.env.ADMIN_PASSWORD);
+  return Boolean(env.MCP_OPERATOR_SECRET);
 }
 
 export function isOperatorSecret(value: string | null | undefined): boolean {
-  // MCP_OPERATOR_SECRET is preferred. ADMIN_PASSWORD is a backwards-safe
-  // owner fallback so the existing deployment does not lose operator access
-  // before the new optional secret is added to Vercel.
-  const configured = process.env.MCP_OPERATOR_SECRET || process.env.ADMIN_PASSWORD;
+  const configured = env.MCP_OPERATOR_SECRET;
   return Boolean(configured && value && value === configured);
 }
 

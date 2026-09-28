@@ -46,10 +46,12 @@ export async function executeGovernedTrajectoryAction(
   state: TrajectoryState,
   action: TrajectoryAction,
   args: Record<string, unknown>,
-  toolFn: (args: Record<string, unknown>) => Promise<string>,
+  toolFn: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
   sessionId: string,
   taskContext?: string,
   runContext?: AutonomousRunContext,
+  actorId = 'internal-agent',
+  signal?: AbortSignal,
 ): Promise<GovernedTrajectoryExecution> {
   const trajectoryDecision = authorizeTrajectoryAction(state, action);
   if (!trajectoryDecision.approved) {
@@ -91,6 +93,8 @@ export async function executeGovernedTrajectoryAction(
       toolFn,
       sessionId,
       taskContext ?? action.declaredIntent,
+      actorId,
+      signal,
     );
   } catch (error) {
     if (runContext) {

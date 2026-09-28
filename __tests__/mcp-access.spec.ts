@@ -11,6 +11,7 @@ import {
 describe('MCP capability policy', () => {
   afterEach(() => {
     delete process.env.MCP_OPERATOR_SECRET;
+    delete process.env.ADMIN_PASSWORD;
   });
 
   it('keeps infrastructure tools out of the public profile', () => {
@@ -36,9 +37,15 @@ describe('MCP capability policy', () => {
     expect(isOperatorSecret(null)).toBe(false);
   });
 
-  it('gives only private_test keys the full operator profile', () => {
-    expect(profileForApiKey('private_test')).toBe('operator');
+  it('never treats an API-key plan as operator identity', () => {
+    expect(profileForApiKey('private_test')).toBe('public');
+    expect(profileForApiKey('sovereign')).toBe('public');
     expect(profileForApiKey('free')).toBe('public');
     expect(profileForApiKey(undefined)).toBe('public');
+  });
+
+  it('does not accept ADMIN_PASSWORD as an MCP operator credential', () => {
+    process.env.ADMIN_PASSWORD = 'admin-password';
+    expect(isOperatorSecret('admin-password')).toBe(false);
   });
 });

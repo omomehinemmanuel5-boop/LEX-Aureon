@@ -44,6 +44,8 @@ type EnvShape = {
   LOG_DRAIN_URL:                string | undefined;
   LOG_DRAIN_TOKEN:              string | undefined;
   BENCH_SECRET:                 string | undefined;
+  MCP_OPERATOR_SECRET:          string | undefined;
+  TOOL_PROXY_ALLOWED_HOSTS:     string | undefined;
 };
 
 const REQUIRED = new Set<keyof EnvShape>([

@@ -2,15 +2,15 @@
  * Constitutional tool executor.
  *
  * Execution results may be cached for read-only operations, but authorization
- * is recomputed for every request. Before a cached result is served, the
- * current kernel margin is also re-verified so kernel-critical suspension
- * cannot be bypassed by a still-fresh execution cache entry.
+ * is recomputed for every request. The cache never stores or reuses a
+ * governance decision; kernel state is checked by the interceptor on each call.
  */
 
 import crypto from 'crypto';
 import { interceptToolCall } from './tool_interceptor';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
+import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
 import type { ToolCallDecision } from './types';
 
@@ -79,6 +79,7 @@ function report(toolName: string, decision: ToolCallDecision, result?: string, c
     `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
     `receipt_id:  ${decision.receipt_id}`,
     `reason:      ${decision.reason}`,
+    ...(decision.warning ? [`warning:     ${decision.warning}`] : []),
     `authorization_rechecked: true`,
     `cache_hit:   ${cacheHit}`,
     '',
@@ -97,15 +98,18 @@ export interface GovernedToolExecution {
 export async function executeGovernedToolStructured(
   toolName: string,
   args: Record<string, unknown>,
-  toolFn: (args: Record<string, unknown>) => Promise<string>,
+  toolFn: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
   sessionId: string,
   taskContext?: string,
+  actorId = 'internal-agent',
+  signal?: AbortSignal,
 ): Promise<GovernedToolExecution> {
   const decision = await interceptToolCall({
     id: crypto.randomUUID(),
     name: toolName,
     arguments: args,
     session_id: sessionId,
+    actor_id: actorId,
     task_context: taskContext
       ?? (args.message as string | undefined)
       ?? (args.query as string | undefined)
@@ -122,14 +126,29 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  // Authorization has already been performed with the complete ToolCallInput.
-  // Only the execution result is eligible for reuse. For cache hits, perform
-  // one final kernel-M read immediately before serving the cached value so a
-  // transition into the critical floor cannot be hidden by the cache.
+  // The cached value itself is never an authorization artifact. Recheck the
+  // kernel immediately before serving it; if that state read fails, emit a
+  // separate actor-attributed denial receipt where storage is available.
   if (READ_TOOLS.has(toolName)) {
     const kernelState = await getCurrentKernelM(sessionId);
     if (!kernelState.available) {
       const unavailableDecision = dependencyFailureDecision(toolName);
+      const argsHash = crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex').slice(0, 32);
+      try {
+        await writeGovernanceReceipt({
+          receipt_id: unavailableDecision.receipt_id,
+          session_id: sessionId,
+          actor_id: actorId,
+          tool_name: toolName,
+          args_hash: argsHash,
+          decision: unavailableDecision.decision,
+          crs: unavailableDecision.crs,
+          reason: unavailableDecision.reason,
+          sigma_viol: unavailableDecision.sigma_viol,
+        });
+      } catch {
+        unavailableDecision.warning = 'Governance state unavailable; execution denied, but the denial receipt could not be persisted.';
+      }
       return {
         result: report(toolName, unavailableDecision),
         approved: false,
@@ -143,6 +162,7 @@ export async function executeGovernedToolStructured(
         name: toolName,
         arguments: args,
         session_id: sessionId,
+        actor_id: actorId,
         task_context: taskContext
           ?? (args.message as string | undefined)
           ?? (args.query as string | undefined)
@@ -158,11 +178,20 @@ export async function executeGovernedToolStructured(
     }
   }
 
+  if (signal?.aborted) {
+    return {
+      result: report(toolName, decision, 'EXECUTION_STATUS=not_started_after_cancellation; the authorization decision was recorded, but the tool function was not invoked.'),
+      approved: false,
+      decision: 'EXECUTION_CANCELLED_BEFORE_START',
+      receiptId: decision.receipt_id ?? null,
+    };
+  }
+
   const cached = await cache.getOrExecuteAuthorized({
     key: keyFor(sessionId, toolName, args),
     toolName,
     decision,
-    execute: () => toolFn(args),
+    execute: () => toolFn(args, signal),
   });
 
   return {
@@ -177,9 +206,11 @@ export async function executeGovernedToolStructured(
 export async function executeGovernedTool(
   toolName: string,
   args: Record<string, unknown>,
-  toolFn: (args: Record<string, unknown>) => Promise<string>,
+  toolFn: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
   sessionId: string,
   taskContext?: string,
+  actorId = 'internal-agent',
+  signal?: AbortSignal,
 ): Promise<string> {
   const execution = await executeGovernedToolStructured(
     toolName,
@@ -187,6 +218,8 @@ export async function executeGovernedTool(
     toolFn,
     sessionId,
     taskContext,
+    actorId,
+    signal,
   );
   return execution.result;
 }

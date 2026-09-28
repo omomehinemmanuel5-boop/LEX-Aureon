@@ -4,6 +4,7 @@ import type { ToolCRSState, ToolSessionState } from './types';
 export interface GovernanceReceipt {
   receipt_id: string;
   session_id: string;
+  actor_id?: string;
   tool_name: string;
   args_hash: string;
   decision: string;
@@ -53,11 +54,12 @@ export async function commitGovernanceDecision(
     VALUES (?, 0, 3, 0, 0, 0, NULL, ?)`;
   const initializeArgs = [state.session_id, state.updated_at];
   const receiptSql = `INSERT INTO tool_receipts
-    (receipt_id, session_id, tool_name, args_hash, decision,
+    (receipt_id, session_id, actor_id, tool_name, args_hash, decision,
      c_score, r_score, s_score, m_score, risk_level, reason, sigma_viol, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   const receiptArgs = [
-    receipt.receipt_id, receipt.session_id, receipt.tool_name, receipt.args_hash,
+    receipt.receipt_id, receipt.session_id, receipt.actor_id ?? 'internal-agent',
+    receipt.tool_name, receipt.args_hash,
     receipt.decision, receipt.crs.C, receipt.crs.R, receipt.crs.S, receipt.crs.M,
     receipt.crs.risk_level, receipt.reason, receipt.sigma_viol, new Date().toISOString(),
   ];
@@ -90,11 +92,12 @@ export async function writeGovernanceReceipt(receipt: GovernanceReceipt): Promis
   const client = getClient();
   await client.execute({
     sql: `INSERT INTO tool_receipts
-      (receipt_id, session_id, tool_name, args_hash, decision,
+      (receipt_id, session_id, actor_id, tool_name, args_hash, decision,
        c_score, r_score, s_score, m_score, risk_level, reason, sigma_viol, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      receipt.receipt_id, receipt.session_id, receipt.tool_name, receipt.args_hash,
+      receipt.receipt_id, receipt.session_id, receipt.actor_id ?? 'internal-agent',
+      receipt.tool_name, receipt.args_hash,
       receipt.decision, receipt.crs.C, receipt.crs.R, receipt.crs.S, receipt.crs.M,
       receipt.crs.risk_level, receipt.reason, receipt.sigma_viol, new Date().toISOString(),
     ],

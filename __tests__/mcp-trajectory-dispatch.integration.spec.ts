@@ -32,6 +32,7 @@ vi.mock('@/lib/rate_limit', () => ({
 
 vi.mock('@/lib/db', () => ({
   recordMcpClientIdentity: vi.fn(async () => {}),
+  runZTrajMigrations: vi.fn(async () => {}),
 }));
 
 // The trajectory session store (imported both by route.ts via '@/lib/...'
@@ -41,6 +42,7 @@ vi.mock('@/lib/db', () => ({
 // — rather than needing a real DB connection for this dispatch-routing test.
 vi.mock('../lib/db', () => ({
   getClient: () => ({ execute: dbExecute }),
+  runZTrajMigrations: vi.fn(async () => {}),
 }));
 
 function installFakeTrajectoryTable() {
@@ -172,6 +174,7 @@ describe('trajectory-aware MCP dispatch', () => {
     expect(executeGovernedTool).not.toHaveBeenCalled();
 
     const [passedState, passedAction] = executeGovernedTrajectoryAction.mock.calls[0];
+    expect(executeGovernedTrajectoryAction.mock.calls[0][8]).toBeInstanceOf(AbortSignal);
     expect(passedState.currentStep).toBe(0);
     expect(passedAction.toolName).toBe('read_file');
     expect(passedAction.declaredIntent).toBe('read the readme');

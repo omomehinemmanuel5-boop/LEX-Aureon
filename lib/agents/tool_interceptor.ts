@@ -14,9 +14,9 @@
  *   MEDIUM             → APPROVED_MEDIUM   (executes, logged)
  *   LOW                → APPROVED          (executes)
  *
- * fix: uses singleton getClient() from db.ts — was calling createClient()
- * on every DB operation (getSessionState, updateSessionState, writeReceipt,
- * getKernelM) — same connection leak fixed in lex_memory.ts and kernel_bridge.ts.
+ * Uses singleton getClient() from db.ts; approval/slow-drip state transitions
+ * and their receipts commit atomically. Read failures never synthesize a clean
+ * session, and denial persistence failures are surfaced in the result.
  *
  * fix (2026-07-11): measureToolCRS is now async (semantic/embedding-based
  * injection detection as a second pass — see tool_crs.ts's file header) —
@@ -35,41 +35,6 @@ import {
   commitGovernanceDecision,
   GovernanceCommitConflict,
 } from './governance_commit';
-
-// ── Constitutional Tool-Call Cache ───────────────────────────────────────────
-// fix (2026-08-03): session-local cache for identical read-only tool calls.
-// Identical read_file / read_memory calls within the same session should not
-// re-run the full embedding + DB round-trip every time. The cache is keyed on
-// (session_id, tool_name, args_hash) and TTL-limited to avoid stale results.
-//
-// Only READ operations are cached — write operations (create_file, execute_sql,
-// etc.) must always go through the full interceptor since their effects are
-// not idempotent and the constitutional state must be re-measured.
-//
-// The cache is in-memory (per process). On Vercel's serverless it resets each
-// cold start, which is the correct behavior — it is an optimization, not a
-// correctness requirement.
-
-const READ_TOOLS = new Set(['read_file','read_directory','list_files','read_memory',
-  'search_memory','fetch_page','curl','http_get','get_file','cat','head','tail',
-  'grep','find','ls','dir','glob','read_json','parse_csv']);
-
-interface CacheEntry {
-  result:   string;
-  decision: ToolCallDecision;
-  ts:       number;
-}
-
-const _toolCache = new Map<string, CacheEntry>();
-const TOOL_CACHE_TTL_MS = 60_000; // 1 minute — long enough for agent loops, short enough to avoid staleness
-
-function cacheKey(session_id: string, toolName: string, args_hash: string): string {
-  return `${session_id}:${toolName}:${args_hash}`;
-}
-
-function isCacheableTool(toolName: string): boolean {
-  return READ_TOOLS.has(toolName);
-}
 
 // Constitutional constants — same as text governance
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -113,74 +78,40 @@ async function getKernelM(session_id: string): Promise<number | null> {
 
 // ── Session state — persisted in Turso ────────────────────────────────────
 async function getSessionState(session_id: string): Promise<ToolSessionState> {
-  try {
-    const db = getClient();
-    const res = await db.execute({
-      sql: 'SELECT * FROM tool_sessions WHERE session_id = ? LIMIT 1',
-      args: [session_id],
-    });
-    if (res.rows.length === 0) {
-      return {
-        session_id,
-        sigma_viol: 0,
-        n_stable: N_MIN, // start in clean state
-        locked: false,
-        tool_calls: 0,
-        state_version: 0,
-        updated_at: new Date().toISOString(),
-      };
-    }
-    const r = res.rows[0];
+  const db = getClient();
+  const res = await db.execute({
+    sql: 'SELECT * FROM tool_sessions WHERE session_id = ? LIMIT 1',
+    args: [session_id],
+  });
+  if (res.rows.length === 0) {
     return {
-      session_id:   String(r.session_id),
-      sigma_viol:   Number(r.sigma_viol),
-      n_stable:     Number(r.n_stable),
-      locked:       Boolean(r.locked),
-      tool_calls:   Number(r.tool_calls),
-      state_version: Number(r.state_version ?? 0),
-      last_high_at: r.last_high_at ? Number(r.last_high_at) : undefined,
-      updated_at:   String(r.updated_at),
-    };
-  } catch {
-    return {
-      session_id, sigma_viol: 0, n_stable: N_MIN,
-      locked: false, tool_calls: 0, state_version: 0, updated_at: new Date().toISOString(),
+      session_id,
+      sigma_viol: 0,
+      n_stable: N_MIN,
+      locked: false,
+      tool_calls: 0,
+      state_version: 0,
+      updated_at: new Date().toISOString(),
     };
   }
-}
-
-async function updateSessionState(state: ToolSessionState): Promise<void> {
-  try {
-    const db = getClient();
-    await db.execute({
-      sql: `INSERT INTO tool_sessions
-              (session_id, sigma_viol, n_stable, locked, tool_calls, last_high_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
-              sigma_viol   = excluded.sigma_viol,
-              n_stable     = excluded.n_stable,
-              locked       = excluded.locked,
-              tool_calls   = excluded.tool_calls,
-              state_version = tool_sessions.state_version + 1,
-              last_high_at = excluded.last_high_at,
-              updated_at   = excluded.updated_at`,
-      args: [
-        state.session_id,
-        state.sigma_viol,
-        state.n_stable,
-        state.locked ? 1 : 0,
-        state.tool_calls,
-        state.last_high_at ?? null,
-        new Date().toISOString(),
-      ],
-    });
-  } catch { /* non-fatal — session state is best-effort */ }
+  const r = res.rows[0];
+  return {
+    session_id: String(r.session_id),
+    sigma_viol: Number(r.sigma_viol),
+    n_stable: Number(r.n_stable),
+    locked: Boolean(r.locked),
+    tool_calls: Number(r.tool_calls),
+    state_version: Number(r.state_version ?? 0),
+    last_high_at: r.last_high_at ? Number(r.last_high_at) : undefined,
+    updated_at: String(r.updated_at),
+  };
 }
 
 // ── Constitutional receipt ─────────────────────────────────────────────────
 async function writeReceipt(params: {
   receipt_id: string;
   session_id: string;
+  actor_id?: string;
   tool_name:  string;
   args_hash:  string;
   decision:   string;
@@ -188,31 +119,39 @@ async function writeReceipt(params: {
   reason:     string;
   sigma_viol: number;
 }): Promise<void> {
+  const db = getClient();
+  await db.execute({
+    sql: `INSERT INTO tool_receipts
+            (receipt_id, session_id, actor_id, tool_name, args_hash,
+             decision, c_score, r_score, s_score, m_score,
+             risk_level, reason, sigma_viol, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      params.receipt_id,
+      params.session_id,
+      params.actor_id ?? 'internal-agent',
+      params.tool_name,
+      params.args_hash,
+      params.decision,
+      params.crs.C,
+      params.crs.R,
+      params.crs.S,
+      params.crs.M,
+      params.crs.risk_level,
+      params.reason,
+      params.sigma_viol,
+      new Date().toISOString(),
+    ],
+  });
+}
+
+async function persistDenialReceipt(params: Parameters<typeof writeReceipt>[0]): Promise<string | undefined> {
   try {
-    const db = getClient();
-    await db.execute({
-      sql: `INSERT INTO tool_receipts
-              (receipt_id, session_id, tool_name, args_hash,
-               decision, c_score, r_score, s_score, m_score,
-               risk_level, reason, sigma_viol, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        params.receipt_id,
-        params.session_id,
-        params.tool_name,
-        params.args_hash,
-        params.decision,
-        params.crs.C,
-        params.crs.R,
-        params.crs.S,
-        params.crs.M,
-        params.crs.risk_level,
-        params.reason,
-        params.sigma_viol,
-        new Date().toISOString(),
-      ],
-    });
-  } catch { /* non-fatal */ }
+    await writeReceipt(params);
+    return undefined;
+  } catch {
+    return 'Denied safely, but the denial receipt could not be persisted.';
+  }
 }
 
 // ── Health band from sigma_viol ────────────────────────────────────────────
@@ -225,136 +164,6 @@ function toolHealthBand(sigma: number, locked: boolean): ToolCallDecision['healt
 }
 
 // ── Main interceptor ───────────────────────────────────────────────────────
-/**
- * Universal wrapper for governed tool execution.
- * 1. Intercepts the call (governance check).
- * 2. If approved, executes the tool function.
- * 3. Returns a unified report string.
- */
-async function runToolGoverned(
-  toolName: string,
-  args: Record<string, unknown>,
-  toolFn: (args: Record<string, unknown>) => Promise<string>,
-  session_id?: string,
-  task_context?: string,
-): Promise<string> {
-  const sid = session_id ?? `lex-crs-agent-${new Date().toISOString().slice(0, 10)}`;
-
-  // Compute args hash for cache key
-  const args_hash = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(args))
-    .digest('hex')
-    .slice(0, 32);
-
-  // ── Cache check for identical read-only calls ──────────────────────────────
-  if (isCacheableTool(toolName)) {
-    const key = cacheKey(sid, toolName, args_hash);
-    const cached = _toolCache.get(key);
-    if (cached && (Date.now() - cached.ts) < TOOL_CACHE_TTL_MS) {
-      // fix (2026-08-18): re-verify kernel M before serving a cache hit.
-      // The cache previously returned immediately on a hit, bypassing
-      // interceptToolCall entirely — which skipped Step 0 (kernel-critical
-      // gate). If a session's kernel M degraded to CRITICAL mid-window,
-      // a stale cached read would still be served for up to
-      // TOOL_CACHE_TTL_MS, defeating "all tool calls suspended." This is
-      // a single cheap DB read (no embedding call), so it doesn't
-      // reintroduce the cost the cache exists to avoid — it only restores
-      // the one safety invariant the cache broke.
-      const currentKernelM = await getKernelM(sid);
-      if (currentKernelM === null || currentKernelM < KERNEL_CRITICAL) {
-        _toolCache.delete(key); // stale under current kernel state — evict
-      } else {
-        // Cache hit — skip the rest of the full interceptor + execution
-        const report = [
-          `── Constitutional tool-call decision [${toolName}] — CACHED ──`,
-          `decision:    ${cached.decision.decision}`,
-          `approved:    ${cached.decision.approved}`,
-          `crs:         C=${cached.decision.crs.C.toFixed(3)} R=${cached.decision.crs.R.toFixed(3)} S=${cached.decision.crs.S.toFixed(3)} M=${cached.decision.crs.M.toFixed(3)}`,
-          `risk_level:  ${cached.decision.crs.risk_level}`,
-          `health_band: ${cached.decision.health_band}`,
-          `sigma_viol:  ${cached.decision.sigma_viol.toFixed(3)}`,
-          `receipt_id:  ${cached.decision.receipt_id}`,
-          `reason:      ${cached.decision.reason}`,
-          `cache_hit:   true`,
-          ``,
-        ];
-        report.push(cached.result);
-        return report.join('\n');
-      }
-    }
-  }
-
-  const toolInput: ToolCallInput = {
-    id:            crypto.randomUUID(),
-    name:          toolName,
-    arguments:     args,
-    session_id:    sid,
-    // fix (2026-08-19): removed the args.sql and generic-JSON-template
-    // fallbacks that used to sit here. Raw SQL and JSON.stringify(args) are
-    // structural/symbolic text, not a natural-language task description —
-    // embedding them against describeToolCall()'s prose template produced
-    // unreliable similarity (a plain `SELECT COUNT(*)...` scored C=0.050,
-    // floored, triggering APPROVED_HIGH on a read-only count query). Same
-    // failure mode this file already fixed once for tool *arguments* via
-    // extractFreeText's field allowlist (which deliberately excludes
-    // 'sql') — this fallback chain was still feeding raw SQL into
-    // task_context, the untreated side of that same comparison. When no
-    // genuine natural-language signal exists (no explicit task_context, no
-    // message, no query), leaving task_context undefined is the honest
-    // choice: measureC's own early-return already gives a clean, stable
-    // neutral 0.60 for "no task signal available" — safer than
-    // synthesizing one that measures embedding noise instead of intent,
-    // and it skips an embedding API call in the process.
-    task_context:  task_context
-      ?? (args.message as string | undefined)
-      ?? (args.query as string | undefined),
-  };
-
-  const decision = await interceptToolCall(toolInput);
-
-  const report = [
-    `── Constitutional tool-call decision [${toolName}] ──`,
-    `decision:    ${decision.decision}`,
-    `approved:    ${decision.approved}`,
-    `crs:         C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
-    `risk_level:  ${decision.crs.risk_level}`,
-    `health_band: ${decision.health_band}`,
-    `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
-    `receipt_id:  ${decision.receipt_id}`,
-    `reason:      ${decision.reason}`,
-    ...(decision.warning ? [`warning:     ${decision.warning}`] : []),
-    ``,
-  ];
-
-  if (!decision.approved) {
-    report.push(`✗ TOOL BLOCKED — execution halted by constitutional proxy.`);
-    return report.join('\n');
-  }
-
-  let toolResult = '';
-  try {
-    toolResult = await toolFn(args);
-    report.push(toolResult);
-  } catch (e) {
-    const errMsg = `Error executing ${toolName}: ${e instanceof Error ? e.message : String(e)}`;
-    report.push(errMsg);
-    toolResult = errMsg;
-  }
-
-  // ── Cache the result for future identical calls ────────────────────────────
-  if (isCacheableTool(toolName)) {
-    const key = cacheKey(sid, toolName, args_hash);
-    _toolCache.set(key, {
-      result:   toolResult,
-      decision: decision,
-      ts:       Date.now(),
-    });
-  }
-
-  return report.join('\n');
-}
-
 export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDecision> {
   const t = Date.now();
 
@@ -378,7 +187,7 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
   const kernelCRS = { C: kernelM ?? 0, R: kernelM ?? 0, S: kernelM ?? 0, M: kernelM ?? 0, risk_level: 'BLOCKED' as const };
 
   if (kernelM === null) {
-    await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
+    const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_STATE_UNAVAILABLE', crs: kernelCRS,
       reason: 'Constitutional state unavailable — tool execution denied by fail-closed policy', sigma_viol: 1 });
     return {
@@ -389,12 +198,12 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       health_band: 'CRITICAL' as const,
       reason: 'Constitutional state unavailable — tool execution denied by fail-closed policy',
       sigma_viol: 1,
-      warning: 'Governance state unavailable; execution denied by fail-closed policy.',
+      warning: ['Governance state unavailable; execution denied by fail-closed policy.', receiptWarning].filter(Boolean).join(' '),
     };
   }
 
   if (kernelM < KERNEL_CRITICAL) {
-    await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
+    const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_CRITICAL',
       crs: kernelCRS,
       reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated`,
@@ -407,11 +216,12 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       health_band: 'CRITICAL' as const,
       reason: `Kernel M=${kernelM.toFixed(3)} < τ_floor=${KERNEL_CRITICAL} — constitutional floor violated in active session. All tool calls suspended.`,
       sigma_viol: 1,
+      ...(receiptWarning ? { warning: receiptWarning } : {}),
     };
   }
 
   if (kernelM < KERNEL_STRESSED && WRITE_TOOLS.has(tool.name)) {
-    await writeReceipt({ receipt_id, session_id: tool.session_id, tool_name: tool.name,
+    const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_STRESSED',
       crs: kernelCRS,
       reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — write operations suspended during constitutional stress`,
@@ -424,6 +234,7 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       health_band: 'STRESSED' as const,
       reason: `Kernel M=${kernelM.toFixed(3)} < ${KERNEL_STRESSED} — write operations suspended during constitutional stress. Read-only operations allowed.`,
       sigma_viol: 0,
+      ...(receiptWarning ? { warning: receiptWarning } : {}),
     };
   }
 
@@ -438,9 +249,9 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       ? `Prompt injection detected in tool arguments: ${crs.blocked_pattern}`
       : `Hardcoded constitutional invariant violated: ${crs.blocked_pattern}`;
 
-    await writeReceipt({
+    const receiptWarning = await persistDenialReceipt({
       receipt_id, session_id: tool.session_id,
-      tool_name: tool.name, args_hash, decision,
+      actor_id: tool.actor_id, tool_name: tool.name, args_hash, decision,
       crs, reason, sigma_viol: 1.0,
     });
 
@@ -452,11 +263,27 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       receipt_id,
       sigma_viol: 1.0,
       health_band: 'LOCKED',
+      ...(receiptWarning ? { warning: receiptWarning } : {}),
     };
   }
 
   // Step 3: Load session state (cumulative slow-drip defence)
-  const session = await getSessionState(tool.session_id);
+  let session: ToolSessionState;
+  try {
+    session = await getSessionState(tool.session_id);
+  } catch {
+    const reason = 'Tool-session governance state unavailable — execution denied by fail-closed policy.';
+    const receiptWarning = await persistDenialReceipt({
+      receipt_id, session_id: tool.session_id, actor_id: tool.actor_id,
+      tool_name: tool.name, args_hash, decision: 'DENIED_STATE_UNAVAILABLE',
+      crs, reason, sigma_viol: 1,
+    });
+    return {
+      approved: false, decision: 'DENIED_LOCKED', reason, crs, receipt_id,
+      sigma_viol: 1, health_band: 'CRITICAL',
+      warning: receiptWarning ?? 'Tool-session governance state could not be loaded.',
+    };
+  }
 
   // fix (2026-08-15): hard lock previously had no expiry — locked:true was
   // written once (with a real last_high_at timestamp, right below) and never
@@ -475,9 +302,9 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
 
   // Step 4: Hard lock check
   if (session.locked && !lockExpired) {
-    await writeReceipt({
+    const receiptWarning = await persistDenialReceipt({
       receipt_id, session_id: tool.session_id,
-      tool_name: tool.name, args_hash, decision: 'DENIED_LOCKED',
+      actor_id: tool.actor_id, tool_name: tool.name, args_hash, decision: 'DENIED_LOCKED',
       crs, reason: 'Session hard-locked: two HIGH-risk actions in recovery window.',
       sigma_viol: session.sigma_viol,
     });
@@ -490,6 +317,7 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       receipt_id,
       sigma_viol:   session.sigma_viol,
       health_band:  'LOCKED',
+      ...(receiptWarning ? { warning: receiptWarning } : {}),
     };
   }
   if (lockExpired) {
@@ -511,14 +339,21 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
       tool_calls: session.tool_calls + 1,
       last_high_at: t,
     };
-    await updateSessionState(newState);
-
-    await writeReceipt({
-      receipt_id, session_id: tool.session_id,
-      tool_name: tool.name, args_hash, decision: 'DENIED_LOCKED',
-      crs, reason: `Slow-drip attack detected: HIGH action during recovery (n_stable=${session.n_stable} < N_MIN=${N_MIN}). Session locked.`,
-      sigma_viol: newSigma,
-    });
+    const reason = `Slow-drip attack detected: HIGH action during recovery (n_stable=${session.n_stable} < N_MIN=${N_MIN}). Session locked.`;
+    try {
+      await commitGovernanceDecision(newState, session.state_version, {
+        receipt_id, session_id: tool.session_id, actor_id: tool.actor_id,
+        tool_name: tool.name, args_hash, decision: 'DENIED_LOCKED',
+        crs, reason, sigma_viol: newSigma,
+      });
+    } catch {
+      return {
+        approved: false, decision: 'DENIED_LOCKED',
+        reason: 'HIGH-risk action denied; recovery lock and audit receipt could not be committed. Execution remains blocked.',
+        crs, receipt_id, sigma_viol: newSigma, health_band: 'LOCKED',
+        warning: 'Governance state or denial receipt could not be committed atomically.',
+      };
+    }
 
     return {
       approved: false,
@@ -579,19 +414,16 @@ export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDe
     decision = 'APPROVED';
   }
 
-  // Surface measureS/measureR's unclassified flag (see tool_crs.ts) — this
-  // tool/task shape matched no real classification branch, so its score is
-  // a generic default, not a reasoned measurement. Doesn't change
-  // risk_level or block anything; makes the gap visible for review instead
-  // of indistinguishable from a genuinely reasoned score.
+  // Surface unclassified task-context measurements. Unknown tool names are
+  // already blocked by measureToolCRS and cannot reach this approval path.
   if (crs.unclassified) {
-    const gapNote = 'CRS classification gap: no rule in measureS/measureR matched this tool/task shape — score is a generic default.';
+    const gapNote = 'CRS classification note: at least one measurement used a generic task-context fallback.';
     warning = warning ? `${warning} ${gapNote}` : gapNote;
   }
 
   try {
     newState = await commitGovernanceDecision(newState, session.state_version, {
-      receipt_id, session_id: tool.session_id,
+      receipt_id, session_id: tool.session_id, actor_id: tool.actor_id,
       tool_name: tool.name, args_hash, decision,
       crs,
       reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}`,

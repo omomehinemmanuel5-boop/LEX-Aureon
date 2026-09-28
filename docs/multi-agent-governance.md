@@ -94,12 +94,13 @@ already runs (Claude, Codex, Replit, and whatever comes next).
 - This is advisory only. Nothing stops an agent from ignoring the claims
   table entirely — including, honestly, this session, which only checked
   `agent/observability-contracts`'s branch *after* being asked to.
-- There's no attribution in the audit trail. `praxis_receipts` and
-  `tool_receipts` record what happened, not which agent did it. A claims
-  table says "someone is working on X"; it can't yet say "agent Y made
-  change Z" after the fact. That's a real next step — likely an `actor_id`
-  column threaded through `lib/kernel_bridge.ts`'s receipt-write path — not
-  attempted in this pass.
+- Tool receipts now persist the authenticated actor identifier (`operator`,
+  `api_key:<key-id>`, or `internal-agent`) alongside each governed decision.
+  This is principal-level attribution, not proof of the individual model or
+  human behind a shared credential, and it does not identify changes made
+  through independent GitHub/Replit integrations. `praxis_receipts` remains a
+  separate text-governance trail; the tool `actor_id` is not threaded through
+  that unrelated write path.
 - The claims table itself could go stale exactly like the changelog did
   (see `AGENTS.md`'s CHANGELOG, which had an entry gap covering this
   entire session before this fix). A convention that depends on agents

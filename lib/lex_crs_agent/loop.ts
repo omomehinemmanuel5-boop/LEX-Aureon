@@ -11,6 +11,7 @@ import { callLLM, Message, ModelId } from './router';
 import { TOOL_REGISTRY } from './tools';
 import { patch_file } from './tools/patch_file';
 import { executeGovernedTool } from '../agents/constitutional_tool_executor';
+import { runZTrajMigrations } from '../db';
 
 export interface AgentStep {
   type: 'thought' | 'tool_call' | 'tool_result' | 'answer';
@@ -80,9 +81,10 @@ const LOOP_TOOLS: Record<string, (a: Record<string, unknown>) => Promise<string>
       (args: Record<string, unknown>) => executeGovernedTool(
         name,
         args,
-        fn as (args: Record<string, unknown>) => Promise<string>,
+        fn as (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
         (args.session_id as string | undefined) ?? `agent-${new Date().toISOString().slice(0, 10)}`,
         args.task_context as string | undefined,
+        'internal-agent-loop',
       ),
     ])
   ),
@@ -92,6 +94,7 @@ const LOOP_TOOLS: Record<string, (a: Record<string, unknown>) => Promise<string>
     (a) => patch_file(a as unknown as Parameters<typeof patch_file>[0]),
     (args.session_id as string | undefined) ?? `agent-${new Date().toISOString().slice(0, 10)}`,
     args.task_context as string | undefined,
+    'internal-agent-loop',
   ),
 };
 
@@ -100,6 +103,7 @@ export async function runAgentLoop(
   model?: ModelId,
   onStep?: (step: AgentStep) => void,
 ): Promise<AgentResult> {
+  await runZTrajMigrations();
   const messages: Message[] = [
     { role: 'system', content: SYSTEM },
     { role: 'user', content: task },

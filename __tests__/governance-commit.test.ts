@@ -27,6 +27,7 @@ const state = {
 const receipt = {
   receipt_id: 'receipt-1',
   session_id: state.session_id,
+  actor_id: 'api_key:caller-1',
   tool_name: 'write_file',
   args_hash: 'args-hash',
   decision: 'APPROVED_HIGH',
@@ -49,6 +50,7 @@ describe('transactional governance commit', () => {
     const committed = await commitGovernanceDecision(state, 4, receipt);
 
     expect(tx.execute).toHaveBeenCalledTimes(3);
+    expect(tx.execute.mock.calls[2][0].args[2]).toBe('api_key:caller-1');
     expect(tx.commit).toHaveBeenCalledOnce();
     expect(tx.rollback).not.toHaveBeenCalled();
     expect(committed.state_version).toBe(5);
@@ -87,5 +89,23 @@ describe('transactional governance commit', () => {
 
     expect(tx.commit).not.toHaveBeenCalled();
     expect(tx.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('does not permit actor-attributed state to commit without its receipt', async () => {
+    const tx = {
+      execute: vi.fn()
+        .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockRejectedValueOnce(new Error('actor receipt persistence failed')),
+      commit: vi.fn(),
+      rollback: vi.fn().mockResolvedValue(undefined),
+    };
+    transaction.mockResolvedValueOnce(tx);
+
+    await expect(commitGovernanceDecision(state, 4, receipt))
+      .rejects.toThrow('actor receipt persistence failed');
+    expect(tx.commit).not.toHaveBeenCalled();
+    expect(tx.rollback).toHaveBeenCalledOnce();
+    expect(tx.execute.mock.calls[2][0].args[2]).toBe('api_key:caller-1');
   });
 });

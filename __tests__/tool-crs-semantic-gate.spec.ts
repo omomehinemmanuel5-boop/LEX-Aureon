@@ -13,7 +13,7 @@ vi.mock('../lib/lex_memory', () => ({
   embedTextWithProvider,
 }));
 
-import { injectionSimilarity } from '../lib/agents/tool_crs';
+import { injectionSimilarity, measureToolCRS } from '../lib/agents/tool_crs';
 
 describe('injectionSimilarity — natural-language shape gate', () => {
   beforeEach(() => {
@@ -58,5 +58,15 @@ describe('injectionSimilarity — natural-language shape gate', () => {
     // real archetype text and isn't what this test is protecting. The
     // point is: 3+ words reaches the embedding path at all, unlike the
     // single-token cases above.
+  });
+
+  it('blocks a tool name with no explicit risk policy', async () => {
+    const result = await measureToolCRS({
+      id: 'unknown-tool', name: 'mystery_side_effect', arguments: {},
+      session_id: 'test-session',
+    });
+    expect(result.risk_level).toBe('BLOCKED');
+    expect(result.unclassified).toBe(true);
+    expect(result.blocked_pattern).toBe('unclassified_tool:mystery_side_effect');
   });
 });

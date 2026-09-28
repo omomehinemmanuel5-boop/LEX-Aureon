@@ -14,7 +14,10 @@ describe('agent governance coverage', () => {
     const tools = source('lib/lex_crs_agent/tools.ts');
     const patch = source('lib/lex_crs_agent/tools/patch_file.ts');
 
-    expect(route).toContain('const result = await withDeadline(executeGovernedTool(');
+    expect(route).toContain('const outcome = await withDeadline(executeGovernedTool(');
+    expect(route).toContain('unknown_after_deadline');
+    expect(route).toContain('const trajectoryOutcome = await withDeadline(executeGovernedTrajectoryAction(');
+    expect(route).toContain('trajectoryController.signal');
     expect(route).toContain('const toolFn = resolveTool(toolName);');
     expect(route).toContain('return main ?? EXTENSION_REGISTRY[name];');
     expect(route).not.toContain('await toolFn(args);');
@@ -31,7 +34,7 @@ describe('agent governance coverage', () => {
       expect(registry, `Missing TOOL_REGISTRY entry for ${name}`).toContain(`${name}:`);
     }
 
-    expect(route).toContain('patch_file: (args) => patch_file(');
+    expect(route).toContain('patch_file: (args, signal) => patch_file(');
     expect(patch).toContain('export async function patch_file');
   });
 

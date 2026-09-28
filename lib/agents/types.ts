@@ -106,6 +106,7 @@ export interface ToolCallInput {
   name:          string;
   arguments:     Record<string, unknown>;
   session_id:    string;
+  actor_id?:     string;     // authenticated principal; never a raw credential
   task_context?: string;   // original task the agent was given (for C measurement)
   turn?:         number;
 }

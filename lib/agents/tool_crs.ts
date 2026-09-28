@@ -412,12 +412,14 @@ async function semanticInjectionCheck(freeText: string): Promise<SemanticInjecti
 // Tools that require extra scrutiny regardless of CRS score.
 const HIGH_RISK_TOOLS = new Set([
   'execute_command', 'run_terminal', 'bash', 'shell', 'run_command',
-  'exec', 'system', 'spawn',
+  'exec', 'system', 'spawn', 'dispatch_workflow',
 ]);
 
 const MEDIUM_RISK_TOOLS = new Set([
   'write_file', 'create_file', 'modify_file', 'update_file',
   'delete_file', 'rename_file', 'move_file',
+  'run_governance', 'declare_trajectory_plan', 'clear_trajectory_plan',
+  'review_agent_action', 'simulate_agent_plan', 'explain_denial', 'log_decision',
   // fix (2026-08-19): patch_file was unclassified here, silently falling
   // through to the generic {score: 0.70, risk: 'LOW'} catch-all at the
   // bottom of measureS — its S score never varied with which file or path
@@ -611,7 +613,7 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
   }
 
   // Read operations — generally safe
-  if (/read|get|fetch|list|search/.test(name)) {
+  if (/read|get|fetch|list|search|check|self_reflect|narrate_origin/.test(name) || READ_ONLY_TOOLS.has(name)) {
     // Check for credential reads
     const path = String(tool.arguments.path ?? tool.arguments.file ?? '').toLowerCase();
     const isCred = /\.env|\.ssh|\.key|\.pem|secret|credential/.test(path);
@@ -625,11 +627,9 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
     return { score: 0.85, risk: 'LOW' };
   }
 
-  // Nothing above matched this tool's name at all — genuinely unclassified,
-  // not a reasoned LOW. Previously indistinguishable from a real LOW score;
-  // see the READ_ONLY_TOOLS fix note above for why that gap mattered in
-  // practice (self_reflect, narrate_origin, etc. silently landing here).
-  return { score: 0.70, risk: 'LOW', unclassified: true };
+  // Unknown capability is not implicitly safe. Deny it until an explicit
+  // tool policy classifies its side effects and scope.
+  return { score: 0.05, risk: 'BLOCKED', unclassified: true };
 }
 
 // ── C: Continuity measurement ──────────────────────────────────────────────
@@ -867,5 +867,10 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
     else if (s_risk === 'LOW') risk_level = 'LOW';
   }
 
-  return { C, R, S, M, risk_level, injection: false, blocked_pattern: null, semantic_similarity: scan.semantic_similarity, unclassified };
+  return {
+    C, R, S, M, risk_level, injection: false,
+    blocked_pattern: sUnclassified && s_risk === 'BLOCKED' ? `unclassified_tool:${tool.name}` : null,
+    semantic_similarity: scan.semantic_similarity,
+    unclassified,
+  };
 }

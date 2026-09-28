@@ -133,9 +133,10 @@ export async function search_code({
 //    identical except for the interception step. ──────────────────────────────
 async function commitToGitHub({
   path, content, message, repo,
-}: { path: string; content: string; message: string; repo: string }): Promise<string> {
+}: { path: string; content: string; message: string; repo: string }, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   let sha: string | undefined;
-  const existing = await ghFetch(`/repos/${repo}/contents/${path}`);
+  const existing = await ghFetch(`/repos/${repo}/contents/${path}`, { signal });
   if (existing.ok) {
     const d = await existing.json() as { sha?: string };
     sha = d.sha;
@@ -145,8 +146,11 @@ async function commitToGitHub({
     content: Buffer.from(content).toString('base64'),
   };
   if (sha) body.sha = sha;
+  // The caller's deadline may have elapsed while the current file was read;
+  // never begin the mutating PUT after cancellation.
+  signal?.throwIfAborted();
   const res = await ghFetch(`/repos/${repo}/contents/${path}`, {
-    method: 'PUT', body: JSON.stringify(body),
+    method: 'PUT', body: JSON.stringify(body), signal,
   });
   if (!res.ok) {
     const err = await res.json() as { message?: string };
@@ -165,8 +169,8 @@ export async function write_file({
   repo = FRONTEND_REPO,
 }: {
   path: string; content: string; message: string; repo?: string;
-}): Promise<string> {
-  return commitToGitHub({ path, content, message, repo });
+}, signal?: AbortSignal): Promise<string> {
+  return commitToGitHub({ path, content, message, repo }, signal);
 }
 
 /** @deprecated Use write_file instead. */
@@ -300,10 +304,12 @@ export async function dispatch_workflow({
   ref = 'main',
   inputs,
   repo = FRONTEND_REPO,
-}: { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }): Promise<string> {
+}: { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   const res = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     method: 'POST',
     body: JSON.stringify({ ref, inputs: inputs ?? {} }),
+    signal,
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -311,8 +317,15 @@ export async function dispatch_workflow({
   }
 
   // Short, single, bounded poll — see header note on why this isn't a loop.
-  await new Promise(r => setTimeout(r, 2000));
-  const check = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1&event=workflow_dispatch`);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, 2000);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new Error('Workflow dispatch polling aborted'));
+    }, { once: true });
+  });
+  signal?.throwIfAborted();
+  const check = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1&event=workflow_dispatch`, { signal });
   if (check.ok) {
     const data = await check.json() as { workflow_runs?: Array<{ id: number; status: string; created_at: string; html_url: string }> };
     const latest = data.workflow_runs?.[0];
@@ -761,16 +774,16 @@ export async function explain_denial(input: { reason?: string; tool_name?: strin
 // mutations per single request (found 2026-08-18, after the execution-cache
 // merge added dispatch-boundary governance but left this file's own wrapping
 // in place — a real correctness bug, not a style cleanup).
-export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
+export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>> = {
   read_file:                (a) => read_file(a as { path: string; repo?: string }),
   list_directory:           (a) => list_directory(a as { path?: string; repo?: string }),
   search_code:              (a) => search_code(a as { query: string; repo?: string }),
-  write_file:               (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
-  write_file_governed:      (a) => write_file(a as { path: string; content: string; message: string; repo?: string }),
+  write_file:               (a, signal) => write_file(a as { path: string; content: string; message: string; repo?: string }, signal),
+  write_file_governed:      (a, signal) => write_file(a as { path: string; content: string; message: string; repo?: string }, signal),
   get_build_status:         () => get_build_status(),
   get_workflow_run:         (a) => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }),
   get_workflow_log:         (a) => get_workflow_log(a as { job_id: number; repo?: string; maxChars?: number }),
-  dispatch_workflow:        (a) => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }),
+  dispatch_workflow:        (a, signal) => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }, signal),
   get_workflow_artifact:    (a) => get_workflow_artifact(a as { run_id: number; repo?: string }),
   check_github_token_scope: () => check_github_token_scope(),
   get_constitutional_state: () => get_constitutional_state(),
