@@ -43,6 +43,9 @@ jobs:
           node-version: '20'
           # No cache — same reason as above
       - run: npm install
+      - run: npm run red-team:tools
+        env:
+          NODE_ENV: test
       - run: npm run test -- --run
         env:
           GROQ_API_KEY: placeholder
