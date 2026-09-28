@@ -19,6 +19,12 @@ export const PUBLIC_MCP_TOOLS = new Set([
   'explain_denial',
 ]);
 
+export const PRIVATE_TEST_MCP_TOOLS = new Set([
+  'read_file', 'list_directory', 'search_code', 'get_build_status',
+  'get_workflow_run', 'get_workflow_log', 'get_workflow_artifact',
+  'get_constitutional_state', 'get_recent_receipts', 'run_self_test', 'self_reflect',
+]);
+
 export const OPERATOR_ONLY_MCP_TOOLS = new Set([
   'read_file',
   'list_directory',
@@ -40,12 +46,12 @@ export const OPERATOR_ONLY_MCP_TOOLS = new Set([
   'narrate_origin',
 ]);
 
-export type McpAccessProfile = 'public' | 'operator';
+export type McpAccessProfile = 'public' | 'private_test' | 'operator';
 
-export function profileForApiKey(_plan: string | undefined): McpAccessProfile {
-  // API-key plans describe quota/product access, not operator identity.
-  // Infrastructure tools require the independent x-lex-operator-secret.
-  return 'public';
+export function profileForApiKey(plan: string | undefined): McpAccessProfile {
+  // private_test keys are issued only by the admin-protected test-key endpoint.
+  // They are diagnostic, not operator credentials; mutations remain operator-only.
+  return plan === 'private_test' ? 'private_test' : 'public';
 }
 
 export function operatorSecretConfigured(): boolean {
@@ -60,11 +66,15 @@ export function isOperatorSecret(value: string | null | undefined): boolean {
 export function toolsForProfile(profile: McpAccessProfile, names: string[]) {
   return names.filter(name => profile === 'operator'
     ? OPERATOR_ONLY_MCP_TOOLS.has(name) || PUBLIC_MCP_TOOLS.has(name)
-    : PUBLIC_MCP_TOOLS.has(name));
+    : profile === 'private_test'
+      ? PRIVATE_TEST_MCP_TOOLS.has(name) || PUBLIC_MCP_TOOLS.has(name)
+      : PUBLIC_MCP_TOOLS.has(name));
 }
 
 export function canCallTool(profile: McpAccessProfile, name: string): boolean {
   return profile === 'operator'
     ? OPERATOR_ONLY_MCP_TOOLS.has(name) || PUBLIC_MCP_TOOLS.has(name)
-    : PUBLIC_MCP_TOOLS.has(name);
+    : profile === 'private_test'
+      ? PRIVATE_TEST_MCP_TOOLS.has(name) || PUBLIC_MCP_TOOLS.has(name)
+      : PUBLIC_MCP_TOOLS.has(name);
 }
