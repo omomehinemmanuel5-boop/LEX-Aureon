@@ -28,6 +28,17 @@ describe('central tool governance gateway', () => {
     expect(denied.decision).toBe('approval_required');
     expect(denied.requiresApproval).toBe(true);
 
+    const writeDenied = evaluateToolGovernance({
+      toolName: 'write_file',
+      args: { path: 'notes.txt', content: 'changed' },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+    });
+    expect(writeDenied.risk).toBe('write');
+    expect(writeDenied.decision).toBe('approval_required');
+    expect(writeDenied.requiresApproval).toBe(true);
+
     vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'test-approval-secret');
     const nowMs = 1_700_000_000_000;
     const actionArgs = { workflow: 'ci.yml' };
