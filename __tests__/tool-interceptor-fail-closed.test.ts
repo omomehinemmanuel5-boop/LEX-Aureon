@@ -32,8 +32,7 @@ describe('tool interceptor dependency failures', () => {
     process.env.LEX_AGENTDOJO_SYNTHETIC_STATE = '1';
     try {
       dbExecute
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValue({ rowsAffected: 1 });
+        .mockResolvedValue({ rows: [] });
 
       const decision = await interceptToolCall({
         id: 'synthetic-1',
