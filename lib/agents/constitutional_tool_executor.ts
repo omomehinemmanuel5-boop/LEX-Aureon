@@ -176,7 +176,8 @@ export async function executeGovernedToolStructured(
       verification,
     };
   }
-\n  const decision = await interceptToolCall({
+
+  const decision = await interceptToolCall({
     id: crypto.randomUUID(),
     name: toolName,
     arguments: args,
