@@ -8,6 +8,7 @@
 
 import crypto from 'crypto';
 import { interceptToolCall } from './tool_interceptor';
+import { requireKnownToolCapability, type ToolCapabilityRecord } from './tool_capability_registry';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
@@ -148,7 +149,7 @@ export async function executeGovernedToolStructured(
   actorId = 'internal-agent',
   signal?: AbortSignal,
 ): Promise<GovernedToolExecution> {
-  // Reference-monitor admission: capability must be explicitly registered.\n  // Never infer authority from an unknown tool name or caller-supplied label.\n  let capability: ToolCapabilityRecord;\n  try {\n    capability = requireKnownToolCapability(toolName);\n  } catch (error) {\n    const reason = error instanceof Error ? error.message : 'Unknown tool capability; execution denied.';\n    const unknownDecision: ToolCallDecision = {\n      approved: false,\n      decision: 'DENIED_BLOCKED',\n      reason,\n      crs: { C: 0, R: 0, S: 0, M: 0, risk_level: 'BLOCKED' },\n      receipt_id: `capability-${crypto.randomUUID()}`,\n      sigma_viol: 1,\n      health_band: 'LOCKED',\n      warning: 'Reference monitor fail-closed: register the tool capability before execution.',\n    };\n    const verification = verifyToolResult(toolName, undefined, 'destructive');\n    return {\n      result: report(toolName, unknownDecision, undefined, false, undefined, verification),\n      approved: false,\n      decision: unknownDecision.decision,\n      receiptId: unknownDecision.receipt_id ?? null,\n      risk: capability?.capability ?? 'unknown',\n      verification,\n    };\n  }\n\n  const decision = await interceptToolCall({
+  // Reference-monitor admission: capability must be explicitly registered.\n  // Never infer authority from an unknown tool name or caller-supplied label.\n  let capability: ToolCapabilityRecord;\n  try {\n    capability = requireKnownToolCapability(toolName);\n  } catch (error) {\n    const reason = error instanceof Error ? error.message : 'Unknown tool capability; execution denied.';\n    const unknownDecision: ToolCallDecision = {\n      approved: false,\n      decision: 'DENIED_BLOCKED',\n      reason,\n      crs: { C: 0, R: 0, S: 0, M: 0, risk_level: 'BLOCKED' },\n      receipt_id: `capability-${crypto.randomUUID()}`,\n      sigma_viol: 1,\n      health_band: 'LOCKED',\n      warning: 'Reference monitor fail-closed: register the tool capability before execution.',\n    };\n    const verification = verifyToolResult(toolName, undefined, 'destructive');\n    return {\n      result: report(toolName, unknownDecision, undefined, false, undefined, verification),\n      approved: false,\n      decision: unknownDecision.decision,\n      receiptId: unknownDecision.receipt_id ?? null,\n      risk: 'unknown',\n      verification,\n    };\n  }\n\n  const decision = await interceptToolCall({
     id: crypto.randomUUID(),
     name: toolName,
     arguments: args,
