@@ -1127,8 +1127,12 @@ export const TOOL_DEFINITIONS = [
     name: 'simulate_agent_plan',
     description: 'Simulate an ordered agent action plan without executing it and identify high-impact steps.',
     parameters: { type: 'object', properties: { actions: { type: 'array', items: { type: 'object', properties: { toolName: { type: 'string' }, risk: { type: 'string' }, target: { type: 'string' } } } } }, required: ['actions'] },
+  },
   {
-    name: 'explain_denial',  },
+    name: 'explain_denial',
+    description: 'Turn a governance denial into a concise explanation and safer next step.',
+    parameters: { type: 'object', properties: { reason: { type: 'string' }, tool_name: { type: 'string' } } },
+  },
   {
     name: 'authorize_tool_action',
     description: 'Operator-only authority boundary. Issues a short-lived, single-use, action-bound Lex approval token for one explicitly registered consequential tool action. The token is bound to the exact tool and arguments and is never a general credential.',
@@ -1142,8 +1146,5 @@ export const TOOL_DEFINITIONS = [
       },
       required: ['tool_name', 'arguments'],
     },
-
-    description: 'Turn a governance denial into a concise explanation and safer next step.',
-    parameters: { type: 'object', properties: { reason: { type: 'string' }, tool_name: { type: 'string' } } },
   },
 ];
