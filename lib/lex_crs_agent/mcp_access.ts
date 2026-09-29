@@ -17,6 +17,9 @@ export const PUBLIC_MCP_TOOLS = new Set([
   'review_agent_action',
   'simulate_agent_plan',
   'explain_denial',
+  'discover_external_tool',
+  'govern_external_action',
+  'consume_external_action',
 ]);
 
 export const PRIVATE_TEST_MCP_TOOLS = new Set([
