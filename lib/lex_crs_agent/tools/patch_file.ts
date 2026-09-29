@@ -216,16 +216,7 @@ export function previewChange(oldStr: string, newStr: string, width = 220): stri
 
 /* ── the tool ── */
 
-export async function patch_file({
-  path,
-  old_str,
-  new_str,
-  message,
-  repo = FRONTEND_REPO,
-  replace_all = false,
-  dry_run = false,
-  approval_token,
-}: {
+export async function patch_file(input: {
   path: string;
   old_str: string;
   new_str: string;
@@ -235,13 +226,23 @@ export async function patch_file({
   dry_run?: boolean;
   approval_token?: unknown;
 }, signal?: AbortSignal): Promise<string> {
+  const {
+    path,
+    old_str,
+    new_str,
+    message,
+    repo = FRONTEND_REPO,
+    replace_all = false,
+    dry_run = false,
+    approval_token,
+  } = input;
   signal?.throwIfAborted();
   let credential: string;
   try {
     credential = await getGitHubCredentialForApprovedAction({
       token: approval_token,
       toolName: 'patch_file',
-      args: { path, old_str, new_str, message, repo, replace_all, dry_run, approval_token },
+      args: input,
     });
   } catch (error) {
     return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
