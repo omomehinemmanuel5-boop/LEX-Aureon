@@ -191,7 +191,8 @@ describe('governed tool execution integration boundary', () => {
     expect(result).not.toContain('SAFE_RESULT');
     expect(result).not.toContain('cache_hit:   true');
     expect(executions).toBe(1);
-    expect(interceptToolCall).toHaveBeenCalledTimes(2);
+    // The canonical reference monitor now blocks before the interceptor when M is critical.
+    expect(interceptToolCall).toHaveBeenCalledTimes(1);
     expect(dbExecute).toHaveBeenCalled();
   });
 
