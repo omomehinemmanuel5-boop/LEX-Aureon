@@ -899,6 +899,9 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   review_agent_action:       (a) => review_agent_action(a as Parameters<typeof review_agent_action>[0]),
   simulate_agent_plan:       (a) => simulate_agent_plan(a as Parameters<typeof simulate_agent_plan>[0]),
   explain_denial:            (a) => explain_denial(a as Parameters<typeof explain_denial>[0]),
+  // Control-plane issuance is handled directly by the authenticated MCP route.
+  // This registry entry exists for coverage/manifest completeness but is inert.
+  authorize_tool_action:   () => 'Error: authorize_tool_action is a control-plane operation and cannot execute through the ordinary tool registry.',
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
