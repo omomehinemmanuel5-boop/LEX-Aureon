@@ -138,7 +138,13 @@ describe('MCP constitutional dispatch boundary', () => {
       id: 1,
     }));
     const listed = (listResponse.body as unknown as { result: { tools: Array<{ name: string }> } }).result.tools;
-    expect(listed.map(tool => tool.name)).toEqual(['run_governance', 'get_constitutional_state']);
+    expect(listed.map(tool => tool.name)).toEqual([
+      'run_governance',
+      'get_constitutional_state',
+      'discover_external_tool',
+      'govern_external_action',
+      'consume_external_action',
+    ]);
 
     const response = await POST(request({
       jsonrpc: '2.0',
