@@ -333,17 +333,17 @@ export async function POST(req: Request) {
     try {
       requireKnownToolCapability(toolName);
     } catch {
-      const discovered = await getDiscoveredToolCapability(ownerId, toolName).catch(() => undefined);
-      if (!discovered || discovered.confidence === 'unresolved') {
-        return NextResponse.json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32030,
-            message: 'Tool capability not discovered or safely resolved for this environment; execution denied by the Lex reference monitor',
-          },
-          id,
-        });
-      }
+      // Discovery is advisory only. It can inform registration workflows, but
+      // it must never become an authorization source at the execution boundary.
+      // A tool is executable only after explicit capability registration.
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32030,
+          message: 'Tool capability is not explicitly registered for this environment; execution denied by the Lex reference monitor',
+        },
+        id,
+      });
     }
 
     // Capability filtering is enforced again at call time. Hiding a tool from
