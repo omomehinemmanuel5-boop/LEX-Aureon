@@ -15,6 +15,8 @@ describe('governance response disposition', () => {
       'I cannot fulfill this request. My operational parameters prohibit repository access.',
     )).toEqual({
       decision: 'MODEL_REFUSAL',
+      authorization_decision: 'ALLOWED',
+      response_disposition: 'MODEL_REFUSAL',
       refused: false,
       policy_decision: 'ALLOWED',
       policy_refused: false,
@@ -29,6 +31,8 @@ describe('governance response disposition', () => {
       'I cannot fulfill this request as it conflicts with my safety guidelines.',
     )).toEqual({
       decision: 'REFUSED',
+      authorization_decision: 'REFUSED',
+      response_disposition: 'REFUSED',
       refused: true,
       policy_decision: 'REFUSED',
       policy_refused: true,

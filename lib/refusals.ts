@@ -32,6 +32,8 @@ export function isRefusal(output: string): boolean {
 
 export type GovernanceOutputDecision = 'ALLOWED' | 'REFUSED' | 'MODEL_REFUSAL';
 
+export type GovernanceAuthorizationDecision = 'ALLOWED' | 'REFUSED';
+
 /**
  * Keep the enforcement decision distinct from what the generated text actually
  * says. A model can refuse in prose even when the deterministic policy did not
@@ -40,6 +42,9 @@ export type GovernanceOutputDecision = 'ALLOWED' | 'REFUSED' | 'MODEL_REFUSAL';
  */
 export function describeGovernanceOutput(policyRefused: boolean, output: string): {
   decision: GovernanceOutputDecision;
+  /** Deterministic policy authority; generated prose never overrides it. */
+  authorization_decision: GovernanceAuthorizationDecision;
+  response_disposition: GovernanceOutputDecision;
   refused: boolean;
   policy_decision: 'ALLOWED' | 'REFUSED';
   policy_refused: boolean;
@@ -47,8 +52,14 @@ export function describeGovernanceOutput(policyRefused: boolean, output: string)
   policy_output_mismatch: boolean;
 } {
   const responseRefusal = isRefusal(output);
+  const authorizationDecision: GovernanceAuthorizationDecision = policyRefused ? 'REFUSED' : 'ALLOWED';
+  const responseDisposition: GovernanceOutputDecision =
+    policyRefused ? 'REFUSED' : responseRefusal ? 'MODEL_REFUSAL' : 'ALLOWED';
+
   return {
-    decision: policyRefused ? 'REFUSED' : responseRefusal ? 'MODEL_REFUSAL' : 'ALLOWED',
+    decision: responseDisposition,
+    authorization_decision: authorizationDecision,
+    response_disposition: responseDisposition,
     refused: policyRefused,
     policy_decision: policyRefused ? 'REFUSED' : 'ALLOWED',
     policy_refused: policyRefused,
