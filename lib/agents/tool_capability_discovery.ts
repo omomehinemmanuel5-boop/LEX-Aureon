@@ -82,7 +82,7 @@ export function resolveToolManifest(environmentId: string, manifest: ToolManifes
   let capability: ToolCapability | null = null;
   let confidence: CapabilityConfidence = 'unresolved';
 
-  if (EXECUTE_WORDS.test(name) || /\\b(?:shell|command|execute|eval)\\b/.test(description)) {
+  if (EXECUTE_WORDS.test(name) || /\b(?:shell|command|execute|eval)\b/.test(description)) {
     capability = 'execute';
     confidence = 'high';
     evidence.push('tool identity/description indicates arbitrary execution');
