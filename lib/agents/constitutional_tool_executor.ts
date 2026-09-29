@@ -9,7 +9,7 @@
 import crypto from 'crypto';
 import { interceptToolCall } from './tool_interceptor';
 import { requireKnownToolCapability, type ToolCapabilityRecord } from './tool_capability_registry';
-import { getDiscoveredToolCapability } from './tool_capability_discovery';
+import { getDiscoveredToolCapability, isReadOnlyExecutionOperation } from './tool_capability_discovery';
 import { canonicalExecutionAllowed, readCanonicalGovernanceState, type CanonicalGovernanceState } from './canonical_governance_state';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
@@ -241,11 +241,16 @@ export async function executeGovernedToolStructured(
     }
   }
 
+  const effectiveCapability: ToolCapabilityRecord =
+    capability.capability === 'execute' && isReadOnlyExecutionOperation(toolName, args)
+      ? { ...capability, capability: 'read', approvalRequired: false, reversible: true }
+      : capability;
+
   const canonicalRead = await readCanonicalGovernanceState({
     sessionId,
     actorId,
-    capability: capability.capability,
-    authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
+    capability: effectiveCapability.capability,
+    authorization: effectiveCapability.approvalRequired ? 'approval_required' : 'authorized',
   });
 
   if (!canonicalRead.available) {
@@ -305,7 +310,7 @@ export async function executeGovernedToolStructured(
     arguments: args,
     session_id: sessionId,
     actor_id: actorId,
-    task_context: safeTaskContext(toolName, args, taskContext, capability),
+    task_context: safeTaskContext(toolName, args, taskContext, effectiveCapability),
   });
   const policy = evaluateToolGovernance({
     toolName,
