@@ -167,6 +167,7 @@ function safeTaskContext(
   return typeof redacted === 'string'
     ? redactGovernanceText(redacted).slice(0, 4096)
     : derivedContext;
+}
 
 export interface GovernedToolExecution {
   result: string;
@@ -221,7 +222,7 @@ export async function executeGovernedToolStructured(
     arguments: args,
     session_id: sessionId,
     actor_id: actorId,
-    task_context: safeTaskContext(toolName, args, taskContext),
+    task_context: safeTaskContext(toolName, args, taskContext, capability),
   });
   const policy = evaluateToolGovernance({
     toolName,
