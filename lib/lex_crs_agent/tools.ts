@@ -490,8 +490,6 @@ export async function run_governance({
     return JSON.stringify({
       governed_output: d.governed_output ?? '',
       // Deterministic authorization is authoritative; model prose is only a response disposition.
-      authorization_decision: disposition.authorization_decision,
-      response_disposition: disposition.response_disposition,
       ...disposition,
       refusal_reasons: d.refusal_reasons ?? [],
       primary_refusal_reason: d.primary_refusal_reason ?? null,
