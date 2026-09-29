@@ -901,7 +901,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   explain_denial:            (a) => explain_denial(a as Parameters<typeof explain_denial>[0]),
   // Control-plane issuance is handled directly by the authenticated MCP route.
   // This registry entry exists for coverage/manifest completeness but is inert.
-  authorize_tool_action:   () => 'Error: authorize_tool_action is a control-plane operation and cannot execute through the ordinary tool registry.',
+  authorize_tool_action:   async () => 'Error: authorize_tool_action is a control-plane operation and cannot execute through the ordinary tool registry.',
 };
 
 // ── Tool definitions for LLMs ─────────────────────────────────────────────────
