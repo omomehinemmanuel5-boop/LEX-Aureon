@@ -137,6 +137,12 @@ export function canonicalExecutionAllowed(
       reason: 'Canonical trajectory state is uninitialized; consequential capability execution is suspended until z_traj exists.',
     };
   }
+  // Uninitialized read-only diagnostics are safe to observe; do not let the
+  // synthetic zero M used to represent "unknown" accidentally block them.
+  if (!state.trajectoryAvailable && state.policyRisk === 'read') {
+    return { allowed: true };
+  }
+
   if (state.M < TAU_FLOOR) {
     return {
       allowed: false,
