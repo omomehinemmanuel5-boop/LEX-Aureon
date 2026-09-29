@@ -19,6 +19,7 @@ import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
+import { requireKnownToolCapability } from '@/lib/agents/tool_capability_registry';
 import crypto from 'crypto';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
@@ -319,6 +320,24 @@ export async function POST(req: Request) {
       ownerId = String(keyCheck.key?.id ?? 'anonymous');
       actorId = `api_key:${ownerId}`;
       profile = profileForApiKey(keyCheck.key?.plan);
+    }
+
+    // Reference-monitor admission happens at the MCP transport boundary too.
+    // A guessed or dynamically invented tool name must not be treated as a
+    // harmless "not found" case or allowed to reach any extension resolver.
+    // Capability is explicit and fail-closed; execution applies the same
+    // check again inside executeGovernedTool for defense in depth.
+    try {
+      requireKnownToolCapability(toolName);
+    } catch {
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32030,
+          message: 'Tool capability not registered; execution denied by the Lex reference monitor',
+        },
+        id,
+      });
     }
 
     // Capability filtering is enforced again at call time. Hiding a tool from
