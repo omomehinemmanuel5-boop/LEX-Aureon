@@ -314,9 +314,6 @@ export async function executeGovernedToolStructured(
     authorized: true,
     approvalToken: args.approval_token,
   });
-  if (discoveredConfidence && discoveredConfidence !== 'high') {
-    policy.reasons.push(`Capability discovered from environment manifest with ${discoveredConfidence} confidence; consequential execution remains approval-bound.`);
-  }
 
   if (!decision.approved) {
     const verification = verifyToolResult(toolName, undefined, policy.risk);
