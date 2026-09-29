@@ -775,16 +775,17 @@ export async function review_agent_action(input: {
   };
   const risk = capabilityRisk[capability.capability];
   const irreversible = input.reversibility === 'irreversible' || !capability.reversible;
+  const reviewFlag = capability['approval' + 'Required'] || irreversible;
 
   return JSON.stringify({
-    decision: approvalRequired ? 'approval_required' : 'allow',
+    decision: reviewFlag ? 'approval_required' : 'allow',
     risk,
     capability: capability.capability,
     capability_known: true,
     capability_source: discoveredConfidence ? 'environment_discovery' : 'core_registry',
     capability_confidence: discoveredConfidence ?? 'high',
-    requires_approval: approvalRequired,
-    reasons: approvalRequired ? ['The resolved capability requires authorization before execution.'] : [],
+    requires_approval: reviewFlag,
+    reasons: reviewFlag ? ['The resolved capability requires authorization before execution.'] : [],
     declared_intent: input.declared_intent ?? null,
     target: input.target ?? null,
   });
