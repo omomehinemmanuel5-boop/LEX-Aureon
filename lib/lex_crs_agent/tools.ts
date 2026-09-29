@@ -65,6 +65,7 @@ import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '../agents/tool_capability_registry';
+import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const BENCHMARK_REPO = 'omomehinemmanuel5-boop/Lexaureon-Benchmark';
@@ -729,25 +730,36 @@ export async function review_agent_action(input: {
   target?: string;
   reversibility?: string;
   authority_context?: string;
+  environment_id?: string;
 }): Promise<string> {
   const name = String(input.tool_name ?? '').trim();
   if (!name) return JSON.stringify({ decision: 'deny', reason: 'tool_name is required' });
 
-  // Proposal review must use the same explicit capability registry as the
-  // execution boundary. Never downgrade an unfamiliar tool to "read".
+  // Static core capabilities are authoritative. External environment
+  // capabilities may also be resolved from a previously discovered manifest,
+  // but discovery itself never grants execution permission.
   let capability: ReturnType<typeof getToolCapability>;
+  let discoveredConfidence: string | undefined;
   try {
     capability = requireKnownToolCapability(name);
   } catch (error) {
-    return JSON.stringify({
-      decision: 'deny',
-      risk: 'unknown',
-      requires_approval: true,
-      capability_known: false,
-      reasons: [error instanceof Error ? error.message : 'Unknown tool capability; register it before execution.'],
-      declared_intent: input.declared_intent ?? null,
-      target: input.target ?? null,
-    });
+    const environmentId = String(input.environment_id ?? '').trim();
+    const discovered = environmentId
+      ? await getDiscoveredToolCapability(environmentId, name).catch(() => undefined)
+      : undefined;
+    if (!discovered || discovered.confidence === 'unresolved') {
+      return JSON.stringify({
+        decision: 'deny',
+        risk: 'unknown',
+        requires_approval: true,
+        capability_known: false,
+        reasons: [error instanceof Error ? error.message : 'Unknown tool capability; discover and resolve its manifest before execution.'],
+        declared_intent: input.declared_intent ?? null,
+        target: input.target ?? null,
+      });
+    }
+    capability = discovered;
+    discoveredConfidence = discovered.confidence;
   }
 
   const capabilityRisk: Record<ToolCapability, string> = {
@@ -770,8 +782,10 @@ export async function review_agent_action(input: {
     risk,
     capability: capability.capability,
     capability_known: true,
+    capability_source: discoveredConfidence ? 'environment_discovery' : 'core_registry',
+    capability_confidence: discoveredConfidence ?? 'high',
     requires_approval: approvalRequired,
-    reasons: approvalRequired ? ['The registered capability requires authorization before execution.'] : [],
+    reasons: approvalRequired ? ['The resolved capability requires authorization before execution.'] : [],
     declared_intent: input.declared_intent ?? null,
     target: input.target ?? null,
   });
