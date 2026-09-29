@@ -142,8 +142,9 @@ const EXTERNAL_CAPABILITY_DEFINITIONS = [
         action_args: { type: 'object' },
         session_id: { type: 'string' },
         task_context: { type: 'string' },
+        target_actor_id: { type: 'string', description: 'Authenticated client actor ID that the permit will be bound to.' },
       },
-      required: ['environment_id', 'manifest', 'action_args'],
+      required: ['environment_id', 'manifest', 'action_args', 'target_actor_id'],
     },
   },
 ] as const;
@@ -525,15 +526,17 @@ export async function POST(req: Request) {
           return NextResponse.json({ jsonrpc: '2.0', result, id });
         }
         if (toolName === 'authorize_external_action') {
+          const targetActorId = typeof args.target_actor_id === 'string' ? args.target_actor_id.trim() : '';
+          if (!targetActorId) return invalidParams(id ?? null, 'target_actor_id is required for operator authorization');
           const result = await authorizeExternalAction({
-            environmentId, manifest, actionArgs, sessionId,
+            environmentId, manifest, actionArgs, sessionId, actorId: targetActorId,
             taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
           });
           return NextResponse.json({ jsonrpc: '2.0', result, id });
         }
         const approvalToken = typeof args.approval_token === 'string' ? args.approval_token : '';
         if (!approvalToken) return invalidParams(id ?? null, 'approval_token is required');
-        const result = await consumeExternalAction({ environmentId, manifest, actionArgs, sessionId, approvalToken });
+        const result = await consumeExternalAction({ environmentId, manifest, actionArgs, sessionId, actorId, approvalToken });
         return NextResponse.json({ jsonrpc: '2.0', result: {
           ...result,
           execution_may_begin: result.granted,
