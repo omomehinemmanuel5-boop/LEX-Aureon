@@ -57,9 +57,14 @@ const DESTRUCTIVE_TOOLS = [
 ] as const;
 
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
+  { name:'exec', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
+  { name:'run', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run_command', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
-  { name:'bash', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'shell', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
+  { name:'bash', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
+  { name:'powershell', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
+  { name:'python', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
+  { name:'docker', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'eval', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'transfer', capability:'financial', approvalRequired:true, reversible:false, source:'core' },
   { name:'rotate_identity', capability:'identity', approvalRequired:true, reversible:false, source:'core' },
