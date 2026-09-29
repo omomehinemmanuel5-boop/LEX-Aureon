@@ -489,6 +489,7 @@ export async function executeGovernedTool(
   taskContext?: string,
   actorId = 'internal-agent',
   signal?: AbortSignal,
+  environmentId = 'internal',
 ): Promise<string> {
   const execution = await executeGovernedToolStructured(
     toolName,
@@ -498,6 +499,7 @@ export async function executeGovernedTool(
     taskContext,
     actorId,
     signal,
+    environmentId,
   );
   return execution.result;
 }
