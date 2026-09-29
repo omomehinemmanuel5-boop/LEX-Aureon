@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getClient } from '../db';
 import { getToolCapability } from './tool_capability_registry';
+import { isReadOnlyExecutionOperation } from './tool_capability_discovery';
 
 const DESTRUCTIVE_TOOLS = new Set(['delete_file', 'delete_directory', 'delete_repository', 'delete_branch', 'revoke_key', 'change_access', 'change_billing', 'drop_table', 'execute_destructive_sql']);
 const EXTERNAL_TOOLS = new Set(['dispatch_workflow', 'send_email', 'publish_post', 'create_issue', 'create_pull_request', 'deploy', 'create_deployment', 'http_post', 'http_put', 'http_patch', 'curl_post']);
@@ -226,9 +227,10 @@ export async function consumeGovernanceApprovalToken(input: {
   }
 }
 
-export function classifyGovernanceRisk(toolName: string): GovernanceRisk {
+export function classifyGovernanceRisk(toolName: string, args: Record<string, unknown> = {}): GovernanceRisk {
   const registered = getToolCapability(toolName);
   if (registered) {
+    if (registered.capability === 'execute' && isReadOnlyExecutionOperation(toolName, args)) return 'read';
     switch (registered.capability) {
       case 'read': return 'read';
       case 'write': return 'write';
@@ -265,7 +267,7 @@ export function evaluateToolGovernance(input: {
   approvalToken?: unknown;
   nowMs?: number;
 }): GovernancePolicyDecision {
-  const risk = classifyGovernanceRisk(input.toolName);
+  const risk = classifyGovernanceRisk(input.toolName, input.args);
   const requiresApproval = risk !== 'read';
   const reasons: string[] = [];
   if (!input.authorized) {
