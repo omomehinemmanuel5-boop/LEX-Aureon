@@ -20,7 +20,9 @@ import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
-import { requireKnownToolCapability } from '@/lib/agents/tool_capability_registry';
+import { getToolCapability, requireKnownToolCapability } from '@/lib/agents/tool_capability_registry';
+import { interceptToolCall } from '@/lib/agents/tool_interceptor';
+import { createGovernanceApprovalToken } from '@/lib/agents/tool_governance_gateway';
 import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governance_state';
 import crypto from 'crypto';
 
@@ -322,6 +324,108 @@ export async function POST(req: Request) {
       ownerId = String(keyCheck.key?.id ?? 'anonymous');
       actorId = `api_key:${ownerId}`;
       profile = profileForApiKey(keyCheck.key?.plan);
+    }
+
+    // The authorization endpoint is an operator-only control-plane action.
+    // It issues a short-lived token bound to one exact consequential action.
+    // It is intentionally handled before ordinary tool execution so an
+    // approval token cannot be self-issued by the governed tool it authorizes.
+    if (toolName === 'authorize_tool_action') {
+      if (!operator) return unauthorized(id);
+      const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
+      const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
+      const requestedSession = typeof args.session_id === 'string' && args.session_id.trim()
+        ? args.session_id.trim()
+        : `operator-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+      const taskContext = typeof args.task_context === 'string'
+        ? args.task_context.slice(0, 4096)
+        : `Operator authorization for ${requestedTool}`;
+      if (!requestedTool || !requestedArgs) {
+        return invalidParams(id ?? null, 'tool_name and arguments are required');
+      }
+      if (requestedTool === 'authorize_tool_action') {
+        return invalidParams(id ?? null, 'authorize_tool_action cannot authorize itself');
+      }
+      let capability;
+      try {
+        capability = requireKnownToolCapability(requestedTool);
+      } catch {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          error: { code: -32030, message: 'Cannot issue authorization for an unregistered tool capability' },
+          id,
+        });
+      }
+      if (!capability.approvalRequired) {
+        return invalidParams(id ?? null, 'Approval tokens are only issued for consequential capabilities');
+      }
+      try {
+        await runZTrajMigrations();
+        if (!(await ensureCanonicalTrajectoryState(requestedSession))) {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
+            id,
+          }, { status: 503 });
+        }
+      } catch {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          error: { code: -32003, message: 'Governance storage temporarily unavailable' },
+          id,
+        }, { status: 503 });
+      }
+      const review = await interceptToolCall({
+        id: crypto.randomUUID(),
+        name: requestedTool,
+        arguments: requestedArgs,
+        session_id: requestedSession,
+        actor_id: 'operator',
+        task_context: taskContext,
+      });
+      if (!review.approved) {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          result: {
+            approved: false,
+            decision: review.decision,
+            reason: review.reason,
+            receipt_id: review.receipt_id ?? null,
+          },
+          id,
+        });
+      }
+      const approvalId = crypto.randomUUID();
+      let approvalToken: string;
+      try {
+        approvalToken = createGovernanceApprovalToken({
+          actorId: 'operator',
+          sessionId: requestedSession,
+          toolName: requestedTool,
+          args: requestedArgs,
+          approvalId,
+        });
+      } catch {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          error: { code: -32003, message: 'Approval signing is not configured; authorization denied' },
+          id,
+        }, { status: 503 });
+      }
+      return NextResponse.json({
+        jsonrpc: '2.0',
+        result: {
+          approved: true,
+          decision: 'approval_issued',
+          tool_name: requestedTool,
+          approval_id: approvalId,
+          expires_in_seconds: 15 * 60,
+          approval_token: approvalToken,
+          receipt_id: review.receipt_id ?? null,
+          warning: 'Treat this token as sensitive. It is single-use and bound to the exact tool and arguments.',
+        },
+        id,
+      });
     }
 
     // Reference-monitor admission happens at the MCP transport boundary too.
