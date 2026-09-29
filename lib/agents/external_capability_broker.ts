@@ -165,6 +165,7 @@ export async function authorizeExternalAction(input: {
   manifest: ToolManifest;
   actionArgs: Record<string, unknown>;
   sessionId: string;
+  actorId: string;
   taskContext?: string;
 }): Promise<{
   approved: boolean;
@@ -199,7 +200,7 @@ export async function authorizeExternalAction(input: {
   }
   const approvalId = crypto.randomUUID();
   const approvalToken = createGovernanceApprovalToken({
-    actorId: 'external-client',
+    actorId: input.actorId,
     sessionId: input.sessionId,
     toolName,
     args: tokenArgs(envelope),
@@ -220,6 +221,7 @@ export async function consumeExternalAction(input: {
   manifest: ToolManifest;
   actionArgs: Record<string, unknown>;
   sessionId: string;
+  actorId: string;
   approvalToken: string;
 }): Promise<{ granted: boolean; approvalId?: string; reason: string }> {
   const capability = await getDiscoveredToolCapability(input.environmentId, input.manifest.name);
@@ -232,7 +234,7 @@ export async function consumeExternalAction(input: {
   const toolName = stableToolName(input.environmentId, capability.name);
   const consumed = await consumeGovernanceApprovalToken({
     token: input.approvalToken,
-    actorId: 'external-client',
+    actorId: input.actorId,
     sessionId: input.sessionId,
     toolName,
     args: tokenArgs(envelope),
