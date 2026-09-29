@@ -14,6 +14,7 @@ import {
   type RunLease,
   RunGovernanceError,
 } from './autonomous_run_supervisor';
+import { writeTrajectoryReceipt } from './trajectory_receipts';
 
 export interface GovernedToolExecutionResult {
   result: string;
@@ -57,6 +58,11 @@ export async function executeGovernedTrajectoryAction(
   if (!trajectoryDecision.approved) {
     const deniedState = { ...state, driftScore: trajectoryDecision.driftScore };
     const result = `Trajectory denied: ${trajectoryDecision.reason}`;
+    await writeTrajectoryReceipt({
+      sessionId, actionId: action.actionId, toolName: action.toolName, args,
+      stateBefore: state, stateAfter: deniedState, actualEffect: result,
+      approved: false, decision: 'TRAJECTORY_DENIED',
+    }).catch(() => undefined);
     return {
       state: deniedState,
       action,
@@ -76,6 +82,11 @@ export async function executeGovernedTrajectoryAction(
     );
     if (reservation.replay) {
       const result = 'Autonomous action replay suppressed; reconcile the prior result before retrying.';
+      await writeTrajectoryReceipt({
+        sessionId, actionId: action.actionId, toolName: action.toolName, args,
+        stateBefore: state, stateAfter: state, actualEffect: result,
+        approved: false, decision: 'RUN_ACTION_REPLAY',
+      }).catch(() => undefined);
       return {
         state,
         action,
@@ -114,6 +125,34 @@ export async function executeGovernedTrajectoryAction(
     actualEffect: execution.result,
   };
   const nextState = reconcileTrajectoryOutcome(state, outcome);
+
+  try {
+    await writeTrajectoryReceipt({
+      receiptId: execution.receiptId,
+      sessionId,
+      actionId: action.actionId,
+      toolName: action.toolName,
+      args,
+      stateBefore: state,
+      stateAfter: nextState,
+      actualEffect: execution.result,
+      approved: execution.approved,
+      decision: execution.decision,
+    });
+  } catch {
+    const result = `${execution.result}\nTRAJECTORY PAUSED: durable trajectory receipt could not be persisted.`;
+    return {
+      state: { ...nextState, locked: true },
+      action,
+      result,
+      governance: {
+        result,
+        approved: false,
+        decision: 'TRAJECTORY_RECEIPT_WRITE_FAILED',
+        receiptId: execution.receiptId,
+      },
+    };
+  }
 
   if (runContext) {
     await completeRunAction(

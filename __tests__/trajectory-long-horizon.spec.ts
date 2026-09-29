@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedToolStructured, reserveRunAction, completeRunAction, checkpointRun } = vi.hoisted(() => ({
+const { executeGovernedToolStructured, reserveRunAction, completeRunAction, checkpointRun, writeTrajectoryReceipt } = vi.hoisted(() => ({
   executeGovernedToolStructured: vi.fn(),
   reserveRunAction: vi.fn(),
   completeRunAction: vi.fn(),
   checkpointRun: vi.fn(),
+  writeTrajectoryReceipt: vi.fn(),
 }));
 
 vi.mock('@/lib/agents/constitutional_tool_executor', () => ({ executeGovernedToolStructured }));
@@ -14,6 +15,7 @@ vi.mock('@/lib/agents/autonomous_run_supervisor', () => ({
   checkpointRun,
   RunGovernanceError: class RunGovernanceError extends Error { code = 'checkpoint_conflict'; },
 }));
+vi.mock('@/lib/agents/trajectory_receipts', () => ({ writeTrajectoryReceipt }));
 
 import { executeGovernedTrajectoryAction } from '@/lib/agents/trajectory_executor';
 import { createTrajectoryPlan, createTrajectoryState } from '@/lib/agents/trajectory_governance';
@@ -33,6 +35,7 @@ describe('long-horizon trajectory execution', () => {
     reserveRunAction.mockResolvedValue({ replay: false, status: 'reserved' });
     completeRunAction.mockResolvedValue(undefined);
     checkpointRun.mockResolvedValue(undefined);
+    writeTrajectoryReceipt.mockResolvedValue(undefined);
     executeGovernedToolStructured.mockResolvedValue({
       result: 'READ_OK', approved: true, decision: 'APPROVED', receiptId: 'receipt-1',
     });
