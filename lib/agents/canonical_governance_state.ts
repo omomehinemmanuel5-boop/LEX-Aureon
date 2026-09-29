@@ -128,6 +128,15 @@ export async function readCanonicalGovernanceState(input: {
 export function canonicalExecutionAllowed(
   state: CanonicalGovernanceState,
 ): { allowed: boolean; reason?: string } {
+  // A new session may legitimately lack a trajectory row. Read-only diagnostics
+  // are non-consequential and remain observable for bootstrap/health inspection;
+  // consequential capabilities must wait for an initialized constitutional state.
+  if (!state.trajectoryAvailable && state.policyRisk !== 'read') {
+    return {
+      allowed: false,
+      reason: 'Canonical trajectory state is uninitialized; consequential capability execution is suspended until z_traj exists.',
+    };
+  }
   if (state.M < TAU_FLOOR) {
     return {
       allowed: false,
