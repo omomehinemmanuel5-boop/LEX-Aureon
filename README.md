@@ -33,6 +33,7 @@
 
 - [What Lex Aureon does](#what-lex-aureon-does)
 - [Agent and tool-call governance](#agent-and-tool-call-governance)
+- [Dynamic external capability governance](#dynamic-external-capability-governance)
 - [Current research status](#current-research-status)
 - [Quick start](#quick-start)
 - [API example](#api-example)
@@ -105,6 +106,53 @@ cache_hit:   false
 A denied call returns the same receipt shape with `approved: false` and a `reason` explaining what fired — e.g. semantic injection detection on the tool arguments.
 
 </details>
+
+
+---
+
+## Dynamic external capability governance
+
+Lex Aureon does not require a static registry of every tool an agent might encounter. External capabilities can be **discovered at runtime**, but discovery is advisory: it never grants execution authority.
+
+The production control boundary is:
+
+```text
+Discover → Govern → Authorize → Issue single-use permit → Consume → Execute
+```
+
+The responsibilities are deliberately separated:
+
+1. **Discover** — inspect the external capability manifest and establish what the tool claims to do.
+2. **Govern** — evaluate the proposed action against Lex's constitutional and security policy.
+3. **Authorize** — if policy allows the action, issue a scoped, single-use authorization permit.
+4. **Consume** — the execution path must present that permit; authorization is not implied by discovery.
+5. **Execute** — only the execution layer performs the external action after the permit is accepted.
+
+> **Core invariant:** the model may request, explain, or refuse an action. Only Lex's authorization state can authorize a governed external action, and only the execution layer can actually execute it.
+
+### Policy decision vs. model behavior
+
+Lex records authorization separately from what the model says about the action:
+
+```text
+authorization_decision = Lex policy authority
+response_disposition   = model behavior
+```
+
+For example, a model can refuse to perform an action even when Lex policy has authorized it. That is recorded as `MODEL_REFUSAL` rather than incorrectly converting the authorization into a policy denial. Conversely, a policy refusal remains fail-closed regardless of what the model requests or says.
+
+This distinction keeps the control plane machine-readable and prevents model prose from becoming an authorization mechanism.
+
+### External capability safety boundary
+
+- Discovery is **advisory only**.
+- An undiscovered or unregistered capability cannot silently bypass the governance boundary.
+- Approved external actions receive scoped, single-use permits rather than reusable authorization state.
+- Permit signing failures fail closed.
+- Execution must occur only after the authorization permit is consumed.
+- Governance receipts provide an auditable record of the decision and its constitutional state.
+
+The relevant MCP surface exposes `discover_external_tool`, `govern_external_action`, and `consume_external_action` alongside the core governance tools.
 
 ---
 
@@ -220,6 +268,8 @@ Typical response fields include:
 | `lib/aureonics_core.ts` | Constitutional constants and recovery defaults. |
 | `lib/aureonics_math.ts` | Display-only math helpers, including `computeZWeightsHeuristic`. |
 | `app/api/mcp/route.ts` | MCP endpoint — routes agent tool calls through governance. |
+| `lib/lex_crs_agent/tools.ts` | Public Lex CRS Agent tool surface, including external capability discovery and governed execution. |
+| `lib/agents/external_capability_governance.ts` | External capability discovery, authorization, and single-use permit boundary. |
 | `lib/agents/constitutional_tool_executor.ts` | `executeGovernedTool` — per-call authorization, caching, kernel-floor re-check. |
 | `lib/agents/tool_interceptor.ts` | Injection detection and authorization decision logic. |
 | `lib/agents/tool_crs.ts` | Tool-call CRS measurement — regex + semantic injection detection. |
@@ -283,6 +333,8 @@ Priority evaluation gaps:
 - Never delete or mutate audit receipts.
 - Never import governor/receipt z-logic from the heuristic display helper.
 - Never hardcode secrets; route environment access through `lib/env.ts` except documented fallback-chain exceptions.
+- Never treat external capability discovery as execution authority; discovery must remain advisory and governed execution must require authorization.
+- Never allow model prose to override Lex authorization state; policy authorization and model response disposition are separate signals.
 - Do not claim an unguarded global drift-margin theorem without an explicit admissible drift envelope; the deployed guarded discrete invariant is the supported guarantee.
 
 ---
