@@ -108,6 +108,14 @@ describe('canonical governance state', () => {
     expect(result.state.M).toBe(0);
     expect(result.state.healthBand).toBe('CRITICAL');
     expect(result.reason).toContain('z_traj exists');
+
+    const readGate = canonicalExecutionAllowed(result.state);
+    expect(readGate.allowed).toBe(true);
+
+    const writeState = { ...result.state, policyRisk: 'write' as const };
+    const writeGate = canonicalExecutionAllowed(writeState);
+    expect(writeGate.allowed).toBe(false);
+    expect(writeGate.reason).toContain('consequential capability execution is suspended');
   });
 
   it('fails closed when the canonical state store is unavailable', async () => {
