@@ -58,7 +58,7 @@
  * to enable.
  */
 
-import { env } from '../../env';
+import { getGitHubCredentialForApprovedAction } from '../../agents/credential_broker';
 
 /* Type-only import: erased at compile time, so it adds no runtime dependency on
    typescript. The VALUE is loaded dynamically in parseGate() and may be absent
@@ -68,11 +68,11 @@ import type * as TS from 'typescript';
 const FRONTEND_REPO = 'omomehinemmanuel5-boop/LEX-Aureon';
 const API = 'https://api.github.com';
 
-function ghFetch(path: string, opts: RequestInit = {}) {
+function ghFetch(path: string, credential: string, opts: RequestInit = {}) {
   return fetch(`${API}${path}`, {
     ...opts,
     headers: {
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      Authorization: `Bearer ${credential}`,
       'Content-Type': 'application/json',
       Accept: 'application/vnd.github+json',
       ...opts.headers,
@@ -224,6 +224,7 @@ export async function patch_file({
   repo = FRONTEND_REPO,
   replace_all = false,
   dry_run = false,
+  approval_token,
 }: {
   path: string;
   old_str: string;
@@ -232,9 +233,20 @@ export async function patch_file({
   repo?: string;
   replace_all?: boolean;
   dry_run?: boolean;
+  approval_token?: unknown;
 }, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
-  const head = await ghFetch(`/repos/${repo}/contents/${path}`, { signal });
+  let credential: string;
+  try {
+    credential = await getGitHubCredentialForApprovedAction({
+      token: approval_token,
+      toolName: 'patch_file',
+      args: { path, old_str, new_str, message, repo, replace_all, dry_run, approval_token },
+    });
+  } catch (error) {
+    return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
+  }
+  const head = await ghFetch(`/repos/${repo}/contents/${path}`, credential, { signal });
   if (!head.ok) return `Error: ${head.status} — file not found at ${path} in ${repo}`;
   const meta = (await head.json()) as { content?: string; sha?: string };
   if (!meta.content || !meta.sha) return 'Error: no content or sha returned by GitHub';
@@ -270,7 +282,7 @@ export async function patch_file({
   // The authorization deadline may expire during the read/parse gate; never
   // start the irreversible GitHub commit after cancellation.
   signal?.throwIfAborted();
-  const res = await ghFetch(`/repos/${repo}/contents/${path}`, {
+  const res = await ghFetch(`/repos/${repo}/contents/${path}`, credential, {
     method: 'PUT',
     signal,
     body: JSON.stringify({
@@ -304,6 +316,7 @@ export const PATCH_FILE_DEFINITION = {
       repo: { type: 'string', description: `Optional. Defaults to ${FRONTEND_REPO}.` },
       replace_all: { type: 'boolean', description: 'Replace every occurrence instead of requiring uniqueness. Default false.' },
       dry_run: { type: 'boolean', description: 'Report match count, diff and gate verdict without committing. Default false.' },
+      approval_token: { type: 'string', description: 'Action-bound Lex approval token. Issued only through the operator authorization boundary; never log or persist it.' },
     },
     required: ['path', 'old_str', 'new_str', 'message'],
   },
