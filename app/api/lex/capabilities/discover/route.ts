@@ -100,8 +100,13 @@ export async function POST(req: Request) {
         evidence: tool.evidence,
         manifest_hash: tool.manifestHash,
         discovered_at: tool.discoveredAt,
+        snapshot_hash: tool.snapshotHash,
+        revision: tool.revision,
+        expires_at: tool.expiresAt,
+        active: tool.active,
       })),
-      policy: 'Discovery records capability metadata; execution still requires normal Lex authorization, CRS, trajectory, and approval gates.',
+      snapshot: { hash: resolved[0]?.snapshotHash ?? null, revision: resolved[0]?.revision ?? null, expires_at: resolved[0]?.expiresAt ?? null },
+      policy: 'Discovery records capability metadata; removed or expired capabilities are revoked; execution still requires normal Lex authorization, CRS, trajectory, and approval gates.',
     });
   } catch (error) {
     return NextResponse.json({
