@@ -21,3 +21,32 @@ export interface VerifyResponse {
   receipt_id: string;
   timestamp: string;
 }
+
+export interface ToolManifest {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    openWorldHint?: boolean;
+    idempotentHint?: boolean;
+  };
+}
+
+export interface DiscoveredToolCapability {
+  name: string;
+  capability: string;
+  confidence: 'high' | 'medium' | 'low' | 'unresolved';
+  requires_approval: boolean;
+  reversible: boolean;
+  evidence: string[];
+  manifest_hash: string;
+  discovered_at: number;
+}
+
+export interface CapabilityDiscoveryResponse {
+  environment_id: string;
+  discovered: DiscoveredToolCapability[];
+  policy: string;
+}
