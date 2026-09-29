@@ -51,6 +51,24 @@ describe('governed tool execution integration boundary', () => {
     vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'integration-approval-secret');
   });
 
+  it('derives capability-aware intent when task context is omitted', async () => {
+    const read = vi.fn(async () => 'READ_RESULT');
+
+    await executeGovernedTool(
+      'read_file',
+      { path: 'README.md' },
+      read,
+      'integration-context-session',
+    );
+
+    expect(interceptToolCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'read_file',
+        task_context: 'Read using read_file. Target: README.md',
+      }),
+    );
+  });
+
   it('authorizes before reusing a cached read result', async () => {
     let executions = 0;
     const read = async () => {
