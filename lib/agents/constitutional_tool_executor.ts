@@ -85,6 +85,7 @@ function report(
   policy?: GovernancePolicyDecision,
   verification?: PostActionVerification,
   canonicalState?: CanonicalGovernanceState,
+  postActionCanonicalState?: CanonicalGovernanceState,
 ): string {
   const lines = [
     `── Constitutional tool-call decision [${toolName}]${cacheHit ? ' — CACHED EXECUTION' : ''} ──`,
@@ -116,6 +117,12 @@ function report(
       `canonical_health_band: ${canonicalState.healthBand}`,
       `canonical_sigma_viol: ${canonicalState.sigmaViol.toFixed(3)}`,
       `trajectory_state_available: ${canonicalState.trajectoryAvailable}`,
+    ] : []),
+    ...(postActionCanonicalState ? [
+      `post_action_canonical_crs: C=${postActionCanonicalState.C.toFixed(3)} R=${postActionCanonicalState.R.toFixed(3)} S=${postActionCanonicalState.S.toFixed(3)} M=${postActionCanonicalState.M.toFixed(3)}`,
+      `post_action_canonical_health_band: ${postActionCanonicalState.healthBand}`,
+      `post_action_canonical_sigma_viol: ${postActionCanonicalState.sigmaViol.toFixed(3)}`,
+      `post_action_state_available: ${postActionCanonicalState.trajectoryAvailable}`,
     ] : []),
     '',
   ];
@@ -437,8 +444,21 @@ export async function executeGovernedToolStructured(
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
+  const postActionRead = await readCanonicalGovernanceState({
+    sessionId,
+    actorId,
+    capability: capability.capability,
+    authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
+  });
+  const postActionState = postActionRead.available ? postActionRead.state : undefined;
+  const postActionWarning = postActionState && postActionState.M < canonicalRead.state.M
+    ? ` Post-action canonical M changed from ${canonicalRead.state.M.toFixed(3)} to ${postActionState.M.toFixed(3)}; subsequent consequential execution must use the post-action state.`
+    : '';
+  const reportedValue = postActionWarning
+    ? `${cached.value}\\n\\nPOST_ACTION_GOVERNANCE: ${postActionWarning.trim()}`
+    : cached.value;
   return {
-    result: report(toolName, cached.decision, cached.value, cached.cacheHit, policy, verification, canonicalRead.state),
+    result: report(toolName, cached.decision, reportedValue, cached.cacheHit, policy, verification, canonicalRead.state, postActionState),
     approved: cached.decision.approved,
     decision: cached.decision.decision,
     receiptId: cached.decision.receipt_id ?? null,
