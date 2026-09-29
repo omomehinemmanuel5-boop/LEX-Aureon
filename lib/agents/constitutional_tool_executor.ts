@@ -9,6 +9,7 @@
 import crypto from 'crypto';
 import { interceptToolCall } from './tool_interceptor';
 import { requireKnownToolCapability, type ToolCapabilityRecord } from './tool_capability_registry';
+import { canonicalExecutionAllowed, readCanonicalGovernanceState, type CanonicalGovernanceState } from './canonical_governance_state';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
@@ -83,6 +84,7 @@ function report(
   cacheHit = false,
   policy?: GovernancePolicyDecision,
   verification?: PostActionVerification,
+  canonicalState?: CanonicalGovernanceState,
 ): string {
   const lines = [
     `── Constitutional tool-call decision [${toolName}]${cacheHit ? ' — CACHED EXECUTION' : ''} ──`,
@@ -107,6 +109,13 @@ function report(
     ...(verification ? [
       `post_action_verification: ${verification.status}`,
       `verification_summary: ${verification.summary}`,
+    ] : []),
+    ...(canonicalState ? [
+      `canonical_state_version: ${canonicalState.version}`,
+      `canonical_crs: C=${canonicalState.C.toFixed(3)} R=${canonicalState.R.toFixed(3)} S=${canonicalState.S.toFixed(3)} M=${canonicalState.M.toFixed(3)}`,
+      `canonical_health_band: ${canonicalState.healthBand}`,
+      `canonical_sigma_viol: ${canonicalState.sigmaViol.toFixed(3)}`,
+      `trajectory_state_available: ${canonicalState.trajectoryAvailable}`,
     ] : []),
     '',
   ];
@@ -216,6 +225,64 @@ export async function executeGovernedToolStructured(
     };
   }
 
+  const canonicalRead = await readCanonicalGovernanceState({
+    sessionId,
+    actorId,
+    capability: capability.capability,
+    authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
+  });
+
+  if (!canonicalRead.available) {
+    const unavailableDecision: ToolCallDecision = {
+      approved: false,
+      decision: 'DENIED_LOCKED',
+      reason: canonicalRead.reason ?? 'Canonical governance state unavailable; execution denied by fail-closed policy.',
+      crs: { C: 0, R: 0, S: 0, M: 0, risk_level: 'BLOCKED' },
+      receipt_id: `canonical-${crypto.randomUUID()}`,
+      sigma_viol: 1,
+      health_band: 'CRITICAL',
+      warning: 'Canonical governance state unavailable; the reference monitor refused execution.',
+    };
+    const verification = verifyToolResult(toolName, undefined, 'destructive');
+    return {
+      result: report(toolName, unavailableDecision, undefined, false, undefined, verification),
+      approved: false,
+      decision: unavailableDecision.decision,
+      receiptId: unavailableDecision.receipt_id,
+      risk: 'unknown',
+      verification,
+    };
+  }
+
+  const canonicalGate = canonicalExecutionAllowed(canonicalRead.state);
+  if (!canonicalGate.allowed) {
+    const canonicalDecision: ToolCallDecision = {
+      approved: false,
+      decision: 'DENIED_BLOCKED',
+      reason: canonicalGate.reason ?? 'Canonical governance state denied execution.',
+      crs: {
+        C: canonicalRead.state.C,
+        R: canonicalRead.state.R,
+        S: canonicalRead.state.S,
+        M: canonicalRead.state.M,
+        risk_level: 'BLOCKED',
+      },
+      receipt_id: `canonical-${crypto.randomUUID()}`,
+      sigma_viol: canonicalRead.state.sigmaViol,
+      health_band: canonicalRead.state.healthBand === 'CRITICAL' ? 'CRITICAL' : 'STRESSED',
+      warning: 'Canonical governance state is authoritative for execution health.',
+    };
+    const verification = verifyToolResult(toolName, undefined, capability.capability === 'read' ? 'read' : 'write');
+    return {
+      result: report(toolName, canonicalDecision, undefined, false, undefined, verification, canonicalRead.state),
+      approved: false,
+      decision: canonicalDecision.decision,
+      receiptId: canonicalDecision.receipt_id,
+      risk: capability.capability,
+      verification,
+    };
+  }
+
   const decision = await interceptToolCall({
     id: crypto.randomUUID(),
     name: toolName,
@@ -236,7 +303,7 @@ export async function executeGovernedToolStructured(
   if (!decision.approved) {
     const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, decision, undefined, false, policy, verification),
+      result: report(toolName, decision, undefined, false, policy, verification, canonicalRead.state),
       approved: false,
       decision: decision.decision,
       receiptId: decision.receipt_id ?? null,
@@ -256,7 +323,7 @@ export async function executeGovernedToolStructured(
     };
     const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, approvalDecision, undefined, false, policy, verification),
+      result: report(toolName, approvalDecision, undefined, false, policy, verification, canonicalRead.state),
       approved: false,
       decision: approvalDecision.decision,
       receiptId: approvalDecision.receipt_id ?? null,
@@ -284,7 +351,7 @@ export async function executeGovernedToolStructured(
       };
       const verification = verifyToolResult(toolName, undefined, policy.risk);
       return {
-        result: report(toolName, replayDecision, undefined, false, policy, verification),
+        result: report(toolName, replayDecision, undefined, false, policy, verification, canonicalRead.state),
         approved: false,
         decision: replayDecision.decision,
         receiptId: replayDecision.receipt_id ?? null,
@@ -319,7 +386,7 @@ export async function executeGovernedToolStructured(
         unavailableDecision.warning = 'Governance state unavailable; execution denied, but the denial receipt could not be persisted.';
       }
       return {
-        result: report(toolName, unavailableDecision, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk)),
+        result: report(toolName, unavailableDecision, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk), canonicalRead.state),
         approved: false,
         decision: unavailableDecision.decision,
         receiptId: unavailableDecision.receipt_id,
@@ -338,7 +405,7 @@ export async function executeGovernedToolStructured(
         task_context: safeTaskContext(toolName, args, taskContext, capability),
       });
       return {
-        result: report(toolName, criticalDecision, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk)),
+        result: report(toolName, criticalDecision, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk), canonicalRead.state),
         approved: false,
         decision: criticalDecision.decision,
         receiptId: criticalDecision.receipt_id ?? null,
@@ -352,7 +419,7 @@ export async function executeGovernedToolStructured(
   if (signal?.aborted) {
     const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, decision, 'EXECUTION_STATUS=not_started_after_cancellation; the authorization decision was recorded, but the tool function was not invoked.', false, policy, verification),
+      result: report(toolName, decision, 'EXECUTION_STATUS=not_started_after_cancellation; the authorization decision was recorded, but the tool function was not invoked.', false, policy, verification, canonicalRead.state),
       approved: false,
       decision: 'EXECUTION_CANCELLED_BEFORE_START',
       receiptId: decision.receipt_id ?? null,
@@ -371,7 +438,7 @@ export async function executeGovernedToolStructured(
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
   return {
-    result: report(toolName, cached.decision, cached.value, cached.cacheHit, policy, verification),
+    result: report(toolName, cached.decision, cached.value, cached.cacheHit, policy, verification, canonicalRead.state),
     approved: cached.decision.approved,
     decision: cached.decision.decision,
     receiptId: cached.decision.receipt_id ?? null,
