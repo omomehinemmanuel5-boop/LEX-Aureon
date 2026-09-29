@@ -293,13 +293,13 @@ export async function executeGovernedToolStructured(
       health_band: canonicalRead.state.healthBand === 'CRITICAL' ? 'CRITICAL' : 'STRESSED',
       warning: 'Canonical governance state is authoritative for execution health.',
     };
-    const verification = verifyToolResult(toolName, undefined, capability.capability === 'read' ? 'read' : 'write');
+    const verification = verifyToolResult(toolName, undefined, effectiveCapability.capability === 'read' ? 'read' : 'write');
     return {
       result: report(toolName, canonicalDecision, undefined, false, undefined, verification, canonicalRead.state),
       approved: false,
       decision: canonicalDecision.decision,
       receiptId: canonicalDecision.receipt_id,
-      risk: capability.capability,
+      risk: effectiveCapability.capability,
       verification,
     };
   }
