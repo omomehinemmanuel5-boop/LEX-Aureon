@@ -12,7 +12,7 @@ import {
 } from '../lib/agents/canonical_governance_state';
 
 describe('canonical governance state', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('projects CRS and health from z_traj rather than local tool scores', async () => {
     dbExecute
