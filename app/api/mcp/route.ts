@@ -22,6 +22,7 @@ import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { requireKnownToolCapability } from '@/lib/agents/tool_capability_registry';
 import { getDiscoveredToolCapability } from '@/lib/agents/tool_capability_discovery';
+import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governance_state';
 import crypto from 'crypto';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
@@ -379,6 +380,16 @@ export async function POST(req: Request) {
 
     try {
       await runZTrajMigrations();
+      const clientSessionId = (args.session_id as string | undefined)
+        ?? `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+      const sessionId = profile === 'public' ? `${ownerId}:${clientSessionId}` : clientSessionId;
+      if (!(await ensureCanonicalTrajectoryState(sessionId))) {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
+          id,
+        }, { status: 503 });
+      }
     } catch {
       return NextResponse.json({
         jsonrpc: '2.0',
