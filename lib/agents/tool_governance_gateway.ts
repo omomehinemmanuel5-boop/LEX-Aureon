@@ -135,7 +135,7 @@ export function createGovernanceApprovalToken(input: {
   return `${signingInput}.${approvalSignature(signingInput, secret)}`;
 }
 
-function verifyGovernanceApprovalToken(input: {
+export function verifyGovernanceApprovalToken(input: {
   token: unknown;
   actorId: string;
   sessionId: string;
