@@ -45,6 +45,10 @@ vi.mock('../lib/db', () => ({
   runZTrajMigrations: vi.fn(async () => {}),
 }));
 
+vi.mock('../lib/agents/canonical_governance_state', () => ({
+  ensureCanonicalTrajectoryState: vi.fn(async () => true),
+}));
+
 function installFakeTrajectoryTable() {
   const table = new Map<string, string>();
   dbExecute.mockImplementation(async (query: string | { sql: string; args: unknown[] }) => {
