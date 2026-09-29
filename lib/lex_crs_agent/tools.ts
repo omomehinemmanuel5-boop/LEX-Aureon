@@ -1089,7 +1089,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'review_agent_action',
     description: 'Review a proposed external agent action without executing it. Returns risk, approval requirement, and reasons.',
-    parameters: { type: 'object', properties: { tool_name: { type: 'string' }, declared_intent: { type: 'string' }, target: { type: 'string' }, reversibility: { type: 'string' }, authority_context: { type: 'string' }, environment_id: { type: 'string', description: 'Environment identity returned by capability discovery.' }, command: { type: 'string', description: 'Optional exact command/operation for operation-level classification.' } }, required: ['tool_name'] },
+    parameters: { type: 'object', properties: { tool_name: { type: 'string' }, declared_intent: { type: 'string' }, target: { type: 'string' }, reversibility: { type: 'string' }, authority_context: { type: 'string' }, environment_id: { type: 'string', description: 'Environment identity returned by capability discovery.' } }, required: ['tool_name'] },
   },
   {
     name: 'simulate_agent_plan',
