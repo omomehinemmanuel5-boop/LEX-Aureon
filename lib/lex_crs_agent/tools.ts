@@ -61,6 +61,7 @@
  */
 
 import { env } from '../env';
+import { describeGovernanceOutput } from '../refusals';
 import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
@@ -451,6 +452,10 @@ export async function run_governance({
     }
     const d = await res.json() as {
       governed_output?: string;
+      refused?: boolean;
+      refusal_reasons?: string[];
+      primary_refusal_reason?: string | null;
+      intervention_triggered?: boolean;
       health_band?: string;
       M?: number;
       theta?: number;
@@ -465,13 +470,14 @@ export async function run_governance({
     const R = Number(met.r_measured ?? 0);
     const S = Number(met.s_measured ?? 0);
     const M = Number(d.M ?? Math.min(C, R, S));
+    const policyRefused = Boolean(d.refused);
+    const disposition = describeGovernanceOutput(policyRefused, d.governed_output ?? '');
     return JSON.stringify({
       governed_output: d.governed_output ?? '',
-      decision: (d as { refused?: boolean }).refused ? 'REFUSED' : 'ALLOWED',
-      refused: Boolean((d as { refused?: boolean }).refused),
-      refusal_reasons: (d as { refusal_reasons?: string[] }).refusal_reasons ?? [],
-      primary_refusal_reason: (d as { primary_refusal_reason?: string | null }).primary_refusal_reason ?? null,
-      intervention_triggered: Boolean((d as { intervention_triggered?: boolean }).intervention_triggered),
+      ...disposition,
+      refusal_reasons: d.refusal_reasons ?? [],
+      primary_refusal_reason: d.primary_refusal_reason ?? null,
+      intervention_triggered: Boolean(d.intervention_triggered),
       health_band: d.health_band ?? 'UNKNOWN',
       constitutional_state: {
         C: Number(C.toFixed(3)),

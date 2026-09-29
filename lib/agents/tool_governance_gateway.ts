@@ -36,7 +36,7 @@ const LEGACY_READ_TOOLS = new Set([
   'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file', 'cat', 'head',
   'tail', 'grep', 'find', 'ls', 'dir', 'glob', 'read_json', 'parse_csv',
   'get_constitutional_state', 'get_trajectory_status', 'review_agent_action',
-  'simulate_agent_plan', 'explain_denial', 'run_governance', 'declare_trajectory_plan',
+  'simulate_agent_plan', 'explain_denial', 'declare_trajectory_plan',
   'clear_trajectory_plan', 'get_build_status', 'get_workflow_run',
   'get_workflow_log', 'get_workflow_artifact', 'get_recent_receipts',
 ]);
@@ -305,14 +305,13 @@ export function evaluateToolGovernance(input: {
 /**
  * Conservative generic verification: reads with a non-empty result are
  * verifiable at the tool boundary; writes/externals remain unknown until a
- * caller supplies a resource-specific verifier. Denials never count as success.
+ * caller supplies a resource-specific verifier. A call denied before invocation
+ * is passed as `undefined`; never infer execution state from arbitrary payload
+ * text, which may legitimately contain governance marker strings as source data.
  */
 export function verifyToolResult(toolName: string, result: string | undefined, risk = classifyGovernanceRisk(toolName)): PostActionVerification {
   if (result === undefined) return { status: 'not_started', summary: 'Tool was not invoked.' };
   if (!result.trim()) return { status: 'failed', summary: 'Tool returned an empty result.' };
-  if (result.includes('approved:    false') || result.includes('EXECUTION_STATUS=not_started')) {
-    return { status: 'failed', summary: 'Tool result indicates execution was denied or did not start.' };
-  }
   if (risk === 'read') return { status: 'verified', summary: 'Non-empty read result returned by the tool.' };
   return { status: 'unknown', summary: 'Tool returned, but resource state requires a tool-specific post-action verifier.' };
 }
