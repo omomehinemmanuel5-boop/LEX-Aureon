@@ -49,14 +49,14 @@ describe('canonical governance state', () => {
     });
   });
 
-  it('denies non-read execution when canonical M is stressed', () => {
+  it('denies non-read execution when canonical M is in STRESSED health', () => {
     const gate = canonicalExecutionAllowed({
       sessionId: 's',
       actorId: 'a',
       C: 0.20,
-      R: 0.10,
+      R: 0.07,
       S: 0.30,
-      M: 0.10,
+      M: 0.07,
       healthBand: 'STRESSED',
       sigmaViol: 0,
       toolCalls: 1,
@@ -68,7 +68,7 @@ describe('canonical governance state', () => {
     });
 
     expect(gate.allowed).toBe(false);
-    expect(gate.reason).toContain('non-read capability suspended');
+    expect(gate.reason).toContain('STRESSED/CRITICAL health');
   });
 
   it('denies every capability below the constitutional floor', () => {
@@ -91,6 +91,23 @@ describe('canonical governance state', () => {
 
     expect(gate.allowed).toBe(false);
     expect(gate.reason).toContain('τ_floor');
+  });
+
+  it('fails closed when z_traj is uninitialized', async () => {
+    dbExecute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ sigma_viol: 0, tool_calls: 0 }] });
+
+    const result = await readCanonicalGovernanceState({
+      sessionId: 'uninitialized',
+      actorId: 'agent-a',
+      capability: 'read',
+    });
+
+    expect(result.available).toBe(false);
+    expect(result.state.M).toBe(0);
+    expect(result.state.healthBand).toBe('CRITICAL');
+    expect(result.reason).toContain('z_traj exists');
   });
 
   it('fails closed when the canonical state store is unavailable', async () => {
