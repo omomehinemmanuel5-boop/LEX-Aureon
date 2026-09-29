@@ -149,6 +149,27 @@ export async function governExternalAction(input: {
     };
   }
 
+  const approvalId = crypto.randomUUID();
+  let permit: string;
+  try {
+    permit = createGovernanceApprovalToken({
+      actorId: input.actorId,
+      sessionId: input.sessionId,
+      toolName,
+      args: tokenArgs(envelope),
+      approvalId,
+    });
+  } catch {
+    return {
+      approved: false,
+      decision: 'deny',
+      risk: 'read',
+      capability,
+      receiptId: review.receipt_id,
+      approvalRequired: false,
+      reason: 'Lex approval signing is unavailable; the external action is denied fail-closed.',
+    };
+  }
   return {
     approved: true,
     decision: 'allow',
@@ -156,7 +177,8 @@ export async function governExternalAction(input: {
     capability,
     receiptId: review.receipt_id,
     approvalRequired: false,
-    reason: 'Discovered read-only capability passed Lex governance.',
+    approvalToken: permit,
+    reason: 'Discovered read-only capability passed Lex governance and received a single-use execution permit.',
   };
 }
 
