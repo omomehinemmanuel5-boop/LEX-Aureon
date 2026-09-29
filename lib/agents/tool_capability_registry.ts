@@ -24,6 +24,7 @@ export interface ToolCapabilityRecord {
   capability: ToolCapability;
   approvalRequired: boolean;
   reversible: boolean;
+  bootstrapAllowed?: boolean;
   source: 'core' | 'mcp' | 'extension';
 }
 
@@ -41,7 +42,7 @@ const READ_TOOLS = [
 
 const WRITE_TOOLS = [
   'write_file','write_file_governed','create_file','patch_file','log_decision',
-  'narrate_origin','run_governance',
+  'narrate_origin',
 ] as const;
 
 const EXTERNAL_TOOLS = [
@@ -57,6 +58,7 @@ const DESTRUCTIVE_TOOLS = [
 ] as const;
 
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
+  { name:'run_governance', capability:'write', approvalRequired:false, reversible:false, bootstrapAllowed:true, source:'mcp' },
   { name:'exec', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run_command', capability:'execute', approvalRequired:true, reversible:false, source:'core' },

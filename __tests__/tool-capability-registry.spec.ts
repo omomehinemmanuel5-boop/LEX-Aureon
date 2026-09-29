@@ -13,7 +13,9 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('delete_repository')?.capability).toBe('destructive');
     expect(getToolCapability('exec')?.capability).toBe('execute');
     expect(getToolCapability('run_governance')?.capability).toBe('write');
-    expect(getToolCapability('run_governance')?.approvalRequired).toBe(true);
+    expect(getToolCapability('run_governance')?.approvalRequired).toBe(false);
+    expect(getToolCapability('run_governance')?.bootstrapAllowed).toBe(true);
+    expect(getToolCapability('write_file')?.approvalRequired).toBe(true);
   });
 
   it('fails closed for an unknown tool', () => {

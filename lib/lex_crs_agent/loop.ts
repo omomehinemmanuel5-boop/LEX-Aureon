@@ -11,6 +11,7 @@ import { callLLM, Message, ModelId } from './router';
 import { TOOL_REGISTRY } from './tools';
 import { patch_file } from './tools/patch_file';
 import { executeGovernedTool } from '../agents/constitutional_tool_executor';
+import { bindGovernanceToolSession } from '../agents/governance_tool_session';
 import { runZTrajMigrations } from '../db';
 
 export interface AgentStep {
@@ -78,14 +79,18 @@ const LOOP_TOOLS: Record<string, (a: Record<string, unknown>) => Promise<string>
   ...Object.fromEntries(
     Object.entries(TOOL_REGISTRY).map(([name, fn]) => [
       name,
-      (args: Record<string, unknown>) => executeGovernedTool(
-        name,
-        args,
-        fn as (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
-        (args.session_id as string | undefined) ?? `agent-${new Date().toISOString().slice(0, 10)}`,
-        args.task_context as string | undefined,
-        'internal-agent-loop',
-      ),
+      (args: Record<string, unknown>) => {
+        const sessionId = (args.session_id as string | undefined)
+          ?? `agent-${new Date().toISOString().slice(0, 10)}`;
+        return executeGovernedTool(
+          name,
+          bindGovernanceToolSession(name, args, sessionId),
+          fn as (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
+          sessionId,
+          args.task_context as string | undefined,
+          'internal-agent-loop',
+        );
+      },
     ])
   ),
   patch_file: (args: Record<string, unknown>) => executeGovernedTool(

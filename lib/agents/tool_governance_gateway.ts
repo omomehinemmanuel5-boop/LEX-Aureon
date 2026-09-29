@@ -27,7 +27,7 @@ export interface PostActionVerification {
   summary: string;
 }
 
-const POLICY_VERSION = 'tool-gateway-2026-09-28.2';
+const POLICY_VERSION = 'tool-gateway-2026-09-29.1';
 const APPROVAL_TOKEN_VERSION = 'approval-v1';
 const APPROVAL_TTL_MS = 15 * 60 * 1000;
 const CLOCK_SKEW_MS = 30 * 1000;
@@ -266,7 +266,7 @@ export function evaluateToolGovernance(input: {
   nowMs?: number;
 }): GovernancePolicyDecision {
   const risk = classifyGovernanceRisk(input.toolName, input.args);
-  const requiresApproval = risk !== 'read';
+  const requiresApproval = getToolCapability(input.toolName)?.approvalRequired ?? risk !== 'read';
   const reasons: string[] = [];
   if (!input.authorized) {
     reasons.push('Caller or capability scope does not authorize this tool.');

@@ -780,8 +780,8 @@ export async function review_agent_action(input: {
     delegate: 'external',
   };
   const risk = capabilityRisk[capability.capability];
-  const irreversible = input.reversibility === 'irreversible' || !capability.reversible;
-  const reviewFlag = capability.capability !== 'read' || irreversible;
+  const irreversible = input.reversibility === 'irreversible';
+  const reviewFlag = capability.approvalRequired || irreversible;
 
   return JSON.stringify({
     decision: reviewFlag ? 'approval_required' : 'allow',

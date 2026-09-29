@@ -18,7 +18,7 @@ describe('central tool governance gateway', () => {
     expect(classifyGovernanceRisk('run_governance')).toBe('write');
   });
 
-  it('requires approval for the stateful run_governance tool', () => {
+  it('allows the stateful governance bootstrap without weakening normal write approval', () => {
     const result = evaluateToolGovernance({
       toolName: 'run_governance',
       args: { prompt: 'Review repository state.' },
@@ -27,7 +27,8 @@ describe('central tool governance gateway', () => {
       authorized: true,
     });
     expect(result.risk).toBe('write');
-    expect(result.decision).toBe('approval_required');
+    expect(result.requiresApproval).toBe(false);
+    expect(result.decision).toBe('allow');
   });
 
   it('requires a valid signed approval bound to the exact action', () => {

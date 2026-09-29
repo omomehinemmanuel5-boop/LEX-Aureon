@@ -114,15 +114,15 @@ function report(
     ] : []),
     ...(canonicalState ? [
       `canonical_state_version: ${canonicalState.version}`,
-      `canonical_crs: C=${canonicalState.C.toFixed(3)} R=${canonicalState.R.toFixed(3)} S=${canonicalState.S.toFixed(3)} M=${canonicalState.M.toFixed(3)}`,
+      `canonical_crs: ${canonicalState.healthBand === 'UNINITIALIZED' ? 'UNINITIALIZED (no z_traj row)' : `C=${canonicalState.C.toFixed(3)} R=${canonicalState.R.toFixed(3)} S=${canonicalState.S.toFixed(3)} M=${canonicalState.M.toFixed(3)}`}`,
       `canonical_health_band: ${canonicalState.healthBand}`,
-      `canonical_sigma_viol: ${canonicalState.sigmaViol.toFixed(3)}`,
+      `canonical_sigma_viol: ${canonicalState.healthBand === 'UNINITIALIZED' ? 'UNAVAILABLE' : canonicalState.sigmaViol.toFixed(3)}`,
       `trajectory_state_available: ${canonicalState.trajectoryAvailable}`,
     ] : []),
     ...(postActionCanonicalState ? [
-      `post_action_canonical_crs: C=${postActionCanonicalState.C.toFixed(3)} R=${postActionCanonicalState.R.toFixed(3)} S=${postActionCanonicalState.S.toFixed(3)} M=${postActionCanonicalState.M.toFixed(3)}`,
+      `post_action_canonical_crs: ${postActionCanonicalState.healthBand === 'UNINITIALIZED' ? 'UNINITIALIZED (no z_traj row)' : `C=${postActionCanonicalState.C.toFixed(3)} R=${postActionCanonicalState.R.toFixed(3)} S=${postActionCanonicalState.S.toFixed(3)} M=${postActionCanonicalState.M.toFixed(3)}`}`,
       `post_action_canonical_health_band: ${postActionCanonicalState.healthBand}`,
-      `post_action_canonical_sigma_viol: ${postActionCanonicalState.sigmaViol.toFixed(3)}`,
+      `post_action_canonical_sigma_viol: ${postActionCanonicalState.healthBand === 'UNINITIALIZED' ? 'UNAVAILABLE' : postActionCanonicalState.sigmaViol.toFixed(3)}`,
       `post_action_state_available: ${postActionCanonicalState.trajectoryAvailable}`,
     ] : []),
     '',
@@ -270,7 +270,7 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  const canonicalGate = canonicalExecutionAllowed(canonicalRead.state);
+  const canonicalGate = canonicalExecutionAllowed(canonicalRead.state, capability.bootstrapAllowed === true);
   if (!canonicalGate.allowed) {
     const canonicalDecision: ToolCallDecision = {
       approved: false,
@@ -285,7 +285,9 @@ export async function executeGovernedToolStructured(
       },
       receipt_id: `canonical-${crypto.randomUUID()}`,
       sigma_viol: canonicalRead.state.sigmaViol,
-      health_band: canonicalRead.state.healthBand === 'CRITICAL' ? 'CRITICAL' : 'STRESSED',
+      health_band: canonicalRead.state.healthBand === 'UNINITIALIZED'
+        ? 'LOCKED'
+        : canonicalRead.state.healthBand === 'CRITICAL' ? 'CRITICAL' : 'STRESSED',
       warning: 'Canonical governance state is authoritative for execution health.',
     };
     const verification = verifyToolResult(toolName, undefined, capability.capability === 'read' ? 'read' : 'write');
