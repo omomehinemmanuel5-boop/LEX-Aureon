@@ -29,7 +29,7 @@ export interface CanonicalGovernanceRead {
 
 const STATE_VERSION = 'canonical-governance-2026-09-29.1';
 const TAU_FLOOR = 0.05;
-const TAU_STRESSED = 0.15;
+const TAU_STRESSED = 0.08;
 
 async function getToolSession(sessionId: string): Promise<{ sigmaViol: number; toolCalls: number }> {
   const db = getClient();
@@ -63,9 +63,29 @@ export async function readCanonicalGovernanceState(input: {
       getToolSession(input.sessionId),
     ]);
 
-    const C = trajectory?.last_c ?? 1;
-    const R = trajectory?.last_r ?? 1;
-    const S = trajectory?.last_s ?? 1;
+    if (!trajectory) {
+      return {
+        available: false,
+        state: {
+          sessionId: input.sessionId,
+          actorId: input.actorId,
+          C: 0, R: 0, S: 0, M: 0,
+          healthBand: 'CRITICAL',
+          sigmaViol: 1,
+          toolCalls: toolSession.toolCalls,
+          trajectoryAvailable: false,
+          authorization: 'denied',
+          policyRisk: input.capability,
+          version: STATE_VERSION,
+          observedAt: new Date().toISOString(),
+        },
+        reason: 'Canonical trajectory state is uninitialized; execution must fail closed until z_traj exists.',
+      };
+    }
+
+    const C = trajectory.last_c;
+    const R = trajectory.last_r;
+    const S = trajectory.last_s;
     const M = Math.min(C, R, S);
     const sigmaViol = Math.max(trajectory?.sigma_viol ?? 0, toolSession.sigmaViol);
 
@@ -117,7 +137,7 @@ export function canonicalExecutionAllowed(
   if (state.M < TAU_STRESSED && state.policyRisk !== 'read') {
     return {
       allowed: false,
-      reason: `Canonical M=${state.M.toFixed(3)} < ${TAU_STRESSED}; non-read capability suspended during constitutional stress.`,
+      reason: `Canonical M=${state.M.toFixed(3)} < τ_stressed=${TAU_STRESSED}; non-read capability suspended in STRESSED/CRITICAL health.`,
     };
   }
   if (state.authorization === 'denied') {
