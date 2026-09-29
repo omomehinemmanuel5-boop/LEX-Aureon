@@ -21,6 +21,9 @@ describe('agent governance coverage', () => {
     expect(route).toContain('const toolFn = resolveTool(toolName);');
     expect(route).toContain('return main ?? EXTENSION_REGISTRY[name];');
     expect(route).not.toContain('await toolFn(args);');
+    expect(route).not.toContain('getDiscoveredToolCapability(ownerId, toolName)');
+    expect(route).toContain('Tool capability is not explicitly registered for this environment');
+    expect(route).toContain('requireKnownToolCapability(toolName)');
 
     // The MCP surface is the union of TOOL_DEFINITIONS and patch_file.
     // Verify every declared canonical tool has a corresponding registry entry.
@@ -49,5 +52,7 @@ describe('agent governance coverage', () => {
     expect(executor).toContain('return {');
     expect(executor).toContain('approved: false');
     expect(executor).toContain('authorization_rechecked: true');
+    expect(executor).not.toContain('getDiscoveredToolCapability');
+    expect(executor).toContain('explicitly register the tool capability before execution');
   });
 });
