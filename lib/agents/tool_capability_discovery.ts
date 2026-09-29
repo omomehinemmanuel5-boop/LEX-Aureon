@@ -138,6 +138,10 @@ export function resolveToolManifest(environmentId: string, manifest: ToolManifes
       evidence: ['No safe capability mapping could be established; execution remains blocked.'],
       manifestHash: manifestHash(manifest),
       discoveredAt: Date.now(),
+      snapshotHash: manifestHash(manifest),
+      revision: 1,
+      expiresAt: Date.now() + DISCOVERY_TTL_MS,
+      active: true,
     };
   }
 
@@ -152,6 +156,10 @@ export function resolveToolManifest(environmentId: string, manifest: ToolManifes
     evidence,
     manifestHash: manifestHash(manifest),
     discoveredAt: Date.now(),
+    snapshotHash: manifestHash(manifest),
+    revision: 1,
+    expiresAt: Date.now() + DISCOVERY_TTL_MS,
+    active: true,
   };
 }
 
