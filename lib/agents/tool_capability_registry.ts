@@ -71,6 +71,7 @@ const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
   { name:'transfer', capability:'financial', approvalRequired:true, reversible:false, source:'core' },
   { name:'rotate_identity', capability:'identity', approvalRequired:true, reversible:false, source:'core' },
   { name:'delegate_agent', capability:'delegate', approvalRequired:true, reversible:false, source:'core' },
+  { name:'authorize_tool_action', capability:'identity', approvalRequired:true, reversible:false, source:'core' },
 ];
 
 function record(name: string, capability: ToolCapability, source:'core'|'mcp'|'extension'='core'): ToolCapabilityRecord {
