@@ -48,6 +48,68 @@ const DELEGATE_WORDS = /(?:delegate|spawn[_ -]?agent|create[_ -]?agent|handoff|s
 const EXTERNAL_WORDS = /(?:send|publish|post|email|deploy|webhook|http|browser|network|api[_ -]?call|external)/i;
 const WRITE_WORDS = /(?:write|edit|modify|patch|update|create|insert|commit|push|save|set|change|alter|upload)/i;
 const READ_WORDS = /(?:read|get|list|search|find|inspect|review|audit|query|lookup|fetch|check|verify|status|describe)/i;
+const READ_ONLY_EXEC_TOOLS = new Set(['exec', 'run', 'run_command', 'shell', 'bash', 'powershell', 'python', 'docker']);
+
+export function isReadOnlyExecutionOperation(toolName: string, args: Record<string, unknown>): boolean {
+  if (!READ_ONLY_EXEC_TOOLS.has(normalize(toolName))) return false;
+  const command = String(args.command ?? args.cmd ?? args.command_line ?? args.script ?? '').trim();
+  if (!command || command.length > 512) return false;
+
+  // Never treat shell composition, substitution, redirection, or inline
+  // scripting as read-only. The allowlist below is intentionally narrow.
+  if (/[;&|<>/**
+ * Lex Capability Discovery & Resolution.
+ *
+ * External environments advertise tools (MCP tools/list, SDK manifests, or
+ * adapter-native metadata). Lex normalizes those declarations into its stable
+ * capability ontology. Discovery is namespaced by environment and persisted
+ * so a new serverless instance does not forget what was learned.
+ *
+ * Security rule: discovery never grants execution authority by itself.
+ * It only records the most conservative capability Lex can justify. The
+ * normal CRS/approval/reference-monitor gates remain authoritative.
+ */
+
+import crypto from 'crypto';
+import { getClient } from '../db';
+import {
+  type ToolCapability,
+  type ToolCapabilityRecord,
+} from './tool_capability_registry';
+
+export type CapabilityConfidence = 'high' | 'medium' | 'low' | 'unresolved';
+
+export interface ToolManifest {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    openWorldHint?: boolean;
+    idempotentHint?: boolean;
+  };
+}
+
+export interface ResolvedToolCapability extends ToolCapabilityRecord {
+  confidence: CapabilityConfidence;
+  environmentId: string;
+  evidence: string[];
+  manifestHash: string;
+  discoveredAt: number;
+}
+
+const EXECUTE_WORDS = /^(?:exec|execute|shell|bash|sh|zsh|powershell|cmd|run_command|run_shell|terminal|eval)$/i;
+const DESTRUCTIVE_WORDS = /(?:delete|destroy|drop|purge|wipe|remove|revoke|reset|terminate|format)/i;
+const FINANCIAL_WORDS = /(?:payment|pay|transfer|charge|billing|purchase|refund|withdraw|deposit)/i;
+const IDENTITY_WORDS = /(?:impersonat|rotate[_ -]?identity|credential|permission|privilege|access[_ -]?control|auth(?:enticate|orization)?)/i;
+const DELEGATE_WORDS = /(?:delegate|spawn[_ -]?agent|create[_ -]?agent|handoff|subagent)/i;
+const EXTERNAL_WORDS = /(?:send|publish|post|email|deploy|webhook|http|browser|network|api[_ -]?call|external)/i;
+const WRITE_WORDS = /(?:write|edit|modify|patch|update|create|insert|commit|push|save|set|change|alter|upload)/i;
+\n\r]/.test(command)) return false;
+
+  return /^(?:git\s+(?:status(?:\s+--(?:short|porcelain))?|diff(?:\s+(?:--stat|--name-only|--name-status))?|log(?:\s+.*)?|show(?:\s+.*)?|branch(?:\s+(?:--show-current|--list(?:\s+.*)?))?|ls-files(?:\s+.*)?)|pwd|ls(?:\s+[-\w./]+)*|cat\s+[-\w./]+|head\s+[-\w./]+|tail\s+[-\w./]+|grep\s+[-\w./*?]+\s+[-\w./]+|rg\s+[-\w./*?]+\s+[-\w./]+)$/i.test(command);
+}
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
