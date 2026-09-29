@@ -1,4 +1,4 @@
-import { GovernerRequest, GovernerResponse, VerifyResponse, ToolManifest, CapabilityDiscoveryResponse } from './types';
+import { GovernerRequest, GovernerResponse, VerifyResponse, ToolManifest, CapabilityDiscoveryResponse, CapabilityDiscoveryState } from './types';
 
 export class LexAureonClient {
   constructor(
@@ -47,4 +47,15 @@ export class LexAureonClient {
   async discoverCapabilities(tools: ToolManifest[]): Promise<CapabilityDiscoveryResponse> {
     return this.request<CapabilityDiscoveryResponse>('POST', '/api/lex/capabilities/discover', { tools });
   }
+
+  /** Refresh the current environment's manifest. Removed tools are revoked and the snapshot revision advances when the manifest changes. */
+  async refreshCapabilities(tools: ToolManifest[]): Promise<CapabilityDiscoveryResponse> {
+    return this.discoverCapabilities(tools);
+  }
+
+  /** Read the currently active, non-expired discovered capabilities. */
+  async getCapabilities(): Promise<CapabilityDiscoveryState> {
+    return this.request<CapabilityDiscoveryState>('GET', '/api/lex/capabilities/discover');
+  }
 }
+
