@@ -47,7 +47,7 @@ describe('governed tool execution integration boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     interceptToolCall.mockResolvedValue(approvedDecision());
-    dbExecute.mockResolvedValue({ rows: [{ last_m: 1.0 }], rowsAffected: 1 });
+    dbExecute.mockResolvedValue({ rows: [{ last_c: 1.0, last_r: 1.0, last_s: 1.0, last_m: 1.0, sigma_viol: 0, tool_calls: 0 }], rowsAffected: 1 });
     vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'integration-approval-secret');
   });
 
@@ -177,7 +177,7 @@ describe('governed tool execution integration boundary', () => {
     };
 
     await executeGovernedTool('read_file', { path: 'README.md' }, read, 'integration-kernel-critical');
-    dbExecute.mockResolvedValue({ rows: [{ last_m: 0.01 }] });
+    dbExecute.mockResolvedValue({ rows: [{ last_c: 0.01, last_r: 0.49, last_s: 0.50, last_m: 0.01, sigma_viol: 0, tool_calls: 1 }] });
     interceptToolCall.mockResolvedValue(deniedDecision());
 
     const result = await executeGovernedTool(
