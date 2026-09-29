@@ -64,6 +64,7 @@ import { env } from '../env';
 import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
+import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '../agents/tool_capability_registry';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const BENCHMARK_REPO = 'omomehinemmanuel5-boop/Lexaureon-Benchmark';
@@ -731,14 +732,46 @@ export async function review_agent_action(input: {
 }): Promise<string> {
   const name = String(input.tool_name ?? '').trim();
   if (!name) return JSON.stringify({ decision: 'deny', reason: 'tool_name is required' });
-  const destructive = /delete|destroy|drop|rotate|transfer|deploy|publish|send|write|modify/i.test(name);
-  const external = /email|slack|webhook|http|github|vercel|payment|billing/i.test(`${name} ${input.target ?? ''}`);
-  const approvalRequired = destructive || external || input.reversibility === 'irreversible';
+
+  // Proposal review must use the same explicit capability registry as the
+  // execution boundary. Never downgrade an unfamiliar tool to "read".
+  let capability: ReturnType<typeof getToolCapability>;
+  try {
+    capability = requireKnownToolCapability(name);
+  } catch (error) {
+    return JSON.stringify({
+      decision: 'deny',
+      risk: 'unknown',
+      requires_approval: true,
+      capability_known: false,
+      reasons: [error instanceof Error ? error.message : 'Unknown tool capability; register it before execution.'],
+      declared_intent: input.declared_intent ?? null,
+      target: input.target ?? null,
+    });
+  }
+
+  const capabilityRisk: Record<ToolCapability, string> = {
+    read: 'read',
+    write: 'write',
+    external: 'external',
+    destructive: 'destructive',
+    identity: 'destructive',
+    financial: 'destructive',
+    network: 'external',
+    execute: 'destructive',
+    delegate: 'external',
+  };
+  const risk = capabilityRisk[capability.capability];
+  const irreversible = input.reversibility === 'irreversible' || !capability.reversible;
+  const approvalRequired = capability.approvalRequired || irreversible;
+
   return JSON.stringify({
     decision: approvalRequired ? 'approval_required' : 'allow',
-    risk: destructive ? 'destructive' : external ? 'external' : 'read',
+    risk,
+    capability: capability.capability,
+    capability_known: true,
     requires_approval: approvalRequired,
-    reasons: approvalRequired ? ['The proposed action may change or communicate with an external system.'] : [],
+    reasons: approvalRequired ? ['The registered capability requires authorization before execution.'] : [],
     declared_intent: input.declared_intent ?? null,
     target: input.target ?? null,
   });
@@ -748,17 +781,44 @@ export async function simulate_agent_plan(input: {
   actions?: Array<{ toolName?: string; risk?: string; target?: string }>;
 }): Promise<string> {
   const actions = Array.isArray(input.actions) ? input.actions : [];
-  const risks = ['read', 'write', 'external', 'destructive'];
-  const highest = actions.reduce((current, action) => {
-    const index = risks.indexOf(String(action.risk ?? 'read'));
-    return index > risks.indexOf(current) ? String(action.risk) : current;
-  }, 'read');
-  const warnings = actions.flatMap(action => {
-    const tool = String(action.toolName ?? '');
-    return /delete|destroy|drop|rotate|transfer|deploy|publish|send/i.test(`${tool} ${action.target ?? ''}`)
-      ? [`High-impact action requires approval: ${tool}`] : [];
+  const riskOrder = ['read', 'write', 'external', 'destructive'] as const;
+  let highest: typeof riskOrder[number] = 'read';
+  const warnings: string[] = [];
+
+  for (const action of actions) {
+    const tool = String(action.toolName ?? '').trim();
+    if (!tool) {
+      warnings.push('Action is missing a tool name and cannot be authorized.');
+      highest = 'destructive';
+      continue;
+    }
+
+    try {
+      const capability = requireKnownToolCapability(tool);
+      const mappedRisk: typeof riskOrder[number] =
+        capability.capability === 'read' ? 'read' :
+        capability.capability === 'write' ? 'write' :
+        capability.capability === 'external' || capability.capability === 'network' || capability.capability === 'delegate' ? 'external' :
+        'destructive';
+      if (riskOrder.indexOf(mappedRisk) > riskOrder.indexOf(highest)) highest = mappedRisk;
+      if (capability.approvalRequired) {
+        warnings.push(`Registered capability requires approval: ${tool} [${capability.capability}]`);
+      }
+      if (action.risk && action.risk !== mappedRisk) {
+        warnings.push(`Caller-supplied risk for ${tool} does not match its registered capability; registry classification is authoritative.`);
+      }
+    } catch (error) {
+      highest = 'destructive';
+      warnings.push(error instanceof Error ? error.message : `Unknown tool capability: ${tool}`);
+    }
+  }
+
+  return JSON.stringify({
+    decision: warnings.length ? 'approval_required' : 'allow',
+    action_count: actions.length,
+    highest_risk: highest,
+    warnings,
   });
-  return JSON.stringify({ decision: warnings.length ? 'approval_required' : 'allow', action_count: actions.length, highest_risk: highest, warnings });
 }
 
 export async function explain_denial(input: { reason?: string; tool_name?: string }): Promise<string> {
