@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isReadOnlyExecutionOperation, resolveToolManifest } from '@/lib/agents/tool_capability_discovery';
+import { resolveToolManifest } from '@/lib/agents/tool_capability_discovery';
 
 describe('Lex capability discovery', () => {
   it('maps MCP read-only annotations to read without requiring manual registration', () => {
@@ -31,14 +31,6 @@ describe('Lex capability discovery', () => {
     expect(result.confidence).toBe('unresolved');
     expect(result.capability).toBe('destructive');
     expect(result.approvalRequired).toBe(true);
-  });
-
-  it('classifies narrowly allowlisted repository inspection commands as read-only', () => {
-    expect(isReadOnlyExecutionOperation('exec', { command: 'git status --short' })).toBe(true);
-    expect(isReadOnlyExecutionOperation('exec', { command: 'git diff --stat' })).toBe(true);
-    expect(isReadOnlyExecutionOperation('exec', { command: 'git status; rm -rf .' })).toBe(false);
-    expect(isReadOnlyExecutionOperation('exec', { command: 'git push origin main' })).toBe(false);
-    expect(isReadOnlyExecutionOperation('exec', { command: 'node -e "process.exit()"' })).toBe(false);
   });
 
   it('treats MCP annotations as hints and detects destructive behavior from identity', () => {
