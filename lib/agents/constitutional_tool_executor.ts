@@ -9,6 +9,7 @@
 import crypto from 'crypto';
 import { interceptToolCall } from './tool_interceptor';
 import { requireKnownToolCapability, type ToolCapabilityRecord } from './tool_capability_registry';
+import { getDiscoveredToolCapability } from './tool_capability_discovery';
 import { canonicalExecutionAllowed, readCanonicalGovernanceState, type CanonicalGovernanceState } from './canonical_governance_state';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
@@ -203,14 +204,21 @@ export async function executeGovernedToolStructured(
   taskContext?: string,
   actorId = 'internal-agent',
   signal?: AbortSignal,
+  environmentId = 'internal',
 ): Promise<GovernedToolExecution> {
   // Reference-monitor admission: capability must be explicitly registered.
   // Never infer authority from an unknown tool name or caller-supplied label.
   let capability: ToolCapabilityRecord;
+  let discoveredConfidence: string | undefined;
   try {
     capability = requireKnownToolCapability(toolName);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'Unknown tool capability; execution denied.';
+    const discovered = await getDiscoveredToolCapability(environmentId, toolName).catch(() => undefined);
+    if (discovered && discovered.confidence !== 'unresolved') {
+      capability = discovered;
+      discoveredConfidence = discovered.confidence;
+    } else {
+      const reason = error instanceof Error ? error.message : 'Unknown tool capability; execution denied.';
     const unknownDecision: ToolCallDecision = {
       approved: false,
       decision: 'DENIED_BLOCKED',
@@ -222,14 +230,15 @@ export async function executeGovernedToolStructured(
       warning: 'Reference monitor fail-closed: register the tool capability before execution.',
     };
     const verification = verifyToolResult(toolName, undefined, 'destructive');
-    return {
-      result: report(toolName, unknownDecision, undefined, false, undefined, verification),
-      approved: false,
-      decision: unknownDecision.decision,
-      receiptId: unknownDecision.receipt_id ?? null,
-      risk: 'unknown',
-      verification,
-    };
+      return {
+        result: report(toolName, unknownDecision, undefined, false, undefined, verification),
+        approved: false,
+        decision: unknownDecision.decision,
+        receiptId: unknownDecision.receipt_id ?? null,
+        risk: 'unknown',
+        verification,
+      };
+    }
   }
 
   const canonicalRead = await readCanonicalGovernanceState({
@@ -306,6 +315,9 @@ export async function executeGovernedToolStructured(
     authorized: true,
     approvalToken: args.approval_token,
   });
+  if (discoveredConfidence && discoveredConfidence !== 'high') {
+    policy.reasons.push(`Capability discovered from environment manifest with ${discoveredConfidence} confidence; consequential execution remains approval-bound.`);
+  }
 
   if (!decision.approved) {
     const verification = verifyToolResult(toolName, undefined, policy.risk);
