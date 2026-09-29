@@ -93,7 +93,7 @@ describe('canonical governance state', () => {
     expect(gate.reason).toContain('τ_floor');
   });
 
-  it('fails closed when z_traj is uninitialized', async () => {
+  it('allows read-only bootstrap while denying consequential execution when z_traj is uninitialized', async () => {
     dbExecute
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ sigma_viol: 0, tool_calls: 0 }] });
@@ -104,10 +104,11 @@ describe('canonical governance state', () => {
       capability: 'read',
     });
 
-    expect(result.available).toBe(false);
+    expect(result.available).toBe(true);
     expect(result.state.M).toBe(0);
     expect(result.state.healthBand).toBe('CRITICAL');
-    expect(result.reason).toContain('z_traj exists');
+    expect(result.state.trajectoryAvailable).toBe(false);
+    expect(result.reason).toContain('read-only diagnostics remain available');
 
     const readGate = canonicalExecutionAllowed(result.state);
     expect(readGate.allowed).toBe(true);
