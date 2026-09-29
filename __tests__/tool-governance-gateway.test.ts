@@ -88,6 +88,54 @@ describe('central tool governance gateway', () => {
     vi.unstubAllEnvs();
   });
 
+  it('rejects approval substitution across actor, session, and tool boundaries', () => {
+    vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'test-approval-secret');
+    const nowMs = 1_700_000_000_000;
+    const args = { workflow: 'ci.yml' };
+    const token = createGovernanceApprovalToken({
+      actorId: 'actor-a',
+      sessionId: 'session-a',
+      toolName: 'dispatch_workflow',
+      args,
+      nowMs,
+      approvalId: 'approval-boundary-1',
+    });
+
+    const substitutions = [
+      {
+        actorId: 'actor-b',
+        sessionId: 'session-a',
+        toolName: 'dispatch_workflow',
+      },
+      {
+        actorId: 'actor-a',
+        sessionId: 'session-b',
+        toolName: 'dispatch_workflow',
+      },
+      {
+        actorId: 'actor-a',
+        sessionId: 'session-a',
+        toolName: 'patch_file',
+      },
+    ];
+
+    for (const substitution of substitutions) {
+      const result = evaluateToolGovernance({
+        toolName: substitution.toolName,
+        args: { ...args, approval_token: token },
+        sessionId: substitution.sessionId,
+        actorId: substitution.actorId,
+        authorized: true,
+        approvalToken: token,
+        nowMs,
+      });
+      expect(result.decision).toBe('approval_required');
+      expect(result.reasons.join(' ')).toContain('different actor, session, or tool');
+    }
+
+    vi.unstubAllEnvs();
+  });
+
   it('redacts credential-shaped keys recursively', () => {
     expect(redactGovernanceValue({
       token: 'secret-value',
