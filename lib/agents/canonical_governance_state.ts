@@ -27,7 +27,7 @@ export interface CanonicalGovernanceRead {
   reason?: string;
 }
 
-const STATE_VERSION = 'canonical-governance-2026-09-29.1';
+const STATE_VERSION = 'canonical-governance-2026-09-29.2';
 const TAU_FLOOR = 0.05;
 const TAU_STRESSED = 0.08;
 
@@ -50,6 +50,10 @@ async function getToolSession(sessionId: string): Promise<{ sigmaViol: number; t
  * z_traj is authoritative for constitutional CRS coordinates. tool_sessions
  * contributes cumulative tool-governance pressure. Local tool CRS remains an
  * action-level measurement and must not overwrite this state.
+ *
+ * A missing z_traj row is a valid bootstrap state: diagnostics must remain
+ * observable so the system can discover/repair initialization. Storage errors
+ * are different and remain unavailable/fail-closed.
  */
 export async function readCanonicalGovernanceState(input: {
   sessionId: string;
@@ -65,7 +69,7 @@ export async function readCanonicalGovernanceState(input: {
 
     if (!trajectory) {
       return {
-        available: false,
+        available: true,
         state: {
           sessionId: input.sessionId,
           actorId: input.actorId,
@@ -79,7 +83,7 @@ export async function readCanonicalGovernanceState(input: {
           version: STATE_VERSION,
           observedAt: new Date().toISOString(),
         },
-        reason: 'Canonical trajectory state is uninitialized; execution must fail closed until z_traj exists.',
+        reason: 'Canonical trajectory state is uninitialized; read-only diagnostics remain available for bootstrap, while consequential execution remains suspended until z_traj exists.',
       };
     }
 
@@ -87,7 +91,7 @@ export async function readCanonicalGovernanceState(input: {
     const R = trajectory.last_r;
     const S = trajectory.last_s;
     const M = Math.min(C, R, S);
-    const sigmaViol = Math.max(trajectory?.sigma_viol ?? 0, toolSession.sigmaViol);
+    const sigmaViol = Math.max(trajectory.sigma_viol ?? 0, toolSession.sigmaViol);
 
     const state: CanonicalGovernanceState = {
       sessionId: input.sessionId,
@@ -96,7 +100,7 @@ export async function readCanonicalGovernanceState(input: {
       healthBand: deriveHealthBand(M) as CanonicalGovernanceBand,
       sigmaViol,
       toolCalls: toolSession.toolCalls,
-      trajectoryAvailable: trajectory !== null,
+      trajectoryAvailable: true,
       authorization: input.authorization ?? (input.capability === 'read' ? 'authorized' : 'approval_required'),
       policyRisk: input.capability,
       version: STATE_VERSION,
@@ -137,8 +141,6 @@ export function canonicalExecutionAllowed(
       reason: 'Canonical trajectory state is uninitialized; consequential capability execution is suspended until z_traj exists.',
     };
   }
-  // Uninitialized read-only diagnostics are safe to observe; do not let the
-  // synthetic zero M used to represent "unknown" accidentally block them.
   if (!state.trajectoryAvailable && state.policyRisk === 'read') {
     return { allowed: true };
   }
