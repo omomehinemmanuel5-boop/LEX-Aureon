@@ -43,10 +43,20 @@ export interface DiscoveredToolCapability {
   evidence: string[];
   manifest_hash: string;
   discovered_at: number;
+  snapshot_hash: string;
+  revision: number;
+  expires_at: number;
+  active: boolean;
 }
 
 export interface CapabilityDiscoveryResponse {
   environment_id: string;
   discovered: DiscoveredToolCapability[];
+  snapshot?: { hash: string | null; revision: number | null; expires_at: number | null };
   policy: string;
+}
+
+export interface CapabilityDiscoveryState {
+  environment_id: string;
+  tools: DiscoveredToolCapability[];
 }
