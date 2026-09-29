@@ -342,6 +342,7 @@ export async function POST(req: Request) {
     const allTools = [
       ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
       ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+      ...EXTERNAL_CAPABILITY_DEFINITIONS,
     ];
     return NextResponse.json({
       jsonrpc: '2.0',
