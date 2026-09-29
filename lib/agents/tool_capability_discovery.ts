@@ -235,7 +235,7 @@ export async function registerDiscoveredTool(
       1,
     ],
   });
-  return resolved;
+  return { ...resolved, snapshotHash: snapshotHash ?? resolved.manifestHash, revision, expiresAt, active: true };
 }
 
 export async function discoverToolManifests(
@@ -284,9 +284,9 @@ export async function getDiscoveredToolCapability(
   await ensureCapabilityDiscoverySchema();
   const result = await getClient().execute({
     sql: `SELECT tool_name, capability, confidence, approval_required, reversible, source,
-                 evidence_json, manifest_hash, discovered_at
+                 evidence_json, manifest_hash, discovered_at, snapshot_hash, revision, expires_at, active
           FROM discovered_tool_capabilities
-          WHERE environment_id = ? AND tool_name = ? LIMIT 1`,
+          WHERE environment_id = ? AND tool_name = ? AND active = 1 AND expires_at > ? LIMIT 1`,
     args: [environmentId, toolName, Date.now()],
   });
   const row = result.rows[0];
