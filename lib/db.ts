@@ -509,8 +509,12 @@
       created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN actor_id TEXT NOT NULL DEFAULT 'unknown'`);
+    await safeExec(`ALTER TABLE tool_receipts ADD COLUMN policy_version TEXT NOT NULL DEFAULT 'unknown'`);
+    await safeExec(`ALTER TABLE tool_receipts ADD COLUMN previous_provenance_hash TEXT`);
+    await safeExec(`ALTER TABLE tool_receipts ADD COLUMN provenance_hash TEXT`);
 
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_receipts_session ON tool_receipts(session_id)`);
+    await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_receipts_provenance ON tool_receipts(provenance_hash)`);
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_tool_sessions_updated ON tool_sessions(updated_at)`);
 
     // fix (2026-08-24): app/api/mcp/route.ts's `initialize` handler receives

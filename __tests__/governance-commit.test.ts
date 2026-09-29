@@ -41,6 +41,8 @@ describe('transactional governance commit', () => {
     const tx = {
       execute: vi.fn()
         .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rowsAffected: 1 }),
       commit: vi.fn().mockResolvedValue(undefined),
       rollback: vi.fn().mockResolvedValue(undefined),
@@ -49,8 +51,10 @@ describe('transactional governance commit', () => {
 
     const committed = await commitGovernanceDecision(state, 4, receipt);
 
-    expect(tx.execute).toHaveBeenCalledTimes(3);
-    expect(tx.execute.mock.calls[2][0].args[2]).toBe('api_key:caller-1');
+    expect(tx.execute).toHaveBeenCalledTimes(4);
+    expect(tx.execute.mock.calls[3][0].args[2]).toBe('api_key:caller-1');
+    expect(tx.execute.mock.calls[3][0].args[14]).toBeNull();
+    expect(typeof tx.execute.mock.calls[3][0].args[15]).toBe('string');
     expect(tx.commit).toHaveBeenCalledOnce();
     expect(tx.rollback).not.toHaveBeenCalled();
     expect(committed.state_version).toBe(5);
@@ -78,6 +82,8 @@ describe('transactional governance commit', () => {
     const tx = {
       execute: vi.fn()
         .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rows: [] })
         .mockRejectedValueOnce(new Error('receipt store unavailable')),
       commit: vi.fn(),
       rollback: vi.fn().mockResolvedValue(undefined),
@@ -96,6 +102,7 @@ describe('transactional governance commit', () => {
       execute: vi.fn()
         .mockResolvedValueOnce({ rowsAffected: 1 })
         .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rows: [] })
         .mockRejectedValueOnce(new Error('actor receipt persistence failed')),
       commit: vi.fn(),
       rollback: vi.fn().mockResolvedValue(undefined),
@@ -106,6 +113,6 @@ describe('transactional governance commit', () => {
       .rejects.toThrow('actor receipt persistence failed');
     expect(tx.commit).not.toHaveBeenCalled();
     expect(tx.rollback).toHaveBeenCalledOnce();
-    expect(tx.execute.mock.calls[2][0].args[2]).toBe('api_key:caller-1');
+    expect(tx.execute.mock.calls[3][0].args[2]).toBe('api_key:caller-1');
   });
 });
