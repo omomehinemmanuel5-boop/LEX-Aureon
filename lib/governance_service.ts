@@ -28,7 +28,7 @@ import { CANONICAL_REFUSAL } from './refusals';
 import { logger, errorFields } from './logger';
 import { governorState } from './aureonics_math';
 import { judgeCapitulation } from './capitulation_judge';
-import { decideRefusal, type RefusalDecision } from './refusal_decision';
+import { decideRefusal, isReadOnlyDiagnosticPrompt, type RefusalDecision } from './refusal_decision';
 import { healthBand } from './health_band';
 import { persistCapitulationCalibration } from './capitulation_calibration';
 import type { IdentityMode, SemanticSignal, GovernorSensingReport } from './sovereign_kernel';
@@ -232,7 +232,10 @@ export async function executeGovern(
   }
 
   // ── Single-source refusal decision ────────────────────────────────────────
+  const readonlyDiagnostic = isReadOnlyDiagnosticPrompt(prompt);
+
   const decision: RefusalDecision = decideRefusal({
+    intent: readonlyDiagnostic ? 'readonly_diagnostic' : 'normal',
     sovereignty: {
       drift_detected:     sovereigntyDriftDetected,
       raw_sself:          sovereigntyRaw,
