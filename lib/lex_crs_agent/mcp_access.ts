@@ -48,6 +48,7 @@ export const OPERATOR_ONLY_MCP_TOOLS = new Set([
   'log_decision',
   'narrate_origin',
   'authorize_tool_action',
+  'authorize_external_action',
 ]);
 
 export type McpAccessProfile = 'public' | 'private_test' | 'operator';
