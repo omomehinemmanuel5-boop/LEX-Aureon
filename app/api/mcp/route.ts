@@ -25,6 +25,7 @@ import { interceptToolCall } from '@/lib/agents/tool_interceptor';
 import { createGovernanceApprovalToken } from '@/lib/agents/tool_governance_gateway';
 import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governance_state';
 import { discoverExternalTool, governExternalAction, authorizeExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
+import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
@@ -506,7 +507,7 @@ export async function POST(req: Request) {
         profile = profileForApiKey(consumption.key?.plan);
       }
       const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
-      const manifest = isRecord(args.manifest) ? args.manifest as any : null;
+      const manifest = isRecord(args.manifest) ? args.manifest as unknown as ToolManifest : null;
       const actionArgs = isRecord(args.action_args) ? args.action_args : {};
       const sessionId = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
