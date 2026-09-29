@@ -20,6 +20,7 @@ import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { requireKnownToolCapability } from '@/lib/agents/tool_capability_registry';
+import { getDiscoveredToolCapability } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
@@ -330,14 +331,17 @@ export async function POST(req: Request) {
     try {
       requireKnownToolCapability(toolName);
     } catch {
-      return NextResponse.json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32030,
-          message: 'Tool capability not registered; execution denied by the Lex reference monitor',
-        },
-        id,
-      });
+      const discovered = await getDiscoveredToolCapability(ownerId, toolName).catch(() => undefined);
+      if (!discovered || discovered.confidence === 'unresolved') {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32030,
+            message: 'Tool capability not discovered or safely resolved for this environment; execution denied by the Lex reference monitor',
+          },
+          id,
+        });
+      }
     }
 
     // Capability filtering is enforced again at call time. Hiding a tool from
@@ -458,6 +462,7 @@ export async function POST(req: Request) {
           runContext,
           actorId,
           trajectoryController.signal,
+          ownerId,
         ), 30_000, trajectoryController);
 
         if (trajectoryOutcome.timedOut) {
@@ -497,6 +502,7 @@ export async function POST(req: Request) {
         args.task_context as string | undefined,
         actorId,
         controller.signal,
+        ownerId,
       ), 30_000, controller);
 
       const result = outcome.timedOut
