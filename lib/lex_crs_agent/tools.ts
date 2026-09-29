@@ -944,6 +944,7 @@ export const TOOL_DEFINITIONS = [
         message: { type: 'string', description: 'Commit message' },
         session_id: { type: 'string', description: 'Optional. Governance session ID.' },
         task_context: { type: 'string', description: 'Optional. Context for risk measurement.' },
+        approval_token: { type: 'string', description: 'Action-bound Lex approval token. Never log or persist it.' },
         ...REPO_PARAM,
       },
       required: ['path', 'content', 'message'],
@@ -988,6 +989,7 @@ export const TOOL_DEFINITIONS = [
         workflow: { type: 'string', description: 'Workflow filename, e.g. "lexbench-prod.yml", "lexbench-recovery.yml".' },
         ref: { type: 'string', description: 'Branch to run on. Defaults to "main".' },
         inputs: { type: 'object', description: 'Key-value inputs matching the workflow\'s own workflow_dispatch.inputs schema, e.g. { "run_id": "29626879866" } for lexbench-recovery.yml, or { "limit": "5" } for a quick-test dispatch of lexbench-prod.yml.' },
+        approval_token: { type: 'string', description: 'Action-bound Lex approval token. Never log or persist it.' },
         ...REPO_PARAM,
       },
       required: ['workflow'],
@@ -1125,9 +1127,22 @@ export const TOOL_DEFINITIONS = [
     name: 'simulate_agent_plan',
     description: 'Simulate an ordered agent action plan without executing it and identify high-impact steps.',
     parameters: { type: 'object', properties: { actions: { type: 'array', items: { type: 'object', properties: { toolName: { type: 'string' }, risk: { type: 'string' }, target: { type: 'string' } } } } }, required: ['actions'] },
-  },
   {
-    name: 'explain_denial',
+    name: 'explain_denial',  },
+  {
+    name: 'authorize_tool_action',
+    description: 'Operator-only authority boundary. Issues a short-lived, single-use, action-bound Lex approval token for one explicitly registered consequential tool action. The token is bound to the exact tool and arguments and is never a general credential.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tool_name: { type: 'string', description: 'Registered tool to authorize.' },
+        arguments: { type: 'object', description: 'Exact arguments that will be used for the authorized action. Do not include approval_token.' },
+        session_id: { type: 'string', description: 'Governance session binding.' },
+        task_context: { type: 'string', description: 'Why the operator is authorizing this action.' },
+      },
+      required: ['tool_name', 'arguments'],
+    },
+
     description: 'Turn a governance denial into a concise explanation and safer next step.',
     parameters: { type: 'object', properties: { reason: { type: 'string' }, tool_name: { type: 'string' } } },
   },
