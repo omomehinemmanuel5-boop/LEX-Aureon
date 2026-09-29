@@ -497,6 +497,13 @@ export async function POST(req: Request) {
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
       if (toolName === 'authorize_external_action' && !operator) return unauthorized(id);
+      if (!operator && apiKey) {
+        const consumption = await validateAndConsumeKey(apiKey);
+        if (!consumption.valid) return unauthorized(id);
+        ownerId = String(consumption.key?.id ?? 'anonymous');
+        actorId = `api_key:${ownerId}`;
+        profile = profileForApiKey(consumption.key?.plan);
+      }
       const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
       const manifest = isRecord(args.manifest) ? args.manifest as any : null;
       const actionArgs = isRecord(args.action_args) ? args.action_args : {};
