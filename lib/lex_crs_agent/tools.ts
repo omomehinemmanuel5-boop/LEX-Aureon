@@ -166,21 +166,16 @@ async function commitToGitHub({
 
 // ── write_file (PURE) ─────────────────────────────────────────────────────────
 // Logic only. Governance is applied at the registry/dispatch level.
-export async function write_file({
-  path,
-  content,
-  message,
-  repo = FRONTEND_REPO,
-  approval_token,
-}: {
+export async function write_file(input: {
   path: string; content: string; message: string; repo?: string; approval_token?: unknown;
 }, signal?: AbortSignal): Promise<string> {
+  const { path, content, message, repo = FRONTEND_REPO, approval_token } = input;
   let credential: string;
   try {
     credential = await getGitHubCredentialForApprovedAction({
       token: approval_token,
       toolName: 'write_file',
-      args: { path, content, message, repo, approval_token },
+      args: input,
     });
   } catch (error) {
     return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
@@ -314,20 +309,17 @@ export async function get_workflow_log({
 // registered yet, it tells the caller to check get_workflow_run(workflow)
 // shortly after rather than hanging on a longer poll loop that could run
 // into this serverless function's own execution time limit.
-export async function dispatch_workflow({
-  workflow,
-  ref = 'main',
-  inputs,
-  repo = FRONTEND_REPO,
-  approval_token,
-}: { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string; approval_token?: unknown }, signal?: AbortSignal): Promise<string> {
+export async function dispatch_workflow(input: {
+  workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string; approval_token?: unknown
+}, signal?: AbortSignal): Promise<string> {
+  const { workflow, ref = 'main', inputs, repo = FRONTEND_REPO, approval_token } = input;
   signal?.throwIfAborted();
   let credential: string;
   try {
     credential = await getGitHubCredentialForApprovedAction({
       token: approval_token,
       toolName: 'dispatch_workflow',
-      args: { workflow, ref, inputs, repo, approval_token },
+      args: input,
     });
   } catch (error) {
     return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
