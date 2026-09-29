@@ -24,6 +24,7 @@ import { getToolCapability, requireKnownToolCapability } from '@/lib/agents/tool
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
 import { createGovernanceApprovalToken } from '@/lib/agents/tool_governance_gateway';
 import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governance_state';
+import { discoverExternalTool, governExternalAction, authorizeExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import crypto from 'crypto';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
@@ -86,6 +87,67 @@ const CAPABILITIES = { tools: {} };
 
 type ToolHandler = (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
 
+const EXTERNAL_CAPABILITY_DEFINITIONS = [
+  {
+    name: 'discover_external_tool',
+    description: 'Discover an external tool manifest and conservatively classify its capability. Discovery never grants execution authority.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        environment_id: { type: 'string' },
+        manifest: { type: 'object' },
+      },
+      required: ['environment_id', 'manifest'],
+    },
+  },
+  {
+    name: 'govern_external_action',
+    description: 'Run Lex governance over a discovered external tool action. Read-only actions may be auto-authorized; consequential actions require an exact action-bound approval token.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        environment_id: { type: 'string' },
+        manifest: { type: 'object' },
+        action_args: { type: 'object' },
+        session_id: { type: 'string' },
+        task_context: { type: 'string' },
+        approval_token: { type: 'string' },
+      },
+      required: ['environment_id', 'manifest', 'action_args'],
+    },
+  },
+  {
+    name: 'consume_external_action',
+    description: 'Final execution gate for a client-side external tool adapter. Consumes the exact single-use Lex approval immediately before the adapter executes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        environment_id: { type: 'string' },
+        manifest: { type: 'object' },
+        action_args: { type: 'object' },
+        session_id: { type: 'string' },
+        approval_token: { type: 'string' },
+      },
+      required: ['environment_id', 'manifest', 'action_args', 'approval_token'],
+    },
+  },
+  {
+    name: 'authorize_external_action',
+    description: 'Operator-only control-plane operation. Reviews an exact discovered external action and issues a short-lived action-bound approval permit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        environment_id: { type: 'string' },
+        manifest: { type: 'object' },
+        action_args: { type: 'object' },
+        session_id: { type: 'string' },
+        task_context: { type: 'string' },
+      },
+      required: ['environment_id', 'manifest', 'action_args'],
+    },
+  },
+] as const;
+
 const EXTENSION_DEFINITIONS = [PATCH_FILE_DEFINITION] as const;
 
 /**
@@ -113,6 +175,7 @@ function servedTools() {
       description: t.description,
       inputSchema: t.inputSchema,
     })),
+    ...EXTERNAL_CAPABILITY_DEFINITIONS,
   ];
 }
 
@@ -426,6 +489,64 @@ export async function POST(req: Request) {
         },
         id,
       });
+    }
+
+    // External capability control-plane operations deliberately sit outside the
+    // static internal tool registry. They govern client-side adapters rather than
+    // granting Lex server-side credentials or arbitrary remote execution.
+    if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
+      if (toolName === 'authorize_external_action' && !operator) return unauthorized(id);
+      const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
+      const manifest = isRecord(args.manifest) ? args.manifest as any : null;
+      const actionArgs = isRecord(args.action_args) ? args.action_args : {};
+      const sessionId = typeof args.session_id === 'string' && args.session_id.trim()
+        ? args.session_id.trim()
+        : `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+      if (!environmentId || !manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) {
+        return invalidParams(id ?? null, 'environment_id and manifest.name are required');
+      }
+      try {
+        if (toolName === 'discover_external_tool') {
+          const capability = await discoverExternalTool(environmentId, manifest);
+          return NextResponse.json({ jsonrpc: '2.0', result: {
+            discovered: true,
+            execution_authorized: false,
+            capability,
+            security_rule: 'Discovery is advisory and never grants execution authority.',
+          }, id });
+        }
+        if (toolName === 'govern_external_action') {
+          const result = await governExternalAction({
+            environmentId, manifest, actionArgs, sessionId,
+            actorId,
+            approvalToken: typeof args.approval_token === 'string' ? args.approval_token : undefined,
+            taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
+          });
+          return NextResponse.json({ jsonrpc: '2.0', result, id });
+        }
+        if (toolName === 'authorize_external_action') {
+          const result = await authorizeExternalAction({
+            environmentId, manifest, actionArgs, sessionId,
+            taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
+          });
+          return NextResponse.json({ jsonrpc: '2.0', result, id });
+        }
+        const approvalToken = typeof args.approval_token === 'string' ? args.approval_token : '';
+        if (!approvalToken) return invalidParams(id ?? null, 'approval_token is required');
+        const result = await consumeExternalAction({ environmentId, manifest, actionArgs, sessionId, approvalToken });
+        return NextResponse.json({ jsonrpc: '2.0', result: {
+          ...result,
+          execution_may_begin: result.granted,
+          warning: result.granted
+            ? 'Lex has granted this exact single-use action. The client adapter must execute only the exact governed action and emit its own result/audit event.'
+            : undefined,
+        }, id });
+      } catch (error) {
+        return NextResponse.json({ jsonrpc: '2.0', error: {
+          code: -32031,
+          message: error instanceof Error ? error.message : 'External capability governance failed closed',
+        }, id }, { status: 400 });
+      }
     }
 
     // Reference-monitor admission happens at the MCP transport boundary too.
