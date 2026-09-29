@@ -11,6 +11,7 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('write_file')?.capability).toBe('write');
     expect(getToolCapability('dispatch_workflow')?.capability).toBe('external');
     expect(getToolCapability('delete_repository')?.capability).toBe('destructive');
+    expect(getToolCapability('exec')?.capability).toBe('execute');
   });
 
   it('fails closed for an unknown tool', () => {
