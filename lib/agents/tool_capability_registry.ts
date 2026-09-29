@@ -24,6 +24,7 @@ export interface ToolCapabilityRecord {
   capability: ToolCapability;
   approvalRequired: boolean;
   reversible: boolean;
+  bootstrapAllowed?: boolean;
   source: 'core' | 'mcp' | 'extension';
 }
 
@@ -32,7 +33,7 @@ const READ_TOOLS = [
   'search_memory','fetch_page','curl','http_get','get_file','cat','head',
   'tail','grep','find','ls','dir','glob','read_json','parse_csv',
   'get_constitutional_state','get_trajectory_status','review_agent_action',
-  'simulate_agent_plan','explain_denial','run_governance','declare_trajectory_plan',
+  'simulate_agent_plan','explain_denial','declare_trajectory_plan',
   'clear_trajectory_plan','get_build_status','get_workflow_run',
   'get_workflow_log','get_workflow_artifact','get_recent_receipts',
   'search_code','check_github_token_scope','get_vercel_logs','run_self_test',
@@ -57,6 +58,7 @@ const DESTRUCTIVE_TOOLS = [
 ] as const;
 
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
+  { name:'run_governance', capability:'write', approvalRequired:false, reversible:false, bootstrapAllowed:true, source:'mcp' },
   { name:'exec', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run_command', capability:'execute', approvalRequired:true, reversible:false, source:'core' },

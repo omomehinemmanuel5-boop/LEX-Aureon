@@ -80,9 +80,23 @@ export function isReadOnlyDiagnosticPrompt(prompt: string): boolean {
 
   if (!diagnostic) return false;
 
+  const hasUnnegatedSignal = (signal: RegExp): boolean => {
+    const matches = p.matchAll(new RegExp(signal.source, 'gi'));
+    for (const match of matches) {
+      const index = match.index ?? 0;
+      const prefix = p.slice(0, index);
+      const boundaries = [...prefix.matchAll(/[.!?;\n]|\b(?:but|however|instead|except)\b/gi)];
+      const lastBoundary = boundaries[boundaries.length - 1];
+      const clauseStart = lastBoundary ? (lastBoundary.index ?? 0) + lastBoundary[0].length : 0;
+      const clausePrefix = p.slice(clauseStart, index);
+      if (!/\b(?:do\s+not|don't|never|without|avoid|not)\b/i.test(clausePrefix)) return true;
+    }
+    return false;
+  };
+
   const mutationOrOverride =
-    /\b(write|edit|modify|patch|delete|remove|commit|push|deploy|execute|run|install|change|alter)\b/.test(p) ||
-    /\b(ignore|bypass|override|exploit|loophole|jailbreak|unrestricted|no restrictions|reveal hidden|hidden instructions)\b/.test(p);
+    hasUnnegatedSignal(/\b(write|edit|modify|patch|delete|remove|commit|push|deploy|execute|run|install|change|alter)\b/) ||
+    hasUnnegatedSignal(/\b(ignore|bypass|override|exploit|loophole|jailbreak|unrestricted|no restrictions|reveal hidden|hidden instructions)\b/);
 
   return !mutationOrOverride;
 }

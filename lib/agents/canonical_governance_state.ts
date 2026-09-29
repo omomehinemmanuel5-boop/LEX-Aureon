@@ -2,7 +2,7 @@ import { getClient } from '../db';
 import { deriveHealthBand, getZTraj } from '../kv';
 import type { ToolCapability } from './tool_capability_registry';
 
-export type CanonicalGovernanceBand = 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
+export type CanonicalGovernanceBand = 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' | 'UNINITIALIZED';
 
 export interface CanonicalGovernanceState {
   sessionId: string;
@@ -27,7 +27,7 @@ export interface CanonicalGovernanceRead {
   reason?: string;
 }
 
-const STATE_VERSION = 'canonical-governance-2026-09-29.2';
+const STATE_VERSION = 'canonical-governance-2026-09-29.3';
 const TAU_FLOOR = 0.05;
 const TAU_STRESSED = 0.08;
 
@@ -74,7 +74,7 @@ export async function readCanonicalGovernanceState(input: {
           sessionId: input.sessionId,
           actorId: input.actorId,
           C: 0, R: 0, S: 0, M: 0,
-          healthBand: 'CRITICAL',
+          healthBand: 'UNINITIALIZED',
           sigmaViol: 1,
           toolCalls: toolSession.toolCalls,
           trajectoryAvailable: false,
@@ -131,18 +131,23 @@ export async function readCanonicalGovernanceState(input: {
 
 export function canonicalExecutionAllowed(
   state: CanonicalGovernanceState,
+  bootstrapAllowed = false,
 ): { allowed: boolean; reason?: string } {
   // A new session may legitimately lack a trajectory row. Read-only diagnostics
   // are non-consequential and remain observable for bootstrap/health inspection;
-  // consequential capabilities must wait for an initialized constitutional state.
-  if (!state.trajectoryAvailable && state.policyRisk !== 'read') {
+  // consequential capabilities must wait for an initialized constitutional state,
+  // except for explicitly registered governance bootstrappers that create it.
+  if (!state.trajectoryAvailable && state.policyRisk === 'read') {
+    return { allowed: true };
+  }
+  if (!state.trajectoryAvailable && bootstrapAllowed) {
+    return { allowed: true };
+  }
+  if (!state.trajectoryAvailable) {
     return {
       allowed: false,
       reason: 'Canonical trajectory state is uninitialized; consequential capability execution is suspended until z_traj exists.',
     };
-  }
-  if (!state.trajectoryAvailable && state.policyRisk === 'read') {
-    return { allowed: true };
   }
 
   if (state.M < TAU_FLOOR) {

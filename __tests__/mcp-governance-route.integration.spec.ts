@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit } = vi.hoisted(() => ({
+const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
   checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 59, retryAfter: 0, storageError: false })),
+  isOperatorSecret: vi.fn(),
   definitions: [
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
@@ -33,6 +34,11 @@ vi.mock('@/lib/api_keys', () => ({
 }));
 
 vi.mock('@/lib/rate_limit', () => ({ checkRateLimit }));
+
+vi.mock('@/lib/lex_crs_agent/mcp_access', async () => {
+  const actual = await vi.importActual<typeof import('../lib/lex_crs_agent/mcp_access')>('../lib/lex_crs_agent/mcp_access');
+  return { ...actual, isOperatorSecret };
+});
 
 vi.mock('@/lib/db', () => ({
   recordMcpClientIdentity: vi.fn(async () => {}),
@@ -94,6 +100,7 @@ describe('MCP constitutional dispatch boundary', () => {
     validateApiKey.mockResolvedValue({ valid: true, key: {} });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
+    isOperatorSecret.mockReturnValue(false);
     executeGovernedTool.mockResolvedValue('approved:    true\\ncache_hit:   false\\nTOOL_RESULT');
   });
 
@@ -151,6 +158,22 @@ describe('MCP constitutional dispatch boundary', () => {
 
     const scopedArgs = executeGovernedTool.mock.calls[0]?.[1] as { session_id?: string };
     expect(scopedArgs.session_id).toBe('anonymous:shared-label');
+  });
+
+  it('binds run_governance to the resolved operator session when no session_id is supplied', async () => {
+    isOperatorSecret.mockReturnValue(true);
+    await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'run_governance', arguments: { prompt: 'test' } },
+      id: 4,
+    }, { 'x-lex-operator-secret': 'operator-secret' }));
+
+    const call = executeGovernedTool.mock.calls[0] as unknown as [string, { session_id?: string }, unknown, string];
+    expect(call[0]).toBe('run_governance');
+    expect(call[1].session_id).toBe(call[3]);
+    expect(call[3]).toMatch(/^mcp-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/);
+    expect(validateApiKey).not.toHaveBeenCalled();
   });
 
   it('does not invoke the executor for an unknown tool', async () => {

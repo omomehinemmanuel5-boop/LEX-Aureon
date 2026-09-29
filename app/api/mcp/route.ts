@@ -11,6 +11,7 @@ import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
 import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
+import { bindGovernanceToolSession } from '@/lib/agents/governance_tool_session';
 import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { getAutonomousRun } from '@/lib/agents/autonomous_run_supervisor';
@@ -402,10 +403,11 @@ export async function POST(req: Request) {
       if (hasRunMetadata && (!runId || !leaseToken || !idempotencyKey)) {
         return invalidParams(id ?? null, 'run_id, lease_token, and idempotency_key are required together');
       }
-      const toolArgs = hasRunMetadata
+      const baseToolArgs = hasRunMetadata
         ? Object.fromEntries(Object.entries(scopedArgs).filter(([key]) =>
           !['run_id', 'lease_token', 'idempotency_key', 'risk_cost'].includes(key)))
         : scopedArgs;
+      const toolArgs = bindGovernanceToolSession(toolName, baseToolArgs, sessionId);
       let runContext: AutonomousRunContext | undefined;
       if (runId && leaseToken && idempotencyKey) {
         const run = await getAutonomousRun(runId);

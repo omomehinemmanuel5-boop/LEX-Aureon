@@ -15,6 +15,20 @@ describe('central tool governance gateway', () => {
     expect(classifyGovernanceRisk('patch_file')).toBe('write');
     expect(classifyGovernanceRisk('dispatch_workflow')).toBe('external');
     expect(classifyGovernanceRisk('delete_repository')).toBe('destructive');
+    expect(classifyGovernanceRisk('run_governance')).toBe('write');
+  });
+
+  it('allows the stateful governance bootstrap without weakening normal write approval', () => {
+    const result = evaluateToolGovernance({
+      toolName: 'run_governance',
+      args: { prompt: 'Review repository state.' },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+    });
+    expect(result.risk).toBe('write');
+    expect(result.requiresApproval).toBe(false);
+    expect(result.decision).toBe('allow');
   });
 
   it('requires a valid signed approval bound to the exact action', () => {
@@ -159,7 +173,12 @@ describe('central tool governance gateway', () => {
   it('does not claim a write succeeded without resource-specific verification', () => {
     expect(verifyToolResult('read_file', 'content').status).toBe('verified');
     expect(verifyToolResult('patch_file', 'changed').status).toBe('unknown');
-    expect(verifyToolResult('patch_file', 'approved:    false').status).toBe('failed');
+    expect(verifyToolResult('patch_file', 'approved:    false').status).toBe('unknown');
     expect(verifyToolResult('patch_file', undefined).status).toBe('not_started');
+  });
+
+  it('does not interpret denial-like strings inside a read result as execution status', () => {
+    expect(verifyToolResult('read_file', 'source contains approved:    false').status).toBe('verified');
+    expect(verifyToolResult('read_file', 'source contains EXECUTION_STATUS=not_started').status).toBe('verified');
   });
 });

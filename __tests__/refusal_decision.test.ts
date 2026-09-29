@@ -85,9 +85,19 @@ describe('read-only diagnostic intent', () => {
     expect(isReadOnlyDiagnosticPrompt('Inspect the repository architecture and implementation.')).toBe(true);
   });
 
+  it('recognizes negated mutation and override terms as read-only constraints', () => {
+    expect(isReadOnlyDiagnosticPrompt(
+      'Review the repository; do not modify, push, or otherwise alter any files.',
+    )).toBe(true);
+    expect(isReadOnlyDiagnosticPrompt(
+      'Inspect the code and do not bypass the repository restrictions.',
+    )).toBe(true);
+  });
+
   it('does not recognize mutation or override requests as read-only diagnostics', () => {
     expect(isReadOnlyDiagnosticPrompt('Review the repository and modify the code.')).toBe(false);
     expect(isReadOnlyDiagnosticPrompt('Inspect the repository and bypass its constitutional restrictions.')).toBe(false);
+    expect(isReadOnlyDiagnosticPrompt('Review the repository, then push the changes.')).toBe(false);
   });
 
   it('suppresses an ambiguous semantic hit for an explicit read-only diagnostic', () => {

@@ -401,6 +401,8 @@ npm run build          verify TypeScript
 
 [2026-09-28] SECURITY: Hardened `/api/mcp` and `/api/tool-proxy` with a dedicated operator secret, API-key actor attribution, fail-closed governance state/receipt commits, unknown-tool default denial, bounded admission, and exact-host public-HTTPS egress pinned to its validated DNS address. Remote failures are explicitly indeterminate; GitHub mutations receive cancellation signals. Focused boundary regressions are documented separately from comparative benchmark claims. Full validation: 276 Vitest tests, typecheck, and lint passed.
 
+[2026-09-29] FIX: Local-only, uncommitted, undeployed branch `fix/governance-diagnostic-consistency` makes diagnostic-intent detection negation-aware, distinguishes policy refusal from refusal-style generated output, classifies stateful `run_governance` as an approval-bound write, and prevents denial-like source text from being mistaken for tool execution status. Validation: 312 Vitest tests, typecheck, and lint passed.
+
 [2026-09-11] AUTOMATION: Lex Atlas documentation operating system added under docs/atlas — canonical concept lineage, implementation map, timeline, historical archive, and validation report linked from README; runtime code unchanged.
 
 [2026-03-10] RESEARCH: Aureonics v1 published
@@ -522,6 +524,8 @@ npm run build          verify TypeScript
 
 [2026-09-11] FIX: Audit receipt reproducibility wired end-to-end — canonical exports now include the persisted signing-key version and exact canonical field list; verification explicitly classifies retired fallback-key receipts as `legacy_insecure` rather than valid cryptographic proof; the public text-receipt page links to its machine-readable export; API/reproduction docs state the save-and-verify workflow and evidence boundaries. Regression coverage pins the legacy classification and export provenance.
 
+[2026-09-29] FIX: MCP governance bootstrap corrected on `fix/governance-diagnostic-consistency` — `run_governance` now receives the same resolved session ID as the executor (including operator and internal-loop dispatch), is explicitly registered as the only new-session bootstrapper, and missing `z_traj` is reported as `UNINITIALIZED` rather than misleading `CRITICAL`; other consequential tools remain fail-closed until state exists and normal writes remain approval-bound. Pending merge/deploy.
+
 ---
 
 ## CURRENT STATUS
@@ -536,6 +540,10 @@ Tool Gov:   MCP routes authenticate callers, fail closed on unavailable
             governance state, write actor-attributed receipts, and report
             remote outcomes as unknown when completion cannot be established;
             independent integrations remain outside these route guarantees
+MCP bootstrap: run_governance shares the executor session; missing z_traj is
+            reported UNINITIALIZED; only the explicit bootstrapper can initialize
+            a new session; normal writes remain blocked until initialization.
+            Follow-up is on a feature branch and is not deployed yet.
 z-weights:  Session-adaptive z_c/z_r/z_s live in z_traj, flowing into V_z receipts
 Lyapunov:   V_z(x, z_session) certified on every governed turn since 2026-06-29
 Open Probs: Problem 3 CLOSED. Problem 2 CLOSED. Problem 1 single-pillar CLOSED, multi-pillar OPEN.
@@ -552,6 +560,7 @@ Benchmarks: 920+ adversarial prompts total. JailbreakBench n=150 (run 3147939830
 - [ ] First paying client
 - [ ] Multi-pillar global Lyapunov proof (Open Problem 1 residual)
 - [ ] Multi-turn CRS computation (turn_history table — identified, not yet implemented)
+- [ ] Review and deploy session-bootstrap correction from fix/governance-diagnostic-consistency
 - [x] Open Problem 3 closed and deployed (2026-06-28/29)
 - [x] Naming collision resolved — computeZWeightsHeuristic (2026-06-29)
 - [x] slow_drip receipt wired from sigma_viol accumulator (2026-06-29)

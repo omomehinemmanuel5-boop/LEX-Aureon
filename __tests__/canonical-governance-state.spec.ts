@@ -93,7 +93,7 @@ describe('canonical governance state', () => {
     expect(gate.reason).toContain('τ_floor');
   });
 
-  it('allows read-only bootstrap while denying consequential execution when z_traj is uninitialized', async () => {
+  it('labels missing state UNINITIALIZED, permits diagnostics and the explicit bootstrapper, and denies other writes', async () => {
     dbExecute
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ sigma_viol: 0, tool_calls: 0 }] });
@@ -106,7 +106,7 @@ describe('canonical governance state', () => {
 
     expect(result.available).toBe(true);
     expect(result.state.M).toBe(0);
-    expect(result.state.healthBand).toBe('CRITICAL');
+    expect(result.state.healthBand).toBe('UNINITIALIZED');
     expect(result.state.trajectoryAvailable).toBe(false);
     expect(result.reason).toContain('read-only diagnostics remain available');
 
@@ -117,6 +117,9 @@ describe('canonical governance state', () => {
     const writeGate = canonicalExecutionAllowed(writeState);
     expect(writeGate.allowed).toBe(false);
     expect(writeGate.reason).toContain('consequential capability execution is suspended');
+
+    const bootstrapGate = canonicalExecutionAllowed(writeState, true);
+    expect(bootstrapGate.allowed).toBe(true);
   });
 
   it('fails closed when the canonical state store is unavailable', async () => {

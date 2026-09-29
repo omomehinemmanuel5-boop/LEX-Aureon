@@ -234,6 +234,39 @@ describe('governed tool execution integration boundary', () => {
     expect(result.result).toContain('POST_ACTION_GOVERNANCE: Post-action canonical M changed from 0.400 to 0.040');
   });
 
+  it('lets run_governance initialize the same session that the executor gates', async () => {
+    let initialized = false;
+    dbExecute.mockImplementation(async (query: { sql?: string }) => {
+      if (query.sql?.includes('FROM z_traj')) {
+        return initialized
+          ? { rows: [{ last_c: 0.36, last_r: 0.34, last_s: 0.30, sigma_viol: 0 }] }
+          : { rows: [] };
+      }
+      if (query.sql?.includes('FROM tool_sessions')) {
+        return { rows: [{ sigma_viol: 0, tool_calls: 1 }] };
+      }
+      return { rows: [], rowsAffected: 1 };
+    });
+    const bootstrap = vi.fn(async () => {
+      initialized = true;
+      return 'GOVERNANCE_BOOTSTRAPPED';
+    });
+
+    const result = await executeGovernedToolStructured(
+      'run_governance',
+      { prompt: 'Initialize this governance session.' },
+      bootstrap,
+      'bootstrap-session',
+    );
+
+    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(result.approved).toBe(true);
+    expect(result.result).toContain('canonical_crs: UNINITIALIZED (no z_traj row)');
+    expect(result.result).toContain('canonical_health_band: UNINITIALIZED');
+    expect(result.result).toContain('post_action_canonical_crs: C=0.360 R=0.340 S=0.300 M=0.300');
+    expect(result.result).toContain('post_action_canonical_health_band: OPTIMAL');
+  });
+
   it('fails closed instead of executing when governance state is unavailable', async () => {
     dbExecute.mockRejectedValueOnce(new Error('state store unavailable'));
     const read = vi.fn(async () => 'SHOULD_NOT_EXECUTE');
