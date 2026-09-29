@@ -48,6 +48,24 @@ const DELEGATE_WORDS = /(?:delegate|spawn[_ -]?agent|create[_ -]?agent|handoff|s
 const EXTERNAL_WORDS = /(?:send|publish|post|email|deploy|webhook|http|browser|network|api[_ -]?call|external)/i;
 const WRITE_WORDS = /(?:write|edit|modify|patch|update|create|insert|commit|push|save|set|change|alter|upload)/i;
 const READ_WORDS = /(?:read|get|list|search|find|inspect|review|audit|query|lookup|fetch|check|verify|status|describe)/i;
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function manifestHash(manifest: ToolManifest): string {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    name: manifest.name,
+    description: manifest.description ?? '',
+    inputSchema: manifest.inputSchema ?? {},
+    annotations: manifest.annotations ?? {},
+  })).digest('hex');
+}
+
+function hasSchemaProperty(manifest: ToolManifest, names: RegExp): boolean {
+  const properties = manifest.inputSchema?.properties;
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return false;
+  return Object.keys(properties).some(key => names.test(key));
+}
 /**
  * Deterministic, conservative resolver. MCP annotations are treated as hints,
  * not proof; ambiguous declarations are never silently downgraded to read.
