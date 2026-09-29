@@ -61,6 +61,7 @@
  */
 
 import { env } from '../env';
+import { getGitHubCredentialForApprovedAction } from '../agents/credential_broker';
 import { describeGovernanceOutput } from '../refusals';
 import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
@@ -75,11 +76,11 @@ const API            = 'https://api.github.com';
 // Exported so tool definitions can reference them in descriptions.
 export { FRONTEND_REPO, BENCHMARK_REPO };
 
-function ghFetch(path: string, opts: RequestInit = {}) {
+function ghFetch(path: string, opts: RequestInit = {}, credential = env.GITHUB_TOKEN) {
   return fetch(`${API}${path}`, {
     ...opts,
     headers: {
-      Authorization:  `Bearer ${env.GITHUB_TOKEN}`,
+      Authorization:  `Bearer ${credential}`,
       'Content-Type': 'application/json',
       Accept:         'application/vnd.github+json',
       ...opts.headers,
@@ -136,10 +137,10 @@ export async function search_code({
 //    identical except for the interception step. ──────────────────────────────
 async function commitToGitHub({
   path, content, message, repo,
-}: { path: string; content: string; message: string; repo: string }, signal?: AbortSignal): Promise<string> {
+}: { path: string; content: string; message: string; repo: string }, credential: string, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
   let sha: string | undefined;
-  const existing = await ghFetch(`/repos/${repo}/contents/${path}`, { signal });
+  const existing = await ghFetch(`/repos/${repo}/contents/${path}`, { signal }, credential);
   if (existing.ok) {
     const d = await existing.json() as { sha?: string };
     sha = d.sha;
@@ -154,7 +155,7 @@ async function commitToGitHub({
   signal?.throwIfAborted();
   const res = await ghFetch(`/repos/${repo}/contents/${path}`, {
     method: 'PUT', body: JSON.stringify(body), signal,
-  });
+  }, credential);
   if (!res.ok) {
     const err = await res.json() as { message?: string };
     return `Error committing: ${err.message ?? res.status}`;
@@ -170,10 +171,21 @@ export async function write_file({
   content,
   message,
   repo = FRONTEND_REPO,
+  approval_token,
 }: {
-  path: string; content: string; message: string; repo?: string;
+  path: string; content: string; message: string; repo?: string; approval_token?: unknown;
 }, signal?: AbortSignal): Promise<string> {
-  return commitToGitHub({ path, content, message, repo }, signal);
+  let credential: string;
+  try {
+    credential = await getGitHubCredentialForApprovedAction({
+      token: approval_token,
+      toolName: 'write_file',
+      args: { path, content, message, repo, approval_token },
+    });
+  } catch (error) {
+    return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
+  }
+  return commitToGitHub({ path, content, message, repo }, credential, signal);
 }
 
 /** @deprecated Use write_file instead. */
@@ -307,13 +319,24 @@ export async function dispatch_workflow({
   ref = 'main',
   inputs,
   repo = FRONTEND_REPO,
-}: { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }, signal?: AbortSignal): Promise<string> {
+  approval_token,
+}: { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string; approval_token?: unknown }, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
+  let credential: string;
+  try {
+    credential = await getGitHubCredentialForApprovedAction({
+      token: approval_token,
+      toolName: 'dispatch_workflow',
+      args: { workflow, ref, inputs, repo, approval_token },
+    });
+  } catch (error) {
+    return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
+  }
   const res = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     method: 'POST',
     body: JSON.stringify({ ref, inputs: inputs ?? {} }),
     signal,
-  });
+  }, credential);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     return `Error: ${res.status} — dispatch failed for ${workflow}. ${body.slice(0, 300)}`;
@@ -328,7 +351,7 @@ export async function dispatch_workflow({
     }, { once: true });
   });
   signal?.throwIfAborted();
-  const check = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1&event=workflow_dispatch`, { signal });
+  const check = await ghFetch(`/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1&event=workflow_dispatch`, { signal }, credential);
   if (check.ok) {
     const data = await check.json() as { workflow_runs?: Array<{ id: number; status: string; created_at: string; html_url: string }> };
     const latest = data.workflow_runs?.[0];
