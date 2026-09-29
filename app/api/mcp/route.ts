@@ -21,7 +21,6 @@ import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { requireKnownToolCapability } from '@/lib/agents/tool_capability_registry';
-import { getDiscoveredToolCapability } from '@/lib/agents/tool_capability_discovery';
 import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governance_state';
 import crypto from 'crypto';
 
