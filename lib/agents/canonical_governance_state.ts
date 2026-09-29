@@ -27,9 +27,36 @@ export interface CanonicalGovernanceRead {
   reason?: string;
 }
 
-const STATE_VERSION = 'canonical-governance-2026-09-29.3';
+const STATE_VERSION = 'canonical-governance-2026-09-29.4';
 const TAU_FLOOR = 0.05;
 const TAU_STRESSED = 0.08;
+
+/**
+ * Idempotently establishes the neutral canonical trajectory for a new session.
+ * The neutral simplex point is a bootstrap state, not a measured health claim.
+ * Existing trajectories are never overwritten, including under concurrent calls.
+ */
+export async function ensureCanonicalTrajectoryState(sessionId: string): Promise<boolean> {
+  try {
+    await getClient().execute({
+      sql: `INSERT INTO z_traj
+        (session_id, velocity, n_stable, drift_dir, sigma_viol,
+         last_m, last_c, last_r, last_s,
+         z_c, z_r, z_s, attack_pressure, updated_at)
+       VALUES (?, 0, 0, 'bootstrap', 0, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+       ON CONFLICT(session_id) DO NOTHING`,
+      args: [
+        sessionId,
+        1 / 3, 1 / 3, 1 / 3, 1 / 3,
+        1 / 3, 1 / 3, 1 / 3,
+        new Date().toISOString(),
+      ],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function getToolSession(sessionId: string): Promise<{ sigmaViol: number; toolCalls: number }> {
   const db = getClient();
