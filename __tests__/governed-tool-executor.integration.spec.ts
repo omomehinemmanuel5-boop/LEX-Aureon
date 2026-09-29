@@ -207,7 +207,7 @@ describe('governed tool execution integration boundary', () => {
     );
 
     expect(result).toContain('approved:    false');
-    expect(result).toContain('constitutional_state_unavailable');
+    expect(result).toContain('Canonical governance state unavailable');
     expect(read).not.toHaveBeenCalled();
   });
 });
