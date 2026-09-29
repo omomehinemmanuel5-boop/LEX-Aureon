@@ -335,7 +335,7 @@ export async function executeGovernedToolStructured(
         arguments: args,
         session_id: sessionId,
         actor_id: actorId,
-        task_context: safeTaskContext(toolName, args, taskContext),
+        task_context: safeTaskContext(toolName, args, taskContext, capability),
       });
       return {
         result: report(toolName, criticalDecision, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk)),
