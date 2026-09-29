@@ -118,17 +118,55 @@ function safeTaskContext(
   toolName: string,
   args: Record<string, unknown>,
   taskContext?: string,
+  capability?: ToolCapabilityRecord,
 ): string {
+  // A caller-supplied task context remains authoritative when present. When
+  // it is absent, do not collapse the governance measurement to the generic
+  // `Tool call: <name>` fallback: that text contains no intent signal and
+  // makes C/R effectively measure the wrapper itself rather than the action.
+  // Derive a short, capability-aware intent from non-secret structural fields.
+  const target = String(
+    args.path
+    ?? args.file
+    ?? args.target
+    ?? args.repo
+    ?? args.workflow
+    ?? '',
+  ).trim();
+
+  const verb = capability?.capability === 'read'
+    ? 'Read'
+    : capability?.capability === 'write'
+      ? 'Write'
+      : capability?.capability === 'external' || capability?.capability === 'network'
+        ? 'Perform external action'
+        : capability?.capability === 'delegate'
+          ? 'Delegate'
+          : capability?.capability === 'execute'
+            ? 'Execute'
+            : capability?.capability === 'financial'
+              ? 'Perform financial action'
+              : capability?.capability === 'identity'
+                ? 'Perform identity action'
+                : capability?.capability === 'destructive'
+                  ? 'Perform destructive action'
+                  : 'Invoke';
+
+  const derivedContext = [
+    `${verb} using ${toolName}`,
+    target ? `Target: ${target}` : '',
+  ].filter(Boolean).join('. ');
+
   const candidate = taskContext
     ?? (args.message as string | undefined)
     ?? (args.query as string | undefined)
     ?? (args.sql as string | undefined)
-    ?? `Tool call: ${toolName}`;
+    ?? derivedContext;
+
   const redacted = redactGovernanceValue(candidate);
   return typeof redacted === 'string'
     ? redactGovernanceText(redacted).slice(0, 4096)
-    : `Tool call: ${toolName}`;
-}
+    : derivedContext;
 
 export interface GovernedToolExecution {
   result: string;
