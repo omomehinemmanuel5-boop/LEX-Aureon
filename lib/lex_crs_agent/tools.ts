@@ -65,7 +65,7 @@ import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '../agents/tool_capability_registry';
-import { getDiscoveredToolCapability, isReadOnlyExecutionOperation } from '../agents/tool_capability_discovery';
+import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const BENCHMARK_REPO = 'omomehinemmanuel5-boop/Lexaureon-Benchmark';
@@ -731,7 +731,6 @@ export async function review_agent_action(input: {
   reversibility?: string;
   authority_context?: string;
   environment_id?: string;
-  command?: string;
 }): Promise<string> {
   const name = String(input.tool_name ?? '').trim();
   if (!name) return JSON.stringify({ decision: 'deny', reason: 'tool_name is required' });
@@ -774,12 +773,8 @@ export async function review_agent_action(input: {
     execute: 'destructive',
     delegate: 'external',
   };
-  const effectiveRead = capability.capability === 'execute' && input.command
-    ? isReadOnlyExecutionOperation(name, { command: input.command })
-    : false;
-  const risk = effectiveRead ? 'read' : capabilityRisk[capability.capability];
-  const irreversible = effectiveRead ? false : (input.reversibility === 'irreversible' || !capability.reversible);
-  const approvalRequired = capability.approvalRequired || irreversible;
+  const risk = capabilityRisk[capability.capability];
+  const irreversible = input.reversibility === 'irreversible' || !capability.reversible;
 
   return JSON.stringify({
     decision: approvalRequired ? 'approval_required' : 'allow',
@@ -788,7 +783,6 @@ export async function review_agent_action(input: {
     capability_known: true,
     capability_source: discoveredConfidence ? 'environment_discovery' : 'core_registry',
     capability_confidence: discoveredConfidence ?? 'high',
-    operation_classification: effectiveRead ? 'read_only_execution' : capability.capability,
     requires_approval: approvalRequired,
     reasons: approvalRequired ? ['The resolved capability requires authorization before execution.'] : [],
     declared_intent: input.declared_intent ?? null,
