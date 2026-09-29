@@ -229,10 +229,11 @@ export async function discoverToolManifests(
 export async function getDiscoveredToolCapability(
   environmentId: string,
   toolName: string,
-): Promise<ToolCapabilityRecord | undefined> {
+): Promise<ResolvedToolCapability | undefined> {
   await ensureCapabilityDiscoverySchema();
   const result = await getClient().execute({
-    sql: `SELECT tool_name, capability, approval_required, reversible, source
+    sql: `SELECT tool_name, capability, confidence, approval_required, reversible, source,
+                 evidence_json, manifest_hash, discovered_at
           FROM discovered_tool_capabilities
           WHERE environment_id = ? AND tool_name = ? LIMIT 1`,
     args: [environmentId, toolName],
@@ -245,6 +246,11 @@ export async function getDiscoveredToolCapability(
     approvalRequired: Boolean(Number(row.approval_required)),
     reversible: Boolean(Number(row.reversible)),
     source: String(row.source) as ToolCapabilityRecord['source'],
+    confidence: String(row.confidence) as CapabilityConfidence,
+    environmentId,
+    evidence: (() => { try { return JSON.parse(String(row.evidence_json)) as string[]; } catch { return []; } })(),
+    manifestHash: String(row.manifest_hash),
+    discoveredAt: Number(row.discovered_at),
   };
 }
 
