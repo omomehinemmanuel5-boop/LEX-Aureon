@@ -82,15 +82,7 @@ export function resolveToolManifest(environmentId: string, manifest: ToolManifes
   let capability: ToolCapability | null = null;
   let confidence: CapabilityConfidence = 'unresolved';
 
-  if (annotations.readOnlyHint === true && annotations.destructiveHint !== true) {
-    capability = 'read';
-    confidence = 'high';
-    evidence.push('MCP readOnlyHint=true');
-  } else if (annotations.destructiveHint === true) {
-    capability = 'destructive';
-    confidence = 'high';
-    evidence.push('MCP destructiveHint=true');
-  } else if (EXECUTE_WORDS.test(name) || /\b(?:shell|command|execute|eval)\b/.test(description)) {
+  if (EXECUTE_WORDS.test(name) || /\\b(?:shell|command|execute|eval)\\b/.test(description)) {
     capability = 'execute';
     confidence = 'high';
     evidence.push('tool identity/description indicates arbitrary execution');
@@ -110,6 +102,14 @@ export function resolveToolManifest(environmentId: string, manifest: ToolManifes
     capability = 'delegate';
     confidence = 'high';
     evidence.push('tool identity/description indicates delegation');
+  } else if (annotations.destructiveHint === true) {
+    capability = 'destructive';
+    confidence = 'high';
+    evidence.push('MCP destructiveHint=true');
+  } else if (annotations.readOnlyHint === true) {
+    capability = 'read';
+    confidence = 'high';
+    evidence.push('MCP readOnlyHint=true');
   } else if (EXTERNAL_WORDS.test(combined) || annotations.openWorldHint === true) {
     capability = 'external';
     confidence = annotations.openWorldHint === true ? 'medium' : 'high';
