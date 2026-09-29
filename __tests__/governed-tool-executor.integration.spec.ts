@@ -196,6 +196,45 @@ describe('governed tool execution integration boundary', () => {
     expect(dbExecute).toHaveBeenCalled();
   });
 
+
+  it('records post-action canonical state instead of only the pre-action snapshot', async () => {
+    const tool = vi.fn(async () => 'WRITE_OK');
+    let trajectoryReads = 0;
+    dbExecute.mockImplementation(async (query: { sql?: string }) => {
+      if (query.sql?.includes('FROM z_traj')) {
+        trajectoryReads += 1;
+        return trajectoryReads === 1
+          ? { rows: [{ last_c: 0.40, last_r: 0.40, last_s: 0.40, sigma_viol: 0 }] }
+          : { rows: [{ last_c: 0.04, last_r: 0.48, last_s: 0.48, sigma_viol: 1 }] };
+      }
+      if (query.sql?.includes('FROM tool_sessions')) {
+        return { rows: [{ sigma_viol: 0, tool_calls: 1 }] };
+      }
+      return { rows: [{ rowsAffected: 1 }] };
+    });
+
+    const args = { path: 'post-action.ts', content: 'changed' };
+    const token = createGovernanceApprovalToken({
+      actorId: 'internal-agent',
+      sessionId: 'post-action-session',
+      toolName: 'write_file',
+      args,
+    });
+
+    const result = await executeGovernedToolStructured(
+      'write_file',
+      { ...args, approval_token: token },
+      tool,
+      'post-action-session',
+    );
+
+    expect(tool).toHaveBeenCalledOnce();
+    expect(result.result).toContain('canonical_crs: C=0.400 R=0.400 S=0.400 M=0.400');
+    expect(result.result).toContain('post_action_canonical_crs: C=0.040 R=0.480 S=0.480 M=0.040');
+    expect(result.result).toContain('post_action_canonical_health_band: CRITICAL');
+    expect(result.result).toContain('POST_ACTION_GOVERNANCE: Post-action canonical M changed from 0.400 to 0.040');
+  });
+
   it('fails closed instead of executing when governance state is unavailable', async () => {
     dbExecute.mockRejectedValueOnce(new Error('state store unavailable'));
     const read = vi.fn(async () => 'SHOULD_NOT_EXECUTE');
