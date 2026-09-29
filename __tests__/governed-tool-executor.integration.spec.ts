@@ -196,7 +196,6 @@ describe('governed tool execution integration boundary', () => {
     expect(dbExecute).toHaveBeenCalled();
   });
 
-
   it('records post-action canonical state instead of only the pre-action snapshot', async () => {
     const tool = vi.fn(async () => 'WRITE_OK');
     let trajectoryReads = 0;
@@ -210,7 +209,7 @@ describe('governed tool execution integration boundary', () => {
       if (query.sql?.includes('FROM tool_sessions')) {
         return { rows: [{ sigma_viol: 0, tool_calls: 1 }] };
       }
-      return { rows: [{ rowsAffected: 1 }] };
+      return { rows: [{ rowsAffected: 1 }], rowsAffected: 1 };
     });
 
     const args = { path: 'post-action.ts', content: 'changed' };
