@@ -45,6 +45,10 @@ vi.mock('@/lib/db', () => ({
   runZTrajMigrations: vi.fn(async () => {}),
 }));
 
+vi.mock('../lib/agents/canonical_governance_state', () => ({
+  ensureCanonicalTrajectoryState: vi.fn(async () => true),
+}));
+
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
   TOOL_REGISTRY: {
