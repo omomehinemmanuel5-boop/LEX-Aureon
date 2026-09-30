@@ -38,14 +38,12 @@ describe('computeIEC', () => {
   });
 
   it('returns high IEC when results agree (low variance)', () => {
-    // Same content → same entropy → variance ≈ 0 → IEC ≈ 1
     const results = mockResults(['the sky is blue', 'the sky is blue', 'the sky is blue']);
     const { iec } = computeIEC(results, shannonEntropy('what color is the sky'));
     expect(iec).toBeGreaterThan(0.9);
   });
 
   it('returns low IEC when results conflict (high variance)', () => {
-    // Wildly different content → high variance → low IEC
     const results = mockResults([
       'a',
       'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789',
@@ -97,12 +95,10 @@ describe('applyGovernorCorrection — IEC filter', () => {
     const context: GovernorContext = { delta: 0.5, rho: RHO_MIN + 0.01, U: 0.2, T: 0.2 };
     const results = mockResults(['verified fact', 'verified fact', 'verified fact']);
     const result = applyGovernorCorrection(state, context, results);
-    // May be applied or rejected by CBF check — either way should not throw
     expect(typeof result.applied).toBe('boolean');
   });
 
   it('never violates CBF floor M >= tau', () => {
-    // State very close to boundary
     const dangerState = { C: TAU + 0.001, R: TAU + 0.001, S: 1 - 2 * (TAU + 0.001) };
     const context: GovernorContext = { delta: 0.9, rho: 1.0, U: 0.8, T: 0.9 };
     const result = applyGovernorCorrection(dangerState, context, []);
@@ -112,37 +108,36 @@ describe('applyGovernorCorrection — IEC filter', () => {
       const newS = dangerState.S + result.delta_S;
       expect(Math.min(newC, newR, newS)).toBeGreaterThanOrEqual(TAU);
     }
-    // If rejected, that's also correct — conservative is safe
   });
 });
 
 describe('consumePendingCorrection', () => {
-  // 2026-07-20: now async and Turso-backed (lib/pending_corrections.ts). With
-  // no correction stored (and, in the test env, no reachable Turso) it must
-  // resolve to null — the graceful-degradation path that keeps the governor
-  // safe when the store is empty or unavailable.
+  // These are integration-style Turso-backed checks. The store is deliberately
+  // allowed to be unavailable, but remote DB calls can transiently exceed Vitest's
+  // default 5s timeout. Keep the test deterministic at the test-runner boundary;
+  // production code still fails closed on store errors.
   it('resolves to null for unknown session', async () => {
     const result = await consumePendingCorrection('nonexistent_session_xyz', { C: 1/3, R: 1/3, S: 1/3 });
     expect(result).toBeNull();
-  });
+  }, 15_000);
 
   it('resolves to null when nothing is stored (no double-apply risk)', async () => {
     const result1 = await consumePendingCorrection('session_double_consume', { C: 1/3, R: 1/3, S: 1/3 });
     const result2 = await consumePendingCorrection('session_double_consume', { C: 1/3, R: 1/3, S: 1/3 });
     expect(result1).toBeNull();
     expect(result2).toBeNull();
-  });
+  }, 15_000);
 });
 
 describe('isSafeToSearch — egress gate (do not google attacks)', () => {
   it('allows search when stressed and benign', () => {
-    expect(isSafeToSearch(0.10, 0.0, 0.0, 0.0)).toBe(true);   // low M
-    expect(isSafeToSearch(0.30, 0.4, 0.0, 0.0)).toBe(true);   // high tension
+    expect(isSafeToSearch(0.10, 0.0, 0.0, 0.0)).toBe(true);
+    expect(isSafeToSearch(0.30, 0.4, 0.0, 0.0)).toBe(true);
   });
   it('blocks search when the prompt is adversarial, even if stressed', () => {
-    expect(isSafeToSearch(0.10, 0.5, 0.9, 0.0)).toBe(false);  // high semantic severity
-    expect(isSafeToSearch(0.10, 0.5, 0.0, 0.9)).toBe(false);  // high threat signal
-    expect(isSafeToSearch(0.10, 0.5, 0.5, 0.0)).toBe(false);  // exactly at threshold
+    expect(isSafeToSearch(0.10, 0.5, 0.9, 0.0)).toBe(false);
+    expect(isSafeToSearch(0.10, 0.5, 0.0, 0.9)).toBe(false);
+    expect(isSafeToSearch(0.10, 0.5, 0.5, 0.0)).toBe(false);
   });
   it('blocks search when the state is not stressed (no need to spend the query)', () => {
     expect(isSafeToSearch(0.33, 0.0, 0.0, 0.0)).toBe(false);
@@ -150,13 +145,6 @@ describe('isSafeToSearch — egress gate (do not google attacks)', () => {
 });
 
 describe('computeSemanticReliability', () => {
-  // Only the <2-results short-circuit is asserted here: it returns before any
-  // embedding I/O, so it's deterministic. The "≥2 results, embeddings down →
-  // null" degradation path is real but deliberately NOT unit-tested — it would
-  // depend on whether an embedding key happens to be set in the environment,
-  // and with a placeholder key it makes a real (slow/hanging) network call.
-  // That path is covered by the try/catch in computeSemanticReliability and by
-  // runGovernorSensing's entropy fallback.
   it('returns null for fewer than 2 results (cannot measure agreement, no I/O)', async () => {
     expect(await computeSemanticReliability([])).toBeNull();
     expect(await computeSemanticReliability(mockResults(['only one']))).toBeNull();
