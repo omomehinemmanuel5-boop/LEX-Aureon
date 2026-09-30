@@ -38,14 +38,18 @@ import { StyleAgent } from './agents/style_agent';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+export type GovernanceMode = 'execute' | 'simulate';
+
 export interface GovernRequest {
   prompt:         string;
   session_id:     string;
   turn:           number;
   identity_mode:  IdentityMode;
+  governance_mode?: GovernanceMode;
 }
 
 export interface GovernResponse {
+  governance_mode:           GovernanceMode;
   governed_output:          string;
   raw_output:               string;
   C:                        number;
@@ -132,6 +136,8 @@ export async function executeGovern(
   req: GovernRequest,
 ): Promise<GovernResponse> {
   const { prompt, session_id, turn, identity_mode: identityMode } = req;
+  const governanceMode: GovernanceMode = req.governance_mode ?? 'execute';
+  const simulation = governanceMode === 'simulate';
   const evalSession = isEvalSession(session_id);
 
   // ── All async work runs concurrently ─────────────────────────────────────
@@ -276,7 +282,7 @@ export async function executeGovern(
   if (decision.refused) result.governed_output = CANONICAL_REFUSAL;
 
   // ── Calibration persistence ───────────────────────────────────────────────
-  if (capitulationSignal) {
+  if (capitulationSignal && !simulation) {
     void persistCapitulationCalibration({
       session_id, turn,
       judge_capitulated: capitulationSignal.capitulated,
@@ -317,9 +323,9 @@ export async function executeGovern(
 
   // ── Persist receipt ───────────────────────────────────────────────────────
   const [receiptId] = await Promise.all([
-    writeKernelReceipt(session_id, turn, result),
-    incrementRuns(),
-    promptEmbedding.length ? storeMemory({
+    simulation ? Promise.resolve('') : writeKernelReceipt(session_id, turn, result),
+    simulation ? Promise.resolve() : incrementRuns(),
+    promptEmbedding.length && !simulation ? storeMemory({
       session_id, prompt,
       prompt_hash:            result.receipt.input_hash,
       embedding:              promptEmbedding,
@@ -387,6 +393,7 @@ export async function executeGovern(
     invariance_violations:    result.invariance_violations,
     metrics:                  result.metrics ?? null,
     governor_sensing:         result.governor_sensing,
+    governance_mode:          governanceMode,
     version:                  result.receipt.version ?? 'SovereignKernel-TS-v2+AsyncGovernor',
   };
 }
