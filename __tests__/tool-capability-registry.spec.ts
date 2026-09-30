@@ -12,8 +12,10 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('dispatch_workflow')?.capability).toBe('external');
     expect(getToolCapability('delete_repository')?.capability).toBe('destructive');
     expect(getToolCapability('exec')?.capability).toBe('execute');
-    expect(getToolCapability('run_governance')?.capability).toBe('write');
+    // Governance analysis is non-effectful; the hypothetical target action is governed separately.
+    expect(getToolCapability('run_governance')?.capability).toBe('read');
     expect(getToolCapability('run_governance')?.approvalRequired).toBe(false);
+    expect(getToolCapability('run_governance')?.reversible).toBe(true);
     expect(getToolCapability('run_governance')?.bootstrapAllowed).toBe(true);
     expect(getToolCapability('write_file')?.approvalRequired).toBe(true);
   });
