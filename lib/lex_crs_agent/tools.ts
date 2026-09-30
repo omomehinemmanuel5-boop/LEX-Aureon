@@ -453,13 +453,13 @@ const CRS_EXPLANATIONS = {
 } as const;
 
 export async function run_governance({
-  prompt, session_id = `lex-agent-${Date.now()}`,
-}: { prompt: string; session_id?: string }): Promise<string> {
+  prompt, session_id = `lex-agent-${Date.now()}`, governance_mode = 'execute',
+}: { prompt: string; session_id?: string; governance_mode?: 'execute' | 'simulate' }): Promise<string> {
   try {
     const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, session_id, turn: 1 }),
+      body: JSON.stringify({ prompt, session_id, turn: 1, governance_mode }),
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
@@ -505,6 +505,7 @@ export async function run_governance({
       attack_signal: sig,
       projection_triggered: Boolean(d.projection_triggered),
       receipt_id: d.receipt_id ?? null,
+      governance_mode,
       timestamp: new Date().toISOString(),
     });
   } catch (e) { return `Error: ${String(e)}`; }
