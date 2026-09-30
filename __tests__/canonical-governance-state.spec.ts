@@ -35,12 +35,18 @@ describe('constitutional recovery policy', () => {
     expect(at.state).toBe('VERIFIED');
   });
 
-  it('does not restore consequential capabilities until verified', () => {
-    const unverified = recoveryCapabilityAllowed(0.20, 'destructive', { nStable: 0, sigmaViol: 0, canaryPassed: false });
-    const verified = recoveryCapabilityAllowed(0.20, 'destructive', { nStable: 3, sigmaViol: 0, canaryPassed: true });
+  it('restores ordinary writes after verified evidence but keeps destructive actions gated until NORMAL', () => {
+    const unverified = recoveryCapabilityAllowed(0.20, 'write', { nStable: 0, sigmaViol: 0, canaryPassed: false });
+    const verified = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true });
+    const destructive = recoveryCapabilityAllowed(0.20, 'destructive', { nStable: 3, sigmaViol: 0, canaryPassed: true });
+    const destructiveNormal = recoveryCapabilityAllowed(0.25, 'destructive', { nStable: 3, sigmaViol: 0, canaryPassed: true });
+
     expect(unverified.allowed).toBe(false);
     expect(verified.allowed).toBe(true);
     expect(verified.state).toBe('VERIFIED');
+    expect(destructive.allowed).toBe(false);
+    expect(destructiveNormal.allowed).toBe(true);
+    expect(destructiveNormal.state).toBe('NORMAL');
   });
 
   it('reaches NORMAL only at or above the optimal boundary with verified evidence', () => {
