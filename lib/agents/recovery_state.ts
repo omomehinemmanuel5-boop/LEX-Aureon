@@ -16,7 +16,6 @@ export interface RecoveryEvidence {
 
 export function deriveRecoveryState(M: number, evidence: RecoveryEvidence): RecoveryState {
   if (M < CONSTITUTION.TAU_FLOOR) return 'QUARANTINED';
-  if (M < CONSTITUTION.TAU_LYAPUNOV) return 'RECOVERING';
   if (M < CONSTITUTION.TAU_RECOVERY) return 'RECOVERING';
 
   const verified =
@@ -29,14 +28,14 @@ export function deriveRecoveryState(M: number, evidence: RecoveryEvidence): Reco
 }
 
 /**
- * Progressive restoration is deliberately stricter than the health-band
+ * Progressive restoration is deliberately stricter than health-band
  * classification. Recovery never grants authority; it only determines which
  * capability classes may proceed to their normal authorization checks.
  *
  * < 0.05: no execution.
- * 0.05–0.15: recovery/read-only plane only.
- * >= 0.15: normal non-destructive capabilities may resume after evidence.
- * Destructive/consequential capabilities still require their own authorization.
+ * 0.05–0.149...: recovery/read-only plane only.
+ * >= 0.15: non-read capabilities require verified recovery evidence.
+ * Destructive/consequential capabilities require NORMAL state.
  */
 export function recoveryCapabilityAllowed(
   M: number,
@@ -54,9 +53,7 @@ export function recoveryCapabilityAllowed(
   }
 
   if (M < CONSTITUTION.TAU_RECOVERY) {
-    if (capability === 'read') {
-      return { allowed: true, state };
-    }
+    if (capability === 'read') return { allowed: true, state };
     return {
       allowed: false,
       state,
@@ -64,12 +61,28 @@ export function recoveryCapabilityAllowed(
     };
   }
 
-  if (capability === 'destructive' || capability === 'financial' || capability === 'identity' || capability === 'execute' || capability === 'delegate') {
+  if (capability === 'read') return { allowed: true, state };
+
+  if (state !== 'VERIFIED' && state !== 'NORMAL') {
+    return {
+      allowed: false,
+      state,
+      reason: `Recovery state ${state}: non-read capability requires verified stabilization before restoration.`,
+    };
+  }
+
+  if (
+    capability === 'destructive' ||
+    capability === 'financial' ||
+    capability === 'identity' ||
+    capability === 'execute' ||
+    capability === 'delegate'
+  ) {
     if (state !== 'NORMAL') {
       return {
         allowed: false,
         state,
-        reason: `Recovery state ${state}: consequential capability requires verified stabilization before restoration.`,
+        reason: `Recovery state ${state}: consequential capability requires NORMAL verified stabilization before restoration.`,
       };
     }
   }
