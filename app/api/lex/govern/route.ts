@@ -25,6 +25,7 @@ async function ensureDB() {
 }
 
 const VALID_IDENTITY_MODES: IdentityMode[] = ['full', 'minimal', 'dynamic', 'none'];
+const VALID_GOVERNANCE_MODES = ['execute', 'simulate'] as const;
 const MAX_BODY_BYTES = 70_000;
 const ANONYMOUS_LIMIT = FREE_TEXT_RUNS_PER_DAY;
 const AUTHENTICATED_LIMIT = 120;
@@ -146,11 +147,15 @@ export async function POST(req: Request) {
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
   const { prompt, session_id, turn = 1 } = body;
+  const governanceMode = body.governance_mode ?? 'execute';
   if (!prompt?.trim()) return NextResponse.json({ error: 'prompt required' }, { status: 400 });
   if (!session_id?.trim()) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   if (prompt.length > MAX_PROMPT_CHARS) return NextResponse.json({ error: `prompt too long (max ${MAX_PROMPT_CHARS} chars)` }, { status: 400 });
   if (session_id.length > 128) return NextResponse.json({ error: 'session_id too long (max 128 chars)' }, { status: 400 });
   if (!Number.isInteger(turn) || turn < 1 || turn > 100_000) return NextResponse.json({ error: 'turn must be an integer between 1 and 100000' }, { status: 400 });
+  if (!(VALID_GOVERNANCE_MODES as readonly string[]).includes(governanceMode)) {
+    return NextResponse.json({ error: 'governance_mode must be execute or simulate' }, { status: 400 });
+  }
 
   if (providedApiKey) {
     const consumption = await consumeApiKey(providedApiKey);
@@ -161,10 +166,12 @@ export async function POST(req: Request) {
   }
 
   const identityMode = resolveIdentityMode(body.identity_mode);
-  await ensureDB();
+  if (governanceMode === 'execute') await ensureDB();
 
   try {
-    const response: GovernResponse = await executeGovern({ prompt, session_id, turn, identity_mode: identityMode });
+    const response: GovernResponse = await executeGovern({
+      prompt, session_id, turn, identity_mode: identityMode, governance_mode: governanceMode,
+    });
     return NextResponse.json(response, {
       headers: {
         'Cache-Control': 'no-store',
