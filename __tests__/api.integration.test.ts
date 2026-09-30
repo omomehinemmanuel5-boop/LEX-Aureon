@@ -232,6 +232,25 @@ describe('API integration', () => {
     expect(res.status).toBe(413);
   });
 
+  it('rejects invalid governance modes at the HTTP boundary', async () => {
+    const { POST } = await import('../app/api/lex/govern/route');
+    const req = new Request('http://localhost/api/lex/govern', {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt: 'evaluate this hypothetical action',
+        session_id: 'simulation-test',
+        turn: 1,
+        governance_mode: 'unknown',
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'governance_mode must be execute or simulate',
+    });
+  });
+
   it('rejects invalid turn values at the HTTP boundary', async () => {
     const { POST } = await import('../app/api/lex/govern/route');
     const req = new Request('http://localhost/api/lex/govern', {
