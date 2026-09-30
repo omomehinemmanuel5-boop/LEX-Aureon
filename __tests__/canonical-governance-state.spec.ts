@@ -43,7 +43,7 @@ describe('constitutional recovery policy', () => {
     expect(verified.state).toBe('VERIFIED');
   });
 
-  it('reaches NORMAL only above the optimal boundary with verified evidence', () => {
+  it('reaches NORMAL only at or above the optimal boundary with verified evidence', () => {
     expect(deriveRecoveryState(0.24, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('VERIFIED');
     expect(deriveRecoveryState(0.25, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('NORMAL');
   });
@@ -52,7 +52,7 @@ describe('constitutional recovery policy', () => {
 describe('canonical governance state', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('projects CRS and health from z_traj rather than local tool scores', async () => {
+  it('projects CRS and recovery state from z_traj rather than local tool scores', async () => {
     dbExecute
       .mockResolvedValueOnce({ rows: [{ last_c: 0.42, last_r: 0.18, last_s: 0.31, sigma_viol: 0.04, n_stable: 3 }] })
       .mockResolvedValueOnce({ rows: [{ sigma_viol: 0.12, tool_calls: 7 }] });
@@ -70,20 +70,14 @@ describe('canonical governance state', () => {
     });
   });
 
-  it('allows only recovery reads below 0.15 and blocks the hard floor below 0.05', () => {
-    const recoveryRead = canonicalExecutionAllowed({
+  it('allows recovery reads below 0.15', () => {
+    const gate = canonicalExecutionAllowed({
       sessionId: 's', actorId: 'a', C: 0.20, R: 0.07, S: 0.30, M: 0.07,
       healthBand: 'STRESSED', recoveryState: 'RECOVERING', sigmaViol: 0, toolCalls: 1,
       trajectoryAvailable: true, nStable: 0, authorization: 'authorized', policyRisk: 'read',
       version: 'test', observedAt: new Date().toISOString(),
     });
-    expect(recoveryRead.allowed).toBe(true);
-
-    const belowFloor = canonicalExecutionAllowed({
-      ...recoveryRead,
-      state: undefined,
-    } as never);
-    expect(belowFloor).toBeDefined();
+    expect(gate.allowed).toBe(true);
   });
 
   it('denies consequential execution below 0.15 even when M is above 0.08', () => {
@@ -95,6 +89,17 @@ describe('canonical governance state', () => {
     });
     expect(gate.allowed).toBe(false);
     expect(gate.reason).toContain('0.15');
+  });
+
+  it('denies every capability below the 0.05 constitutional floor', () => {
+    const gate = canonicalExecutionAllowed({
+      sessionId: 's', actorId: 'a', C: 0.04, R: 0.40, S: 0.56, M: 0.04,
+      healthBand: 'CRITICAL', recoveryState: 'QUARANTINED', sigmaViol: 0, toolCalls: 1,
+      trajectoryAvailable: true, nStable: 99, authorization: 'authorized', policyRisk: 'read',
+      version: 'test', observedAt: new Date().toISOString(),
+    });
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('τ_floor');
   });
 
   it('fails closed when the canonical state store is unavailable', async () => {
