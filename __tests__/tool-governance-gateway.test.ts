@@ -10,15 +10,16 @@ import {
 } from '@/lib/agents/tool_governance_gateway';
 
 describe('central tool governance gateway', () => {
-  it('classifies tools by impact rather than trusting a caller label', () => {
+  it('classifies tools by effect rather than trusting a caller label', () => {
     expect(classifyGovernanceRisk('read_file')).toBe('read');
     expect(classifyGovernanceRisk('patch_file')).toBe('write');
     expect(classifyGovernanceRisk('dispatch_workflow')).toBe('external');
     expect(classifyGovernanceRisk('delete_repository')).toBe('destructive');
-    expect(classifyGovernanceRisk('run_governance')).toBe('write');
+    // run_governance evaluates a request but has no side effect itself.
+    expect(classifyGovernanceRisk('run_governance')).toBe('read');
   });
 
-  it('allows the stateful governance bootstrap without weakening normal write approval', () => {
+  it('allows non-effectful governance analysis without weakening normal write approval', () => {
     const result = evaluateToolGovernance({
       toolName: 'run_governance',
       args: { prompt: 'Review repository state.' },
@@ -26,7 +27,7 @@ describe('central tool governance gateway', () => {
       actorId: 'internal-agent',
       authorized: true,
     });
-    expect(result.risk).toBe('write');
+    expect(result.risk).toBe('read');
     expect(result.requiresApproval).toBe(false);
     expect(result.decision).toBe('allow');
   });
