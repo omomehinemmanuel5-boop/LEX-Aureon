@@ -58,7 +58,10 @@ const DESTRUCTIVE_TOOLS = [
 ] as const;
 
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
-  { name:'run_governance', capability:'write', approvalRequired:false, reversible:false, bootstrapAllowed:true, source:'mcp' },
+  // Governance analysis is non-effectful: it evaluates a requested/hypothetical
+  // action but does not execute that action. The target action's capability
+  // remains independently governed before any execution path can proceed.
+  { name:'run_governance', capability:'read', approvalRequired:false, reversible:true, bootstrapAllowed:true, source:'mcp' },
   { name:'exec', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run_command', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
