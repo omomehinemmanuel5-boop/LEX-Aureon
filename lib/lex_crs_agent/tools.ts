@@ -8,7 +8,9 @@
  *              get_constitutional_state, query_database, get_recent_receipts,
  *              get_vercel_logs, run_self_test
  *
- * WRITE TOOLS: write_file, run_governance
+ * WRITE TOOLS: write_file
+ *
+ * GOVERNANCE ANALYSIS: run_governance (execute or simulation mode)
  *
  * TEST TOOLS:  write_file_governed
  *
@@ -885,7 +887,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   check_github_token_scope: () => check_github_token_scope(),
   get_constitutional_state: () => get_constitutional_state(),
   query_database:           (a) => query_database(a as { sql: string }),
-  run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string }),
+  run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string; governance_mode?: 'execute' | 'simulate' }),
   get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
   get_vercel_logs:          (a) => get_vercel_logs(a as { limit?: number }),
   run_self_test:            () => run_self_test(),
@@ -1022,7 +1024,15 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'run_governance',
     description: 'Send a prompt through the SovereignKernel governance cycle (includes memory, adaptive θ, CCP/IEC/ADV metrics).',
-    parameters: { type: 'object', properties: { prompt: { type: 'string' }, session_id: { type: 'string' } }, required: ['prompt'] },
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string' },
+        session_id: { type: 'string' },
+        governance_mode: { type: 'string', enum: ['execute', 'simulate'], description: 'Optional. simulate evaluates a hypothetical governance action without persisting canonical state, receipts, memory, calibration, or trajectory updates. Defaults to execute.' },
+      },
+      required: ['prompt'],
+    },
   },
   {
     name: 'get_recent_receipts',
