@@ -1,5 +1,6 @@
-import { classifyDatabaseOperation, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  classifyDatabaseOperation,
   classifyGovernanceRisk,
   createGovernanceApprovalToken,
   evaluateToolGovernance,
