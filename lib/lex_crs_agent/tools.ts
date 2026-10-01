@@ -932,7 +932,7 @@ export async function simulate_agent_plan(input: {
       }
     }
 
-    const recoveryState = before.M < 0.05 ? 'QUARANTINED' : before.M < 0.15 ? 'RECOVERING' : before.M < 0.25 ? 'RESTORING' : 'VERIFIED';
+    const recoveryState: 'QUARANTINED' | 'RECOVERING' | 'RESTORING' | 'VERIFIED' | 'NORMAL' = before.M < 0.05 ? 'QUARANTINED' : before.M < 0.15 ? 'RECOVERING' : before.M < 0.25 ? 'RESTORING' : 'NORMAL';
     const capabilityAllowed = before.M < 0.05
       ? false
       : mappedRisk === 'read'
