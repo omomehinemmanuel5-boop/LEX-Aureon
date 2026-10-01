@@ -6,6 +6,17 @@ const DESTRUCTIVE_TOOLS = new Set(['delete_file', 'delete_directory', 'delete_re
 const EXTERNAL_TOOLS = new Set(['dispatch_workflow', 'send_email', 'publish_post', 'create_issue', 'create_pull_request', 'deploy', 'create_deployment', 'http_post', 'http_put', 'http_patch', 'curl_post']);
 
 export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
+
+/** Classifies SQL by operation so database safety is governed by the statement, not the tool name. */
+export function classifyDatabaseOperation(sql: string): 'read' | 'write' | 'invalid' {
+  const normalized = sql
+    .replace(/^\\s*(?:--[^\\n]*(?:\\n|$)|\\/\\*[\\s\\S]*?\\*\\/\\s*)+/g, '')
+    .trim();
+  if (!normalized || normalized.includes(';')) return 'invalid';
+  if (/^(?:select|with)\\b/i.test(normalized)) return 'read';
+  return 'write';
+}
+
 export type VerificationStatus = 'verified' | 'unknown' | 'not_started' | 'failed';
 
 export interface GovernancePolicyDecision {
