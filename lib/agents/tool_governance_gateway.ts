@@ -10,10 +10,10 @@ export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
 /** Classifies SQL by operation so database safety is governed by the statement, not the tool name. */
 export function classifyDatabaseOperation(sql: string): 'read' | 'write' | 'invalid' {
   const normalized = sql
-    .replace(/^\\s*(?:--[^\\n]*(?:\\n|$)|\\/\\*[\\s\\S]*?\\*\\/\\s*)+/g, '')
+    .replace(/^\s*(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/\s*)+/g, '')
     .trim();
   if (!normalized || normalized.includes(';')) return 'invalid';
-  if (/^(?:select|with)\\b/i.test(normalized)) return 'read';
+  if (/^(?:select|with)\b/i.test(normalized)) return 'read';
   return 'write';
 }
 
