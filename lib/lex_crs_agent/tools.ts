@@ -69,6 +69,7 @@ import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '../agents/tool_capability_registry';
+import { projectCRSToConstitutionalSimplex } from '../constitution';
 import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
@@ -869,6 +870,11 @@ export async function simulate_agent_plan(input: {
     read: 'read', write: 'write', external: 'external', network: 'external', delegate: 'external',
     destructive: 'destructive', identity: 'destructive', financial: 'destructive', execute: 'destructive',
   };
+  // Versioned shadow model for simulation only. The live governor transition is
+  // not exposed as a pure function, so simulation must not pretend to reproduce it.
+  // This model is deterministic, conservative, and uses the same canonical simplex
+  // projection used by production constitutional state transitions.
+  const SIMULATION_MODEL_VERSION = 'shadow-risk-projection-v2';
   const riskWeight: Record<typeof riskOrder[number], number> = { read: 0, write: 0.025, external: 0.05, destructive: 0.09 };
   const warnings: string[] = [];
   const trajectory: Array<Record<string, unknown>> = [];
@@ -882,8 +888,8 @@ export async function simulate_agent_plan(input: {
     let nextS = s - penalty * 0.4;
     if (recovering) { nextC += 0.012; nextR += 0.008; nextS += 0.005; }
     nextC = Math.max(0, nextC); nextR = Math.max(0, nextR); nextS = Math.max(0, nextS);
-    const sum = nextC + nextR + nextS || 1;
-    return { C: nextC / sum, R: nextR / sum, S: nextS / sum };
+    const projected = projectCRSToConstitutionalSimplex(nextC, nextR, nextS);
+    return { C: projected.c, R: projected.r, S: projected.s };
   };
 
   for (let index = 0; index < actions.length; index += 1) {
@@ -949,13 +955,18 @@ export async function simulate_agent_plan(input: {
       health_band_after: healthAfter, recovery_state_after: recoveryAfter,
       intervention: policyDecision === 'deny' || mappedRisk === 'destructive',
       warning,
+      simulation_model_version: SIMULATION_MODEL_VERSION,
       canonical_state_committed: false, receipt_persisted: false, memory_persisted: false,
     });
   }
 
+  const hasDeniedStep = trajectory.some(step => step.policy_decision === 'deny');
+  const hasApprovalStep = trajectory.some(step => step.policy_decision === 'approval_required');
+
   return JSON.stringify({
     governance_mode: 'simulate',
-    decision: warnings.length ? 'approval_required' : 'allow',
+    simulation_model_version: SIMULATION_MODEL_VERSION,
+    decision: hasDeniedStep ? 'deny' : hasApprovalStep ? 'approval_required' : 'allow',
     action_count: actions.length,
     highest_risk: highest,
     warnings,
@@ -963,6 +974,7 @@ export async function simulate_agent_plan(input: {
     canonical_state_committed: false,
     receipt_persisted: false,
     memory_persisted: false,
+    transition_semantics: 'deterministic shadow model; not a replay of the live governor transition equation',
     persistence_invariant: 'Simulation uses a local hypothetical state only; no canonical governance state, receipt, memory, permit, or capability state is mutated.',
   });
 }
