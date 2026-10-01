@@ -33,6 +33,8 @@ describe('central tool governance gateway', () => {
     expect(result.requiresApproval).toBe(false);
     expect(result.decision).toBe('allow');
     expect(classifyDatabaseOperation('SELECT 1')).toBe('read');
+    expect(classifyGovernanceRisk('query_database', { sql: 'UPDATE users SET x = 1' })).toBe('write');
+    expect(classifyGovernanceRisk('query_database', { sql: 'SELECT 1; DELETE FROM users' })).toBe('destructive');
     expect(classifyDatabaseOperation('  /* comment */ SELECT 1')).toBe('read');
     expect(classifyDatabaseOperation('UPDATE users SET x = 1')).toBe('write');
     expect(classifyDatabaseOperation('SELECT 1; DELETE FROM users')).toBe('invalid');
