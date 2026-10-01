@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { classifyDatabaseOperation, describe, expect, it, vi } from 'vitest';
 import {
   classifyGovernanceRisk,
   createGovernanceApprovalToken,
@@ -31,6 +31,10 @@ describe('central tool governance gateway', () => {
     expect(result.risk).toBe('read');
     expect(result.requiresApproval).toBe(false);
     expect(result.decision).toBe('allow');
+    expect(classifyDatabaseOperation('SELECT 1')).toBe('read');
+    expect(classifyDatabaseOperation('  /* comment */ SELECT 1')).toBe('read');
+    expect(classifyDatabaseOperation('UPDATE users SET x = 1')).toBe('write');
+    expect(classifyDatabaseOperation('SELECT 1; DELETE FROM users')).toBe('invalid');
   });
 
   it('allows non-effectful governance analysis without weakening normal write approval', () => {
