@@ -430,10 +430,20 @@ export async function get_constitutional_state(): Promise<string> {
 }
 
 // ── query_database ────────────────────────────────────────────────────────────
+export function classifyDatabaseOperation(sql: string): 'read' | 'write' | 'invalid' {
+  // Database governance is operation-level, not tool-name-level. Strip only
+  // leading whitespace/comments, then require exactly one read statement.
+  const normalized = sql
+    .replace(/^\\s*(?:--[^\\n]*(?:\\n|$)|\\/\\*[\\s\\S]*?\\*\\/\\s*)+/g, '')
+    .trim();
+  if (!normalized || normalized.includes(';')) return 'invalid';
+  if (/^(?:select|with)\\b/i.test(normalized)) return 'read';
+  return 'write';
+}
+
 export async function query_database({ sql }: { sql: string }): Promise<string> {
-  const lower = sql.toLowerCase().trim();
-  if (!lower.startsWith('select') && !lower.startsWith('with'))
-    return 'Error: only SELECT queries allowed for safety.';
+  if (classifyDatabaseOperation(sql) !== 'read')
+    return 'Error: only single-statement SELECT/CTE queries allowed for safety.';
   try {
     const db  = await getDB();
     const res = await db.execute(sql);
