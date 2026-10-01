@@ -458,14 +458,28 @@ export async function run_governance({
   prompt, session_id = `lex-agent-${Date.now()}`, governance_mode = 'execute',
 }: { prompt: string; session_id?: string; governance_mode?: 'execute' | 'simulate' }): Promise<string> {
   try {
-    const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, session_id, turn: 1, governance_mode }),
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      return `Error ${res.status}: ${txt.slice(0, 200)}`;
+    let res: Response | null = null;
+    let lastStatus = 0;
+    let lastBody = '';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, session_id, turn: 1, governance_mode }),
+      });
+      lastStatus = res.status;
+      if (res.status !== 429) break;
+      lastBody = await res.text().catch(() => '');
+      if (attempt === 2) break;
+      const retryAfter = Number(res.headers.get('retry-after') ?? '');
+      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(5000, retryAfter * 1000)
+        : 500 * (2 ** attempt);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    if (!res || !res.ok) {
+      const txt = lastBody || await res?.text().catch(() => '') || '';
+      return `Error ${lastStatus || res?.status || 0}: ${txt.slice(0, 200)}`;
     }
     const d = await res.json() as {
       governed_output?: string;
@@ -475,6 +489,9 @@ export async function run_governance({
       intervention_triggered?: boolean;
       health_band?: string;
       M?: number;
+      m_before?: number;
+      state?: { C?: number; R?: number; S?: number };
+      raw_state?: { C?: number; R?: number; S?: number };
       theta?: number;
       semantic_signal?: { attack_type: string; severity: number };
       metrics?: { c_measured?: number; r_measured?: number; s_measured?: number };
@@ -508,6 +525,33 @@ export async function run_governance({
       projection_triggered: Boolean(d.projection_triggered),
       receipt_id: d.receipt_id ?? null,
       governance_mode,
+      hypothetical_mutation: governance_mode === 'simulate' ? (() => {
+        const before = {
+          C: Number(d.raw_state?.C ?? C),
+          R: Number(d.raw_state?.R ?? R),
+          S: Number(d.raw_state?.S ?? S),
+          M: Number(d.m_before ?? Math.min(C, R, S)),
+        };
+        const after = {
+          C: Number(d.state?.C ?? C),
+          R: Number(d.state?.R ?? R),
+          S: Number(d.state?.S ?? S),
+          M,
+        };
+        return {
+          before,
+          after,
+          delta: {
+            C: Number((after.C - before.C).toFixed(6)),
+            R: Number((after.R - before.R).toFixed(6)),
+            S: Number((after.S - before.S).toFixed(6)),
+            M: Number((after.M - before.M).toFixed(6)),
+          },
+          canonical_state_committed: false,
+          receipt_persisted: false,
+          memory_persisted: false,
+        };
+      })() : null,
       timestamp: new Date().toISOString(),
     });
   } catch (e) { return `Error: ${String(e)}`; }
