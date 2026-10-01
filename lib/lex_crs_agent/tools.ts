@@ -65,6 +65,7 @@
 import { env } from '../env';
 import { getGitHubCredentialForApprovedAction } from '../agents/credential_broker';
 import { describeGovernanceOutput } from '../refusals';
+import { classifyDatabaseOperation } from '../agents/tool_governance_gateway';
 import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
@@ -430,17 +431,6 @@ export async function get_constitutional_state(): Promise<string> {
 }
 
 // ── query_database ────────────────────────────────────────────────────────────
-export function classifyDatabaseOperation(sql: string): 'read' | 'write' | 'invalid' {
-  // Database governance is operation-level, not tool-name-level. Strip only
-  // leading whitespace/comments, then require exactly one read statement.
-  const normalized = sql
-    .replace(/^\\s*(?:--[^\\n]*(?:\\n|$)|\\/\\*[\\s\\S]*?\\*\\/\\s*)+/g, '')
-    .trim();
-  if (!normalized || normalized.includes(';')) return 'invalid';
-  if (/^(?:select|with)\\b/i.test(normalized)) return 'read';
-  return 'write';
-}
-
 export async function query_database({ sql }: { sql: string }): Promise<string> {
   if (classifyDatabaseOperation(sql) !== 'read')
     return 'Error: only single-statement SELECT/CTE queries allowed for safety.';
