@@ -17,6 +17,20 @@ describe('central tool governance gateway', () => {
     expect(classifyGovernanceRisk('delete_repository')).toBe('destructive');
     // run_governance evaluates a request but has no side effect itself.
     expect(classifyGovernanceRisk('run_governance')).toBe('read');
+    expect(classifyGovernanceRisk('query_database')).toBe('read');
+  });
+
+  it('treats query_database as a read-only SELECT capability', () => {
+    const result = evaluateToolGovernance({
+      toolName: 'query_database',
+      args: { sql: 'SELECT 1' },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+    });
+    expect(result.risk).toBe('read');
+    expect(result.requiresApproval).toBe(false);
+    expect(result.decision).toBe('allow');
   });
 
   it('allows non-effectful governance analysis without weakening normal write approval', () => {
