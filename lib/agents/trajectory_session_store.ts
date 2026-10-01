@@ -60,12 +60,27 @@ export async function getTrajectoryState(sessionId: string): Promise<TrajectoryS
 
 export async function setTrajectoryState(sessionId: string, state: TrajectoryState): Promise<void> {
   await ensureTrajectorySchema();
+  const timestamp = Date.now();
+  const persistedState: TrajectoryState = {
+    ...state,
+    createdAt: state.createdAt ?? timestamp,
+    updatedAt: timestamp,
+  };
   await getClient().execute({
     sql: `INSERT INTO trajectory_state (session_id, state_json, updated_at)
           VALUES (?, ?, ?)
           ON CONFLICT(session_id) DO UPDATE SET state_json=excluded.state_json, updated_at=excluded.updated_at`,
-    args: [sessionId, JSON.stringify(state), Date.now()],
+    args: [sessionId, JSON.stringify(persistedState), timestamp],
   });
+}
+
+/** Lock a plan when execution status is unknown; retrying must not bypass the checkpoint. */
+export async function lockTrajectoryState(sessionId: string, reason: string): Promise<TrajectoryState | undefined> {
+  const state = await getTrajectoryState(sessionId);
+  if (!state) return undefined;
+  const locked: TrajectoryState = { ...state, locked: true, lockReason: reason };
+  await setTrajectoryState(sessionId, locked);
+  return locked;
 }
 
 export async function clearTrajectoryState(sessionId: string): Promise<void> {
@@ -86,4 +101,8 @@ export function isTrajectoryActive(state: TrajectoryState | undefined): state is
   if (!state) return false;
   if (state.locked) return false;
   return state.currentStep < state.plan.actions.length;
+}
+
+export function isTrajectoryExpired(state: TrajectoryState | undefined): boolean {
+  return Boolean(state?.expiresAt !== undefined && Date.now() >= state.expiresAt);
 }

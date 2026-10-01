@@ -200,7 +200,10 @@ describe('trajectory-aware MCP dispatch', () => {
     const [, passedAction] = executeGovernedTrajectoryAction.mock.calls[0];
     expect(passedAction.toolName).toBe('search_code');
     expect(passedAction.declaredIntent).toBe('Undeclared call to search_code');
-    expect(passedAction.risk).toBe('destructive');
+    // Risk is derived from the registered capability of the attempted tool;
+    // the trajectory gate then rejects it for order/scope, rather than
+    // inventing a destructive risk for every mismatch.
+    expect(passedAction.risk).toBe('read');
   });
 
   it('declare_trajectory_plan and get_trajectory_status calls themselves are never trajectory-gated', async () => {

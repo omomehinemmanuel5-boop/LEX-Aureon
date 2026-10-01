@@ -13,14 +13,14 @@ import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
 import { bindGovernanceToolSession } from '@/lib/agents/governance_tool_session';
 import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
-import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
+import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, lockTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { getAutonomousRun } from '@/lib/agents/autonomous_run_supervisor';
 import type { AutonomousRunContext } from '@/lib/agents/trajectory_executor';
 import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
 import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
-import { getToolCapability, requireKnownToolCapability } from '@/lib/agents/tool_capability_registry';
+import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
 import { createGovernanceApprovalToken } from '@/lib/agents/tool_governance_gateway';
 import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governance_state';
@@ -87,6 +87,13 @@ const SERVER_INFO = {
 const CAPABILITIES = { tools: {} };
 
 type ToolHandler = (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
+
+function trajectoryRiskForCapability(capability: ToolCapability | undefined): TrajectoryAction['risk'] {
+  if (capability === 'read') return 'read';
+  if (capability === 'write') return 'write';
+  if (capability === 'external' || capability === 'network' || capability === 'delegate') return 'external';
+  return 'destructive';
+}
 
 const EXTERNAL_CAPABILITY_DEFINITIONS = [
   {
@@ -690,13 +697,30 @@ export async function POST(req: Request) {
         return NextResponse.json({ jsonrpc: '2.0', error: { code: -32042, message: 'Long-horizon actions require an active trajectory checkpoint' }, id });
       }
 
+      if (trajectoryState?.locked) {
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          result: {
+            content: [{ type: 'text', text: `Trajectory denied: ${trajectoryState.lockReason ?? 'trajectory_locked'}` }],
+            trajectory: {
+              decision: 'deny', reason: trajectoryState.lockReason ?? 'trajectory_locked',
+              plan_id: trajectoryState.plan.planId, session_id: sessionId,
+              step_before: trajectoryState.currentStep, step_after: trajectoryState.currentStep,
+              drift_score: trajectoryState.driftScore, execution_status: 'not_executed', receipt_id: null,
+            },
+          },
+          id,
+        });
+      }
+
       if (trajectoryState && isTrajectoryActive(trajectoryState)) {
         const expected = trajectoryState.plan.actions[trajectoryState.currentStep];
+        const attemptedCapability = getToolCapability(toolName);
         const attemptedAction: TrajectoryAction = {
           actionId: trajectoryActionId(toolName, trajectoryState.currentStep),
           toolName,
           declaredIntent: expected?.toolName === toolName ? expected.declaredIntent : `Undeclared call to ${toolName}`,
-          risk: expected?.toolName === toolName ? expected.risk : 'destructive',
+          risk: expected?.toolName === toolName ? expected.risk : trajectoryRiskForCapability(attemptedCapability?.capability),
           target: expected?.target,
         };
 
@@ -715,12 +739,19 @@ export async function POST(req: Request) {
         ), 30_000, trajectoryController);
 
         if (trajectoryOutcome.timedOut) {
+          const pausedState = await lockTrajectoryState(sessionId, 'execution_unknown_after_deadline');
           return NextResponse.json({
             jsonrpc: '2.0',
             result: { content: [{
               type: 'text',
-              text: 'EXECUTION_STATUS=unknown_after_deadline. Trajectory execution was cancelled where supported, but the tool or remote system may already have completed the action. Verify its state and receipt before retrying.',
-            }] },
+              text: 'EXECUTION_STATUS=unknown_after_deadline. Trajectory is locked fail-closed; verify its state and receipt before retrying.',
+            }], trajectory: {
+              decision: 'paused', reason: 'execution_unknown_after_deadline', plan_id: trajectoryState.plan.planId,
+              session_id: sessionId, step_before: trajectoryState.currentStep,
+              step_after: pausedState?.currentStep ?? trajectoryState.currentStep,
+              drift_score: pausedState?.driftScore ?? trajectoryState.driftScore,
+              execution_status: 'unknown',
+            } },
             id,
           });
         }
@@ -737,7 +768,20 @@ export async function POST(req: Request) {
 
         return NextResponse.json({
           jsonrpc: '2.0',
-          result: { content: [{ type: 'text', text: execution.result }] },
+          result: {
+            content: [{ type: 'text', text: execution.result }],
+            trajectory: {
+              decision: execution.trajectory.decision,
+              reason: execution.trajectory.reason,
+              plan_id: execution.trajectory.planId,
+              session_id: execution.trajectory.sessionId,
+              step_before: execution.trajectory.stepBefore,
+              step_after: execution.trajectory.stepAfter,
+              drift_score: execution.trajectory.driftScore,
+              execution_status: execution.trajectory.executionStatus,
+              receipt_id: execution.governance.receiptId ?? null,
+            },
+          },
           id,
         });
       }

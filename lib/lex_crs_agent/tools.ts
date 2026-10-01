@@ -728,8 +728,8 @@ export async function narrate_origin({ component }: { component?: string }): Pro
 // to submit a specific piece of work to stricter scope/order/drift
 // enforcement — same trust model as the rest of this file's tools, applied
 // one level up.
-import type { TrajectoryAction } from '../agents/trajectory_governance';
-import { createTrajectoryPlan, createTrajectoryState } from '../agents/trajectory_governance';
+import type { TrajectoryAction, TrajectoryRisk } from '../agents/trajectory_governance';
+import { createTrajectoryPlan, createTrajectoryState, MAX_TRAJECTORY_STEPS } from '../agents/trajectory_governance';
 import { trajectoryActionId } from '../agents/trajectory_executor';
 import { setTrajectoryState, getTrajectoryState, clearTrajectoryState } from '../agents/trajectory_session_store';
 
@@ -744,6 +744,32 @@ export async function declare_trajectory_plan({
 }): Promise<string> {
   if (!session_id) return 'Error: session_id is required to declare a trajectory plan.';
   if (!actions?.length) return 'Error: a plan needs at least one declared action.';
+  if (actions.length > MAX_TRAJECTORY_STEPS) {
+    return `Error: trajectory plan exceeds the maximum of ${MAX_TRAJECTORY_STEPS} actions.`;
+  }
+  if (!authorized_scope?.length) return 'Error: authorized_scope must contain at least one registered capability.';
+
+  const riskForCapability = (capability: ToolCapability): TrajectoryRisk => {
+    if (capability === 'read') return 'read';
+    if (capability === 'write') return 'write';
+    if (capability === 'external' || capability === 'network' || capability === 'delegate') return 'external';
+    return 'destructive';
+  };
+  const ceilingRank: Record<TrajectoryRisk, number> = { read: 0, write: 1, external: 2, destructive: 3 };
+  for (const action of actions) {
+    const capability = getToolCapability(action.toolName);
+    if (!capability) return `Error: ${action.toolName} is not explicitly registered as a governed capability.`;
+    const registeredRisk = riskForCapability(capability.capability);
+    if (action.risk !== registeredRisk) {
+      return `Error: ${action.toolName} must be declared as risk=${registeredRisk}; caller supplied risk=${action.risk}.`;
+    }
+    if (ceilingRank[action.risk] > ceilingRank[risk_ceiling]) {
+      return `Error: ${action.toolName} exceeds the plan risk ceiling ${risk_ceiling}.`;
+    }
+    if (!authorized_scope.some(scope => action.toolName === scope || action.toolName.startsWith(`${scope}:`))) {
+      return `Error: ${action.toolName} is outside the authorized trajectory scope.`;
+    }
+  }
 
   const declared: TrajectoryAction[] = actions.map((a, i) => ({
     actionId: trajectoryActionId(a.toolName, i),
@@ -779,10 +805,17 @@ export async function get_trajectory_status({ session_id }: { session_id?: strin
 
   const remaining = state.plan.actions.slice(state.currentStep);
   const next = remaining[0];
+  const now = Date.now();
+  const expired = state.expiresAt !== undefined && now >= state.expiresAt;
   return `Plan: ${state.plan.planId} — "${state.plan.goal}"\n` +
     `Progress: ${state.currentStep}/${state.plan.actions.length} steps completed\n` +
     `Drift score: ${state.driftScore.toFixed(2)}\n` +
     `Locked: ${state.locked}\n` +
+    `Expired: ${expired}\n` +
+    `Created at: ${state.createdAt ? new Date(state.createdAt).toISOString() : 'unknown'}\n` +
+    `Updated at: ${state.updatedAt ? new Date(state.updatedAt).toISOString() : 'unknown'}\n` +
+    `Expires at: ${state.expiresAt ? new Date(state.expiresAt).toISOString() : 'unknown'}\n` +
+    (state.lockReason ? `Lock reason: ${state.lockReason}\n` : '') +
     (next ? `Next required step: [${next.actionId}] ${next.toolName} — ${next.declaredIntent}` : 'All declared steps completed.');
 }
 

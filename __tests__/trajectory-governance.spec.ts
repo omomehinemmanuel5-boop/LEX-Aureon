@@ -56,6 +56,13 @@ describe('trajectory governance', () => {
     expect(decision.reason).toBe('trajectory_locked');
   });
 
+  it('rejects expired plans before any action can execute', () => {
+    const expired = { ...createTrajectoryState(plan), expiresAt: Date.now() - 1 };
+    const decision = authorizeTrajectoryAction(expired, plan.actions[0]);
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toBe('trajectory_expired');
+  });
+
   it('rejects risk escalation beyond the plan ceiling', () => {
     const state = createTrajectoryState(plan);
     const decision = authorizeTrajectoryAction(state, {
@@ -140,5 +147,24 @@ describe('trajectory governance', () => {
     expect(afterSecond.currentStep).toBe(2);
     expect(afterSecond.completed).toEqual(['a1', 'a2']);
     expect(afterSecond.locked).toBe(false);
+  });
+
+  it('preserves ordering across a 50-step long-horizon run', () => {
+    const longPlan = createTrajectoryPlan({
+      goal: 'read 50 approved artifacts',
+      authorizedScope: ['read_file'],
+      riskCeiling: 'read',
+      actions: Array.from({ length: 50 }, (_, i) => ({
+        actionId: `step-${i}`, toolName: 'read_file', declaredIntent: `read artifact ${i}`, risk: 'read' as const,
+      })),
+    });
+    let state = createTrajectoryState(longPlan);
+    for (const action of longPlan.actions) {
+      expect(authorizeTrajectoryAction(state, action).approved).toBe(true);
+      state = reconcileTrajectoryOutcome(state, { actionId: action.actionId, success: true, actualEffect: 'READ_OK' });
+    }
+    expect(state.currentStep).toBe(50);
+    expect(state.completed).toHaveLength(50);
+    expect(state.locked).toBe(false);
   });
 });

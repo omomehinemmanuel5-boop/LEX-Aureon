@@ -69,7 +69,9 @@ describe('trajectory_session_store (Turso-backed)', () => {
   it('stores and retrieves state by session id, isolated from other sessions', async () => {
     const state = createTrajectoryState(planWithSteps(2));
     await setTrajectoryState('session-a', state);
-    expect(await getTrajectoryState('session-a')).toEqual(state);
+    const stored = await getTrajectoryState('session-a');
+    expect(stored).toMatchObject(state);
+    expect(stored?.updatedAt).toBeGreaterThanOrEqual(state.updatedAt ?? 0);
     expect(await getTrajectoryState('session-b')).toBeUndefined();
   });
 

@@ -28,6 +28,16 @@ export interface GovernedTrajectoryExecution {
   result: string;
   action: TrajectoryAction;
   governance: GovernedToolExecutionResult;
+  trajectory: {
+    decision: 'allow' | 'deny' | 'paused';
+    reason: string;
+    planId: string;
+    sessionId: string;
+    stepBefore: number;
+    stepAfter: number;
+    driftScore: number;
+    executionStatus: 'not_executed' | 'completed' | 'blocked' | 'unknown';
+  };
 }
 
 export interface AutonomousRunContext {
@@ -57,7 +67,13 @@ export async function executeGovernedTrajectoryAction(
 ): Promise<GovernedTrajectoryExecution> {
   const trajectoryDecision = authorizeTrajectoryAction(state, action);
   if (!trajectoryDecision.approved) {
-    const deniedState = { ...state, driftScore: trajectoryDecision.driftScore };
+    const expired = trajectoryDecision.reason === 'trajectory_expired';
+    const deniedState = {
+      ...state,
+      driftScore: trajectoryDecision.driftScore,
+      locked: expired ? true : state.locked,
+      lockReason: expired ? 'trajectory_expired' : state.lockReason,
+    };
     const result = `Trajectory denied: ${trajectoryDecision.reason}`;
     await writeTrajectoryReceipt({
       sessionId, actionId: action.actionId, toolName: action.toolName, args,
@@ -69,6 +85,11 @@ export async function executeGovernedTrajectoryAction(
       action,
       result,
       governance: { result, approved: false, decision: 'TRAJECTORY_DENIED', receiptId: null },
+      trajectory: {
+        decision: 'deny', reason: trajectoryDecision.reason, planId: state.plan.planId,
+        sessionId, stepBefore: state.currentStep, stepAfter: state.currentStep,
+        driftScore: deniedState.driftScore, executionStatus: 'not_executed',
+      },
     };
   }
 
@@ -93,6 +114,11 @@ export async function executeGovernedTrajectoryAction(
         action,
         result,
         governance: { result, approved: false, decision: 'RUN_ACTION_REPLAY', receiptId: null },
+        trajectory: {
+          decision: 'deny', reason: 'autonomous_action_replay', planId: state.plan.planId,
+          sessionId, stepBefore: state.currentStep, stepAfter: state.currentStep,
+          driftScore: state.driftScore, executionStatus: 'blocked',
+        },
       };
     }
   }
@@ -153,6 +179,11 @@ export async function executeGovernedTrajectoryAction(
         decision: 'TRAJECTORY_RECEIPT_WRITE_FAILED',
         receiptId: execution.receiptId,
       },
+      trajectory: {
+        decision: 'paused', reason: 'trajectory_receipt_write_failed', planId: state.plan.planId,
+        sessionId, stepBefore: state.currentStep, stepAfter: nextState.currentStep,
+        driftScore: nextState.driftScore, executionStatus: 'unknown',
+      },
     };
   }
 
@@ -176,11 +207,16 @@ export async function executeGovernedTrajectoryAction(
         state: { ...nextState, locked: true },
         action,
         result,
-        governance: {
+      governance: {
           result,
           approved: false,
           decision: error instanceof RunGovernanceError ? `RUN_${error.code.toUpperCase()}` : 'RUN_CHECKPOINT_FAILED',
           receiptId: execution.receiptId,
+        },
+        trajectory: {
+          decision: 'paused', reason: error instanceof RunGovernanceError ? `run_${error.code}` : 'run_checkpoint_failed',
+          planId: state.plan.planId, sessionId, stepBefore: state.currentStep,
+          stepAfter: nextState.currentStep, driftScore: nextState.driftScore, executionStatus: 'unknown',
         },
       };
     }
@@ -192,7 +228,16 @@ export async function executeGovernedTrajectoryAction(
     decision: execution.decision,
     receiptId: execution.receiptId,
   };
-  return { state: nextState, result: execution.result, action, governance };
+  return {
+    state: nextState, result: execution.result, action, governance,
+    trajectory: {
+      decision: execution.approved ? 'allow' : 'deny',
+      reason: execution.approved ? 'trajectory_authorized' : 'constitutional_tool_denied',
+      planId: state.plan.planId, sessionId, stepBefore: state.currentStep,
+      stepAfter: nextState.currentStep, driftScore: nextState.driftScore,
+      executionStatus: execution.approved ? 'completed' : 'blocked',
+    },
+  };
 }
 
 /** Deterministic action identity helper for adapters that construct plans dynamically. */

@@ -42,7 +42,14 @@ export interface TrajectoryState {
   completed: string[];
   driftScore: number;
   locked: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+  expiresAt?: number;
+  lockReason?: string;
 }
+
+export const MAX_TRAJECTORY_STEPS = 1000;
+export const DEFAULT_TRAJECTORY_TTL_MS = 24 * 60 * 60 * 1000;
 
 const RISK_RANK: Record<TrajectoryRisk, number> = {
   read: 0,
@@ -59,12 +66,16 @@ export function createTrajectoryPlan(input: Omit<TrajectoryPlan, 'planId'>): Tra
 }
 
 export function createTrajectoryState(plan: TrajectoryPlan): TrajectoryState {
+  const now = Date.now();
   return {
     plan,
     currentStep: 0,
     completed: [],
     driftScore: 0,
     locked: false,
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: now + DEFAULT_TRAJECTORY_TTL_MS,
   };
 }
 
@@ -81,6 +92,10 @@ export function authorizeTrajectoryAction(
 ): { approved: boolean; reason: string; driftScore: number } {
   if (state.locked) {
     return { approved: false, reason: 'trajectory_locked', driftScore: state.driftScore };
+  }
+
+  if (state.expiresAt !== undefined && Date.now() >= state.expiresAt) {
+    return { approved: false, reason: 'trajectory_expired', driftScore: state.driftScore };
   }
 
   if (RISK_RANK[action.risk] > RISK_RANK[state.plan.riskCeiling]) {
@@ -140,6 +155,7 @@ export function reconcileTrajectoryOutcome(
     currentStep: nextStep,
     completed: [...state.completed, outcome.actionId],
     driftScore: nextDrift,
+    updatedAt: Date.now(),
     // `locked` intentionally signals "an outcome violated the plan," not
     // "no more steps remain" — a plan that finishes all its steps
     // successfully stays unlocked (see trajectory-governance.spec.ts:
@@ -148,5 +164,6 @@ export function reconcileTrajectoryOutcome(
     // out-of-bounds `expected` check in authorizeTrajectoryAction, so no
     // separate completion-locking is needed here.
     locked: !outcome.success || nextDrift >= 1,
+    lockReason: !outcome.success ? 'action_failed' : nextDrift >= 1 ? 'drift_ceiling_exceeded' : state.lockReason,
   };
 }

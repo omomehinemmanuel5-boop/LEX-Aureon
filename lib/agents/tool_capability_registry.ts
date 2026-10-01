@@ -32,7 +32,7 @@ const READ_TOOLS = [
   'read_file','read_directory','list_directory','list_files','read_memory',
   'search_memory','fetch_page','curl','http_get','get_file','cat','head',
   'tail','grep','find','ls','dir','glob','read_json','parse_csv',
-  'get_constitutional_state','get_trajectory_status','review_agent_action',
+  'get_constitutional_state','get_trajectory_status','review_agent_action','query_database',
   'simulate_agent_plan','explain_denial','declare_trajectory_plan',
   'clear_trajectory_plan','get_build_status','get_workflow_run',
   'get_workflow_log','get_workflow_artifact','get_recent_receipts',
