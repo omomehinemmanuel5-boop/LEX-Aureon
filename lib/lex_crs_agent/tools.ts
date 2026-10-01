@@ -70,7 +70,8 @@ import { runSelfReflection } from '../self_reflection';
 import { logDecision, narrateOrigin } from '../design_journal';
 import crypto from 'crypto';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '../agents/tool_capability_registry';
-import { projectCRSToConstitutionalSimplex } from '../constitution';
+import { productionStateTransition, PRODUCTION_TRANSITION_VERSION } from '../production_transition';
+import { THETA_0 } from '../aureonics_core';
 import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
@@ -870,32 +871,25 @@ export async function simulate_agent_plan(input: {
     read: 'read', write: 'write', external: 'external', network: 'external', delegate: 'external',
     destructive: 'destructive', identity: 'destructive', financial: 'destructive', execute: 'destructive',
   };
-  // Versioned shadow model for simulation only. The live governor transition is
-  // not exposed as a pure function, so simulation must not pretend to reproduce it.
-  // This model is deterministic, conservative, and uses the same canonical simplex
-  // projection used by production constitutional state transitions.
-  const SIMULATION_MODEL_VERSION = 'shadow-risk-projection-v2';
-  const riskWeight: Record<typeof riskOrder[number], number> = { read: 0, write: 0.025, external: 0.05, destructive: 0.09 };
+  const SIMULATION_MODEL_VERSION = 'production-transition-shadow-v1';
+  // The risk-to-measurement mapping is hypothetical; the state-transition
+  // equation itself is the exact productionStateTransition used by SovereignKernel.
+  const riskDelta: Record<typeof riskOrder[number], { dc:number; dr:number; ds:number }> = {
+    read: { dc: 0, dr: 0, ds: 0 },
+    write: { dc: -0.01, dr: -0.005, ds: 0.015 },
+    external: { dc: -0.02, dr: -0.01, ds: 0.03 },
+    destructive: { dc: -0.04, dr: -0.02, ds: 0.06 },
+  };
+  const severity: Record<typeof riskOrder[number], number> = { read: 0, write: 0.25, external: 0.5, destructive: 0.9 };
   const warnings: string[] = [];
   const trajectory: Array<Record<string, unknown>> = [];
   let highest: typeof riskOrder[number] = 'read';
-  let C = 1 / 3, R = 1 / 3, S = 1 / 3;
-  let stableSteps = 0;
-
-  const project = (c: number, r: number, s: number, penalty: number, recovering: boolean) => {
-    let nextC = c - penalty * 0.4;
-    let nextR = r - penalty * 0.2;
-    let nextS = s - penalty * 0.4;
-    if (recovering) { nextC += 0.012; nextR += 0.008; nextS += 0.005; }
-    nextC = Math.max(0, nextC); nextR = Math.max(0, nextR); nextS = Math.max(0, nextS);
-    const projected = projectCRSToConstitutionalSimplex(nextC, nextR, nextS);
-    return { C: projected.c, R: projected.r, S: projected.s };
-  };
+  let state = { C: 1 / 3, R: 1 / 3, S: 1 / 3 };
 
   for (let index = 0; index < actions.length; index += 1) {
     const action = actions[index];
     const tool = String(action.toolName ?? '').trim();
-    const before = { C, R, S, M: Math.min(C, R, S) };
+    const before = { ...state, M: Math.min(state.C, state.R, state.S) };
     const healthBefore = before.M >= 0.25 ? 'OPTIMAL' : before.M >= 0.15 ? 'ALERT' : before.M >= 0.08 ? 'STRESSED' : 'CRITICAL';
     let mappedRisk: typeof riskOrder[number] = 'destructive';
     let capability: ToolCapability | null = null;
@@ -905,6 +899,7 @@ export async function simulate_agent_plan(input: {
     if (!tool) {
       warning = 'Action is missing a tool name and cannot be authorized.';
       warnings.push(warning);
+      policyDecision = 'deny';
     } else {
       try {
         const resolved = requireKnownToolCapability(tool);
@@ -915,6 +910,15 @@ export async function simulate_agent_plan(input: {
           policyDecision = 'approval_required';
           warning = 'Registered capability requires approval: ' + tool + ' [' + capability + ']';
           warnings.push(warning);
+        }
+        if (tool === 'query_database' && action.target) {
+          const operation = classifyDatabaseOperation(action.target);
+          if (operation !== 'read') {
+            mappedRisk = operation === 'invalid' ? 'destructive' : 'write';
+            policyDecision = 'approval_required';
+            warning = 'Database operation is governed by statement effect: ' + operation;
+            warnings.push(warning);
+          }
         }
         if (action.risk && action.risk !== mappedRisk) {
           const mismatch = 'Caller-supplied risk for ' + tool + ' does not match its registered capability; registry classification is authoritative.';
@@ -928,8 +932,7 @@ export async function simulate_agent_plan(input: {
       }
     }
 
-    const recoveryEvidence = { nStable: stableSteps, sigmaViol: 0, canaryPassed: mappedRisk === 'read' && before.M >= 0.15 };
-    const recoveryState = before.M < 0.05 ? 'QUARANTINED' : before.M < 0.15 ? 'RECOVERING' : before.M < 0.25 ? (recoveryEvidence.canaryPassed && stableSteps >= 3 ? 'VERIFIED' : 'RESTORING') : (recoveryEvidence.canaryPassed && stableSteps >= 3 ? 'NORMAL' : 'VERIFIED');
+    const recoveryState = before.M < 0.05 ? 'QUARANTINED' : before.M < 0.15 ? 'RECOVERING' : before.M < 0.25 ? 'RESTORING' : 'VERIFIED';
     const capabilityAllowed = before.M < 0.05
       ? false
       : mappedRisk === 'read'
@@ -937,13 +940,21 @@ export async function simulate_agent_plan(input: {
         : before.M >= 0.15 && (recoveryState === 'VERIFIED' || recoveryState === 'NORMAL') && (mappedRisk !== 'destructive' || recoveryState === 'NORMAL');
     if (!capabilityAllowed && policyDecision !== 'deny') policyDecision = 'deny';
 
-    const recovering = mappedRisk === 'read' && before.M < 0.25;
-    const next = project(C, R, S, riskWeight[mappedRisk], recovering);
-    C = next.C; R = next.R; S = next.S;
-    const after = { C, R, S, M: Math.min(C, R, S) };
-    if (mappedRisk === 'read' && after.M >= before.M) stableSteps += 1; else stableSteps = 0;
+    const transition = productionStateTransition({
+      state,
+      delta: riskDelta[mappedRisk],
+      postResponseDelta: { dc: 0, dr: 0, ds: 0 },
+      semanticAttack: mappedRisk === 'destructive',
+      semanticSeverity: severity[mappedRisk],
+      advGain: 0,
+      effectiveTheta: THETA_0,
+      threatSignal: 0,
+      theta: THETA_0,
+    });
+    state = transition.state;
+    const after = { ...state, M: Math.min(state.C, state.R, state.S) };
     const healthAfter = after.M >= 0.25 ? 'OPTIMAL' : after.M >= 0.15 ? 'ALERT' : after.M >= 0.08 ? 'STRESSED' : 'CRITICAL';
-    const recoveryAfter = after.M < 0.05 ? 'QUARANTINED' : after.M < 0.15 ? 'RECOVERING' : after.M < 0.25 ? (stableSteps >= 3 ? 'VERIFIED' : 'RESTORING') : (stableSteps >= 3 ? 'NORMAL' : 'VERIFIED');
+    const recoveryAfter = after.M < 0.05 ? 'QUARANTINED' : after.M < 0.15 ? 'RECOVERING' : after.M < 0.25 ? 'RESTORING' : 'VERIFIED';
 
     trajectory.push({
       step: index + 1, tool_name: tool || null, capability, risk: mappedRisk,
@@ -956,6 +967,9 @@ export async function simulate_agent_plan(input: {
       intervention: policyDecision === 'deny' || mappedRisk === 'destructive',
       warning,
       simulation_model_version: SIMULATION_MODEL_VERSION,
+      production_transition_version: PRODUCTION_TRANSITION_VERSION,
+      projection_triggered: transition.projectionTriggered,
+      descent_guard_triggered: transition.descentGuardTriggered,
       canonical_state_committed: false, receipt_persisted: false, memory_persisted: false,
     });
   }
@@ -966,6 +980,7 @@ export async function simulate_agent_plan(input: {
   return JSON.stringify({
     governance_mode: 'simulate',
     simulation_model_version: SIMULATION_MODEL_VERSION,
+    production_transition_version: PRODUCTION_TRANSITION_VERSION,
     decision: hasDeniedStep ? 'deny' : hasApprovalStep ? 'approval_required' : 'allow',
     action_count: actions.length,
     highest_risk: highest,
@@ -974,10 +989,11 @@ export async function simulate_agent_plan(input: {
     canonical_state_committed: false,
     receipt_persisted: false,
     memory_persisted: false,
-    transition_semantics: 'deterministic shadow model; not a replay of the live governor transition equation',
+    transition_semantics: 'exact production CRS transition equation with deterministic hypothetical risk measurements; no production state is mutated',
     persistence_invariant: 'Simulation uses a local hypothetical state only; no canonical governance state, receipt, memory, permit, or capability state is mutated.',
   });
 }
+
 export async function explain_denial(input: { reason?: string; tool_name?: string }): Promise<string> {
   const reason = String(input.reason ?? 'The action did not satisfy the active governance policy.');
   return JSON.stringify({ summary: reason, tool_name: input.tool_name ?? null, safer_alternative: 'Review the action, declare the required scope, and request approval when the action is external or irreversible.' });
