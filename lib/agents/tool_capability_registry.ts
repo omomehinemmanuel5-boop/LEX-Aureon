@@ -37,7 +37,7 @@ const READ_TOOLS = [
   'clear_trajectory_plan','get_build_status','get_workflow_run',
   'get_workflow_log','get_workflow_artifact','get_recent_receipts',
   'search_code','check_github_token_scope','get_vercel_logs','run_self_test',
-  'self_reflect',
+  'self_reflect','query_database',
 ] as const;
 
 const WRITE_TOOLS = [
