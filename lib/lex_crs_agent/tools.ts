@@ -937,7 +937,7 @@ export async function simulate_agent_plan(input: {
       ? false
       : mappedRisk === 'read'
         ? true
-        : before.M >= 0.15 && (recoveryState === 'VERIFIED' || recoveryState === 'NORMAL') && (mappedRisk !== 'destructive' || recoveryState === 'NORMAL');
+        : before.M >= 0.15 && recoveryState === 'NORMAL' && (mappedRisk !== 'destructive' || recoveryState === 'NORMAL');
     if (!capabilityAllowed && policyDecision !== 'deny') policyDecision = 'deny';
 
     const transition = productionStateTransition({
