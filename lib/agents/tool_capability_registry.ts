@@ -54,7 +54,7 @@ const EXTERNAL_TOOLS = [
 const DESTRUCTIVE_TOOLS = [
   'delete_file','delete_directory','delete_repository','delete_branch',
   'revoke_key','change_access','change_billing','drop_table',
-  'execute_destructive_sql','query_database',
+  'execute_destructive_sql',
 ] as const;
 
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
