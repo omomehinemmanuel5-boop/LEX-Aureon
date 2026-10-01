@@ -238,6 +238,11 @@ export async function consumeGovernanceApprovalToken(input: {
 }
 
 export function classifyGovernanceRisk(toolName: string, args: Record<string, unknown> = {}): GovernanceRisk {
+  if (toolName === 'query_database') {
+    const operation = classifyDatabaseOperation(String(args.sql ?? ''));
+    if (operation === 'invalid') return 'destructive';
+    return operation;
+  }
   const registered = getToolCapability(toolName);
   if (registered) {
     switch (registered.capability) {
