@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     if (!apiKey) return NextResponse.json({ error: 'Failed to generate key' }, { status: 500 });
     return NextResponse.json({
       ok: true, key: apiKey.key, id: apiKey.id, name: apiKey.name,
-      plan: apiKey.plan, runs_limit: apiKey.runs_limit,
+      plan: apiKey.plan, runs_limit: apiKey.runs_limit, expires_at: apiKey.expires_at,
       message: `Your API key has been generated. Store it safely — it won't be shown again.`,
     });
   } catch (e) {
@@ -44,9 +44,9 @@ export async function GET(req: Request) {
     const keys = await getKeysByEmail(email);
     const masked = keys.map(k => ({
       id: k.id, name: k.name,
-      key_preview: `${k.key.slice(0, 10)}...${k.key.slice(-4)}`,
+      key_preview: k.key_preview,
       plan: k.plan, runs_used: k.runs_used, runs_limit: k.runs_limit,
-      created_at: k.created_at, last_used_at: k.last_used_at,
+      created_at: k.created_at, last_used_at: k.last_used_at, expires_at: k.expires_at,
     }));
     return NextResponse.json({ ok: true, keys: masked, total: masked.length });
   } catch (e) {

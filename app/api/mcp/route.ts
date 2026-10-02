@@ -16,7 +16,8 @@ import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, claimTrajectoryState, compareAndSetTrajectoryState, lockTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { getAutonomousRun } from '@/lib/agents/autonomous_run_supervisor';
 import type { AutonomousRunContext } from '@/lib/agents/trajectory_executor';
-import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
+import { validateApiKey, validateAndConsumeKey, consumeApiKeyById } from '@/lib/api_keys';
+import { validateMcpSession } from '@/lib/mcp_sessions';
 import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
@@ -48,23 +49,16 @@ function ipHash(req: Request): string {
 // since this endpoint's blast radius (repo write, CI dispatch, DB read)
 // is categorically larger than a rate-limited text-governance call.
 //
-// fix (2026-09-04): added a `?apiKey=` query-param fallback. Claude.ai's
-// custom connector UI (mobile + web) has no field for a static request
-// header today — "Requires sign-in" only exposes OAuth client id/secret,
-// not a raw Bearer/x-lex-api-key value — so header-only auth leaves that
-// client unable to authenticate at all. Every other MCP client we support
-// (Claude Code, Codex, etc.) already sends the header and is unaffected.
-// Query-param keys can leak into logs/browser history more easily than
-// headers, so this is an interim measure until OAuth is added for the
-// Claude.ai path specifically — not a replacement for the header check.
 function extractApiKey(req: Request): string | null {
   const header = req.headers.get('x-lex-api-key');
   if (header) return header.trim();
   const auth = req.headers.get('authorization');
   if (auth?.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
-  const queryKey = new URL(req.url).searchParams.get('apiKey');
-  if (queryKey) return queryKey.trim();
   return null;
+}
+
+function extractSessionToken(req: Request): string | null {
+  return req.headers.get('x-lex-session-token')?.trim() || null;
 }
 
 function isOperator(req: Request): boolean {
@@ -311,7 +305,9 @@ export async function POST(req: Request) {
     // optional client identity only for an authenticated key or operator.
     try {
       const apiKey = extractApiKey(req);
-      const keyIsValid = apiKey ? (await validateApiKey(apiKey)).valid : false;
+      const sessionToken = extractSessionToken(req);
+      const keyIsValid = apiKey ? (await validateApiKey(apiKey)).valid
+        : sessionToken ? (await validateMcpSession(sessionToken)).valid : false;
       if (isOperator(req) || keyIsValid) {
         const clientInfo = isRecord(params?.clientInfo) ? params.clientInfo : undefined;
         await recordMcpClientIdentity(
@@ -341,11 +337,18 @@ export async function POST(req: Request) {
     const operator = isOperator(req);
     let profile: McpAccessProfile = operator ? 'operator' : 'public';
     if (!operator) {
-      const apiKey = extractApiKey(req);
-      if (!apiKey) return unauthorized(id);
-      const keyCheck = await validateApiKey(apiKey);
-      if (!keyCheck.valid) return unauthorized(id);
-      profile = profileForApiKey(keyCheck.key?.plan);
+      const sessionToken = extractSessionToken(req);
+      if (sessionToken) {
+        const session = await validateMcpSession(sessionToken);
+        if (!session.valid) return unauthorized(id);
+        profile = profileForApiKey(session.key.plan);
+      } else {
+        const apiKey = extractApiKey(req);
+        if (!apiKey) return unauthorized(id);
+        const keyCheck = await validateApiKey(apiKey);
+        if (!keyCheck.valid) return unauthorized(id);
+        profile = profileForApiKey(keyCheck.key?.plan);
+      }
     }
     const allTools = [
       ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
@@ -386,17 +389,28 @@ export async function POST(req: Request) {
     let ownerId = 'operator';
     let actorId = 'operator';
     let apiKey: string | null = null;
+    let sessionKeyId: string | null = null;
     if (!operator) {
-      apiKey = extractApiKey(req);
-      if (!apiKey) return unauthorized(id);
-      // Validate first so malformed, unknown, and unauthorized tool names do
-      // not debit a caller's quota. Consumption remains atomic below, after
-      // all local admission checks have passed and before execution begins.
-      const keyCheck = await validateApiKey(apiKey);
-      if (!keyCheck.valid) return unauthorized(id);
-      ownerId = String(keyCheck.key?.id ?? 'anonymous');
-      actorId = `api_key:${ownerId}`;
-      profile = profileForApiKey(keyCheck.key?.plan);
+      const sessionToken = extractSessionToken(req);
+      if (sessionToken) {
+        const session = await validateMcpSession(sessionToken);
+        if (!session.valid) return unauthorized(id);
+        sessionKeyId = session.key.id;
+        ownerId = session.key.id;
+        actorId = `api_key:${ownerId}`;
+        profile = profileForApiKey(session.key.plan);
+      } else {
+        apiKey = extractApiKey(req);
+        if (!apiKey) return unauthorized(id);
+        // Validate first so malformed, unknown, and unauthorized tool names do
+        // not debit a caller's quota. Consumption remains atomic below, after
+        // all local admission checks have passed and before execution begins.
+        const keyCheck = await validateApiKey(apiKey);
+        if (!keyCheck.valid) return unauthorized(id);
+        ownerId = String(keyCheck.key?.id ?? 'anonymous');
+        actorId = `api_key:${ownerId}`;
+        profile = profileForApiKey(keyCheck.key?.plan);
+      }
     }
 
     // The authorization endpoint is an operator-only control-plane action.
@@ -506,8 +520,8 @@ export async function POST(req: Request) {
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
       if (toolName === 'authorize_external_action' && !operator) return unauthorized(id);
-      if (!operator && apiKey) {
-        const consumption = await validateAndConsumeKey(apiKey);
+      if (!operator && (apiKey || sessionKeyId)) {
+        const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
         if (!consumption.valid) return unauthorized(id);
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
@@ -609,8 +623,8 @@ export async function POST(req: Request) {
       });
     }
 
-    if (!operator && apiKey) {
-      const consumption = await validateAndConsumeKey(apiKey);
+    if (!operator && (apiKey || sessionKeyId)) {
+      const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
       if (!consumption.valid) return unauthorized(id);
       // Use the atomically re-read key after consumption for ownership and
       // profile selection, so a concurrent revoke/plan change cannot retain

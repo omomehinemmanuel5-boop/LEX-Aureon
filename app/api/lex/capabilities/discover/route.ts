@@ -14,7 +14,7 @@ function extractApiKey(req: Request): string | null {
   if (header) return header.trim();
   const auth = req.headers.get('authorization');
   if (auth?.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
-  return new URL(req.url).searchParams.get('apiKey')?.trim() ?? null;
+  return null;
 }
 
 function unauthorized() {

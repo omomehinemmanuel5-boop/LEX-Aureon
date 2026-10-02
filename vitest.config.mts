@@ -4,14 +4,11 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, '.'),
+      '@': path.resolve(import.meta.dirname, '.'),
     },
   },
   test: {
     environment: 'node',
-    environmentMatchGlobs: [
-      ['**/*.dom.test.{ts,tsx}', 'jsdom'],
-    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
