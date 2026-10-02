@@ -99,8 +99,8 @@ body {
 [data-theme="dark"] .text-slate-600 { color: #7c8b9e !important; }  /* 5.78 / 5.55 */
 
 /* Light: section alt backgrounds */
-[data-theme="light"] .dark\:bg-\[#0d0d1a\]  { background-color: var(--section-alt) !important; }
-[data-theme="light"] .dark\:bg-\[#07070d\]  { background-color: var(--bg-primary) !important; }
+[data-theme="light"] .dark\:bg-\[\#0d0d1a\]  { background-color: var(--section-alt) !important; }
+[data-theme="light"] .dark\:bg-\[\#07070d\]  { background-color: var(--bg-primary) !important; }
 
 /* Light: card backgrounds */
 [data-theme="light"] .dark\:bg-\[#c9a84c06\] { background-color: #fff8ee !important; }

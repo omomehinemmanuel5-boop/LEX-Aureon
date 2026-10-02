@@ -42,6 +42,10 @@ export interface TrajectoryState {
   completed: string[];
   driftScore: number;
   locked: boolean;
+  /** Monotonic database version used to reject stale writers. */
+  version?: number;
+  /** True only while a claimed action is executing. */
+  inFlight?: boolean;
   createdAt?: number;
   updatedAt?: number;
   expiresAt?: number;
@@ -73,6 +77,7 @@ export function createTrajectoryState(plan: TrajectoryPlan): TrajectoryState {
     completed: [],
     driftScore: 0,
     locked: false,
+    inFlight: false,
     createdAt: now,
     updatedAt: now,
     expiresAt: now + DEFAULT_TRAJECTORY_TTL_MS,
@@ -132,19 +137,9 @@ export function reconcileTrajectoryOutcome(
 ): TrajectoryState {
   const expected = state.plan.actions[state.currentStep];
   if (!expected || expected.actionId !== outcome.actionId) {
-    return { ...state, driftScore: state.driftScore + 0.25, locked: true };
+    return { ...state, driftScore: state.driftScore + 0.25, locked: true, inFlight: false };
   }
 
-  // fix (2026-08-21): previously this only checked actualEffect was
-  // non-empty — nearly any string satisfies that, including a denial
-  // message from executeGovernedTool's formatted result, so it barely
-  // verified the action's effect was real. Excluding that known
-  // denial-string format makes this actually correlate with "something real
-  // happened" rather than "some string exists". This is deliberately
-  // separate from outcome.success (a hard per-action gate the caller
-  // computes) — effectMatches instead feeds the softer, cumulative
-  // driftScore signal, so it's worth it being a genuine check in its own
-  // right rather than reusing the same boolean.
   const effectMatches = outcome.actualEffect.trim().length > 0
     && !outcome.actualEffect.includes('approved:    false');
   const nextDrift = state.driftScore + (effectMatches ? 0 : 0.15);
@@ -156,13 +151,7 @@ export function reconcileTrajectoryOutcome(
     completed: [...state.completed, outcome.actionId],
     driftScore: nextDrift,
     updatedAt: Date.now(),
-    // `locked` intentionally signals "an outcome violated the plan," not
-    // "no more steps remain" — a plan that finishes all its steps
-    // successfully stays unlocked (see trajectory-governance.spec.ts:
-    // "preserves the ordered trajectory across a successful multi-step
-    // run"). Actions after completion are independently denied by the
-    // out-of-bounds `expected` check in authorizeTrajectoryAction, so no
-    // separate completion-locking is needed here.
+    inFlight: false,
     locked: !outcome.success || nextDrift >= 1,
     lockReason: !outcome.success ? 'action_failed' : nextDrift >= 1 ? 'drift_ceiling_exceeded' : state.lockReason,
   };

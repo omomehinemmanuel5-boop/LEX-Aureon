@@ -31,6 +31,7 @@ export interface ApiKey {
   runs_limit: number;
   created_at: number;
   last_used_at: number | null;
+  expires_at: number | null;
 }
 
 const PLANS = {
@@ -58,10 +59,12 @@ export async function initApiKeySchema(): Promise<void> {
       runs_used   INTEGER NOT NULL DEFAULT 0,
       runs_limit  INTEGER NOT NULL DEFAULT 1000,
       created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-      last_used_at INTEGER
+      last_used_at INTEGER,
+      expires_at  INTEGER
     )`,
     args: [],
   });
+  try { await db.execute('ALTER TABLE api_keys ADD COLUMN expires_at INTEGER'); } catch { /* already migrated */ }
   if (!_freeQuotaMigrated) {
     // Existing free keys were created with the old 100-run quota. Upgrade them
     // in place so “Free = 1,000” applies to all free keys, not only new keys.
@@ -80,6 +83,7 @@ export async function generateApiKey(params: {
   email: string;
   name?: string;
   plan?: 'free' | 'sovereign' | 'private_test';
+  expiresAt?: number;
 }): Promise<ApiKey | null> {
   const db = getClient();
   if (!db) return null;
@@ -90,11 +94,12 @@ export async function generateApiKey(params: {
   const key = `lex_sk_${raw}`;
   const plan = params.plan ?? 'free';
   const limit = PLANS[plan].limit;
+  const expiresAt = params.expiresAt ?? (plan === 'private_test' ? Date.now() + 2 * 60 * 60 * 1000 : null);
 
   await db.execute({
-    sql: `INSERT INTO api_keys (id, key, name, email, plan, runs_limit)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [id, key, params.name ?? 'My Key', params.email, plan, limit],
+    sql: `INSERT INTO api_keys (id, key, name, email, plan, runs_limit, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, key, params.name ?? 'My Key', params.email, plan, limit, expiresAt],
   });
 
   return {
@@ -106,6 +111,7 @@ export async function generateApiKey(params: {
     runs_limit: limit,
     created_at: Date.now(),
     last_used_at: null,
+    expires_at: expiresAt,
   };
 }
 
@@ -120,6 +126,7 @@ function rowToApiKey(row: Record<string, unknown>): ApiKey {
     runs_limit: row.runs_limit as number,
     created_at: row.created_at as number,
     last_used_at: row.last_used_at as number | null,
+    expires_at: row.expires_at == null ? null : Number(row.expires_at),
   };
 }
 
@@ -154,6 +161,10 @@ export async function validateApiKey(raw: string): Promise<ValidateResult> {
     };
   }
 
+  if (row.expires_at != null && Date.now() >= Number(row.expires_at)) {
+    return { valid: false, error: 'API key expired' };
+  }
+
   return { valid: true, key: rowToApiKey(row) };
 }
 
@@ -166,8 +177,9 @@ export async function consumeApiKey(raw: string): Promise<ValidateResult> {
   const result = await db.execute({
     sql: `UPDATE api_keys
           SET runs_used = runs_used + 1, last_used_at = unixepoch()
-          WHERE key = ? AND runs_used < runs_limit`,
-    args: [raw],
+          WHERE key = ? AND runs_used < runs_limit
+            AND (expires_at IS NULL OR expires_at > ?)`,
+    args: [raw, Date.now()],
   });
 
   if ((result.rowsAffected ?? 0) !== 1) {

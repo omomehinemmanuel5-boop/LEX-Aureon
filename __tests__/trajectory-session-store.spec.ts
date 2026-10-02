@@ -10,7 +10,8 @@ vi.mock('../lib/db', () => ({
 }));
 
 import {
-  getTrajectoryState, setTrajectoryState, clearTrajectoryState, isTrajectoryActive,
+  getTrajectoryState, setTrajectoryState, claimTrajectoryState, compareAndSetTrajectoryState,
+  clearTrajectoryState, isTrajectoryActive,
 } from '../lib/agents/trajectory_session_store';
 import { createTrajectoryPlan, createTrajectoryState } from '../lib/agents/trajectory_governance';
 
@@ -38,12 +39,20 @@ function installFakeTable() {
     if (sql.startsWith('SELECT')) {
       const [sessionId] = args as [string];
       const json = table.get(sessionId);
-      return { rows: json ? [{ state_json: json }] : [] };
+      return { rows: json ? [{ state_json: json, version: JSON.parse(json).version ?? 0 }] : [] };
     }
     if (sql.startsWith('INSERT')) {
       const [sessionId, stateJson] = args as [string, string];
       table.set(sessionId, stateJson);
       return { rows: [] };
+    }
+    if (sql.startsWith('UPDATE')) {
+      const [stateJson, _version, _updatedAt, sessionId, expectedVersion] = args as [string, number, number, string, number];
+      const previous = table.get(sessionId);
+      const currentVersion = previous ? (JSON.parse(previous).version ?? 0) : -1;
+      if (currentVersion !== expectedVersion) return { rowsAffected: 0, rows: [] };
+      table.set(sessionId, stateJson);
+      return { rowsAffected: 1, rows: [] };
     }
     if (sql.startsWith('DELETE')) {
       const [sessionId] = args as [string];
@@ -71,8 +80,10 @@ describe('trajectory_session_store (Turso-backed)', () => {
     await setTrajectoryState('session-a', state);
     const stored = await getTrajectoryState('session-a');
     const { updatedAt: _storedUpdatedAt, ...storedWithoutTimestamp } = stored ?? {};
-    const { updatedAt: _stateUpdatedAt, ...stateWithoutTimestamp } = state;
-    expect(storedWithoutTimestamp).toEqual(stateWithoutTimestamp);
+    const { updatedAt: _stateUpdatedAt, version: _stateVersion, ...stateWithoutTimestamp } = state;
+    const storedWithoutVersion = { ...storedWithoutTimestamp };
+    delete storedWithoutVersion.version;
+    expect(storedWithoutVersion).toEqual(stateWithoutTimestamp);
     expect(stored?.updatedAt).toBeGreaterThanOrEqual(state.updatedAt ?? 0);
     expect(await getTrajectoryState('session-b')).toBeUndefined();
   });
@@ -92,6 +103,17 @@ describe('trajectory_session_store (Turso-backed)', () => {
     await setTrajectoryState('session-z', state2);
     const retrieved = await getTrajectoryState('session-z');
     expect(retrieved!.currentStep).toBe(1);
+  });
+
+  it('claims a step once and rejects a stale concurrent writer', async () => {
+    const state = createTrajectoryState(planWithSteps(1));
+    await setTrajectoryState('session-claim', state);
+    const first = await claimTrajectoryState('session-claim', 0);
+    expect(first?.inFlight).toBe(true);
+    expect(await claimTrajectoryState('session-claim', 0)).toBeUndefined();
+    const committed = await compareAndSetTrajectoryState('session-claim', { ...first!, inFlight: false, currentStep: 1 }, 1);
+    expect(committed).toBe(true);
+    expect((await getTrajectoryState('session-claim'))?.currentStep).toBe(1);
   });
 
   it('isTrajectoryActive: true while steps remain and not locked', () => {

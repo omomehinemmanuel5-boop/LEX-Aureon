@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { env } from '@/lib/env';
 import { generateApiKey } from '@/lib/api_keys';
+import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 
 function isAdmin(req: Request): boolean {
   const configured = env.ADMIN_PASSWORD;
@@ -26,6 +27,19 @@ export async function POST(req: Request) {
       { error: 'Unauthorized' },
       { status: 401, headers: { 'Cache-Control': 'no-store' } },
     );
+  }
+
+  const rate = await checkRateLimit(`admin:mcp-test-key:${getClientIp(req)}`, 5, 60 * 60);
+  if (rate.storageError) {
+    return NextResponse.json({ error: 'Credential issuance temporarily unavailable' }, {
+      status: 503, headers: { 'Cache-Control': 'no-store' },
+    });
+  }
+  if (!rate.allowed) {
+    return NextResponse.json({ error: 'Credential issuance rate limit exceeded' }, {
+      status: 429,
+      headers: { 'Retry-After': String(rate.retryAfter), 'Cache-Control': 'no-store' },
+    });
   }
 
   let body: { email?: unknown; name?: unknown } = {};
@@ -57,6 +71,7 @@ export async function POST(req: Request) {
     name: apiKey.name,
     plan: apiKey.plan,
     runs_limit: apiKey.runs_limit,
+    expires_at: apiKey.expires_at,
     message: 'Private MCP test key generated. Store it safely; it will not be shown again.',
   }, { headers: { 'Cache-Control': 'no-store' } });
 }

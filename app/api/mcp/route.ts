@@ -13,7 +13,7 @@ import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
 import { bindGovernanceToolSession } from '@/lib/agents/governance_tool_session';
 import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
-import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, lockTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
+import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, claimTrajectoryState, compareAndSetTrajectoryState, lockTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { getAutonomousRun } from '@/lib/agents/autonomous_run_supervisor';
 import type { AutonomousRunContext } from '@/lib/agents/trajectory_executor';
 import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
@@ -714,10 +714,21 @@ export async function POST(req: Request) {
       }
 
       if (trajectoryState && isTrajectoryActive(trajectoryState)) {
-        const expected = trajectoryState.plan.actions[trajectoryState.currentStep];
+        const claimedState = await claimTrajectoryState(sessionId, trajectoryState.version ?? 0);
+        if (!claimedState) {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32043, message: 'Trajectory step is already in flight or was advanced by another request; retry after reconciliation' },
+            id,
+          }, { status: 409 });
+        }
+        // The claim is persisted before the side effect. A concurrent request
+        // therefore cannot execute this same declared step a second time.
+        const claimedVersion = claimedState.version ?? 0;
+        const expected = claimedState.plan.actions[claimedState.currentStep];
         const attemptedCapability = getToolCapability(toolName);
         const attemptedAction: TrajectoryAction = {
-          actionId: trajectoryActionId(toolName, trajectoryState.currentStep),
+          actionId: trajectoryActionId(toolName, claimedState.currentStep),
           toolName,
           declaredIntent: expected?.toolName === toolName ? expected.declaredIntent : `Undeclared call to ${toolName}`,
           risk: expected?.toolName === toolName ? expected.risk : trajectoryRiskForCapability(attemptedCapability?.capability),
@@ -726,7 +737,7 @@ export async function POST(req: Request) {
 
         const trajectoryController = new AbortController();
         const trajectoryOutcome = await withDeadline(executeGovernedTrajectoryAction(
-          trajectoryState,
+          claimedState,
           attemptedAction,
           toolArgs,
           toolFn,
@@ -746,10 +757,10 @@ export async function POST(req: Request) {
               type: 'text',
               text: 'EXECUTION_STATUS=unknown_after_deadline. Trajectory is locked fail-closed; verify its state and receipt before retrying.',
             }], trajectory: {
-              decision: 'paused', reason: 'execution_unknown_after_deadline', plan_id: trajectoryState.plan.planId,
-              session_id: sessionId, step_before: trajectoryState.currentStep,
-              step_after: pausedState?.currentStep ?? trajectoryState.currentStep,
-              drift_score: pausedState?.driftScore ?? trajectoryState.driftScore,
+              decision: 'paused', reason: 'execution_unknown_after_deadline', plan_id: claimedState.plan.planId,
+              session_id: sessionId, step_before: claimedState.currentStep,
+              step_after: pausedState?.currentStep ?? claimedState.currentStep,
+              drift_score: pausedState?.driftScore ?? claimedState.driftScore,
               execution_status: 'unknown',
             } },
             id,
@@ -758,7 +769,14 @@ export async function POST(req: Request) {
         const execution = trajectoryOutcome.value;
 
         if (isTrajectoryActive(execution.state)) {
-          await setTrajectoryState(sessionId, execution.state);
+          const committed = await compareAndSetTrajectoryState(sessionId, execution.state, claimedVersion);
+          if (!committed) {
+            return NextResponse.json({
+              jsonrpc: '2.0',
+              result: { content: [{ type: 'text', text: 'TRAJECTORY PAUSED: state changed during execution; verify the receipt before retrying.' }] },
+              id,
+            });
+          }
         } else {
           // Plan completed or locked — clear it so further calls in this
           // session fall back to ordinary per-call governance rather than

@@ -57,12 +57,20 @@ function installFakeTrajectoryTable() {
     if (sql.startsWith('SELECT')) {
       const [sessionId] = args as [string];
       const json = table.get(sessionId);
-      return { rows: json ? [{ state_json: json }] : [] };
+      return { rows: json ? [{ state_json: json, version: JSON.parse(json).version ?? 0 }] : [] };
     }
     if (sql.startsWith('INSERT')) {
       const [sessionId, stateJson] = args as [string, string];
       table.set(sessionId, stateJson);
       return { rows: [] };
+    }
+    if (sql.startsWith('UPDATE')) {
+      const [stateJson, _version, _updatedAt, sessionId, expectedVersion] = args as [string, number, number, string, number];
+      const previous = table.get(sessionId);
+      const currentVersion = previous ? (JSON.parse(previous).version ?? 0) : -1;
+      if (currentVersion !== expectedVersion) return { rowsAffected: 0, rows: [] };
+      table.set(sessionId, stateJson);
+      return { rowsAffected: 1, rows: [] };
     }
     if (sql.startsWith('DELETE')) {
       const [sessionId] = args as [string];
@@ -129,9 +137,11 @@ describe('trajectory-aware MCP dispatch', () => {
     // need a specific denial/completion shape override this with
     // mockResolvedValueOnce before making that call.
     executeGovernedTrajectoryAction.mockImplementation(async (state, action) => ({
-      state: { ...state, currentStep: state.currentStep + 1, completed: [...state.completed, action.actionId] },
+      state: { ...state, currentStep: state.currentStep + 1, completed: [...state.completed, action.actionId], inFlight: false },
       result: 'TRAJECTORY_RESULT',
       action,
+      governance: { result: 'TRAJECTORY_RESULT', approved: true, decision: 'APPROVED', receiptId: 'test-receipt' },
+      trajectory: { decision: 'allow', reason: 'trajectory_authorized', planId: state.plan.planId, sessionId, stepBefore: state.currentStep, stepAfter: state.currentStep + 1, driftScore: state.driftScore, executionStatus: 'completed' },
     }));
   });
 
@@ -237,6 +247,8 @@ describe('trajectory-aware MCP dispatch', () => {
       state: { plan: { planId: 'p', goal: 'g', authorizedScope: ['read_file'], riskCeiling: 'read', actions: [{ actionId: 'a', toolName: 'read_file', declaredIntent: 'x', risk: 'read' }] }, currentStep: 1, completed: ['a'], driftScore: 0, locked: false },
       result: 'DONE',
       action: { actionId: 'a', toolName: 'read_file', declaredIntent: 'x', risk: 'read' },
+      governance: { result: 'DONE', approved: true, decision: 'APPROVED', receiptId: 'test-receipt' },
+      trajectory: { decision: 'allow', reason: 'trajectory_authorized', planId: 'p', sessionId, stepBefore: 0, stepAfter: 1, driftScore: 0, executionStatus: 'completed' },
     });
 
     await call('read_file', { path: 'README.md', session_id: sessionId }); // completes the plan

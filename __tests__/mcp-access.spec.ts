@@ -41,12 +41,13 @@ describe('MCP capability policy', () => {
     expect(isOperatorSecret(null)).toBe(false);
   });
 
-  it('gives admin-issued private-test keys the complete internal profile', () => {
+  it('gives admin-issued private-test keys a diagnostic profile without mutation authority', () => {
     expect(profileForApiKey('private_test')).toBe('private_test');
-    expect(PRIVATE_TEST_MCP_TOOLS).toEqual(INTERNAL_MCP_TOOLS);
-    expect([...INTERNAL_MCP_TOOLS].every(tool => canCallTool('private_test', tool))).toBe(true);
-    expect(canCallTool('private_test', 'write_file')).toBe(true);
-    expect(canCallTool('private_test', 'patch_file')).toBe(true);
+    expect(PRIVATE_TEST_MCP_TOOLS).not.toEqual(INTERNAL_MCP_TOOLS);
+    expect(canCallTool('private_test', 'read_file')).toBe(true);
+    expect(canCallTool('private_test', 'write_file')).toBe(false);
+    expect(canCallTool('private_test', 'patch_file')).toBe(false);
+    expect(canCallTool('private_test', 'dispatch_workflow')).toBe(false);
     expect(canCallTool('private_test', 'query_database')).toBe(true);
     expect(canCallTool('private_test', 'authorize_tool_action')).toBe(false);
     expect(canCallTool('private_test', 'authorize_external_action')).toBe(false);
