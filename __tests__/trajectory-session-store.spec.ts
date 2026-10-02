@@ -70,7 +70,9 @@ describe('trajectory_session_store (Turso-backed)', () => {
     const state = createTrajectoryState(planWithSteps(2));
     await setTrajectoryState('session-a', state);
     const stored = await getTrajectoryState('session-a');
-    expect(stored).toMatchObject(state);
+    const { updatedAt: _storedUpdatedAt, ...storedWithoutTimestamp } = stored ?? {};
+    const { updatedAt: _stateUpdatedAt, ...stateWithoutTimestamp } = state;
+    expect(storedWithoutTimestamp).toEqual(stateWithoutTimestamp);
     expect(stored?.updatedAt).toBeGreaterThanOrEqual(state.updatedAt ?? 0);
     expect(await getTrajectoryState('session-b')).toBeUndefined();
   });
