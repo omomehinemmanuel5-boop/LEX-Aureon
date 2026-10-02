@@ -28,7 +28,7 @@ export const PRIVATE_TEST_MCP_TOOLS = new Set([
   'get_constitutional_state', 'get_recent_receipts', 'run_self_test', 'self_reflect',
 ]);
 
-export const OPERATOR_ONLY_MCP_TOOLS = new Set([
+const INTERNAL_MCP_TOOLS = new Set([
   'read_file',
   'list_directory',
   'search_code',
@@ -47,6 +47,10 @@ export const OPERATOR_ONLY_MCP_TOOLS = new Set([
   'self_reflect',
   'log_decision',
   'narrate_origin',
+]);
+
+export const OPERATOR_ONLY_MCP_TOOLS = new Set([
+  ...INTERNAL_MCP_TOOLS,
   'authorize_tool_action',
   'authorize_external_action',
 ]);
@@ -55,7 +59,8 @@ export type McpAccessProfile = 'public' | 'private_test' | 'operator';
 
 export function profileForApiKey(plan: string | undefined): McpAccessProfile {
   // private_test keys are issued only by the admin-protected test-key endpoint.
-  // They are diagnostic, not operator credentials; mutations remain operator-only.
+  // They are the authenticated internal development surface; mutations still
+  // pass through the normal constitutional execution gateway.
   return plan === 'private_test' ? 'private_test' : 'public';
 }
 
