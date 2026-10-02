@@ -413,6 +413,8 @@ async function semanticInjectionCheck(freeText: string): Promise<SemanticInjecti
 const HIGH_RISK_TOOLS = new Set([
   'execute_command', 'run_terminal', 'bash', 'shell', 'run_command',
   'exec', 'system', 'spawn', 'dispatch_workflow',
+  // Explicit identity/financial scope changes from tool_capability_registry.
+  'change_access', 'revoke_key', 'change_billing',
 ]);
 
 const MEDIUM_RISK_TOOLS = new Set([
@@ -863,7 +865,10 @@ export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState 
       // shipping, including this exact case, which an earlier draft failed.
       risk_level = (cDegraded && s_risk !== 'HIGH') ? 'MEDIUM' : 'HIGH';
     }
-    else if (M < 0.15) risk_level = 'MEDIUM';
+    // A constrained margin can elevate an otherwise lower-risk action to
+    // MEDIUM, but must not downgrade an action already classified HIGH by
+    // its capability or argument-level severity.
+    else if (M < 0.15) risk_level = s_risk === 'HIGH' ? 'HIGH' : 'MEDIUM';
     else if (s_risk === 'LOW') risk_level = 'LOW';
   }
 

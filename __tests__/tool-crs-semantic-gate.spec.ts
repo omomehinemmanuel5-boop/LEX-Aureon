@@ -69,4 +69,16 @@ describe('injectionSimilarity — natural-language shape gate', () => {
     expect(result.unclassified).toBe(true);
     expect(result.blocked_pattern).toBe('unclassified_tool:mystery_side_effect');
   });
+
+  it('classifies registered access-control changes as high risk rather than unclassified', async () => {
+    const result = await measureToolCRS({
+      id: 'access-change', name: 'change_access',
+      arguments: { target: 'attacker@example.test', role: 'admin' },
+      session_id: 'test-session',
+    });
+
+    expect(result.risk_level).toBe('HIGH');
+    expect(result.blocked_pattern).toBeNull();
+    expect(result.unclassified).toBe(false);
+  });
 });

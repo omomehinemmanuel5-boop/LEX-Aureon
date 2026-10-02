@@ -282,8 +282,9 @@ export interface GovernorSensingReport {
  *                    non-answer. NOT governed by LEX_IDENTITY/context this turn.
  *   'unavailable'  — BOTH arms exhausted. Honest "unavailable" message; this
  *                    turn produced no real content on either arm.
+ *   'simulation'   — local-only simulated output; no model provider was called.
  */
-export type GovernedSource = 'governed' | 'raw_fallback' | 'unavailable';
+export type GovernedSource = 'governed' | 'raw_fallback' | 'unavailable' | 'simulation';
 
 export interface KernelReceipt {
   timestamp_iso:               string;
@@ -1013,6 +1014,7 @@ export class SovereignKernel {
     // identity: 2026-07-18 — see IdentityMode above. Defaults to 'full' so
     // every existing caller is byte-identical to prior behavior.
     identityMode: IdentityMode = 'full',
+    executionMode: 'execute' | 'simulate' = 'execute',
   ): Promise<KernelCycleResult> {
     this.step_counter += 1;
     this.prev_state = { ...this.state };
@@ -1020,11 +1022,12 @@ export class SovereignKernel {
     // ── STEP 0: Apply pending G(x,z) from previous turn ──────────────────────
     let governorSensing: GovernorSensingReport = {
       fired: false, correction_applied: false,
-      basin_shift: 'none', rho: 0, reason: 'no_session',
+      basin_shift: 'none', rho: 0,
+      reason: executionMode === 'simulate' ? 'simulation_no_correction_consumed' : 'no_session',
       correction_magnitude: 0,
     };
 
-    if (sessionId) {
+    if (sessionId && executionMode === 'execute') {
       const pending = await consumePendingCorrection(sessionId, this.state);
       if (pending) {
         this.state.C += pending.delta_C;
@@ -1060,7 +1063,9 @@ export class SovereignKernel {
     else this.attack_pressure *= 0.92;
     const effectiveTheta = this.theta * (1 + this.attack_pressure);
 
-    const semanticSignal = await this.detectSemanticAttackCombined(userPrompt);
+    const semanticSignal = executionMode === 'simulate'
+      ? this.detectSemanticAttack(userPrompt)
+      : await this.detectSemanticAttackCombined(userPrompt);
     this.last_semantic_signal = semanticSignal;
     const scale = 1.0 + 1.2 * semanticSignal.severity;
     const delta = this.transduce(userPrompt, threatSignal);
@@ -1071,7 +1076,7 @@ export class SovereignKernel {
 
     this.assertConsistency();
 
-    const activeLawData = semanticSignal.attack_type !== 'none'
+    const activeLawData = executionMode === 'simulate' ? null : semanticSignal.attack_type !== 'none'
       ? await this.selectActiveLaw(semanticSignal, M0) : null;
     const activeLaw = activeLawData?.name || null;
 
@@ -1095,7 +1100,14 @@ export class SovereignKernel {
     let rawProvider = 'unknown';
     let governedProvider = 'unknown';
     let governedSource: GovernedSource = 'governed';
-    try {
+    if (executionMode === 'simulate') {
+      rawResponse = '[simulation only: raw model provider was not called]';
+      governedResponse = '[simulation only: governed model provider was not called]';
+      rawProvider = 'not_called';
+      governedProvider = 'not_called';
+      governedSource = 'simulation';
+      governedResponse = this.enforceResponseShape(governedResponse, health_band);
+    } else try {
       const governedContext = memoryContext ? `${memoryContext}\n\n${context}` : context;
       const [rawResult, governedResult] = await Promise.allSettled([
         this.callLLMRaw(userPrompt, '', temperature),
@@ -1150,7 +1162,7 @@ export class SovereignKernel {
     // ── STEP 2: Fire async G(x,z) for next turn ───────────────────────────────
     // Pass this turn's threat picture so an adversarial prompt is never sent
     // to external search (see fireGovernorLoop's egress gate).
-    if (sessionId) {
+    if (sessionId && executionMode === 'execute') {
       fireGovernorLoop(sessionId, { ...this.state }, userPrompt, {
         semanticSeverity: semanticSignal.severity,
         threatSignal:     clampedThreat,

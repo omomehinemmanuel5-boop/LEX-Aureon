@@ -47,7 +47,7 @@ describe('governed tool execution integration boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     interceptToolCall.mockResolvedValue(approvedDecision());
-    dbExecute.mockResolvedValue({ rows: [{ last_c: 1.0, last_r: 1.0, last_s: 1.0, last_m: 1.0, sigma_viol: 0, tool_calls: 0 }], rowsAffected: 1 });
+    dbExecute.mockResolvedValue({ rows: [{ last_c: 1.0, last_r: 1.0, last_s: 1.0, last_m: 1.0, sigma_viol: 0, n_stable: 3, tool_calls: 0 }], rowsAffected: 1 });
     vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'integration-approval-secret');
   });
 
@@ -203,7 +203,7 @@ describe('governed tool execution integration boundary', () => {
       if (query.sql?.includes('FROM z_traj')) {
         trajectoryReads += 1;
         return trajectoryReads === 1
-          ? { rows: [{ last_c: 0.40, last_r: 0.40, last_s: 0.40, sigma_viol: 0 }] }
+          ? { rows: [{ last_c: 0.40, last_r: 0.40, last_s: 0.40, sigma_viol: 0, n_stable: 3 }] }
           : { rows: [{ last_c: 0.04, last_r: 0.48, last_s: 0.48, sigma_viol: 1 }] };
       }
       if (query.sql?.includes('FROM tool_sessions')) {
