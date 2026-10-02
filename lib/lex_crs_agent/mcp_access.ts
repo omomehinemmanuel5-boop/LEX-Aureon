@@ -2,8 +2,10 @@
  * MCP capability policy.
  *
  * The public MCP endpoint must never expose Lex's own infrastructure tools.
- * Those tools use server-side GitHub, Vercel, database, or filesystem access
- * and are available only to an operator with the separate MCP_OPERATOR_SECRET.
+ * Those tools use server-side GitHub, Vercel, database, or filesystem access.
+ * They are available to the admin-issued private test profile and to an
+ * operator with the separate MCP_OPERATOR_SECRET; public API profiles never
+ * receive them.
  */
 
 import { env } from '../env';
@@ -22,13 +24,7 @@ export const PUBLIC_MCP_TOOLS = new Set([
   'consume_external_action',
 ]);
 
-export const PRIVATE_TEST_MCP_TOOLS = new Set([
-  'read_file', 'list_directory', 'search_code', 'get_build_status',
-  'get_workflow_run', 'get_workflow_log', 'get_workflow_artifact',
-  'get_constitutional_state', 'get_recent_receipts', 'run_self_test', 'self_reflect',
-]);
-
-const INTERNAL_MCP_TOOLS = new Set([
+export const INTERNAL_MCP_TOOLS = new Set([
   'read_file',
   'list_directory',
   'search_code',
@@ -48,6 +44,10 @@ const INTERNAL_MCP_TOOLS = new Set([
   'log_decision',
   'narrate_origin',
 ]);
+
+// Admin-issued private test keys expose the complete internal development
+// surface, but not the operator-only authorization control plane below.
+export const PRIVATE_TEST_MCP_TOOLS = new Set(INTERNAL_MCP_TOOLS);
 
 export const OPERATOR_ONLY_MCP_TOOLS = new Set([
   ...INTERNAL_MCP_TOOLS,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   canCallTool,
   isOperatorSecret,
+  INTERNAL_MCP_TOOLS,
   OPERATOR_ONLY_MCP_TOOLS,
   PRIVATE_TEST_MCP_TOOLS,
   profileForApiKey,
@@ -28,6 +29,8 @@ describe('MCP capability policy', () => {
   it('allows the operator profile to include the classified tools', () => {
     expect(OPERATOR_ONLY_MCP_TOOLS.has('read_file')).toBe(true);
     expect(canCallTool('operator', 'read_file')).toBe(true);
+    expect(canCallTool('operator', 'authorize_tool_action')).toBe(true);
+    expect(canCallTool('operator', 'authorize_external_action')).toBe(true);
     expect(canCallTool('public', 'read_file')).toBe(false);
   });
 
@@ -38,13 +41,15 @@ describe('MCP capability policy', () => {
     expect(isOperatorSecret(null)).toBe(false);
   });
 
-  it('gives admin-issued private-test keys a diagnostic-only profile', () => {
+  it('gives admin-issued private-test keys the complete internal profile', () => {
     expect(profileForApiKey('private_test')).toBe('private_test');
-    expect(canCallTool('private_test', 'read_file')).toBe(true);
-    expect(canCallTool('private_test', 'run_self_test')).toBe(true);
-    expect(canCallTool('private_test', 'write_file')).toBe(false);
-    expect(canCallTool('private_test', 'query_database')).toBe(false);
-    expect(PRIVATE_TEST_MCP_TOOLS.has('patch_file')).toBe(false);
+    expect(PRIVATE_TEST_MCP_TOOLS).toEqual(INTERNAL_MCP_TOOLS);
+    expect([...INTERNAL_MCP_TOOLS].every(tool => canCallTool('private_test', tool))).toBe(true);
+    expect(canCallTool('private_test', 'write_file')).toBe(true);
+    expect(canCallTool('private_test', 'patch_file')).toBe(true);
+    expect(canCallTool('private_test', 'query_database')).toBe(true);
+    expect(canCallTool('private_test', 'authorize_tool_action')).toBe(false);
+    expect(canCallTool('private_test', 'authorize_external_action')).toBe(false);
     expect(profileForApiKey('sovereign')).toBe('public');
     expect(profileForApiKey('free')).toBe('public');
     expect(profileForApiKey(undefined)).toBe('public');
