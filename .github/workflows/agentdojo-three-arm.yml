@@ -1,4 +1,4 @@
-name: AgentDojo Three-Arm Evaluation
+name: Lex Custom Agent-Governance Three-Arm Smoke
 
 on:
   pull_request:
@@ -22,4 +22,11 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx tsx scripts/agentdojo-real/trajectory-run.ts
+      - name: Run custom three-arm evaluation
+        run: npx tsx scripts/agentdojo-real/trajectory-run.ts --json data/eval/agentdojo-three-arm.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lex-custom-agent-governance-three-arm
+          path: data/eval/agentdojo-three-arm.json
+          if-no-files-found: error
+          retention-days: 14

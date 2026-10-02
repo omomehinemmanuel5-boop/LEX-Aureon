@@ -31,7 +31,7 @@ import { judgeCapitulation } from './capitulation_judge';
 import { decideRefusal, isReadOnlyDiagnosticPrompt, type RefusalDecision } from './refusal_decision';
 import { healthBand } from './health_band';
 import { persistCapitulationCalibration } from './capitulation_calibration';
-import type { IdentityMode, SemanticSignal, GovernorSensingReport } from './sovereign_kernel';
+import { SovereignKernel, type IdentityMode, type SemanticSignal, type GovernorSensingReport } from './sovereign_kernel';
 import type { PostResponseCRS } from './constitutional_metrics';
 import { CelesteAgent } from './agents/celeste';
 import { StyleAgent } from './agents/style_agent';
@@ -50,6 +50,7 @@ export interface GovernRequest {
 
 export interface GovernResponse {
   governance_mode:           GovernanceMode;
+  simulation_notice:         string | null;
   governed_output:          string;
   raw_output:               string;
   C:                        number;
@@ -144,7 +145,7 @@ export async function executeGovern(
   let promptEmbedding: number[] = [];
   let promptEmbedProvider: EmbedProvider | null = null;
   let memoryContext = '';
-  const memoryPromise = (async () => {
+  const memoryPromise = simulation ? Promise.resolve() : (async () => {
     try {
       const resolved = await embedTextResolved(prompt);
       promptEmbedding      = resolved.vector;
@@ -161,11 +162,15 @@ export async function executeGovern(
     }
   })();
 
-  const [savedState, sessionZ] = await Promise.all([
-    loadKernelState(session_id),
-    loadKernelZ(session_id),
-    memoryPromise,
-  ]);
+  let savedState: { C: number; R: number; S: number } | null = null;
+  let sessionZ: [number, number, number] | undefined;
+  if (!simulation) {
+    [savedState, sessionZ] = await Promise.all([
+      loadKernelState(session_id),
+      loadKernelZ(session_id),
+      memoryPromise,
+    ]);
+  }
 
   // ── Input-side threat signal ──────────────────────────────────────────────
   let threatSignal = 0;
@@ -186,8 +191,16 @@ export async function executeGovern(
   }
 
   // ── TypeScript kernel cycle ───────────────────────────────────────────────
-  const kernel = getCachedKernel(session_id, savedState);
-  const result = await kernel.runCycle(prompt, memoryContext, session_id, sessionZ, threatSignal, identityMode);
+  const kernel = simulation ? new SovereignKernel() : getCachedKernel(session_id, savedState);
+  const result = await kernel.runCycle(
+    prompt,
+    memoryContext,
+    simulation ? undefined : session_id,
+    sessionZ,
+    threatSignal,
+    identityMode,
+    simulation ? 'simulate' : 'execute',
+  );
 
   if (result.status === 'Error') {
     throw new Error(`Governance kernel error: ${result.error}`);
@@ -198,20 +211,19 @@ export async function executeGovern(
   const mBefore  = Math.min(rawState.C, rawState.R, rawState.S);
 
   // ── Output-side capitulation judge (measurement-only PROTOTYPE) ───────────
-  const capitulationResult = await Promise.allSettled([
-    evalSession
-      ? Promise.resolve(null)
-      : judgeCapitulation(prompt, result.governed_output),
-  ]);
-  const capitulationSignal =
-    capitulationResult[0].status === 'fulfilled' ? capitulationResult[0].value : null;
+  const capitulationResult = simulation || evalSession
+    ? null
+    : await Promise.allSettled([judgeCapitulation(prompt, result.governed_output)]);
+  const capitulationSignal = capitulationResult?.[0].status === 'fulfilled'
+    ? capitulationResult[0].value
+    : null;
 
   // ── Self-referential sovereignty ──────────────────────────────────────────
   let sovereigntyDriftDetected = false;
   let sovereigntyRaw: number | null = null;
   let detectionDegraded = false;
 
-  if (promptEmbedding.length && promptEmbedProvider) {
+  if (!simulation && promptEmbedding.length && promptEmbedProvider) {
     try {
       const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
         embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
@@ -260,22 +272,24 @@ export async function executeGovern(
   }
 
   // ── Output canonicalisation ───────────────────────────────────────────────
-  try {
-    const celeste = await CelesteAgent(result.governed_output, '', 'api');
-    if (celeste?.rendered_output && celeste.rendered_output !== result.governed_output) {
-      result.governed_output = celeste.rendered_output;
+  if (!simulation) {
+    try {
+      const celeste = await CelesteAgent(result.governed_output, '', 'api');
+      if (celeste?.rendered_output && celeste.rendered_output !== result.governed_output) {
+        result.governed_output = celeste.rendered_output;
+      }
+    } catch (e) {
+      logger.error('govern.celeste', 'CelesteAgent failed; leaving output unshaped', errorFields(e));
     }
-  } catch (e) {
-    logger.error('govern.celeste', 'CelesteAgent failed; leaving output unshaped', errorFields(e));
-  }
 
-  try {
-    const styleResult = await StyleAgent({ prompt, session_id, governed_output: result.governed_output });
-    if (styleResult?.success && styleResult.output) {
-      result.governed_output = styleResult.output;
+    try {
+      const styleResult = await StyleAgent({ prompt, session_id, governed_output: result.governed_output });
+      if (styleResult?.success && styleResult.output) {
+        result.governed_output = styleResult.output;
+      }
+    } catch (e) {
+      logger.error('govern.style_agent', 'StyleAgent failed; leaving output unstyled', errorFields(e));
     }
-  } catch (e) {
-    logger.error('govern.style_agent', 'StyleAgent failed; leaving output unstyled', errorFields(e));
   }
 
   // Boundary guarantee
@@ -307,7 +321,7 @@ export async function executeGovern(
     });
   }
 
-  if (detectionDegraded) {
+  if (detectionDegraded && !simulation) {
     logger.warn('govern.detection',
       'self-referential sovereignty unavailable (embedding provider down, or pinned provider failed mid-request) — detection degraded; keyword classifier only',
       { session_id, turn, resolved_provider: promptEmbedProvider });
@@ -346,6 +360,9 @@ export async function executeGovern(
   return {
     governed_output:          result.governed_output,
     raw_output:               result.raw_output,
+    simulation_notice:        simulation
+      ? 'LOCAL SIMULATION ONLY: starts from neutral CRS; uses keyword-only detection and placeholder outputs. Governance state is not read or written; no model/embedding call, pending-correction consumption, background governor, receipt, memory, calibration, or run-count write occurs. HTTP authentication, rate limits, and API-key admission still apply.'
+      : null,
     C:                        reportedState.C,
     R:                        reportedState.R,
     S:                        reportedState.S,
@@ -354,7 +371,7 @@ export async function executeGovern(
     health_band:              reportedBand,
     raw_state:                { C: rawState.C, R: rawState.R, S: rawState.S },
     m_before:                 mBefore,
-    crs_source:               'typescript-kernel',
+    crs_source:               simulation ? 'typescript-kernel-simulation' : 'typescript-kernel',
     governed_source:          result.governed_source ?? null,
     raw_provider:             result.raw_provider ?? null,
     governed_provider:        result.governed_provider ?? null,
