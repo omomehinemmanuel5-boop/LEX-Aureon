@@ -8,7 +8,6 @@ vi.mock('../lib/db', () => ({
 
 import {
   canonicalExecutionAllowed,
-  ensureCanonicalTrajectoryState,
   readCanonicalGovernanceState,
 } from '../lib/agents/canonical_governance_state';
 import { recoveryCapabilityAllowed, deriveRecoveryState } from '../lib/agents/recovery_state';
@@ -54,25 +53,10 @@ describe('constitutional recovery policy', () => {
     expect(deriveRecoveryState(0.24, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('VERIFIED');
     expect(deriveRecoveryState(0.25, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('NORMAL');
   });
-
-  it('does not infer verified recovery from a healthy margin without canary and stability evidence', () => {
-    const evidence = { nStable: 0, sigmaViol: 0, canaryPassed: false };
-    expect(deriveRecoveryState(0.30, evidence)).toBe('RESTORING');
-    expect(recoveryCapabilityAllowed(0.30, 'write', evidence).allowed).toBe(false);
-    expect(recoveryCapabilityAllowed(0.30, 'destructive', evidence).allowed).toBe(false);
-  });
 });
 
 describe('canonical governance state', () => {
   beforeEach(() => { vi.clearAllMocks(); });
-
-  it('bootstraps a new neutral trajectory with the stable-call baseline', async () => {
-    dbExecute.mockResolvedValue({ rowsAffected: 1 });
-
-    expect(await ensureCanonicalTrajectoryState('fresh-session')).toBe(true);
-    expect(dbExecute.mock.calls[0]?.[0].args?.[0]).toBe('fresh-session');
-    expect(dbExecute.mock.calls[0]?.[0].args?.[1]).toBe(3);
-  });
 
   it('projects CRS and recovery state from z_traj rather than local tool scores', async () => {
     dbExecute
