@@ -11,7 +11,10 @@ function redirectError(redirectUri: string, state: string, error: string, descri
   u.searchParams.set('error_description', description);
   if (state) u.searchParams.set('state', state);
   u.searchParams.set('iss', MCP_ISSUER);
-  return NextResponse.redirect(u);
+  // The authorization form is submitted with POST. A 307 would preserve
+  // that method when following the redirect, but OAuth callbacks must be
+  // reached with GET so ChatGPT can receive the authorization response.
+  return NextResponse.redirect(u, 303);
 }
 
 export async function GET(req: Request) {
@@ -77,5 +80,8 @@ export async function POST(req: Request) {
   callback.searchParams.set('code', result.code);
   callback.searchParams.set('state', state);
   callback.searchParams.set('iss', MCP_ISSUER);
-  return NextResponse.redirect(callback);
+  // Use 303 after the POSTed consent form; NextResponse.redirect defaults to
+  // 307, which makes the client repeat POST at ChatGPT's callback and prevents
+  // the authorization-code exchange from ever starting.
+  return NextResponse.redirect(callback, 303);
 }
