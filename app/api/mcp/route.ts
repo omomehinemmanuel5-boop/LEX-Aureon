@@ -29,6 +29,7 @@ import { discoverExternalTool, governExternalAction, authorizeExternalAction, co
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
+import { MCP_RESOURCE } from '@/lib/mcp_oauth';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
 // MCP-over-HTTP here is stateless per POST request, so IP is the only
@@ -74,7 +75,7 @@ function unauthorized(id: number | string | null | undefined) {
   }, {
     status: 401,
     headers: {
-      'WWW-Authenticate': 'Bearer realm="Lex Aureon MCP", error="invalid_token", error_description="Authentication is required for this MCP operation"',
+      'WWW-Authenticate': `Bearer resource_metadata="${MCP_RESOURCE}/../.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"`,
     },
   });
 }
@@ -174,17 +175,9 @@ const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
 
 function servedTools() {
   return [
-    ...TOOL_DEFINITIONS.map(t => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.parameters,
-    })),
-    ...EXTENSION_DEFINITIONS.map(t => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema,
-    })),
-    ...EXTERNAL_CAPABILITY_DEFINITIONS,
+    ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+    ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+    ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => ({ ...t, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
   ];
 }
 
@@ -365,9 +358,9 @@ export async function POST(req: Request) {
       }
     }
     const allTools = [
-      ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
-      ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-      ...EXTERNAL_CAPABILITY_DEFINITIONS,
+      ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+      ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+      ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => ({ ...t, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
     ];
     return NextResponse.json({
       jsonrpc: '2.0',
