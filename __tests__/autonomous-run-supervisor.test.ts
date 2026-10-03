@@ -12,7 +12,9 @@ import {
   checkpointRun,
   createAutonomousRun,
   heartbeatRun,
+  recoverExpiredRun,
   reserveRunAction,
+  resumeAutonomousRun,
   RunGovernanceError,
 } from '../lib/agents/autonomous_run_supervisor';
 
@@ -90,6 +92,21 @@ describe('autonomous run supervisor', () => {
     execute.mockResolvedValueOnce({ rowsAffected: 0 });
     await expect(checkpointRun({ runId: 'run-1', leaseToken: 'secret' }, { cursor: 'step-2' }, 0))
       .rejects.toMatchObject({ code: 'checkpoint_conflict' });
+  });
+
+  it('moves an expired lease to paused and resumes it only for the owning agent', async () => {
+    const pausedRow = { ...runRow, status: 'paused' };
+    execute.mockResolvedValueOnce({ rowsAffected: 1 });
+    execute.mockResolvedValueOnce({ rows: [pausedRow] });
+    const recovered = await recoverExpiredRun('run-1');
+    expect(recovered?.status).toBe('paused');
+
+    execute.mockResolvedValueOnce({ rowsAffected: 1 });
+    execute.mockResolvedValueOnce({ rows: [{ ...runRow, status: 'active' }] });
+    const resumed = await resumeAutonomousRun('run-1', 'owner');
+    expect(resumed.run.status).toBe('active');
+    expect(resumed.lease.leaseToken.length).toBeGreaterThan(20);
+    expect(execute.mock.calls[2][0].sql).toContain("status = 'active'");
   });
 
   it('exposes typed governance errors for callers to pause and recover', () => {

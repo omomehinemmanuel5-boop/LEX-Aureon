@@ -25,6 +25,7 @@
 - [API guide](docs/api.md)
 - [Architecture overview](docs/architecture/system-overview.md)
 - [Security model](docs/security.md)
+- [Operator MCP access](docs/operator-access.md)
 - [Production readiness and reproducibility](docs/production-readiness.md)
 - [Evaluation manifest](docs/evaluation-manifest.md)
 - [Contributing](CONTRIBUTING.md)

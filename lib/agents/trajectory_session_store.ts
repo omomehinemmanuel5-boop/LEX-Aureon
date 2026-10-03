@@ -84,7 +84,7 @@ export async function claimTrajectoryState(
   const claimed: TrajectoryState = { ...current, version: nextVersion, inFlight: true, updatedAt };
   const result = await getClient().execute({
     sql: `UPDATE trajectory_state SET state_json = ?, version = ?, updated_at = ?
-          WHERE session_id = ? AND version = ? AND locked = 0`,
+          WHERE session_id = ? AND version = ?`,
     args: [JSON.stringify(claimed), nextVersion, updatedAt, sessionId, expectedVersion],
   });
   return (result.rowsAffected ?? 0) === 1 ? claimed : undefined;

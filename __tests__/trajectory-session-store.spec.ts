@@ -47,6 +47,7 @@ function installFakeTable() {
       return { rows: [] };
     }
     if (sql.startsWith('UPDATE')) {
+      if (sql.includes('locked')) throw new Error('no such column: locked');
       const [stateJson, _version, _updatedAt, sessionId, expectedVersion] = args as [string, number, number, string, number];
       const previous = table.get(sessionId);
       const currentVersion = previous ? (JSON.parse(previous).version ?? 0) : -1;
