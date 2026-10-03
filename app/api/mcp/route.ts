@@ -75,7 +75,7 @@ function unauthorized(id: number | string | null | undefined) {
   }, {
     status: 401,
     headers: {
-      'WWW-Authenticate': `Bearer resource_metadata="${MCP_RESOURCE}/../.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"`,
+      'WWW-Authenticate': `Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"`,
     },
   });
 }
