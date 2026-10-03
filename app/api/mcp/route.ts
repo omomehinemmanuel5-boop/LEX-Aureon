@@ -69,8 +69,13 @@ function isOperator(req: Request): boolean {
 function unauthorized(id: number | string | null | undefined) {
   return NextResponse.json({
     jsonrpc: '2.0',
-    error: { code: -32001, message: 'Unauthorized: valid API key required' },
+    error: { code: -32001, message: 'Unauthorized: valid API key or OAuth bearer token required' },
     id,
+  }, {
+    status: 401,
+    headers: {
+      'WWW-Authenticate': 'Bearer realm="Lex Aureon MCP", error="invalid_token", error_description="Authentication is required for this MCP operation"',
+    },
   });
 }
 
@@ -338,20 +343,25 @@ export async function POST(req: Request) {
   }
 
   if (method === 'tools/list') {
+    // Tool discovery is intentionally public. Authentication belongs at the
+    // execution boundary, not the catalog boundary: ChatGPT and other MCP
+    // clients must be able to complete discovery before a user credential is
+    // available. No tool is executed by this branch and no secret is exposed.
     const operator = isOperator(req);
-    let profile: McpAccessProfile = operator ? 'operator' : 'public';
-    if (!operator) {
+    let profile: McpAccessProfile = 'public';
+    if (operator) {
+      profile = 'operator';
+    } else {
       const sessionToken = extractSessionToken(req);
       if (sessionToken) {
         const session = await validateMcpSession(sessionToken);
-        if (!session.valid) return unauthorized(id);
-        profile = profileForApiKey(session.key.plan);
+        if (session.valid) profile = profileForApiKey(session.key.plan);
       } else {
         const apiKey = extractApiKey(req);
-        if (!apiKey) return unauthorized(id);
-        const keyCheck = await validateApiKey(apiKey);
-        if (!keyCheck.valid) return unauthorized(id);
-        profile = profileForApiKey(keyCheck.key?.plan);
+        if (apiKey) {
+          const keyCheck = await validateApiKey(apiKey);
+          if (keyCheck.valid) profile = profileForApiKey(keyCheck.key?.plan);
+        }
       }
     }
     const allTools = [
@@ -887,6 +897,6 @@ export async function GET() {
     description: 'Lex CRS Agent — MCP coding agent with constitutional authorization before every tool execution; read-only results may use authorization-checked execution caching.',
     tools: servedTools().length,
     endpoint: '/api/mcp',
-    protocol: 'MCP 2024-11-05',
+    protocol: 'MCP legacy handshake (2024-11-05 through 2025-11-25)',
   });
 }
