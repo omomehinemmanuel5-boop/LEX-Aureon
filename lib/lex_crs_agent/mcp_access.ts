@@ -45,23 +45,12 @@ export const INTERNAL_MCP_TOOLS = new Set([
   'narrate_origin',
 ]);
 
-// Admin-issued private test keys are diagnostic credentials, not operator
-// credentials. Keep repository writes, CI dispatch, database mutation, and
-// audit mutation behind the separate operator secret even for test traffic.
-export const PRIVATE_TEST_MCP_TOOLS = new Set([
-  'read_file',
-  'list_directory',
-  'search_code',
-  'get_build_status',
-  'get_workflow_run',
-  'get_workflow_log',
-  'get_workflow_artifact',
-  'check_github_token_scope',
-  'query_database',
-  'get_recent_receipts',
-  'run_self_test',
-  'self_reflect',
-]);
+// Admin-issued private test keys are trusted internal development credentials,
+// not operator credentials. They receive the complete internal development
+// surface, but every tool mutation still passes through the normal
+// constitutional execution gateway. Authorization control-plane operations
+// remain operator-only.
+export const PRIVATE_TEST_MCP_TOOLS = new Set(INTERNAL_MCP_TOOLS);
 
 export const OPERATOR_ONLY_MCP_TOOLS = new Set([
   ...INTERNAL_MCP_TOOLS,
