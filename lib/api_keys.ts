@@ -129,11 +129,31 @@ function rowToApiKey(row: Record<string, unknown>): ApiKey {
   };
 }
 
+async function oauthKeyIdForAccessToken(raw: string): Promise<string | null> {
+  if (!raw.startsWith('lex_at_')) return null;
+  try {
+    const r = await getClient().execute({
+      sql: `SELECT key_id FROM mcp_oauth_tokens
+            WHERE access_hash = ? AND resource = ? AND revoked_at IS NULL AND expires_at > ?
+            LIMIT 1`,
+      args: [hashApiKey(raw), 'https://www.lexaureon.com/api/mcp', Date.now()],
+    });
+    return r.rows.length ? String(r.rows[0].key_id) : null;
+  } catch {
+    // The OAuth table is absent until the first OAuth deployment initializes it.
+    return null;
+  }
+}
+
 export interface ValidateResult { valid: boolean; error?: string; key?: ApiKey }
 
 export async function validateApiKey(raw: string): Promise<ValidateResult> {
   const db = getClient();
   await initApiKeySchema();
+  const oauthKeyId = await oauthKeyIdForAccessToken(raw);
+  if (oauthKeyId) return getApiKeyById(oauthKeyId).then(key =>
+    key ? { valid: true, key } : { valid: false, error: 'OAuth access token is invalid or expired' }
+  );
   const r = await db.execute({
     sql: 'SELECT * FROM api_keys WHERE key_hash = ? OR key = ? LIMIT 1',
     args: [hashApiKey(raw), raw],
@@ -152,6 +172,8 @@ export async function validateApiKey(raw: string): Promise<ValidateResult> {
 export async function consumeApiKey(raw: string): Promise<ValidateResult> {
   const db = getClient();
   await initApiKeySchema();
+  const oauthKeyId = await oauthKeyIdForAccessToken(raw);
+  if (oauthKeyId) return consumeApiKeyById(oauthKeyId);
   const result = await db.execute({
     sql: `UPDATE api_keys SET runs_used = runs_used + 1, last_used_at = unixepoch()
           WHERE (key_hash = ? OR key = ?) AND runs_used < runs_limit

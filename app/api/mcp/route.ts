@@ -29,6 +29,7 @@ import { discoverExternalTool, governExternalAction, authorizeExternalAction, co
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
+import { MCP_RESOURCE } from '@/lib/mcp_oauth';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
 // MCP-over-HTTP here is stateless per POST request, so IP is the only
@@ -74,8 +75,31 @@ function unauthorized(id: number | string | null | undefined) {
   }, {
     status: 401,
     headers: {
-      'WWW-Authenticate': 'Bearer realm="Lex Aureon MCP", error="invalid_token", error_description="Authentication is required for this MCP operation"',
+      'WWW-Authenticate': `Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"`,
     },
+  });
+}
+
+/**
+ * ChatGPT's tool-level OAuth UX is triggered by an MCP error result carrying
+ * _meta["mcp/www_authenticate"]. Keep the HTTP 401 challenge above for generic
+ * MCP clients, but also emit the MCP-native challenge when a tool call arrives
+ * without a usable credential. This lets ChatGPT launch OAuth instead of
+ * surfacing a generic authentication failure.
+ */
+function oauthToolChallenge(id: number | string | null | undefined) {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    result: {
+      content: [{ type: 'text', text: 'Authentication required. Connect Lex Aureon and retry this tool call.' }],
+      isError: true,
+    },
+    _meta: {
+      'mcp/www_authenticate': [
+        'Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"',
+      ],
+    },
+    id,
   });
 }
 
@@ -174,17 +198,9 @@ const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
 
 function servedTools() {
   return [
-    ...TOOL_DEFINITIONS.map(t => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.parameters,
-    })),
-    ...EXTENSION_DEFINITIONS.map(t => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema,
-    })),
-    ...EXTERNAL_CAPABILITY_DEFINITIONS,
+    ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+    ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+    ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => ({ ...t, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
   ];
 }
 
@@ -365,9 +381,9 @@ export async function POST(req: Request) {
       }
     }
     const allTools = [
-      ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
-      ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-      ...EXTERNAL_CAPABILITY_DEFINITIONS,
+      ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+      ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+      ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => ({ ...t, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
     ];
     return NextResponse.json({
       jsonrpc: '2.0',
@@ -408,14 +424,14 @@ export async function POST(req: Request) {
       const sessionToken = extractSessionToken(req);
       if (sessionToken) {
         const session = await validateMcpSession(sessionToken);
-        if (!session.valid) return unauthorized(id);
+        if (!session.valid) return oauthToolChallenge(id);
         sessionKeyId = session.key.id;
         ownerId = session.key.id;
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(session.key.plan);
       } else {
         apiKey = extractApiKey(req);
-        if (!apiKey) return unauthorized(id);
+        if (!apiKey) return oauthToolChallenge(id);
         // Validate first so malformed, unknown, and unauthorized tool names do
         // not debit a caller's quota. Consumption remains atomic below, after
         // all local admission checks have passed and before execution begins.
