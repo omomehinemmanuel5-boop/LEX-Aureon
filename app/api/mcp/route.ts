@@ -80,6 +80,29 @@ function unauthorized(id: number | string | null | undefined) {
   });
 }
 
+/**
+ * ChatGPT's tool-level OAuth UX is triggered by an MCP error result carrying
+ * _meta["mcp/www_authenticate"]. Keep the HTTP 401 challenge above for generic
+ * MCP clients, but also emit the MCP-native challenge when a tool call arrives
+ * without a usable credential. This lets ChatGPT launch OAuth instead of
+ * surfacing a generic authentication failure.
+ */
+function oauthToolChallenge(id: number | string | null | undefined) {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    result: {
+      content: [{ type: 'text', text: 'Authentication required. Connect Lex Aureon and retry this tool call.' }],
+      isError: true,
+    },
+    _meta: {
+      'mcp/www_authenticate': [
+        'Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"',
+      ],
+    },
+    id,
+  });
+}
+
 const SERVER_INFO = {
   name:    'lex-crs-agent',
   version: '2.3.0',
@@ -401,14 +424,14 @@ export async function POST(req: Request) {
       const sessionToken = extractSessionToken(req);
       if (sessionToken) {
         const session = await validateMcpSession(sessionToken);
-        if (!session.valid) return unauthorized(id);
+        if (!session.valid) return oauthToolChallenge(id);
         sessionKeyId = session.key.id;
         ownerId = session.key.id;
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(session.key.plan);
       } else {
         apiKey = extractApiKey(req);
-        if (!apiKey) return unauthorized(id);
+        if (!apiKey) return oauthToolChallenge(id);
         // Validate first so malformed, unknown, and unauthorized tool names do
         // not debit a caller's quota. Consumption remains atomic below, after
         // all local admission checks have passed and before execution begins.
