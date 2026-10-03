@@ -14,7 +14,7 @@ Outbound forwarding from `/api/tool-proxy` is disabled unless `TOOL_PROXY_ALLOWE
 
 Tool receipts store an authenticated actor identifier (`operator`, `api_key:<key-id>`, or `internal-agent`) and a hash of arguments, never the raw credential or raw arguments. This identifies the authenticated principal, not necessarily the human or model behind a shared key.
 
-Admin-issued `private_test` MCP keys are diagnostic-only credentials: they expire after two hours, are subject to issuance rate limits, and cannot call repository-write, CI-dispatch, database-mutation, or audit-mutation tools. Those capabilities require the separate `MCP_OPERATOR_SECRET` boundary.
+Admin-issued `private_test` MCP keys are trusted internal-development credentials: they expire after two hours, are subject to issuance rate limits, and receive the complete internal tool surface. Every call still passes through the constitutional execution gateway; authorization control-plane operations (`authorize_tool_action` and `authorize_external_action`) remain restricted to the separate `MCP_OPERATOR_SECRET` boundary.
 
 ## Sensitive areas
 

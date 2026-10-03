@@ -78,4 +78,4 @@ Prefer a dedicated service account/agent deployment, a separate operator secret 
 
 ## Private test keys versus operator access
 
-A `private_test` API key is intentionally diagnostic-only. It can inspect files, code, workflow status/logs, receipts, and self-test state, but it cannot write files, patch the repository, dispatch CI, mutate the database, or issue authorization tokens. Use the operator header when an agent genuinely needs those control-plane capabilities.
+A `private_test` API key receives the complete internal tool surface, including repository writes, CI dispatch, database reads, and receipt operations. Those calls still pass through the constitutional execution gateway. Use the operator header when an agent needs authorization control-plane operations (`authorize_tool_action` or `authorize_external_action`) or when you want a distinct operator principal; private-test keys cannot issue authorization tokens.
