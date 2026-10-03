@@ -6,13 +6,24 @@
     }
   },
   "rewrites": [
-    { "source": "/api/python/:path*", "destination": "/api/python/:path*" },
-    { "source": "/api/:path*", "destination": "/api/:path*" }
+    {
+      "source": "/api/python/:path*",
+      "destination": "/api/python/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    }
   ],
   "redirects": [
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": "lexaureon.com" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "lexaureon.com"
+        }
+      ],
       "destination": "https://www.lexaureon.com/$1",
       "permanent": true
     }
@@ -26,5 +37,6 @@
       "path": "/api/cron/self-reflect",
       "schedule": "0 6 * * *"
     }
-  ]
+  ],
+  "installCommand": "pnpm install --no-frozen-lockfile"
 }
