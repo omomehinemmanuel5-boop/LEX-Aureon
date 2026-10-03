@@ -28,6 +28,7 @@ import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governanc
 import { discoverExternalTool, governExternalAction, authorizeExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
+import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller —
 // MCP-over-HTTP here is stateless per POST request, so IP is the only
@@ -318,10 +319,13 @@ export async function POST(req: Request) {
       }
     } catch { /* non-fatal telemetry must never block a handshake */ }
 
+    const requestedProtocolVersion = params?.protocolVersion;
+    const protocolVersion = negotiateMcpHandshakeVersion(requestedProtocolVersion);
+
     return NextResponse.json({
       jsonrpc: '2.0',
       result: {
-        protocolVersion: '2024-11-05',
+        protocolVersion,
         capabilities: CAPABILITIES,
         serverInfo: SERVER_INFO,
       },
