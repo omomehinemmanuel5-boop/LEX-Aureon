@@ -119,6 +119,20 @@ function trajectoryRiskForCapability(capability: ToolCapability | undefined): Tr
   return 'destructive';
 }
 
+function externalCapabilityResult(id: number | string | null | undefined, value: unknown) {
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    result: {
+      // MCP clients require tool results to expose content. Returning the
+      // broker object directly made clients report "content is missing" even
+      // though discovery/governance had completed successfully.
+      content: [{ type: 'text', text: JSON.stringify(value) }],
+      structuredContent: value,
+    },
+    id,
+  });
+}
+
 const EXTERNAL_CAPABILITY_DEFINITIONS = [
   {
     name: 'discover_external_tool',
@@ -569,12 +583,12 @@ export async function POST(req: Request) {
       try {
         if (toolName === 'discover_external_tool') {
           const capability = await discoverExternalTool(environmentId, manifest);
-          return NextResponse.json({ jsonrpc: '2.0', result: {
+          return externalCapabilityResult(id, {
             discovered: true,
             execution_authorized: false,
             capability,
             security_rule: 'Discovery is advisory and never grants execution authority.',
-          }, id });
+          });
         }
         if (toolName === 'govern_external_action') {
           const result = await governExternalAction({
@@ -583,7 +597,7 @@ export async function POST(req: Request) {
             approvalToken: typeof args.approval_token === 'string' ? args.approval_token : undefined,
             taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
           });
-          return NextResponse.json({ jsonrpc: '2.0', result, id });
+          return externalCapabilityResult(id, result);
         }
         if (toolName === 'authorize_external_action') {
           const targetActorId = typeof args.target_actor_id === 'string' ? args.target_actor_id.trim() : '';
@@ -592,18 +606,18 @@ export async function POST(req: Request) {
             environmentId, manifest, actionArgs, sessionId, actorId: targetActorId,
             taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
           });
-          return NextResponse.json({ jsonrpc: '2.0', result, id });
+          return externalCapabilityResult(id, result);
         }
         const approvalToken = typeof args.approval_token === 'string' ? args.approval_token : '';
         if (!approvalToken) return invalidParams(id ?? null, 'approval_token is required');
         const result = await consumeExternalAction({ environmentId, manifest, actionArgs, sessionId, actorId, approvalToken });
-        return NextResponse.json({ jsonrpc: '2.0', result: {
+        return externalCapabilityResult(id, {
           ...result,
           execution_may_begin: result.granted,
           warning: result.granted
             ? 'Lex has granted this exact single-use action. The client adapter must execute only the exact governed action and emit its own result/audit event.'
             : undefined,
-        }, id });
+        });
       } catch (error) {
         return NextResponse.json({ jsonrpc: '2.0', error: {
           code: -32031,

@@ -29,6 +29,8 @@ describe('agent governance coverage', () => {
     expect(route).toContain("toolName === 'consume_external_action'");
     expect(route).toContain("execution_may_begin: result.granted");
     expect(route).toContain('Discovery is advisory and never grants execution authority.');
+    expect(route).toContain('function externalCapabilityResult');
+    expect(route).toContain('content: [{ type: \'text\', text: JSON.stringify(value) }]');
 
     // The MCP surface is the union of TOOL_DEFINITIONS and patch_file.
     // Verify every declared canonical tool has a corresponding registry entry.
