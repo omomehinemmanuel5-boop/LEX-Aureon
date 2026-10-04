@@ -119,14 +119,13 @@ function trajectoryRiskForCapability(capability: ToolCapability | undefined): Tr
   return 'destructive';
 }
 
-function externalCapabilityResult(id: number | string | null | undefined, value: unknown) {
+function mcpToolResult(id: number | string | null | undefined, value: unknown) {
   return NextResponse.json({
     jsonrpc: '2.0',
     result: {
-      // MCP clients require tool results to expose content. Returning the
-      // broker object directly made clients report "content is missing" even
-      // though discovery/governance had completed successfully.
-      content: [{ type: 'text', text: JSON.stringify(value) }],
+      // MCP clients require every successful tools/call result to expose
+      // content. Keep the structured value for clients that support it.
+      content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
       structuredContent: value,
     },
     id,
@@ -583,7 +582,7 @@ export async function POST(req: Request) {
       try {
         if (toolName === 'discover_external_tool') {
           const capability = await discoverExternalTool(environmentId, manifest);
-          return externalCapabilityResult(id, {
+          return mcpToolResult(id, {
             discovered: true,
             execution_authorized: false,
             capability,
@@ -597,7 +596,7 @@ export async function POST(req: Request) {
             approvalToken: typeof args.approval_token === 'string' ? args.approval_token : undefined,
             taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
           });
-          return externalCapabilityResult(id, result);
+          return mcpToolResult(id, result);
         }
         if (toolName === 'authorize_external_action') {
           const targetActorId = typeof args.target_actor_id === 'string' ? args.target_actor_id.trim() : '';
@@ -606,12 +605,12 @@ export async function POST(req: Request) {
             environmentId, manifest, actionArgs, sessionId, actorId: targetActorId,
             taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
           });
-          return externalCapabilityResult(id, result);
+          return mcpToolResult(id, result);
         }
         const approvalToken = typeof args.approval_token === 'string' ? args.approval_token : '';
         if (!approvalToken) return invalidParams(id ?? null, 'approval_token is required');
         const result = await consumeExternalAction({ environmentId, manifest, actionArgs, sessionId, actorId, approvalToken });
-        return externalCapabilityResult(id, {
+        return mcpToolResult(id, {
           ...result,
           execution_may_begin: result.granted,
           warning: result.granted
@@ -878,11 +877,7 @@ export async function POST(req: Request) {
         ? 'EXECUTION_STATUS=unknown_after_deadline. Cancellation was requested, but the tool or remote system may already have completed the action. Verify its state and receipt before retrying.'
         : outcome.value;
 
-      return NextResponse.json({
-        jsonrpc: '2.0',
-        result: { content: [{ type: 'text', text: result }] },
-        id,
-      });
+      return mcpToolResult(id, result);
     } catch (e) {
       return NextResponse.json({
         jsonrpc: '2.0',
