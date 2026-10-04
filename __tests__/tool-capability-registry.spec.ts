@@ -22,6 +22,17 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('write_file')?.approvalRequired).toBe(true);
   });
 
+  it('registers external capability control-plane tools explicitly', () => {
+    expect(getToolCapability('discover_external_tool')?.capability).toBe('read');
+    expect(getToolCapability('discover_external_tool')?.approvalRequired).toBe(false);
+    expect(getToolCapability('govern_external_action')?.capability).toBe('read');
+    expect(getToolCapability('govern_external_action')?.approvalRequired).toBe(false);
+    expect(getToolCapability('consume_external_action')?.capability).toBe('external');
+    expect(getToolCapability('consume_external_action')?.approvalRequired).toBe(true);
+    expect(getToolCapability('authorize_external_action')?.capability).toBe('identity');
+    expect(getToolCapability('authorize_external_action')?.approvalRequired).toBe(true);
+  });
+
   it('fails closed for an unknown tool', () => {
     expect(isKnownGovernedTool('mystery_side_effect')).toBe(false);
     expect(() => requireKnownToolCapability('mystery_side_effect')).toThrow(
