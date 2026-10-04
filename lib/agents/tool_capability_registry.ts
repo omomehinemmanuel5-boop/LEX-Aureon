@@ -62,6 +62,17 @@ const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
   // action but does not execute that action. The target action's capability
   // remains independently governed before any execution path can proceed.
   { name:'run_governance', capability:'read', approvalRequired:false, reversible:true, bootstrapAllowed:true, source:'mcp' },
+  // External capability discovery is also a non-effectful governance operation.
+  // These tools are routed through the external capability broker, but must be
+  // registered here as well so trajectory simulation and the reference monitor
+  // see the same explicit control-plane capabilities as the MCP route.
+  { name:'discover_external_tool', capability:'read', approvalRequired:false, reversible:true, bootstrapAllowed:true, source:'mcp' },
+  { name:'govern_external_action', capability:'read', approvalRequired:false, reversible:true, bootstrapAllowed:true, source:'mcp' },
+  // Consumption is the final execution gate for a client-side adapter. Lex
+  // does not perform the external action, but consuming the permit is itself a
+  // consequential authorization step and remains approval-gated.
+  { name:'consume_external_action', capability:'external', approvalRequired:true, reversible:false, source:'mcp' },
+  { name:'authorize_external_action', capability:'identity', approvalRequired:true, reversible:false, source:'mcp' },
   { name:'exec', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
   { name:'run_command', capability:'execute', approvalRequired:true, reversible:false, source:'core' },
