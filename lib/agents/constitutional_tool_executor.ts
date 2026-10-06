@@ -14,6 +14,7 @@ import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
+import { advanceRecoveryPlane } from './recovery_runtime';
 import type { ToolCallDecision } from './types';
 import {
   consumeGovernanceApprovalToken,
@@ -269,10 +270,23 @@ export async function executeGovernedToolStructured(
 
   const canonicalGate = canonicalExecutionAllowed(canonicalRead.state, capability.bootstrapAllowed === true);
   if (!canonicalGate.allowed) {
+    let recoveryNote = '';
+    // A fail-closed write must never become a recovery mechanism by executing
+    // the requested action. Instead, use the dedicated non-destructive
+    // recovery plane to move the canonical trajectory toward stability.
+    if (capability.capability !== 'read' && canonicalRead.state.trajectoryAvailable && canonicalRead.state.M >= KERNEL_CRITICAL) {
+      try {
+        const recovery = await advanceRecoveryPlane(sessionId);
+        recoveryNote = ` Recovery plane: ${recovery.state}; M=${recovery.M.toFixed(3)}; n_stable=${recovery.nStable}; velocity=${recovery.velocity.toFixed(4)}.`;
+      } catch (error) {
+        recoveryNote = ` Recovery plane unavailable (non-fatal): ${String(error).slice(0, 120)}.`;
+      }
+    }
+
     const canonicalDecision: ToolCallDecision = {
       approved: false,
       decision: 'DENIED_BLOCKED',
-      reason: canonicalGate.reason ?? 'Canonical governance state denied execution.',
+      reason: `${canonicalGate.reason ?? 'Canonical governance state denied execution.'}${recoveryNote}`,
       crs: {
         C: canonicalRead.state.C,
         R: canonicalRead.state.R,
@@ -285,7 +299,7 @@ export async function executeGovernedToolStructured(
       health_band: canonicalRead.state.healthBand === 'UNINITIALIZED'
         ? 'LOCKED'
         : canonicalRead.state.healthBand === 'CRITICAL' ? 'CRITICAL' : 'STRESSED',
-      warning: 'Canonical governance state is authoritative for execution health.',
+      warning: 'Canonical governance state is authoritative for execution health; recovery is handled separately and never grants execution authority.',
     };
     const verification = verifyToolResult(toolName, undefined, capability.capability === 'read' ? 'read' : 'write');
     return {
