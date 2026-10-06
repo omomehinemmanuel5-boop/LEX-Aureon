@@ -5,6 +5,7 @@ import {
   calculateZAwareGovernorG,
 } from '../aureonics_core';
 import { CONSTITUTION } from '../constitution';
+import { getCachedKernel } from '../kernel_cache';
 
 const MAX_RECOVERY_STEP = 0.08;
 
@@ -94,6 +95,11 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
 
     reason = 'Bounded governor correction applied by the recovery plane; ordinary tool execution remains denied.';
   }
+
+  // Keep a warm serverless kernel aligned with the canonical persisted state.
+  // Other instances will hydrate from z_traj on their next governance turn.
+  const kernel = getCachedKernel(sessionId, { C: x[0], R: x[1], S: x[2] });
+  kernel.state = { C: next[0], R: next[1], S: next[2] };
 
   const updated: ZTraj = await updateZTraj(
     sessionId,
