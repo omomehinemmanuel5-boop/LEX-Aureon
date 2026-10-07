@@ -239,12 +239,32 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  const canonicalRead = await readCanonicalGovernanceState({
+  let canonicalRead = await readCanonicalGovernanceState({
     sessionId,
     actorId,
     capability: capability.capability,
     authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
   });
+
+  // Recovery must not depend on a caller repeatedly attempting a denied write.
+  // Safe reads and ordinary MCP traffic are valid stabilization observations;
+  // advance the bounded recovery plane first, then evaluate fresh state.
+  if (canonicalRead.available && canonicalRead.state.trajectoryAvailable
+    && canonicalRead.state.M >= KERNEL_CRITICAL
+    && (canonicalRead.state.M < 0.25 || canonicalRead.state.nStable < 3)) {
+    try {
+      await advanceRecoveryPlane(sessionId);
+      canonicalRead = await readCanonicalGovernanceState({
+        sessionId,
+        actorId,
+        capability: capability.capability,
+        authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
+      });
+    } catch {
+      // Recovery is fail-closed and non-fatal to the authorization boundary;
+      // the fresh canonical read above remains authoritative.
+    }
+  }
 
   if (!canonicalRead.available) {
     const unavailableDecision: ToolCallDecision = {

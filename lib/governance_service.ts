@@ -15,6 +15,7 @@
 
 import { getCachedKernel } from './kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from './kernel_bridge';
+import { advanceRecoveryPlane } from './agents/recovery_runtime';
 import { incrementRuns } from './db';
 import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
@@ -165,6 +166,16 @@ export async function executeGovern(
   let savedState: { C: number; R: number; S: number } | null = null;
   let sessionZ: [number, number, number] | undefined;
   if (!simulation) {
+    // Keep the direct governance proxy on the same recovery plane as MCP.
+    // A safe request is a stabilization observation; recovery must not wait
+    // for a denied tool write before n_stable can advance.
+    try {
+      const current = await loadKernelState(session_id);
+      const margin = current ? Math.min(current.C, current.R, current.S) : 1;
+      if (margin < 0.25) await advanceRecoveryPlane(session_id);
+    } catch (e) {
+      logger.warn('govern.recovery', 'recovery pulse unavailable; continuing with canonical state', errorFields(e));
+    }
     [savedState, sessionZ] = await Promise.all([
       loadKernelState(session_id),
       loadKernelZ(session_id),
