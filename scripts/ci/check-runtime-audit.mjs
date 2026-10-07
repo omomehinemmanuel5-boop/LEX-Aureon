@@ -28,8 +28,8 @@ const nextConfig = fs.existsSync('next.config.mjs')
   : '';
 
 const nextCveContextuallySafe =
-  !/experimental\\.ppr\\s*:/i.test(nextConfig) &&
-  !/cacheComponents\\s*:/i.test(nextConfig) &&
+  !/experimental\.ppr\s*:/i.test(nextConfig) &&
+  !/cacheComponents\s*:/i.test(nextConfig) &&
   process.env.NEXT_PRIVATE_MINIMAL_MODE !== '1';
 
 const ignoredCve = 'CVE-2025-59472';
@@ -37,7 +37,7 @@ const ignoredSource = 'SNYK-JS-NEXT-15105315';
 
 const sharpContextuallySafe =
   process.env.NEXT_SHARP_RUNTIME_UNTRUSTED_SVG !== '1' &&
-  !/\\bsharp\\s*\\(/i.test(fs.existsSync('app') ? '' : '');
+  !/\bsharp\s*\(/i.test(fs.existsSync('app') ? '' : '');
 
 const sourceMapJsContextuallySafe = true;
 
