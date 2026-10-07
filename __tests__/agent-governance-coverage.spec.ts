@@ -31,6 +31,8 @@ describe('agent governance coverage', () => {
     expect(route).toContain('Discovery is advisory and never grants execution authority.');
     expect(route).toContain('function mcpToolResult');
     expect(route).toContain('content: [{ type: \'text\', text: typeof value === \'string\' ? value : JSON.stringify(value) }]');
+    expect(tools).toContain('get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string })');
+    expect(tools).toContain("WHERE session_id = ?");
 
     // The MCP surface is the union of TOOL_DEFINITIONS and patch_file.
     // Verify every declared canonical tool has a corresponding registry entry.
