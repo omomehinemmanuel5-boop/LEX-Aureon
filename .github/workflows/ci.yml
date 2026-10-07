@@ -86,7 +86,9 @@ jobs:
         run: npm run test:coverage
 
       - name: Dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: |
+          npm audit --omit=dev --audit-level=high --json > /tmp/npm-audit.json || true
+          node scripts/ci/check-runtime-audit.mjs /tmp/npm-audit.json
 
       - name: Production build
         env:
