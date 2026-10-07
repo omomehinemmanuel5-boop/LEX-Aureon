@@ -121,13 +121,21 @@ function trajectoryRiskForCapability(capability: ToolCapability | undefined): Tr
 }
 
 function mcpToolResult(id: number | string | null | undefined, value: unknown) {
+  // MCP structuredContent must be a JSON object. Most Lex tools return their
+  // governed result as plain text, so wrap primitive/array results instead of
+  // emitting structuredContent as a bare string that strict clients reject.
+  const structuredContent = value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    ? value
+    : { value };
   return NextResponse.json({
     jsonrpc: '2.0',
     result: {
       // MCP clients require every successful tools/call result to expose
       // content. Keep the structured value for clients that support it.
       content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
-      structuredContent: value,
+      structuredContent,
     },
     id,
   });
