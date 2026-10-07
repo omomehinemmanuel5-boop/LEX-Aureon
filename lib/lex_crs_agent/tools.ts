@@ -417,13 +417,15 @@ export async function check_github_token_scope(): Promise<string> {
 }
 
 // ── get_constitutional_state ──────────────────────────────────────────────────
-export async function get_constitutional_state(): Promise<string> {
+export async function get_constitutional_state({ session_id }: { session_id?: string } = {}): Promise<string> {
   try {
     const db  = await getDB();
-    const res = await db.execute(
-      `SELECT session_id, last_c, last_r, last_s, last_m, velocity, drift_dir, sigma_viol, updated_at
-       FROM z_traj ORDER BY updated_at DESC LIMIT 5`
-    );
+    const res = await db.execute({
+      sql: `SELECT session_id, last_c, last_r, last_s, last_m, velocity, drift_dir, sigma_viol, updated_at
+            FROM z_traj ${session_id ? 'WHERE session_id = ?' : ''}
+            ORDER BY updated_at DESC LIMIT 5`,
+      args: session_id ? [session_id] : [],
+    });
     if (!res.rows.length) return 'No sessions found.';
     return res.rows.map(r =>
       `Session ${String(r.session_id).slice(0, 8)} | C=${Number(r.last_c).toFixed(3)} R=${Number(r.last_r).toFixed(3)} S=${Number(r.last_s).toFixed(3)} M=${Number(r.last_m).toFixed(3)} | updated: ${r.updated_at}`
@@ -1052,7 +1054,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   dispatch_workflow:        (a, signal) => dispatch_workflow(a as { workflow: string; ref?: string; inputs?: Record<string, string>; repo?: string }, signal),
   get_workflow_artifact:    (a) => get_workflow_artifact(a as { run_id: number; repo?: string }),
   check_github_token_scope: () => check_github_token_scope(),
-  get_constitutional_state: () => get_constitutional_state(),
+  get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string }),
   query_database:           (a) => query_database(a as { sql: string }),
   run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string; governance_mode?: 'execute' | 'simulate' }),
   get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
