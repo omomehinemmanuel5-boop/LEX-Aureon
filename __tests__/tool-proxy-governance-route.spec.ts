@@ -175,6 +175,13 @@ describe('/api/tool-proxy governance boundary', () => {
     expect(JSON.stringify(payload)).not.toContain('raw-key');
   });
 
+  it('accepts the legacy x-api-key header alias', async () => {
+    const response = await POST(request(baseBody, { 'x-api-key': 'legacy-key' }));
+    expect(response.status).toBe(200);
+    expect(validateApiKey).toHaveBeenCalledWith('legacy-key');
+    expect(validateAndConsumeKey).toHaveBeenCalledWith('legacy-key');
+  });
+
   it('pins the verified DNS address and reports timeout as an unknown outcome', async () => {
     process.env.TOOL_PROXY_ALLOWED_HOSTS = 'tools.example.com';
     httpsRequest.mockImplementation((options: { lookup: (hostname: string, opts: unknown, callback: (error: Error | null, address: string, family: number) => void) => void }) => {

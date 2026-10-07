@@ -38,7 +38,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function extractHeaderApiKey(req: Request): string | null {
-  const header = req.headers.get('x-lex-api-key');
+  // Keep x-api-key as a compatibility alias for older client configurations.
+  const header = req.headers.get('x-lex-api-key') ?? req.headers.get('x-api-key');
   if (header?.trim()) return header.trim();
   const authorization = req.headers.get('authorization');
   if (authorization?.toLowerCase().startsWith('bearer ')) {

@@ -85,10 +85,10 @@ export default function KeysPage() {
         {/* Usage example */}
         <div style={{ background:'#0d0d1a', border:'1px solid #1f2937', borderRadius:8, padding:'1rem', marginBottom:'1.5rem' }}>
           <p style={{ color:'#c9a84c', fontSize:11, margin:'0 0 0.5rem', textTransform:'uppercase', letterSpacing:1 }}>Quick Start</p>
-          <pre style={{ color:'#10b981', fontSize:11, margin:0, overflowX:'auto', whiteSpace:'pre-wrap' }}>{`curl -X POST https://www.lexaureon.com/api/lex/run \\
-  -H "x-api-key: lex_sk_YOUR_KEY" \\
+          <pre style={{ color:'#10b981', fontSize:11, margin:0, overflowX:'auto', whiteSpace:'pre-wrap' }}>{`curl -X POST https://www.lexaureon.com/api/lex/govern \\
+  -H "x-lex-api-key: lex_sk_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"prompt": "Your prompt here"}'`}</pre>
+  -d '{"prompt":"Your prompt here","session_id":"quick-start"}'`}</pre>
         </div>
 
         {/* Input */}
