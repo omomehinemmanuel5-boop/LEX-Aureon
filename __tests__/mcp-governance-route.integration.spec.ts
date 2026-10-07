@@ -131,6 +131,18 @@ describe('MCP constitutional dispatch boundary', () => {
     ]);
   });
 
+  it('wraps plain-text tool results in an object-shaped structuredContent field', async () => {
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'run_governance', arguments: { prompt: 'test' } },
+      id: 'structured-content',
+    }));
+    const payload = response.body as unknown as { result: { structuredContent: unknown } };
+    expect(payload.result.structuredContent).toEqual({ value: 'approved:    true\\ncache_hit:   false\\nTOOL_RESULT' });
+    expect(Array.isArray(payload.result.structuredContent)).toBe(false);
+  });
+
   it('does not expose or execute infrastructure tools for public API keys', async () => {
     const listResponse = await POST(request({
       jsonrpc: '2.0',
