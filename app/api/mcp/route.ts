@@ -52,7 +52,8 @@ function ipHash(req: Request): string {
 // is categorically larger than a rate-limited text-governance call.
 //
 function extractApiKey(req: Request): string | null {
-  const header = req.headers.get('x-lex-api-key');
+  // Keep x-api-key as a compatibility alias for older client configurations.
+  const header = req.headers.get('x-lex-api-key') ?? req.headers.get('x-api-key');
   if (header) return header.trim();
   const auth = req.headers.get('authorization');
   if (auth?.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
