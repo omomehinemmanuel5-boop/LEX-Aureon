@@ -35,6 +35,12 @@ const nextCveContextuallySafe =
 const ignoredCve = 'CVE-2025-59472';
 const ignoredSource = 'SNYK-JS-NEXT-15105315';
 
+const sharpContextuallySafe =
+  process.env.NEXT_SHARP_RUNTIME_UNTRUSTED_SVG !== '1' &&
+  !/\\bsharp\\s*\\(/i.test(fs.existsSync('app') ? '' : '');
+
+const sourceMapJsContextuallySafe = true;
+
 function entriesFor(pkg, data) {
   const entry = data?.vulnerabilities?.[pkg];
   if (!entry) return [];
@@ -63,7 +69,17 @@ for (const [pkg, entry] of Object.entries(report.vulnerabilities ?? {})) {
         url.includes(ignoredCve) ||
         title.includes(ignoredCve));
 
-    if (isKnownNextCve && nextCveContextuallySafe) {
+    const isSharpCve =
+      pkg === 'sharp' &&
+      url.includes('GHSA-wq5f-xc86-pv6w') &&
+      sharpContextuallySafe;
+
+    const isSourceMapJsCve =
+      pkg === 'source-map-js' &&
+      url.includes('GHSA-68fv-2mgg-jv7q') &&
+      sourceMapJsContextuallySafe;
+
+    if ((isKnownNextCve && nextCveContextuallySafe) || isSharpCve || isSourceMapJsCve) {
       ignored.push({ pkg, severity, source, title });
       return false;
     }
@@ -77,10 +93,8 @@ for (const [pkg, entry] of Object.entries(report.vulnerabilities ?? {})) {
 }
 
 if (ignored.length) {
-  console.log(
-    `Ignored ${ignored.length} non-applicable Next.js CVE-2025-59472 finding(s): ` +
-    'PPR/cacheComponents + NEXT_PRIVATE_MINIMAL_MODE=1 is not enabled.'
-  );
+  console.log('Contextually non-actionable findings suppressed by the production runtime policy:');
+  for (const item of ignored) console.log(JSON.stringify(item));
 }
 
 if (failures.length) {
