@@ -15,7 +15,8 @@
 
 import { getCachedKernel } from './kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from './kernel_bridge';
-import { advanceRecoveryPlane } from './agents/recovery_runtime';
+import { advanceRecoveryPlane, type RecoveryPulseResult } from './agents/recovery_runtime';
+import { TAU, projectToSimplex } from './aureonics_core';
 import { incrementRuns } from './db';
 import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
@@ -101,6 +102,12 @@ export interface GovernResponse {
   invariance_violations:    number;
   metrics:                  PostResponseCRS | null;
   governor_sensing:         GovernorSensingReport | null;
+  recovery_state:           'QUARANTINED' | 'RECOVERING' | 'RESTORING' | 'VERIFIED' | 'NORMAL';
+  n_stable:                 number;
+  recovery_pulse_applied:   boolean;
+  recovery_reason:          string | null;
+  recovery_clamped:         boolean;
+  canonical_execution_allowed: boolean;
   version:                  string;
 }
 
@@ -165,6 +172,7 @@ export async function executeGovern(
 
   let savedState: { C: number; R: number; S: number } | null = null;
   let sessionZ: [number, number, number] | undefined;
+  let recoveryPulse: RecoveryPulseResult | null = null;
   if (!simulation) {
     // Keep the direct governance proxy on the same recovery plane as MCP.
     // A safe request is a stabilization observation; recovery must not wait
@@ -172,7 +180,7 @@ export async function executeGovern(
     try {
       const current = await loadKernelState(session_id);
       const margin = current ? Math.min(current.C, current.R, current.S) : 1;
-      if (margin < 0.25) await advanceRecoveryPlane(session_id);
+      if (margin < 0.25) recoveryPulse = await advanceRecoveryPlane(session_id);
     } catch (e) {
       logger.warn('govern.recovery', 'recovery pulse unavailable; continuing with canonical state', errorFields(e));
     }
@@ -182,6 +190,9 @@ export async function executeGovern(
       memoryPromise,
     ]);
   }
+  const recoveryBaselineM = savedState
+    ? Math.min(savedState.C, savedState.R, savedState.S)
+    : null;
 
   // ── Input-side threat signal ──────────────────────────────────────────────
   let threatSignal = 0;
@@ -260,10 +271,31 @@ export async function executeGovern(
     detectionDegraded = true;
   }
 
+  // The self-referential measurement can adjust kernel.state after the normal
+  // transition. Keep recovery monotonic and enforce the same hard floor used
+  // by the MCP/tool executor before this path can report or persist state.
+  let recoveryClamped = false;
+  let floorBreached = false;
+  const postMeasurementM = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
+  if (!simulation && recoveryBaselineM !== null
+    && recoveryBaselineM < 0.15 && postMeasurementM < recoveryBaselineM) {
+    kernel.state = { ...savedState! };
+    result.state = { ...kernel.state };
+    result.M = recoveryBaselineM;
+    recoveryClamped = true;
+  }
+  if (!simulation && Math.min(kernel.state.C, kernel.state.R, kernel.state.S) < TAU) {
+    const projected = projectToSimplex([kernel.state.C, kernel.state.R, kernel.state.S], TAU);
+    kernel.state = { C: projected[0], R: projected[1], S: projected[2] };
+    result.state = { ...kernel.state };
+    result.M = Math.min(projected[0], projected[1], projected[2]);
+    floorBreached = true;
+  }
+
   // ── Single-source refusal decision ────────────────────────────────────────
   const readonlyDiagnostic = isReadOnlyDiagnosticPrompt(prompt);
 
-  const decision: RefusalDecision = decideRefusal({
+  const measuredDecision = decideRefusal({
     intent: readonlyDiagnostic ? 'readonly_diagnostic' : 'normal',
     sovereignty: {
       drift_detected:     sovereigntyDriftDetected,
@@ -274,6 +306,16 @@ export async function executeGovern(
     capitulation:  capitulationSignal,
     safety_projection_triggered: result.receipt.safety_projection_triggered,
   });
+  const decision: RefusalDecision = floorBreached
+    ? {
+      ...measuredDecision,
+      refused: true,
+      reasons: ['constitutional_floor'],
+      primary: 'constitutional_floor',
+      forced_critical: true,
+      safety_projection_triggered: true,
+    }
+    : measuredDecision;
 
   let projectionTriggered = decision.safety_projection_triggered;
   if (decision.refused) {
@@ -343,6 +385,17 @@ export async function executeGovern(
   const reportedM     = Math.min(reportedState.C, reportedState.R, reportedState.S);
   const reportedBand  = decision.forced_critical ? 'CRITICAL' : healthBand(reportedM);
   result.health_band  = reportedBand;
+
+  const reportedRecoveryState: GovernResponse['recovery_state'] = recoveryPulse?.state === 'UNINITIALIZED'
+    ? 'QUARANTINED'
+    : recoveryPulse?.state
+    ?? (reportedM < TAU ? 'QUARANTINED'
+      : reportedM < 0.15 ? 'RECOVERING'
+        : reportedM < 0.25 ? 'RESTORING' : 'NORMAL');
+  const reportedStable = recoveryPulse?.nStable ?? 0;
+  const recoveryReason = recoveryPulse?.reason
+    ?? (floorBreached ? 'Constitutional hard floor enforced; ordinary governance output was refused.'
+      : recoveryClamped ? 'Recovery monotonicity guard retained the pre-turn recovery state.' : null);
 
   const govDetail = governorState(reportedState.C, reportedState.R, reportedState.S);
 
@@ -421,6 +474,12 @@ export async function executeGovern(
     invariance_violations:    result.invariance_violations,
     metrics:                  result.metrics ?? null,
     governor_sensing:         result.governor_sensing,
+    recovery_state:           reportedRecoveryState,
+    n_stable:                 reportedStable,
+    recovery_pulse_applied:   recoveryPulse?.advanced ?? false,
+    recovery_reason:          recoveryReason,
+    recovery_clamped:         recoveryClamped,
+    canonical_execution_allowed: !floorBreached && reportedM >= TAU,
     governance_mode:          governanceMode,
     version:                  result.receipt.version ?? 'SovereignKernel-TS-v2+AsyncGovernor',
   };

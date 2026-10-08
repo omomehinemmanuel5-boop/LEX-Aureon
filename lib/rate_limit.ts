@@ -17,6 +17,7 @@ export function getClientIp(req: Request): string {
 }
 
 let _schemaReady = false;
+const localBlockedUntil = new Map<string, number>();
 async function ensureSchema(): Promise<void> {
   if (_schemaReady) return;
   await getClient().execute(`
@@ -41,6 +42,16 @@ export async function checkRateLimit(
   const windowMs = windowSeconds * 1000;
   const now = Date.now();
   const windowStart = now - windowMs;
+  const localKey = `${key}:${limit}:${windowSeconds}`;
+  const blockedUntil = localBlockedUntil.get(localKey) ?? 0;
+  if (blockedUntil > now) {
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfter: Math.max(1, Math.ceil((blockedUntil - now) / 1000)),
+    };
+  }
+  localBlockedUntil.delete(localKey);
 
   try {
     await ensureSchema();
@@ -59,6 +70,8 @@ export async function checkRateLimit(
     const allowed = count <= limit;
     const remaining = Math.max(0, limit - count);
     const retryAfter = allowed ? 0 : Math.max(1, Math.ceil((ws + windowMs - now) / 1000));
+
+    if (!allowed) localBlockedUntil.set(localKey, now + retryAfter * 1000);
 
     return { allowed, remaining, retryAfter };
   } catch (e) {

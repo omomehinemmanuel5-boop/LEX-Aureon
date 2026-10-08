@@ -44,7 +44,8 @@ export const SEMANTIC_ATTACK_ENFORCE_THRESHOLD_DEGRADED = 0.5;
 
 export type RefusalReason =
   | 'sovereignty_drift'
-  | 'semantic_classifier';
+  | 'semantic_classifier'
+  | 'constitutional_floor';
 
 export interface RefusalDecision {
   refused: boolean;
