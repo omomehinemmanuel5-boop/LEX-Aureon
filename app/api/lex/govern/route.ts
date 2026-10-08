@@ -28,7 +28,9 @@ const VALID_IDENTITY_MODES: IdentityMode[] = ['full', 'minimal', 'dynamic', 'non
 const VALID_GOVERNANCE_MODES = ['execute', 'simulate'] as const;
 const MAX_BODY_BYTES = 70_000;
 const ANONYMOUS_LIMIT = FREE_TEXT_RUNS_PER_DAY;
-const AUTHENTICATED_LIMIT = 120;
+// A valid API key is the intended path for high-throughput agents. The
+// anonymous budget remains deliberately small and separate from this quota.
+const AUTHENTICATED_LIMIT = 600;
 const ANONYMOUS_WINDOW_SECONDS = 24 * 60 * 60;
 const AUTHENTICATED_WINDOW_SECONDS = 60;
 

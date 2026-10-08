@@ -24,9 +24,12 @@ import { env } from '@/lib/env';
 
 const MAX_PROXY_BODY_BYTES = 64 * 1024;
 const PROXY_ANONYMOUS_REQUESTS_PER_MINUTE = 30;
-const PROXY_API_KEY_REQUESTS_PER_MINUTE = 120;
-const PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE = 90;
-const PROXY_OPERATOR_REQUESTS_PER_MINUTE = 180;
+// Authenticated agents are expected to fan out concurrent, short-lived tool
+// calls. Keep anonymous traffic conservative, but do not make a valid key
+// share the anonymous-sized ceiling.
+const PROXY_API_KEY_REQUESTS_PER_MINUTE = 600;
+const PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE = 600;
+const PROXY_OPERATOR_REQUESTS_PER_MINUTE = 1_200;
 const MAX_SESSION_ID_LENGTH = 128;
 const MAX_TOOL_NAME_LENGTH = 128;
 const MAX_MCP_RESPONSE_BYTES = 1024 * 1024;
@@ -197,7 +200,7 @@ function postToMcp(target: URL, payload: Record<string, unknown>): Promise<{ sta
   });
 }
 
-function rateLimitResponse(retryAfter: number, storageError: boolean) {
+function rateLimitResponse(retryAfter: number, storageError: boolean, limit: number) {
   return NextResponse.json({
     error: storageError
       ? 'Tool proxy admission temporarily unavailable'
@@ -206,6 +209,8 @@ function rateLimitResponse(retryAfter: number, storageError: boolean) {
     status: storageError ? 503 : 429,
     headers: {
       'Retry-After': String(retryAfter),
+      'X-RateLimit-Limit': String(limit),
+      'X-RateLimit-Remaining': '0',
       'Cache-Control': 'no-store',
     },
   });
@@ -226,7 +231,11 @@ export async function POST(req: Request) {
     operator || apiKey ? PROXY_API_KEY_REQUESTS_PER_MINUTE : PROXY_ANONYMOUS_REQUESTS_PER_MINUTE,
     60,
   );
-  if (!admission.allowed) return rateLimitResponse(admission.retryAfter, Boolean(admission.storageError));
+  if (!admission.allowed) return rateLimitResponse(
+    admission.retryAfter,
+    Boolean(admission.storageError),
+    operator || apiKey ? PROXY_API_KEY_REQUESTS_PER_MINUTE : PROXY_ANONYMOUS_REQUESTS_PER_MINUTE,
+  );
 
   let checkedKey: Awaited<ReturnType<typeof validateApiKey>>['key'] | null = null;
   if (!operator && apiKey) {
@@ -245,13 +254,21 @@ export async function POST(req: Request) {
       operator ? PROXY_OPERATOR_REQUESTS_PER_MINUTE : PROXY_API_KEY_REQUESTS_PER_MINUTE,
       60,
     );
-    if (!quota.allowed) return rateLimitResponse(quota.retryAfter, Boolean(quota.storageError));
+    if (!quota.allowed) return rateLimitResponse(
+      quota.retryAfter,
+      Boolean(quota.storageError),
+      operator ? PROXY_OPERATOR_REQUESTS_PER_MINUTE : PROXY_API_KEY_REQUESTS_PER_MINUTE,
+    );
     const ipSafety = await checkRateLimit(
       `tool-proxy:authenticated-ip:${ipKey}`,
       PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE,
       60,
     );
-    if (!ipSafety.allowed) return rateLimitResponse(ipSafety.retryAfter, Boolean(ipSafety.storageError));
+    if (!ipSafety.allowed) return rateLimitResponse(
+      ipSafety.retryAfter,
+      Boolean(ipSafety.storageError),
+      PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE,
+    );
   }
 
   const bounded = await readBoundedBody(req);
