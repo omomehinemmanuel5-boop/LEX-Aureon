@@ -23,7 +23,10 @@ import { isOperatorSecret } from '@/lib/lex_crs_agent/mcp_access';
 import { env } from '@/lib/env';
 
 const MAX_PROXY_BODY_BYTES = 64 * 1024;
-const PROXY_REQUESTS_PER_MINUTE = 30;
+const PROXY_ANONYMOUS_REQUESTS_PER_MINUTE = 30;
+const PROXY_API_KEY_REQUESTS_PER_MINUTE = 120;
+const PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE = 90;
+const PROXY_OPERATOR_REQUESTS_PER_MINUTE = 180;
 const MAX_SESSION_ID_LENGTH = 128;
 const MAX_TOOL_NAME_LENGTH = 128;
 const MAX_MCP_RESPONSE_BYTES = 1024 * 1024;
@@ -195,8 +198,17 @@ function postToMcp(target: URL, payload: Record<string, unknown>): Promise<{ sta
 }
 
 function rateLimitResponse(retryAfter: number, storageError: boolean) {
-  return jsonError(storageError ? 503 : 429,
-    storageError ? 'Tool proxy admission temporarily unavailable' : `Too many requests; retry after ${retryAfter} seconds`);
+  return NextResponse.json({
+    error: storageError
+      ? 'Tool proxy admission temporarily unavailable'
+      : `Too many requests; retry after ${retryAfter} seconds`,
+  }, {
+    status: storageError ? 503 : 429,
+    headers: {
+      'Retry-After': String(retryAfter),
+      'Cache-Control': 'no-store',
+    },
+  });
 }
 
 export async function POST(req: Request) {
@@ -207,8 +219,40 @@ export async function POST(req: Request) {
 
   const ip = getClientIp(req);
   const ipKey = crypto.createHash('sha256').update(ip).digest('hex').slice(0, 16);
-  const rate = await checkRateLimit(`tool-proxy:${ipKey}`, PROXY_REQUESTS_PER_MINUTE, 60);
-  if (!rate.allowed) return rateLimitResponse(rate.retryAfter, Boolean(rate.storageError));
+  const operator = isOperatorSecret(req.headers.get('x-lex-operator-secret'));
+  const apiKey = operator ? null : extractHeaderApiKey(req);
+  const admission = await checkRateLimit(
+    `tool-proxy:admission:${ipKey}`,
+    operator || apiKey ? PROXY_API_KEY_REQUESTS_PER_MINUTE : PROXY_ANONYMOUS_REQUESTS_PER_MINUTE,
+    60,
+  );
+  if (!admission.allowed) return rateLimitResponse(admission.retryAfter, Boolean(admission.storageError));
+
+  let checkedKey: Awaited<ReturnType<typeof validateApiKey>>['key'] | null = null;
+  if (!operator && apiKey) {
+    try {
+      const checked = await validateApiKey(apiKey);
+      if (!checked.valid || !checked.key) return jsonError(401, 'Valid API key or operator secret required');
+      checkedKey = checked.key;
+    } catch {
+      return jsonError(503, 'Tool proxy authentication temporarily unavailable');
+    }
+  }
+
+  if (checkedKey || operator) {
+    const quota = await checkRateLimit(
+      operator ? `tool-proxy:operator:${ipKey}` : `tool-proxy:key:${String(checkedKey!.id)}`,
+      operator ? PROXY_OPERATOR_REQUESTS_PER_MINUTE : PROXY_API_KEY_REQUESTS_PER_MINUTE,
+      60,
+    );
+    if (!quota.allowed) return rateLimitResponse(quota.retryAfter, Boolean(quota.storageError));
+    const ipSafety = await checkRateLimit(
+      `tool-proxy:authenticated-ip:${ipKey}`,
+      PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE,
+      60,
+    );
+    if (!ipSafety.allowed) return rateLimitResponse(ipSafety.retryAfter, Boolean(ipSafety.storageError));
+  }
 
   const bounded = await readBoundedBody(req);
   if (bounded.tooLarge) return jsonError(413, 'Request body too large');
@@ -239,19 +283,10 @@ export async function POST(req: Request) {
     return jsonError(400, 'target_mcp_url must be a URL string of at most 2048 characters');
   }
 
-  const operator = isOperatorSecret(req.headers.get('x-lex-operator-secret'));
   let actorId = 'operator';
   let sessionId = clientSessionId;
-  let apiKey: string | null = null;
   if (!operator) {
-    apiKey = extractHeaderApiKey(req);
     if (!apiKey) return jsonError(401, 'Valid API key or operator secret required');
-    try {
-      const checked = await validateApiKey(apiKey);
-      if (!checked.valid || !checked.key) return jsonError(401, 'Valid API key or operator secret required');
-    } catch {
-      return jsonError(503, 'Tool proxy authentication temporarily unavailable');
-    }
   }
 
   // Authenticate the caller before DNS resolution, but validate the target
