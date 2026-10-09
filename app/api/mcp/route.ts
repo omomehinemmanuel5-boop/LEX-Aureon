@@ -539,15 +539,11 @@ export async function POST(req: Request) {
         task_context: taskContext,
       });
       if (!review.approved) {
-        return NextResponse.json({
-          jsonrpc: '2.0',
-          result: {
-            approved: false,
-            decision: review.decision,
-            reason: review.reason,
-            receipt_id: review.receipt_id ?? null,
-          },
-          id,
+        return mcpToolResult(id, {
+          approved: false,
+          decision: review.decision,
+          reason: review.reason,
+          receipt_id: review.receipt_id ?? null,
         });
       }
       const approvalId = crypto.randomUUID();
@@ -567,19 +563,15 @@ export async function POST(req: Request) {
           id,
         }, { status: 503 });
       }
-      return NextResponse.json({
-        jsonrpc: '2.0',
-        result: {
-          approved: true,
-          decision: 'approval_issued',
-          tool_name: requestedTool,
-          approval_id: approvalId,
-          expires_in_seconds: 15 * 60,
-          approval_token: approvalToken,
-          receipt_id: review.receipt_id ?? null,
-          warning: 'Treat this token as sensitive. It is single-use and bound to the exact tool and arguments.',
-        },
-        id,
+      return mcpToolResult(id, {
+        approved: true,
+        decision: 'approval_issued',
+        tool_name: requestedTool,
+        approval_id: approvalId,
+        expires_in_seconds: 15 * 60,
+        approval_token: approvalToken,
+        receipt_id: review.receipt_id ?? null,
+        warning: 'Treat this token as sensitive. It is single-use and bound to the exact tool and arguments.',
       });
     }
 
@@ -628,7 +620,7 @@ export async function POST(req: Request) {
           const targetActorId = typeof args.target_actor_id === 'string' ? args.target_actor_id.trim() : '';
           if (!targetActorId) return invalidParams(id ?? null, 'target_actor_id is required for operator authorization');
           const result = await authorizeExternalAction({
-            environmentId, manifest, actionArgs, sessionId, actorId: targetActorId,
+            environmentId, manifest, actionArgs, sessionId, actorId: targetActorId, authorizedByActorId: actorId,
             taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
           });
           return mcpToolResult(id, result);

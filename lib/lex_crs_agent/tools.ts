@@ -940,7 +940,6 @@ export async function simulate_agent_plan(input: {
         const resolved = requireKnownToolCapability(tool);
         capability = resolved.capability;
         mappedRisk = capabilityRisk[capability];
-        if (riskOrder.indexOf(mappedRisk) > riskOrder.indexOf(highest)) highest = mappedRisk;
         if (resolved.approvalRequired) {
           policyDecision = 'approval_required';
           warning = 'Registered capability requires approval: ' + tool + ' [' + capability + ']';
@@ -967,6 +966,7 @@ export async function simulate_agent_plan(input: {
       }
     }
 
+    if (riskOrder.indexOf(mappedRisk) > riskOrder.indexOf(highest)) highest = mappedRisk;
     const recoveryState: 'QUARANTINED' | 'RECOVERING' | 'RESTORING' | 'NORMAL' = before.M < 0.05 ? 'QUARANTINED' : before.M < 0.15 ? 'RECOVERING' : before.M < 0.25 ? 'RESTORING' : 'NORMAL';
     const capabilityAllowed = before.M < 0.05
       ? false
