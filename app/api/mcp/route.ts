@@ -775,7 +775,16 @@ export async function POST(req: Request) {
       // never declare a plan are completely unaffected: falls straight
       // through to the original bare path.
       const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan']);
-      const trajectoryState = TRAJECTORY_META_TOOLS.has(toolName) ? undefined : await getTrajectoryState(sessionId);
+      // Diagnostics must remain reachable when a plan is stale, locked, or
+      // out of sequence. They still pass through executeGovernedTool below,
+      // so authentication, capability, and constitutional checks are intact;
+      // they simply do not consume or require a plan step.
+      const TRAJECTORY_DIAGNOSTIC_TOOLS = new Set([
+        'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+      ]);
+      const trajectoryBypass = TRAJECTORY_META_TOOLS.has(toolName)
+        || TRAJECTORY_DIAGNOSTIC_TOOLS.has(toolName);
+      const trajectoryState = trajectoryBypass ? undefined : await getTrajectoryState(sessionId);
       if (runContext && (!trajectoryState || !isTrajectoryActive(trajectoryState))) {
         return NextResponse.json({ jsonrpc: '2.0', error: { code: -32042, message: 'Long-horizon actions require an active trajectory checkpoint' }, id });
       }
