@@ -102,9 +102,34 @@ vi.mock('@/lib/agents/trajectory_executor', async (importOriginal) => {
 // them. We call declare_trajectory_plan directly (not through POST) to set
 // up state, since executeGovernedTool above is a canned mock that doesn't
 // invoke the real toolFn it's given.
-import { declare_trajectory_plan } from '../lib/lex_crs_agent/tools';
+import { declare_trajectory_plan, simulate_agent_plan } from '../lib/lex_crs_agent/tools';
 import { getTrajectoryState, clearTrajectoryState, setTrajectoryState } from '../lib/agents/trajectory_session_store';
 import { POST } from '../app/api/mcp/route';
+
+describe('simulation risk summary', () => {
+  it('reports the highest final mapped risk, including unknown destructive actions', async () => {
+    const output = JSON.parse(await simulate_agent_plan({ actions: [
+      { toolName: 'read_file', risk: 'read', target: 'README.md' },
+      { toolName: 'unregistered_delete_probe', risk: 'destructive', target: 'synthetic-only' },
+      { toolName: 'query_database', risk: 'write', target: 'DELETE FROM synthetic_table WHERE id = 1' },
+    ] })) as {
+      decision: string;
+      highest_risk: string;
+      trajectory: Array<{ policy_decision: string; risk: string }>;
+      canonical_state_committed: boolean;
+      receipt_persisted: boolean;
+      memory_persisted: boolean;
+    };
+
+    expect(output.decision).toBe('deny');
+    expect(output.highest_risk).toBe('destructive');
+    expect(output.trajectory[1]).toMatchObject({ policy_decision: 'deny', risk: 'destructive' });
+    expect(output.trajectory[2].risk).toBe('write');
+    expect(output.canonical_state_committed).toBe(false);
+    expect(output.receipt_persisted).toBe(false);
+    expect(output.memory_persisted).toBe(false);
+  });
+});
 
 function request(body: Record<string, unknown>) {
   return new Request('http://localhost/api/mcp', {

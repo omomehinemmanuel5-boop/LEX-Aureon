@@ -414,7 +414,7 @@ const HIGH_RISK_TOOLS = new Set([
   'execute_command', 'run_terminal', 'bash', 'shell', 'run_command',
   'exec', 'system', 'spawn', 'dispatch_workflow',
   // Explicit identity/financial scope changes from tool_capability_registry.
-  'change_access', 'revoke_key', 'change_billing',
+  'change_access', 'revoke_key', 'change_billing', 'authorize_external_action',
 ]);
 
 const MEDIUM_RISK_TOOLS = new Set([
@@ -422,6 +422,7 @@ const MEDIUM_RISK_TOOLS = new Set([
   'delete_file', 'rename_file', 'move_file',
   'run_governance', 'declare_trajectory_plan', 'clear_trajectory_plan',
   'review_agent_action', 'simulate_agent_plan', 'explain_denial', 'log_decision',
+  'govern_external_action',
   // fix (2026-08-19): patch_file was unclassified here, silently falling
   // through to the generic {score: 0.70, risk: 'LOW'} catch-all at the
   // bottom of measureS — its S score never varied with which file or path

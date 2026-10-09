@@ -234,8 +234,46 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'write_file',
       args: actionArgs,
     }));
-    expect((response.body as unknown as { result: { approved: boolean; approval_token: string } }).result)
-      .toMatchObject({ approved: true, approval_token: 'approval-token' });
+    const result = (response.body as unknown as {
+      result: {
+        approved: boolean;
+        approval_token: string;
+        content: Array<{ type: string; text: string }>;
+        structuredContent: Record<string, unknown>;
+      };
+    }).result;
+    expect(result.structuredContent).toMatchObject({ approved: true, approval_token: 'approval-token' });
+    expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(result.structuredContent) }]);
+    expect(result.structuredContent).toMatchObject({ approved: true, approval_token: 'approval-token' });
+  });
+
+  it('returns MCP content for a denied authorization decision without minting a token', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    interceptToolCall.mockResolvedValueOnce({
+      approved: false,
+      decision: 'DENIED_BLOCKED',
+      reason: 'synthetic denial',
+      receipt_id: 'denial-receipt',
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'authorize_tool_action',
+        arguments: { tool_name: 'write_file', arguments: { path: 'README.md' }, session_id: 'private-test-session' },
+      },
+      id: 34,
+    }));
+    const result = (response.body as unknown as {
+      result: { approved: boolean; content: Array<{ type: string; text: string }>; structuredContent: Record<string, unknown> };
+    }).result;
+
+    expect(result.structuredContent).toMatchObject({ approved: false, reason: 'synthetic denial' });
+    expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(result.structuredContent) }]);
+    expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
   });
 
   it('keeps public API keys from authorizing consequential actions', async () => {

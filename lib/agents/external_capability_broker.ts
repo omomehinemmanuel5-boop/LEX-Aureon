@@ -99,7 +99,7 @@ export async function governExternalAction(input: {
   const toolName = stableToolName(input.environmentId, capability.name);
   const review = await interceptToolCall({
     id: crypto.randomUUID(),
-    name: toolName,
+    name: 'govern_external_action',
     arguments: tokenArgs(envelope),
     session_id: input.sessionId,
     actor_id: input.actorId,
@@ -188,6 +188,7 @@ export async function authorizeExternalAction(input: {
   actionArgs: Record<string, unknown>;
   sessionId: string;
   actorId: string;
+  authorizedByActorId: string;
   taskContext?: string;
 }): Promise<{
   approved: boolean;
@@ -206,11 +207,11 @@ export async function authorizeExternalAction(input: {
   const toolName = stableToolName(input.environmentId, capability.name);
   const review = await interceptToolCall({
     id: crypto.randomUUID(),
-    name: toolName,
+    name: 'authorize_external_action',
     arguments: tokenArgs(envelope),
     session_id: input.sessionId,
-    actor_id: 'operator',
-    task_context: input.taskContext ?? `Operator authorization for external action ${capability.name}`,
+    actor_id: input.authorizedByActorId,
+    task_context: input.taskContext ?? `Authorize external action ${capability.name}`,
   });
   if (!review.approved) {
     return {
