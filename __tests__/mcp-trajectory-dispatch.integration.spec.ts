@@ -103,7 +103,7 @@ vi.mock('@/lib/agents/trajectory_executor', async (importOriginal) => {
 // up state, since executeGovernedTool above is a canned mock that doesn't
 // invoke the real toolFn it's given.
 import { declare_trajectory_plan } from '../lib/lex_crs_agent/tools';
-import { getTrajectoryState, clearTrajectoryState } from '../lib/agents/trajectory_session_store';
+import { getTrajectoryState, clearTrajectoryState, setTrajectoryState } from '../lib/agents/trajectory_session_store';
 import { POST } from '../app/api/mcp/route';
 
 function request(body: Record<string, unknown>) {
@@ -283,5 +283,42 @@ describe('trajectory-aware MCP dispatch', () => {
     expect(state).toBeDefined();
     expect(state!.currentStep).toBe(1);
     expect(state!.plan.actions).toHaveLength(2);
+  });
+
+  it('allows safe diagnostics through a locked plan without consuming or clearing it', async () => {
+    await declare_trajectory_plan({
+      goal: 'Recover a locked plan',
+      authorized_scope: ['read_file'],
+      risk_ceiling: 'read',
+      actions: [{ toolName: 'read_file', declaredIntent: 'inspect file', risk: 'read' }],
+      session_id: sessionId,
+    });
+    const state = await getTrajectoryState(sessionId);
+    expect(state).toBeDefined();
+    await setTrajectoryState(sessionId, { ...state!, locked: true, lockReason: 'test_lock' });
+
+    for (const [name, args] of [
+      ['get_constitutional_state', { session_id: sessionId }],
+      ['get_recent_receipts', { limit: 5 }],
+      ['explain_denial', { reason: 'trajectory_step_mismatch' }],
+    ] as const) {
+      await call(name, args);
+    }
+
+    expect(executeGovernedTool).toHaveBeenCalledTimes(3);
+    expect(executeGovernedTrajectoryAction).not.toHaveBeenCalled();
+    const after = await getTrajectoryState(sessionId);
+    expect(after).toMatchObject({ currentStep: 0, locked: true, lockReason: 'test_lock' });
+  });
+
+  it('routes patch_file dry_run through the read-only preview capability', async () => {
+    await call('patch_file', {
+      path: 'app/api/mcp/route.ts', old_str: 'before', new_str: 'after',
+      message: 'preview only', dry_run: true, session_id: sessionId,
+    });
+
+    expect(executeGovernedTool).toHaveBeenCalledTimes(1);
+    expect(executeGovernedTool.mock.calls[0][0]).toBe('preview_patch_file');
+    expect(executeGovernedTrajectoryAction).not.toHaveBeenCalled();
   });
 });

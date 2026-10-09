@@ -41,16 +41,16 @@ describe('MCP capability policy', () => {
     expect(isOperatorSecret(null)).toBe(false);
   });
 
-  it('gives admin-issued private-test keys the internal and authorization-control surfaces', () => {
-    expect(profileForApiKey('private_test')).toBe('private_test');
+  it('maps admin-issued private-test keys to the operator capability profile', () => {
+    expect(profileForApiKey('private_test')).toBe('operator');
     expect([...INTERNAL_MCP_TOOLS].every(tool => PRIVATE_TEST_MCP_TOOLS.has(tool))).toBe(true);
-    expect(canCallTool('private_test', 'read_file')).toBe(true);
-    expect(canCallTool('private_test', 'write_file')).toBe(true);
-    expect(canCallTool('private_test', 'patch_file')).toBe(true);
-    expect(canCallTool('private_test', 'dispatch_workflow')).toBe(true);
-    expect(canCallTool('private_test', 'query_database')).toBe(true);
-    expect(canCallTool('private_test', 'authorize_tool_action')).toBe(true);
-    expect(canCallTool('private_test', 'authorize_external_action')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'read_file')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'write_file')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'patch_file')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'dispatch_workflow')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'query_database')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'authorize_tool_action')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'authorize_external_action')).toBe(true);
     expect(profileForApiKey('sovereign')).toBe('public');
     expect(profileForApiKey('free')).toBe('public');
     expect(profileForApiKey(undefined)).toBe('public');
