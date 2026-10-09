@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server';
 import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file, preview_patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
-import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
+import { executeGovernedTool, executeGovernedToolStructured } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
 import { bindGovernanceToolSession } from '@/lib/agents/governance_tool_session';
 import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
@@ -24,7 +24,8 @@ import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type 
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
 import { createGovernanceApprovalToken } from '@/lib/agents/tool_governance_gateway';
-import { ensureCanonicalTrajectoryState } from '@/lib/agents/canonical_governance_state';
+import { ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
+import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
 import { discoverExternalTool, governExternalAction, authorizeExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
@@ -781,7 +782,7 @@ export async function POST(req: Request) {
       // so authentication, capability, and constitutional checks are intact;
       // they simply do not consume or require a plan step.
       const TRAJECTORY_DIAGNOSTIC_TOOLS = new Set([
-        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file',
+        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary',
       ]);
       const trajectoryBypass = TRAJECTORY_META_TOOLS.has(toolName)
         || TRAJECTORY_DIAGNOSTIC_TOOLS.has(dispatchToolName);
@@ -894,6 +895,129 @@ export async function POST(req: Request) {
             },
           },
           id,
+        });
+      }
+
+      if (dispatchToolName === 'run_recovery_canary') {
+        let rawProbeResult: string | undefined;
+        const trackedCanaryHandler: ToolHandler = async (handlerArgs, signal) => {
+          rawProbeResult = await toolFn(handlerArgs, signal);
+          return rawProbeResult;
+        };
+        const controller = new AbortController();
+        const outcome = await withDeadline(executeGovernedToolStructured(
+          dispatchToolName,
+          toolArgs,
+          trackedCanaryHandler,
+          sessionId,
+          args.task_context as string | undefined,
+          actorId,
+          controller.signal,
+          ownerId,
+        ), 30_000, controller);
+
+        if (outcome.timedOut) {
+          return mcpToolResult(id, {
+            execution_status: 'unknown_after_deadline',
+            evidence_persisted: false,
+            message: 'The canary result is unknown; no recovery evidence was recorded. Inspect the governed receipt and retry only after confirming the probe outcome.',
+          });
+        }
+
+        const execution = outcome.value;
+        let probe: Record<string, unknown> | null = null;
+        try {
+          const parsed = JSON.parse(rawProbeResult ?? '') as unknown;
+          if (isRecord(parsed)) probe = parsed;
+        } catch {
+          probe = null;
+        }
+
+        let evidencePersisted = false;
+        let evidenceStatus: 'passed' | 'failed' | 'not_recorded' = 'not_recorded';
+        let evidenceReason = typeof probe?.reason === 'string' ? probe.reason : undefined;
+        const hasSnapshot = Boolean(
+          probe &&
+          probe.session_id === sessionId &&
+          typeof probe.state_fingerprint === 'string' &&
+          /^[a-f0-9]{64}$/.test(probe.state_fingerprint) &&
+          typeof probe.state_version === 'string' &&
+          typeof probe.trajectory_updated_at === 'string' &&
+          typeof probe.C === 'number' && Number.isFinite(probe.C) &&
+          typeof probe.R === 'number' && Number.isFinite(probe.R) &&
+          typeof probe.S === 'number' && Number.isFinite(probe.S) &&
+          typeof probe.n_stable === 'number' && Number.isFinite(probe.n_stable) &&
+          typeof probe.sigma_viol === 'number' && Number.isFinite(probe.sigma_viol)
+        );
+
+        if (
+          hasSnapshot &&
+          (probe?.status === 'passed' || probe?.status === 'failed') &&
+          execution.receiptId
+        ) {
+          const fingerprint = String(probe.state_fingerprint);
+          const current = await readCanonicalGovernanceState({
+            sessionId,
+            actorId,
+            capability: 'read',
+          });
+          const snapshotStillCurrent = current.available && current.state.stateFingerprint === fingerprint;
+          const status = probe.status === 'passed' && execution.approved && snapshotStillCurrent
+            ? 'passed'
+            : 'failed';
+          if (probe.status === 'passed' && !snapshotStillCurrent) {
+            evidenceReason = 'Canonical state changed before evidence persistence; rerun the read-only canary on the current snapshot.';
+          } else if (probe.status === 'passed' && !execution.approved) {
+            evidenceReason = 'The governed executor did not approve the canary call; no pass can be recorded.';
+          }
+
+          try {
+            await recordRecoveryCanaryEvidence({
+              sessionId,
+              actorId,
+              status,
+              stateFingerprint: fingerprint,
+              policyVersion: String(probe.state_version),
+              probeTool: String(probe.probe_tool ?? 'get_constitutional_state'),
+              receiptId: execution.receiptId,
+              C: Number(probe.C),
+              R: Number(probe.R),
+              S: Number(probe.S),
+              nStable: Number(probe.n_stable),
+              sigmaViol: Number(probe.sigma_viol),
+              trajectoryUpdatedAt: String(probe.trajectory_updated_at),
+              reason: evidenceReason,
+            });
+            const confirmed = await readCanonicalGovernanceState({
+              sessionId,
+              actorId,
+              capability: 'read',
+            });
+            evidencePersisted = confirmed.available
+              && confirmed.state.stateFingerprint === fingerprint
+              && confirmed.state.canaryPassed === (status === 'passed')
+              && confirmed.state.canaryReceiptId === execution.receiptId;
+            evidenceStatus = evidencePersisted ? status : 'not_recorded';
+            if (!evidencePersisted) evidenceReason = 'Evidence was written but could not be confirmed against the current exact snapshot; execution remains fail-closed.';
+          } catch {
+            evidenceReason = 'Canary ran, but durable evidence storage failed; no write authority is granted.';
+          }
+        } else if (probe?.status === 'not_run') {
+          evidenceReason = typeof probe.reason === 'string' ? probe.reason : 'Canary prerequisites were not met; no evidence was recorded.';
+        } else if (rawProbeResult && !probe) {
+          evidenceReason = 'Canary returned an unreadable result; no evidence was recorded.';
+        }
+
+        return mcpToolResult(id, {
+          execution: execution.result,
+          recovery_canary: {
+            status: evidenceStatus,
+            evidence_persisted: evidencePersisted,
+            receipt_id: execution.receiptId,
+            state_fingerprint: typeof probe?.state_fingerprint === 'string' ? probe.state_fingerprint : null,
+            reason: evidenceReason ?? null,
+            grants_write_authority: false,
+          },
         });
       }
 

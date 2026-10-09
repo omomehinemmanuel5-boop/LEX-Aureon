@@ -167,4 +167,49 @@ describe('trajectory governance', () => {
     expect(state.completed).toHaveLength(50);
     expect(state.locked).toBe(false);
   });
+
+  it('survives a seeded 257-action mixed-read stress run without corruption or mismatch consumption', () => {
+    let seed = 0x5eed1234;
+    const nextRandom = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed;
+    };
+    const tools = ['read_file', 'search_code', 'get_constitutional_state'] as const;
+    const actions = Array.from({ length: 257 }, (_, index) => ({
+      actionId: `seeded-${index}-${nextRandom().toString(16)}`,
+      toolName: tools[nextRandom() % tools.length],
+      declaredIntent: `read-only stress action ${index}`,
+      risk: 'read' as const,
+    }));
+    const stressPlan = createTrajectoryPlan({
+      goal: 'Seeded read-only trajectory stress test',
+      authorizedScope: [...tools],
+      riskCeiling: 'read',
+      actions,
+    });
+    let state = createTrajectoryState(stressPlan);
+
+    for (let index = 0; index < actions.length; index += 1) {
+      const expected = actions[index];
+      if (index % 7 === 0 && index + 1 < actions.length) {
+        const skipped = authorizeTrajectoryAction(state, actions[index + 1]);
+        expect(skipped.approved).toBe(false);
+        expect(skipped.reason).toBe('trajectory_step_mismatch');
+        expect(state.currentStep).toBe(index);
+      }
+
+      expect(authorizeTrajectoryAction(state, expected).approved).toBe(true);
+      state = reconcileTrajectoryOutcome(state, {
+        actionId: expected.actionId,
+        success: true,
+        actualEffect: `READ_OK:${index}`,
+      });
+    }
+
+    expect(state.currentStep).toBe(257);
+    expect(state.completed).toHaveLength(257);
+    expect(new Set(state.completed).size).toBe(257);
+    expect(state.driftScore).toBe(0);
+    expect(state.locked).toBe(false);
+  });
 });

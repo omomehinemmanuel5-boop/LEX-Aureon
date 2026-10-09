@@ -73,6 +73,9 @@ import { getToolCapability, requireKnownToolCapability, type ToolCapability } fr
 import { productionStateTransition, PRODUCTION_TRANSITION_VERSION } from '../production_transition';
 import { THETA_0 } from '../aureonics_core';
 import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
+import { CONSTITUTION } from '../constitution';
+import { readCanonicalGovernanceState } from '../agents/canonical_governance_state';
+import { deriveRecoveryState, recoveryCapabilityAllowed } from '../agents/recovery_state';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const BENCHMARK_REPO = 'omomehinemmanuel5-boop/Lexaureon-Benchmark';
@@ -419,6 +422,50 @@ export async function check_github_token_scope(): Promise<string> {
 // ── get_constitutional_state ──────────────────────────────────────────────────
 export async function get_constitutional_state({ session_id }: { session_id?: string } = {}): Promise<string> {
   try {
+    if (session_id) {
+      const canonical = await readCanonicalGovernanceState({
+        sessionId: session_id,
+        actorId: 'constitutional-state-diagnostic',
+        capability: 'read',
+      });
+      const state = canonical.state;
+      const nextStep = !canonical.available
+        ? 'Canonical storage is unavailable; execution remains fail-closed.'
+        : state.M < CONSTITUTION.TAU_FLOOR
+          ? 'Quarantined below the hard floor; only operator recovery diagnostics are actionable.'
+          : state.M < CONSTITUTION.TAU_RECOVERY
+            ? 'Continue bounded recovery-plane observations until M reaches the recovery threshold.'
+            : state.sigmaViol > CONSTITUTION.SIGMA_THRESHOLD
+              ? 'Investigate sigma violations before canary verification.'
+              : state.nStable < CONSTITUTION.N_MIN
+                ? `Continue safe governed observations (${state.nStable}/${CONSTITUTION.N_MIN}) before canary verification.`
+                : state.canaryPassed
+                  ? 'Exact-snapshot canary is current; each consequential action still requires its ordinary authorization.'
+                  : 'Call operator-only run_recovery_canary for this exact session and state snapshot; this probe does not authorize a write.';
+      return JSON.stringify({
+        session_id: state.sessionId,
+        available: canonical.available,
+        C: state.C,
+        R: state.R,
+        S: state.S,
+        M: state.M,
+        health_band: state.healthBand,
+        recovery_state: state.recoveryState,
+        n_stable: state.nStable,
+        sigma_viol: state.sigmaViol,
+        canary_passed: state.canaryPassed === true,
+        canary_receipt_id: state.canaryReceiptId ?? null,
+        state_version: state.version,
+        state_fingerprint: state.stateFingerprint ?? null,
+        authorization: state.authorization,
+        policy_risk: state.policyRisk,
+        trajectory_available: state.trajectoryAvailable,
+        reason: canonical.reason ?? null,
+        next_step: nextStep,
+        observed_at: state.observedAt,
+      });
+    }
+
     const db  = await getDB();
     const res = await db.execute({
       sql: `SELECT session_id, last_c, last_r, last_s, last_m, velocity, drift_dir, sigma_viol, updated_at
@@ -431,6 +478,84 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
       `Session ${String(r.session_id).slice(0, 8)} | C=${Number(r.last_c).toFixed(3)} R=${Number(r.last_r).toFixed(3)} S=${Number(r.last_s).toFixed(3)} M=${Number(r.last_m).toFixed(3)} | updated: ${r.updated_at}`
     ).join('\n');
   } catch (e) { return `Error: ${String(e)}`; }
+}
+
+// ── run_recovery_canary ──────────────────────────────────────────────────────
+// This operator-only read probe is governed by the ordinary MCP executor. The
+// route persists a pass only after that invocation succeeds and binds the
+// result to its real receipt and exact canonical state fingerprint.
+export async function run_recovery_canary({ session_id }: { session_id?: string } = {}): Promise<string> {
+  const response = (value: Record<string, unknown>) => JSON.stringify({
+    probe_tool: 'get_constitutional_state',
+    ...value,
+  });
+  if (!session_id) return response({ status: 'not_run', reason: 'A session_id is required for an exact-snapshot canary.' });
+
+  const before = await readCanonicalGovernanceState({
+    sessionId: session_id,
+    actorId: 'recovery-canary-probe',
+    capability: 'read',
+  });
+  if (!before.available || !before.state.trajectoryAvailable || !before.state.stateFingerprint) {
+    return response({ status: 'not_run', reason: before.reason ?? 'Canonical state is unavailable for this session.' });
+  }
+  const state = before.state;
+  if (!state.trajectoryUpdatedAt) {
+    return response({ status: 'not_run', reason: 'Canonical trajectory timestamp is missing; exact-snapshot evidence cannot be bound safely.' });
+  }
+  const snapshot = {
+    session_id,
+    state_fingerprint: state.stateFingerprint,
+    state_version: state.version,
+    trajectory_updated_at: state.trajectoryUpdatedAt,
+    C: state.C,
+    R: state.R,
+    S: state.S,
+    M: state.M,
+    n_stable: state.nStable,
+    sigma_viol: state.sigmaViol,
+  };
+  const unmet: string[] = [];
+  if (state.M < CONSTITUTION.TAU_RECOVERY) unmet.push(`M ${state.M.toFixed(3)} < τ_recovery ${CONSTITUTION.TAU_RECOVERY}`);
+  if (state.nStable < CONSTITUTION.N_MIN) unmet.push(`n_stable ${state.nStable} < N_MIN ${CONSTITUTION.N_MIN}`);
+  if (state.sigmaViol > CONSTITUTION.SIGMA_THRESHOLD) unmet.push(`sigma_viol ${state.sigmaViol.toFixed(3)} > threshold ${CONSTITUTION.SIGMA_THRESHOLD}`);
+  if (unmet.length) {
+    return response({
+      status: 'not_run',
+      reason: `Canary not run; prerequisites unmet: ${unmet.join('; ')}.`,
+      ...snapshot,
+    });
+  }
+
+  const probeResult = await get_constitutional_state({ session_id });
+  let diagnostic: Record<string, unknown>;
+  try {
+    diagnostic = JSON.parse(probeResult) as Record<string, unknown>;
+  } catch {
+    return response({ status: 'failed', reason: 'The governed diagnostic probe returned an unreadable result.', ...snapshot });
+  }
+  if (
+    diagnostic.session_id !== session_id ||
+    diagnostic.available !== true ||
+    diagnostic.trajectory_available !== true ||
+    diagnostic.state_fingerprint !== state.stateFingerprint
+  ) {
+    return response({ status: 'failed', reason: 'The diagnostic probe did not return the requested exact canonical snapshot.', ...snapshot });
+  }
+
+  const after = await readCanonicalGovernanceState({
+    sessionId: session_id,
+    actorId: 'recovery-canary-probe',
+    capability: 'read',
+  });
+  if (!after.available || after.state.stateFingerprint !== state.stateFingerprint) {
+    return response({ status: 'failed', reason: 'Canonical state changed during the probe; no evidence will be accepted.', ...snapshot });
+  }
+
+  return response({
+    status: 'passed',
+    ...snapshot,
+  });
 }
 
 // ── query_database ────────────────────────────────────────────────────────────
@@ -899,6 +1024,7 @@ export async function review_agent_action(input: {
 
 export async function simulate_agent_plan(input: {
   actions?: Array<{ toolName?: string; risk?: string; target?: string }>;
+  recovery_evidence?: { canary_passed?: boolean; n_stable?: number; sigma_viol?: number };
 }): Promise<string> {
   const actions = Array.isArray(input.actions) ? input.actions : [];
   const riskOrder = ['read', 'write', 'external', 'destructive'] as const;
@@ -906,7 +1032,7 @@ export async function simulate_agent_plan(input: {
     read: 'read', write: 'write', external: 'external', network: 'external', delegate: 'external',
     destructive: 'destructive', identity: 'destructive', financial: 'destructive', execute: 'destructive',
   };
-  const SIMULATION_MODEL_VERSION = 'production-transition-shadow-v1';
+  const SIMULATION_MODEL_VERSION = 'production-transition-shadow-v2';
   // The risk-to-measurement mapping is hypothetical; the state-transition
   // equation itself is the exact productionStateTransition used by SovereignKernel.
   const riskDelta: Record<typeof riskOrder[number], { dc:number; dr:number; ds:number }> = {
@@ -920,6 +1046,14 @@ export async function simulate_agent_plan(input: {
   const trajectory: Array<Record<string, unknown>> = [];
   let highest: typeof riskOrder[number] = 'read';
   let state = { C: 1 / 3, R: 1 / 3, S: 1 / 3 };
+  const nStableInput = Number(input.recovery_evidence?.n_stable ?? 0);
+  const sigmaInput = Number(input.recovery_evidence?.sigma_viol ?? 0);
+  let hypotheticalEvidence = {
+    canaryPassed: input.recovery_evidence?.canary_passed === true,
+    nStable: Number.isFinite(nStableInput) ? Math.max(0, Math.floor(nStableInput)) : 0,
+    sigmaViol: Number.isFinite(sigmaInput) ? Math.max(0, sigmaInput) : Number.POSITIVE_INFINITY,
+  };
+  const initialHypotheticalEvidence = { ...hypotheticalEvidence };
 
   for (let index = 0; index < actions.length; index += 1) {
     const action = actions[index];
@@ -967,13 +1101,16 @@ export async function simulate_agent_plan(input: {
     }
 
     if (riskOrder.indexOf(mappedRisk) > riskOrder.indexOf(highest)) highest = mappedRisk;
-    const recoveryState: 'QUARANTINED' | 'RECOVERING' | 'RESTORING' | 'NORMAL' = before.M < 0.05 ? 'QUARANTINED' : before.M < 0.15 ? 'RECOVERING' : before.M < 0.25 ? 'RESTORING' : 'NORMAL';
-    const capabilityAllowed = before.M < 0.05
-      ? false
-      : mappedRisk === 'read'
-        ? true
-        : before.M >= 0.15 && recoveryState === 'NORMAL' && (mappedRisk !== 'destructive' || recoveryState === 'NORMAL');
-    if (!capabilityAllowed && policyDecision !== 'deny') policyDecision = 'deny';
+    const recoveryGate = capability
+      ? recoveryCapabilityAllowed(before.M, capability, hypotheticalEvidence)
+      : { allowed: false, state: deriveRecoveryState(before.M, hypotheticalEvidence), reason: 'Unknown tool capability cannot pass the recovery gate.' };
+    const recoveryState = recoveryGate.state;
+    const capabilityAllowed = recoveryGate.allowed;
+    if (!capabilityAllowed && policyDecision !== 'deny') {
+      policyDecision = 'deny';
+      warning = [warning, recoveryGate.reason].filter(Boolean).join(' ') || 'Recovery policy denies this capability.';
+      warnings.push(recoveryGate.reason ?? 'Recovery policy denies this capability.');
+    }
 
     const transition = productionStateTransition({
       state,
@@ -989,7 +1126,9 @@ export async function simulate_agent_plan(input: {
     state = transition.state;
     const after = { ...state, M: Math.min(state.C, state.R, state.S) };
     const healthAfter = after.M >= 0.25 ? 'OPTIMAL' : after.M >= 0.15 ? 'ALERT' : after.M >= 0.08 ? 'STRESSED' : 'CRITICAL';
-    const recoveryAfter = after.M < 0.05 ? 'QUARANTINED' : after.M < 0.15 ? 'RECOVERING' : after.M < 0.25 ? 'RESTORING' : 'VERIFIED';
+    const snapshotChanged = before.C !== after.C || before.R !== after.R || before.S !== after.S;
+    if (snapshotChanged) hypotheticalEvidence = { ...hypotheticalEvidence, canaryPassed: false };
+    const recoveryAfter = deriveRecoveryState(after.M, hypotheticalEvidence);
 
     trajectory.push({
       step: index + 1, tool_name: tool || null, capability, risk: mappedRisk,
@@ -1016,6 +1155,19 @@ export async function simulate_agent_plan(input: {
     governance_mode: 'simulate',
     simulation_model_version: SIMULATION_MODEL_VERSION,
     production_transition_version: PRODUCTION_TRANSITION_VERSION,
+    recovery_evidence: {
+      source: 'hypothetical input only; never persisted and never valid as production evidence',
+      initial_input: {
+        canary_passed: initialHypotheticalEvidence.canaryPassed,
+        n_stable: initialHypotheticalEvidence.nStable,
+        sigma_viol: Number.isFinite(initialHypotheticalEvidence.sigmaViol) ? initialHypotheticalEvidence.sigmaViol : null,
+      },
+      effective_after_simulation: {
+        canary_passed: hypotheticalEvidence.canaryPassed,
+        n_stable: hypotheticalEvidence.nStable,
+        sigma_viol: Number.isFinite(hypotheticalEvidence.sigmaViol) ? hypotheticalEvidence.sigmaViol : null,
+      },
+    },
     decision: hasDeniedStep ? 'deny' : hasApprovalStep ? 'approval_required' : 'allow',
     action_count: actions.length,
     highest_risk: highest,
@@ -1055,6 +1207,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   get_workflow_artifact:    (a) => get_workflow_artifact(a as { run_id: number; repo?: string }),
   check_github_token_scope: () => check_github_token_scope(),
   get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string }),
+  run_recovery_canary:     (a) => run_recovery_canary(a as { session_id?: string }),
   query_database:           (a) => query_database(a as { sql: string }),
   run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string; governance_mode?: 'execute' | 'simulate' }),
   get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
@@ -1182,8 +1335,17 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_constitutional_state',
-    description: 'Get live CRS constitutional health from Turso.',
-    parameters: { type: 'object', properties: {} },
+    description: 'Get this session’s live canonical CRS, recovery state, stability/sigma thresholds, exact state fingerprint, canary status, and the next recovery step.',
+    parameters: { type: 'object', properties: { session_id: { type: 'string', description: 'Governance session to inspect.' } } },
+  },
+  {
+    name: 'run_recovery_canary',
+    description: 'Operator-only, read-only recovery probe. Runs get_constitutional_state through the governed executor and records evidence only when the exact canonical session snapshot is stable and unchanged. This does not authorize a write or bypass normal approvals.',
+    parameters: {
+      type: 'object',
+      properties: { session_id: { type: 'string', description: 'Exact governance session to probe and bind the canary evidence to.' } },
+      required: ['session_id'],
+    },
   },
   {
     name: 'query_database',
@@ -1301,8 +1463,23 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'simulate_agent_plan',
-    description: 'Simulate an ordered agent action plan without executing it and identify high-impact steps.',
-    parameters: { type: 'object', properties: { actions: { type: 'array', items: { type: 'object', properties: { toolName: { type: 'string' }, risk: { type: 'string' }, target: { type: 'string' } } } } }, required: ['actions'] },
+    description: 'Simulate an ordered agent action plan without executing it. Optional recovery_evidence is hypothetical input only and is never treated as production evidence.',
+    parameters: {
+      type: 'object',
+      properties: {
+        actions: { type: 'array', items: { type: 'object', properties: { toolName: { type: 'string' }, risk: { type: 'string' }, target: { type: 'string' } } } },
+        recovery_evidence: {
+          type: 'object',
+          description: 'Hypothetical scenario only; not persisted, not verified, and never grants production authority.',
+          properties: {
+            canary_passed: { type: 'boolean' },
+            n_stable: { type: 'number' },
+            sigma_viol: { type: 'number' },
+          },
+        },
+      },
+      required: ['actions'],
+    },
   },
   {
     name: 'explain_denial',

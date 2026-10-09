@@ -14,6 +14,8 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('exec')?.capability).toBe('execute');
     expect(getToolCapability('query_database')?.capability).toBe('read');
     expect(getToolCapability('query_database')?.approvalRequired).toBe(false);
+    expect(getToolCapability('run_recovery_canary')?.capability).toBe('read');
+    expect(getToolCapability('run_recovery_canary')?.approvalRequired).toBe(false);
     // Governance analysis is non-effectful; the hypothetical target action is governed separately.
     expect(getToolCapability('run_governance')?.capability).toBe('read');
     expect(getToolCapability('run_governance')?.approvalRequired).toBe(false);

@@ -29,6 +29,7 @@ describe('MCP capability policy', () => {
   it('allows the operator profile to include the classified tools', () => {
     expect(OPERATOR_ONLY_MCP_TOOLS.has('read_file')).toBe(true);
     expect(canCallTool('operator', 'read_file')).toBe(true);
+    expect(canCallTool('operator', 'run_recovery_canary')).toBe(true);
     expect(canCallTool('operator', 'authorize_tool_action')).toBe(true);
     expect(canCallTool('operator', 'authorize_external_action')).toBe(true);
     expect(canCallTool('public', 'read_file')).toBe(false);
@@ -48,12 +49,14 @@ describe('MCP capability policy', () => {
     expect(canCallTool(profileForApiKey('private_test'), 'write_file')).toBe(true);
     expect(canCallTool(profileForApiKey('private_test'), 'patch_file')).toBe(true);
     expect(canCallTool(profileForApiKey('private_test'), 'dispatch_workflow')).toBe(true);
+    expect(canCallTool(profileForApiKey('private_test'), 'run_recovery_canary')).toBe(true);
     expect(canCallTool(profileForApiKey('private_test'), 'query_database')).toBe(true);
     expect(canCallTool(profileForApiKey('private_test'), 'authorize_tool_action')).toBe(true);
     expect(canCallTool(profileForApiKey('private_test'), 'authorize_external_action')).toBe(true);
     expect(profileForApiKey('sovereign')).toBe('public');
     expect(profileForApiKey('free')).toBe('public');
     expect(profileForApiKey(undefined)).toBe('public');
+    expect(canCallTool('public', 'run_recovery_canary')).toBe(false);
     expect(canCallTool('public', 'authorize_tool_action')).toBe(false);
     expect(canCallTool('public', 'authorize_external_action')).toBe(false);
   });

@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.MCP_OPERATOR_SECRET = 'trajectory-test-operator';
 
-const { executeGovernedTool, executeGovernedTrajectoryAction, dbExecute } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, executeGovernedTrajectoryAction, dbExecute } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
+  executeGovernedToolStructured: vi.fn(),
   executeGovernedTrajectoryAction: vi.fn(),
   dbExecute: vi.fn(),
 }));
@@ -47,6 +48,7 @@ vi.mock('../lib/db', () => ({
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
+  readCanonicalGovernanceState: vi.fn(),
 }));
 
 function installFakeTrajectoryTable() {
@@ -87,6 +89,7 @@ function installFakeTrajectoryTable() {
 // real network calls.
 vi.mock('@/lib/agents/constitutional_tool_executor', () => ({
   executeGovernedTool,
+  executeGovernedToolStructured,
 }));
 
 // Keep the real trajectoryActionId (pure, deterministic) — only replace
@@ -345,5 +348,37 @@ describe('trajectory-aware MCP dispatch', () => {
     expect(executeGovernedTool).toHaveBeenCalledTimes(1);
     expect(executeGovernedTool.mock.calls[0][0]).toBe('preview_patch_file');
     expect(executeGovernedTrajectoryAction).not.toHaveBeenCalled();
+  });
+
+  it('executes exactly 50 declared route steps and clears the plan before a later per-call action', async () => {
+    const actionCount = 50;
+    await declare_trajectory_plan({
+      goal: 'Deterministic 50-step read-only stress test',
+      authorized_scope: ['read_file'],
+      risk_ceiling: 'read',
+      actions: Array.from({ length: actionCount }, (_, index) => ({
+        toolName: 'read_file',
+        declaredIntent: `Read synthetic artifact ${index + 1}`,
+        risk: 'read' as const,
+      })),
+      session_id: sessionId,
+    });
+
+    for (let index = 0; index < actionCount; index += 1) {
+      await call('read_file', { path: `synthetic/${index + 1}.md`, session_id: sessionId });
+    }
+
+    expect(executeGovernedTrajectoryAction).toHaveBeenCalledTimes(actionCount);
+    expect(executeGovernedTrajectoryAction.mock.calls.map(([state]) => state.currentStep))
+      .toEqual(Array.from({ length: actionCount }, (_, index) => index));
+    expect(executeGovernedTrajectoryAction.mock.calls.every(([state]) => state.plan.actions.length === actionCount))
+      .toBe(true);
+    expect(await getTrajectoryState(sessionId)).toBeUndefined();
+
+    // Completion removes the plan gate; an additional legitimate request is
+    // governed normally instead of being misreported as step 51 of 50.
+    await call('read_file', { path: 'synthetic/after-plan.md', session_id: sessionId });
+    expect(executeGovernedTrajectoryAction).toHaveBeenCalledTimes(actionCount);
+    expect(executeGovernedTool).toHaveBeenCalledTimes(1);
   });
 });

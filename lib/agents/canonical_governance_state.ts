@@ -2,6 +2,7 @@ import { getClient } from '../db';
 import { deriveHealthBand, getZTraj } from '../kv';
 import { CONSTITUTION } from '../constitution';
 import { recoveryCapabilityAllowed, type RecoveryState } from './recovery_state';
+import { readRecoveryCanaryEvidence, recoverySnapshotFingerprint } from './recovery_canary_evidence';
 import type { ToolCapability } from './tool_capability_registry';
 
 export type CanonicalGovernanceBand = 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' | 'UNINITIALIZED';
@@ -19,6 +20,10 @@ export interface CanonicalGovernanceState {
   toolCalls: number;
   trajectoryAvailable: boolean;
   nStable: number;
+  canaryPassed?: boolean;
+  canaryReceiptId?: string | null;
+  stateFingerprint?: string | null;
+  trajectoryUpdatedAt?: string | null;
   authorization: 'authorized' | 'approval_required' | 'denied';
   policyRisk: ToolCapability;
   version: string;
@@ -31,7 +36,7 @@ export interface CanonicalGovernanceRead {
   reason?: string;
 }
 
-const STATE_VERSION = 'canonical-governance-2026-09-30.1';
+const STATE_VERSION = 'canonical-governance-2026-10-10.1';
 
 export async function ensureCanonicalTrajectoryState(sessionId: string): Promise<boolean> {
   try {
@@ -92,6 +97,10 @@ export async function readCanonicalGovernanceState(input: {
           toolCalls: toolSession.toolCalls,
           trajectoryAvailable: false,
           nStable: 0,
+          canaryPassed: false,
+          canaryReceiptId: null,
+          stateFingerprint: null,
+          trajectoryUpdatedAt: null,
           authorization: 'denied',
           policyRisk: input.capability,
           version: STATE_VERSION,
@@ -107,10 +116,18 @@ export async function readCanonicalGovernanceState(input: {
     const M = Math.min(C, R, S);
     const sigmaViol = Math.max(trajectory.sigma_viol ?? 0, toolSession.sigmaViol);
     const nStable = Number(trajectory.n_stable ?? 0);
+    const trajectoryUpdatedAt = String(trajectory.updated_at ?? '');
+    const stateFingerprint = recoverySnapshotFingerprint({
+      sessionId: input.sessionId,
+      policyVersion: STATE_VERSION,
+      C, R, S, nStable, sigmaViol,
+      trajectoryUpdatedAt,
+    });
+    const canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint);
     const recovery = recoveryCapabilityAllowed(M, input.capability, {
       nStable,
       sigmaViol,
-      canaryPassed: nStable >= CONSTITUTION.N_MIN && sigmaViol <= CONSTITUTION.SIGMA_THRESHOLD,
+      canaryPassed: canary.passed,
     });
 
     const state: CanonicalGovernanceState = {
@@ -123,6 +140,10 @@ export async function readCanonicalGovernanceState(input: {
       toolCalls: toolSession.toolCalls,
       trajectoryAvailable: true,
       nStable,
+      canaryPassed: canary.passed,
+      canaryReceiptId: canary.receiptId,
+      stateFingerprint,
+      trajectoryUpdatedAt: trajectoryUpdatedAt || null,
       authorization: input.authorization ?? (input.capability === 'read' ? 'authorized' : 'approval_required'),
       policyRisk: input.capability,
       version: STATE_VERSION,
@@ -143,6 +164,10 @@ export async function readCanonicalGovernanceState(input: {
         toolCalls: 0,
         trajectoryAvailable: false,
         nStable: 0,
+        canaryPassed: false,
+        canaryReceiptId: null,
+        stateFingerprint: null,
+        trajectoryUpdatedAt: null,
         authorization: 'denied',
         policyRisk: input.capability,
         version: STATE_VERSION,
@@ -176,7 +201,7 @@ export function canonicalExecutionAllowed(
   const recovery = recoveryCapabilityAllowed(state.M, state.policyRisk, {
     nStable: state.nStable,
     sigmaViol: state.sigmaViol,
-    canaryPassed: state.nStable >= CONSTITUTION.N_MIN && state.sigmaViol <= CONSTITUTION.SIGMA_THRESHOLD,
+    canaryPassed: state.canaryPassed === true,
   });
 
   if (!recovery.allowed) {

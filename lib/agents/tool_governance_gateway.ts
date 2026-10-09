@@ -50,6 +50,7 @@ const LEGACY_READ_TOOLS = new Set([
   'simulate_agent_plan', 'explain_denial', 'declare_trajectory_plan',
   'clear_trajectory_plan', 'get_build_status', 'get_workflow_run',
   'get_workflow_log', 'get_workflow_artifact', 'get_recent_receipts',
+  'run_recovery_canary',
 ]);
 
 const SECRET_KEY = /(?:pass(?:word|phrase)?|secret|token|api[_-]?key|authorization|cookie|credential|private[_-]?key|access[_-]?key)/i;
