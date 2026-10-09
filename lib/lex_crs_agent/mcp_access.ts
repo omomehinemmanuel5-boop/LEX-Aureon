@@ -3,9 +3,9 @@
  *
  * The public MCP endpoint must never expose Lex's own infrastructure tools.
  * Those tools use server-side GitHub, Vercel, database, or filesystem access.
- * They are available to admin-issued private_test credentials and to an
- * operator with the optional MCP_OPERATOR_SECRET; public API profiles never
- * receive them.
+ * They are available to admin-issued private_test credentials (mapped to the
+ * operator capability profile) and to an operator with the optional
+ * MCP_OPERATOR_SECRET; public API profiles never receive them.
  */
 
 import { env } from '../env';
@@ -65,9 +65,11 @@ export type McpAccessProfile = 'public' | 'private_test' | 'operator';
 
 export function profileForApiKey(plan: string | undefined): McpAccessProfile {
   // private_test keys are issued only by the admin-protected test-key endpoint.
-  // They are the authenticated internal development surface; mutations still
-  // pass through the normal constitutional execution gateway.
-  return plan === 'private_test' ? 'private_test' : 'public';
+  // Map them to the same operator capability profile for internal-agent
+  // interoperability. This does NOT make the request an operator-secret
+  // request: route-level key accounting and api_key:<id> audit identity remain.
+  // Mutations still pass through the normal constitutional execution gateway.
+  return plan === 'private_test' ? 'operator' : 'public';
 }
 
 export function operatorSecretConfigured(): boolean {
