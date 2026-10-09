@@ -18,12 +18,13 @@ describe('agent governance coverage', () => {
     expect(route).toContain('unknown_after_deadline');
     expect(route).toContain('const trajectoryOutcome = await withDeadline(executeGovernedTrajectoryAction(');
     expect(route).toContain('trajectoryController.signal');
-    expect(route).toContain('const toolFn = resolveTool(toolName);');
+    expect(route).toContain('const toolFn = resolveTool(dispatchToolName);');
     expect(route).toContain('return main ?? EXTENSION_REGISTRY[name];');
     expect(route).not.toContain('await toolFn(args);');
     expect(route).not.toContain('getDiscoveredToolCapability(ownerId, toolName)');
     expect(route).toContain('Tool capability is not explicitly registered for this environment');
-    expect(route).toContain('requireKnownToolCapability(toolName)');
+    expect(route).toContain('requireKnownToolCapability(dispatchToolName)');
+    expect(route).toContain("args.dry_run === true\n      ? 'preview_patch_file'");
     expect(route).toContain("toolName === 'discover_external_tool'");
     expect(route).toContain("toolName === 'govern_external_action'");
     expect(route).toContain("toolName === 'consume_external_action'");

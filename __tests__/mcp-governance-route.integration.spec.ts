@@ -13,6 +13,8 @@ const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndCon
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
+    { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
+    { name: 'query_database', description: 'database', parameters: { type: 'object' } },
     { name: 'authorize_tool_action', description: 'authorize', parameters: { type: 'object' } },
   ],
 }));
@@ -191,6 +193,10 @@ describe('MCP constitutional dispatch boundary', () => {
 
     expect(names).toContain('authorize_tool_action');
     expect(names).toContain('authorize_external_action');
+    expect(names).toContain('read_file');
+    expect(names).toContain('dispatch_workflow');
+    expect(names).toContain('query_database');
+    expect(isOperatorSecret).toHaveBeenCalled();
   });
 
   it('lets a private-test key authorize a consequential action under its own identity and quota', async () => {
@@ -215,6 +221,7 @@ describe('MCP constitutional dispatch boundary', () => {
 
     expect(response.status).toBe(200);
     expect(validateAndConsumeKey).toHaveBeenCalledTimes(1);
+    expect(isOperatorSecret).toHaveBeenCalled();
     expect(interceptToolCall).toHaveBeenCalledWith(expect.objectContaining({
       name: 'write_file',
       arguments: actionArgs,
