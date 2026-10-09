@@ -41,19 +41,21 @@ describe('MCP capability policy', () => {
     expect(isOperatorSecret(null)).toBe(false);
   });
 
-  it('gives admin-issued private-test keys the complete internal surface without authorization authority', () => {
+  it('gives admin-issued private-test keys the internal and authorization-control surfaces', () => {
     expect(profileForApiKey('private_test')).toBe('private_test');
-    expect(PRIVATE_TEST_MCP_TOOLS).toEqual(INTERNAL_MCP_TOOLS);
+    expect([...INTERNAL_MCP_TOOLS].every(tool => PRIVATE_TEST_MCP_TOOLS.has(tool))).toBe(true);
     expect(canCallTool('private_test', 'read_file')).toBe(true);
     expect(canCallTool('private_test', 'write_file')).toBe(true);
     expect(canCallTool('private_test', 'patch_file')).toBe(true);
     expect(canCallTool('private_test', 'dispatch_workflow')).toBe(true);
     expect(canCallTool('private_test', 'query_database')).toBe(true);
-    expect(canCallTool('private_test', 'authorize_tool_action')).toBe(false);
-    expect(canCallTool('private_test', 'authorize_external_action')).toBe(false);
+    expect(canCallTool('private_test', 'authorize_tool_action')).toBe(true);
+    expect(canCallTool('private_test', 'authorize_external_action')).toBe(true);
     expect(profileForApiKey('sovereign')).toBe('public');
     expect(profileForApiKey('free')).toBe('public');
     expect(profileForApiKey(undefined)).toBe('public');
+    expect(canCallTool('public', 'authorize_tool_action')).toBe(false);
+    expect(canCallTool('public', 'authorize_external_action')).toBe(false);
   });
 
   it('does not accept ADMIN_PASSWORD as an MCP operator credential', () => {

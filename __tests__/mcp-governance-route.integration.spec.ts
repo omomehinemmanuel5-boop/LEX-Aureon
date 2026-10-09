@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret } = vi.hoisted(() => ({
+const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
   checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 59, retryAfter: 0, storageError: false })),
   isOperatorSecret: vi.fn(),
+  interceptToolCall: vi.fn(async () => ({ approved: true, decision: 'approved', reason: 'allowed', receipt_id: 'approval-receipt' })),
+  createGovernanceApprovalToken: vi.fn(() => 'approval-token'),
   definitions: [
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
+    { name: 'authorize_tool_action', description: 'authorize', parameters: { type: 'object' } },
   ],
 }));
 
@@ -66,6 +69,15 @@ vi.mock('../lib/lex_crs_agent/tools/patch_file', () => ({
 vi.mock('../lib/agents/constitutional_tool_executor', () => ({
   executeGovernedTool,
 }));
+
+vi.mock('@/lib/agents/tool_interceptor', () => ({ interceptToolCall }));
+
+vi.mock('@/lib/agents/tool_governance_gateway', async () => {
+  const actual = await vi.importActual<typeof import('../lib/agents/tool_governance_gateway')>(
+    '../lib/agents/tool_governance_gateway',
+  );
+  return { ...actual, createGovernanceApprovalToken };
+});
 
 // fix (2026-09-06): route.ts now checks getTrajectoryState(sessionId) before
 // every dispatch (trajectory-aware routing). This test is specifically about
@@ -168,6 +180,71 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(response.status).toBe(200);
     expect((response.body as unknown as { error: { code: number } }).error.code).toBe(-32601);
     expect(executeGovernedTool).not.toHaveBeenCalled();
+  });
+
+  it('exposes authorization-control tools to authenticated private-test keys', async () => {
+    validateApiKey.mockResolvedValue({ valid: true, key: { id: 'private-test-1', plan: 'private_test' } });
+
+    const response = await POST(request({ jsonrpc: '2.0', method: 'tools/list', id: 31 }));
+    const tools = (response.body as unknown as { result: { tools: Array<{ name: string }> } }).result.tools;
+    const names = tools.map(tool => tool.name);
+
+    expect(names).toContain('authorize_tool_action');
+    expect(names).toContain('authorize_external_action');
+  });
+
+  it('lets a private-test key authorize a consequential action under its own identity and quota', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const actionArgs = { path: 'README.md', content: 'test', message: 'test' };
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'authorize_tool_action',
+        arguments: {
+          tool_name: 'write_file',
+          arguments: actionArgs,
+          session_id: 'private-test-session',
+        },
+      },
+      id: 32,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(validateAndConsumeKey).toHaveBeenCalledTimes(1);
+    expect(interceptToolCall).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'write_file',
+      arguments: actionArgs,
+      session_id: 'private-test-session',
+      actor_id: 'api_key:private-test-1',
+    }));
+    expect(createGovernanceApprovalToken).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: 'api_key:private-test-1',
+      sessionId: 'private-test-session',
+      toolName: 'write_file',
+      args: actionArgs,
+    }));
+    expect((response.body as unknown as { result: { approved: boolean; approval_token: string } }).result)
+      .toMatchObject({ approved: true, approval_token: 'approval-token' });
+  });
+
+  it('keeps public API keys from authorizing consequential actions', async () => {
+    validateApiKey.mockResolvedValue({ valid: true, key: { id: 'public-1', plan: 'free' } });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'authorize_tool_action', arguments: { tool_name: 'write_file', arguments: {} } },
+      id: 33,
+    }));
+
+    expect(response.status).toBe(401);
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
+    expect(interceptToolCall).not.toHaveBeenCalled();
+    expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
   });
 
   it('namespaces public session IDs by the authenticated key', async () => {

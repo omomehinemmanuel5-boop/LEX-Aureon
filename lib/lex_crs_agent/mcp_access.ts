@@ -3,8 +3,8 @@
  *
  * The public MCP endpoint must never expose Lex's own infrastructure tools.
  * Those tools use server-side GitHub, Vercel, database, or filesystem access.
- * They are available to the admin-issued private test profile and to an
- * operator with the separate MCP_OPERATOR_SECRET; public API profiles never
+ * They are available to admin-issued private_test credentials and to an
+ * operator with the optional MCP_OPERATOR_SECRET; public API profiles never
  * receive them.
  */
 
@@ -45,12 +45,14 @@ export const INTERNAL_MCP_TOOLS = new Set([
   'narrate_origin',
 ]);
 
-// Admin-issued private test keys are trusted internal development credentials,
-// not operator credentials. They receive the complete internal development
-// surface, but every tool mutation still passes through the normal
-// constitutional execution gateway. Authorization control-plane operations
-// remain operator-only.
-export const PRIVATE_TEST_MCP_TOOLS = new Set(INTERNAL_MCP_TOOLS);
+// Admin-issued private-test credentials may use the complete internal and
+// authorization-control surface. Their calls remain authenticated, quota
+// checked, and subject to the normal constitutional execution gateway.
+export const PRIVATE_TEST_MCP_TOOLS = new Set([
+  ...INTERNAL_MCP_TOOLS,
+  'authorize_tool_action',
+  'authorize_external_action',
+]);
 
 export const OPERATOR_ONLY_MCP_TOOLS = new Set([
   ...INTERNAL_MCP_TOOLS,

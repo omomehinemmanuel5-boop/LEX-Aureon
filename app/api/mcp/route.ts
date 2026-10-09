@@ -470,7 +470,7 @@ export async function POST(req: Request) {
     // It is intentionally handled before ordinary tool execution so an
     // approval token cannot be self-issued by the governed tool it authorizes.
     if (toolName === 'authorize_tool_action') {
-      if (!operator) return unauthorized(id);
+      if (!operator && profile !== 'private_test') return unauthorized(id);
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
       const requestedSession = typeof args.session_id === 'string' && args.session_id.trim()
@@ -498,6 +498,22 @@ export async function POST(req: Request) {
       if (!capability.approvalRequired) {
         return invalidParams(id ?? null, 'Approval tokens are only issued for consequential capabilities');
       }
+      // Private-test callers may use the authorization control plane, but
+      // retain normal API-key accounting and re-read the plan atomically before
+      // issuing a token. Bind the token to this authenticated key, not to the
+      // shared operator principal.
+      if (!operator) {
+        const consumption = apiKey
+          ? await validateAndConsumeKey(apiKey)
+          : sessionKeyId
+            ? await consumeApiKeyById(sessionKeyId)
+            : null;
+        if (!consumption?.valid) return unauthorized(id);
+        ownerId = String(consumption.key?.id ?? 'anonymous');
+        actorId = `api_key:${ownerId}`;
+        profile = profileForApiKey(consumption.key?.plan);
+        if (profile !== 'private_test') return unauthorized(id);
+      }
       try {
         await runZTrajMigrations();
         if (!(await ensureCanonicalTrajectoryState(requestedSession))) {
@@ -519,7 +535,7 @@ export async function POST(req: Request) {
         name: requestedTool,
         arguments: requestedArgs,
         session_id: requestedSession,
-        actor_id: 'operator',
+        actor_id: actorId,
         task_context: taskContext,
       });
       if (!review.approved) {
@@ -538,7 +554,7 @@ export async function POST(req: Request) {
       let approvalToken: string;
       try {
         approvalToken = createGovernanceApprovalToken({
-          actorId: 'operator',
+          actorId,
           sessionId: requestedSession,
           toolName: requestedTool,
           args: requestedArgs,
@@ -571,13 +587,14 @@ export async function POST(req: Request) {
     // static internal tool registry. They govern client-side adapters rather than
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
-      if (toolName === 'authorize_external_action' && !operator) return unauthorized(id);
+      if (toolName === 'authorize_external_action' && !operator && profile !== 'private_test') return unauthorized(id);
       if (!operator && (apiKey || sessionKeyId)) {
         const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
         if (!consumption.valid) return unauthorized(id);
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
+        if (toolName === 'authorize_external_action' && profile !== 'private_test') return unauthorized(id);
       }
       const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
       const manifest = isRecord(args.manifest) ? args.manifest as unknown as ToolManifest : null;
