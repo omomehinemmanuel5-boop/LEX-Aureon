@@ -491,6 +491,30 @@
     )`);
     await safeExec(`ALTER TABLE tool_sessions ADD COLUMN state_version INTEGER NOT NULL DEFAULT 0`);
 
+    // Recovery proofs are append-only, actor-attributed, and tied to one exact
+    // canonical state fingerprint. The latest result for that snapshot wins.
+    await safeExec(`CREATE TABLE IF NOT EXISTS recovery_canary_evidence (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id            TEXT    NOT NULL,
+      actor_id              TEXT    NOT NULL,
+      canary_status         TEXT    NOT NULL,
+      state_fingerprint     TEXT    NOT NULL,
+      state_version         TEXT    NOT NULL,
+      probe_tool            TEXT    NOT NULL,
+      receipt_id            TEXT    NOT NULL UNIQUE,
+      c_value               REAL    NOT NULL,
+      r_value               REAL    NOT NULL,
+      s_value               REAL    NOT NULL,
+      m_value               REAL    NOT NULL,
+      n_stable              INTEGER NOT NULL,
+      sigma_viol            REAL    NOT NULL,
+      trajectory_updated_at TEXT    NOT NULL,
+      reason                TEXT,
+      created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+    )`);
+    await safeExec(`CREATE INDEX IF NOT EXISTS idx_recovery_canary_snapshot
+      ON recovery_canary_evidence(session_id, state_fingerprint, id DESC)`);
+
     await safeExec(`CREATE TABLE IF NOT EXISTS tool_receipts (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       receipt_id    TEXT    NOT NULL UNIQUE,

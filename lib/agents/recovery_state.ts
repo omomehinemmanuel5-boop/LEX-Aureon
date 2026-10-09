@@ -64,10 +64,15 @@ export function recoveryCapabilityAllowed(
   if (capability === 'read') return { allowed: true, state };
 
   if (state !== 'VERIFIED' && state !== 'NORMAL') {
+    const evidenceBlock = evidence.canaryPassed !== true
+      ? 'No passing canary is persisted for this exact state snapshot; once recovery thresholds are met, an operator must run run_recovery_canary for this session.'
+      : evidence.nStable < CONSTITUTION.N_MIN
+        ? `Stable observations ${evidence.nStable}/${CONSTITUTION.N_MIN} are insufficient; continue safe governed observations.`
+        : `sigmaViol=${evidence.sigmaViol.toFixed(3)} exceeds ${CONSTITUTION.SIGMA_THRESHOLD}; investigate before restoration.`;
     return {
       allowed: false,
       state,
-      reason: `Recovery state ${state}: non-read capability requires verified stabilization before restoration.`,
+      reason: `Recovery state ${state}: non-read capability denied. ${evidenceBlock}`,
     };
   }
 

@@ -41,6 +41,7 @@ export const INTERNAL_MCP_TOOLS = new Set([
   'get_recent_receipts',
   'get_vercel_logs',
   'run_self_test',
+  'run_recovery_canary',
   'self_reflect',
   'log_decision',
   'narrate_origin',

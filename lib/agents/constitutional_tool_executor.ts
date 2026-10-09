@@ -30,7 +30,7 @@ import {
 const READ_TOOLS = new Set([
   'read_file', 'read_directory', 'list_directory', 'list_files', 'read_memory',
   'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file',
-  'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
+  'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob', 'run_recovery_canary',
   'read_json', 'parse_csv',
 ]);
 
@@ -38,7 +38,7 @@ const KERNEL_CRITICAL = 0.05;
 
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
   ttlMs: 60_000,
-  isCacheable: (toolName) => READ_TOOLS.has(toolName),
+  isCacheable: (toolName) => READ_TOOLS.has(toolName) && toolName !== 'run_recovery_canary',
   authorize: async () => {
     throw new Error('Authorization must be supplied by executeGovernedTool.');
   },

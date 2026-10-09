@@ -28,11 +28,15 @@ describe('agent governance coverage', () => {
     expect(route).toContain("toolName === 'discover_external_tool'");
     expect(route).toContain("toolName === 'govern_external_action'");
     expect(route).toContain("toolName === 'consume_external_action'");
+    expect(route).toContain("dispatchToolName === 'run_recovery_canary'");
+    expect(route).toContain('recordRecoveryCanaryEvidence');
+    expect(route).toContain('execution.receiptId');
     expect(route).toContain("execution_may_begin: result.granted");
     expect(route).toContain('Discovery is advisory and never grants execution authority.');
     expect(route).toContain('function mcpToolResult');
     expect(route).toContain('content: [{ type: \'text\', text: typeof value === \'string\' ? value : JSON.stringify(value) }]');
     expect(tools).toContain('get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string })');
+    expect(tools).toContain('run_recovery_canary:');
     expect(tools).toContain("WHERE session_id = ?");
 
     // The MCP surface is the union of TOOL_DEFINITIONS and patch_file.
@@ -58,6 +62,7 @@ describe('agent governance coverage', () => {
 
     expect(authorization).toBeGreaterThanOrEqual(0);
     expect(cache).toBeGreaterThan(authorization);
+    expect(executor).toContain("toolName !== 'run_recovery_canary'");
     expect(executor).toContain('if (!decision.approved) {');
     expect(executor).toContain('return {');
     expect(executor).toContain('approved: false');

@@ -60,8 +60,9 @@ describe('canonical governance state', () => {
 
   it('projects CRS and recovery state from z_traj rather than local tool scores', async () => {
     dbExecute
-      .mockResolvedValueOnce({ rows: [{ last_c: 0.42, last_r: 0.18, last_s: 0.31, sigma_viol: 0.04, n_stable: 3 }] })
-      .mockResolvedValueOnce({ rows: [{ sigma_viol: 0.12, tool_calls: 7 }] });
+      .mockResolvedValueOnce({ rows: [{ last_c: 0.42, last_r: 0.18, last_s: 0.31, sigma_viol: 0.04, n_stable: 3, updated_at: '2026-10-10T00:00:00.000Z' }] })
+      .mockResolvedValueOnce({ rows: [{ sigma_viol: 0.12, tool_calls: 7 }] })
+      .mockResolvedValueOnce({ rows: [{ canary_status: 'passed', receipt_id: 'canary-receipt' }] });
 
     const result = await readCanonicalGovernanceState({
       sessionId: 'canonical-session', actorId: 'agent-a', capability: 'read',
@@ -73,7 +74,28 @@ describe('canonical governance state', () => {
       sigmaViol: 0.12, toolCalls: 7, healthBand: 'ALERT',
       trajectoryAvailable: true,
       recoveryState: 'VERIFIED',
+      canaryPassed: true,
+      canaryReceiptId: 'canary-receipt',
     });
+    expect(result.state.stateFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('does not infer a successful canary from M=0.333 and stable observations alone', async () => {
+    dbExecute
+      .mockResolvedValueOnce({ rows: [{ last_c: 1 / 3, last_r: 1 / 3, last_s: 1 / 3, sigma_viol: 0, n_stable: 3, updated_at: '2026-10-10T00:00:00.000Z' }] })
+      .mockResolvedValueOnce({ rows: [{ sigma_viol: 0, tool_calls: 9 }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await readCanonicalGovernanceState({
+      sessionId: 'unverified-optimal-session', actorId: 'agent-a', capability: 'write',
+    });
+
+    expect(result.available).toBe(true);
+    expect(result.state.M).toBeCloseTo(1 / 3);
+    expect(result.state.nStable).toBe(3);
+    expect(result.state.canaryPassed).toBe(false);
+    expect(result.state.recoveryState).toBe('RESTORING');
+    expect(canonicalExecutionAllowed(result.state).allowed).toBe(false);
   });
 
   it('allows recovery reads below 0.15', () => {

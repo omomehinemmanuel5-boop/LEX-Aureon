@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
+  executeGovernedToolStructured: vi.fn(),
+  recordRecoveryCanaryEvidence: vi.fn(async () => {}),
+  readCanonicalGovernanceState: vi.fn(),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
@@ -12,6 +15,7 @@ const { executeGovernedTool, toolFn, definitions, validateApiKey, validateAndCon
   definitions: [
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
+    { name: 'run_recovery_canary', description: 'canary', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
     { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
     { name: 'query_database', description: 'database', parameters: { type: 'object' } },
@@ -52,13 +56,17 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
+  readCanonicalGovernanceState,
 }));
+
+vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryEvidence }));
 
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
   TOOL_REGISTRY: {
     run_governance: toolFn,
     get_constitutional_state: toolFn,
+    run_recovery_canary: toolFn,
     read_file: toolFn,
   },
 }));
@@ -70,6 +78,7 @@ vi.mock('../lib/lex_crs_agent/tools/patch_file', () => ({
 
 vi.mock('../lib/agents/constitutional_tool_executor', () => ({
   executeGovernedTool,
+  executeGovernedToolStructured,
 }));
 
 vi.mock('@/lib/agents/tool_interceptor', () => ({ interceptToolCall }));
@@ -119,7 +128,14 @@ describe('MCP constitutional dispatch boundary', () => {
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
     isOperatorSecret.mockReturnValue(false);
+    toolFn.mockResolvedValue('TOOL_RESULT');
+    readCanonicalGovernanceState.mockResolvedValue({ available: false, state: {} });
+    recordRecoveryCanaryEvidence.mockResolvedValue(undefined);
     executeGovernedTool.mockResolvedValue('approved:    true\\ncache_hit:   false\\nTOOL_RESULT');
+    executeGovernedToolStructured.mockImplementation(async (_name, args, handler) => {
+      const raw = await handler(args);
+      return { result: raw, approved: true, receiptId: 'canary-test-receipt' };
+    });
   });
 
   it('routes every exposed tool call through the constitutional executor', async () => {
@@ -196,7 +212,107 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(names).toContain('read_file');
     expect(names).toContain('dispatch_workflow');
     expect(names).toContain('query_database');
+    expect(names).toContain('run_recovery_canary');
     expect(isOperatorSecret).toHaveBeenCalled();
+  });
+
+  it('persists a private-test canary only after its governed receipt and exact snapshot are confirmed', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const fingerprint = 'a'.repeat(64);
+    const state = {
+      sessionId: 'canary-session', actorId: 'api_key:private-test-1',
+      C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+      healthBand: 'OPTIMAL', recoveryState: 'RESTORING', sigmaViol: 0,
+      toolCalls: 3, trajectoryAvailable: true, nStable: 3,
+      canaryPassed: false, canaryReceiptId: null,
+      stateFingerprint: fingerprint, trajectoryUpdatedAt: '2026-10-10T00:00:00.000Z',
+      authorization: 'authorized', policyRisk: 'read',
+      version: 'canonical-governance-2026-10-10.1', observedAt: '2026-10-10T00:00:00.000Z',
+    };
+    const confirmedState = {
+      ...state,
+      recoveryState: 'NORMAL',
+      canaryPassed: true,
+      canaryReceiptId: 'canary-test-receipt',
+    };
+    readCanonicalGovernanceState
+      .mockResolvedValueOnce({ available: true, state })
+      .mockResolvedValueOnce({ available: true, state: confirmedState });
+    toolFn.mockResolvedValueOnce(JSON.stringify({
+      status: 'passed', probe_tool: 'get_constitutional_state',
+      session_id: 'canary-session', state_fingerprint: fingerprint,
+      state_version: state.version, trajectory_updated_at: state.trajectoryUpdatedAt,
+      C: state.C, R: state.R, S: state.S, M: state.M,
+      n_stable: state.nStable, sigma_viol: state.sigmaViol,
+    }));
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'canary-session' } },
+      id: 'canary-run',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+    expect(recordRecoveryCanaryEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'canary-session', actorId: 'api_key:private-test-1',
+      stateFingerprint: fingerprint, receiptId: 'canary-test-receipt', status: 'passed',
+    }));
+    const result = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(result.recovery_canary).toMatchObject({
+      status: 'passed', evidence_persisted: true,
+      receipt_id: 'canary-test-receipt', state_fingerprint: fingerprint,
+      grants_write_authority: false,
+    });
+  });
+
+  it('does not activate a canary if the canonical snapshot changes before persistence', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const probedFingerprint = 'a'.repeat(64);
+    const currentFingerprint = 'b'.repeat(64);
+    const currentState = {
+      sessionId: 'canary-race-session', actorId: 'api_key:private-test-1',
+      C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+      healthBand: 'OPTIMAL', recoveryState: 'RESTORING', sigmaViol: 0,
+      toolCalls: 3, trajectoryAvailable: true, nStable: 3,
+      canaryPassed: false, canaryReceiptId: null,
+      stateFingerprint: currentFingerprint, trajectoryUpdatedAt: '2026-10-10T00:00:01.000Z',
+      authorization: 'authorized', policyRisk: 'read',
+      version: 'canonical-governance-2026-10-10.1', observedAt: '2026-10-10T00:00:01.000Z',
+    };
+    readCanonicalGovernanceState
+      .mockResolvedValueOnce({ available: true, state: currentState })
+      .mockResolvedValueOnce({ available: true, state: currentState });
+    toolFn.mockResolvedValueOnce(JSON.stringify({
+      status: 'passed', probe_tool: 'get_constitutional_state',
+      session_id: 'canary-race-session', state_fingerprint: probedFingerprint,
+      state_version: currentState.version, trajectory_updated_at: '2026-10-10T00:00:00.000Z',
+      C: currentState.C, R: currentState.R, S: currentState.S, M: currentState.M,
+      n_stable: currentState.nStable, sigma_viol: currentState.sigmaViol,
+    }));
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'canary-race-session' } },
+      id: 'canary-race',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(recordRecoveryCanaryEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      stateFingerprint: probedFingerprint,
+      status: 'failed',
+      receiptId: 'canary-test-receipt',
+    }));
+    const result = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(result.recovery_canary).toMatchObject({
+      evidence_persisted: false,
+      grants_write_authority: false,
+    });
   });
 
   it('lets a private-test key authorize a consequential action under its own identity and quota', async () => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
+import { recoverySnapshotFingerprint } from '../lib/agents/recovery_canary_evidence';
 
 const { interceptToolCall, dbExecute } = vi.hoisted(() => ({
   interceptToolCall: vi.fn(),
@@ -43,11 +44,49 @@ function deniedDecision() {
   };
 }
 
+const CANONICAL_VERSION = 'canonical-governance-2026-10-10.1';
+const DEFAULT_UPDATED_AT = '2026-10-10T00:00:00.000Z';
+const canaryEvidence = new Map<string, string>();
+
+function addPassingCanary(sessionId: string, snapshot: {
+  C: number; R: number; S: number; nStable: number; sigmaViol: number; updatedAt: string;
+}) {
+  const fingerprint = recoverySnapshotFingerprint({
+    sessionId,
+    policyVersion: CANONICAL_VERSION,
+    C: snapshot.C,
+    R: snapshot.R,
+    S: snapshot.S,
+    nStable: snapshot.nStable,
+    sigmaViol: snapshot.sigmaViol,
+    trajectoryUpdatedAt: snapshot.updatedAt,
+  });
+  canaryEvidence.set(`${sessionId}:${fingerprint}`, 'integration-canary-receipt');
+}
+
+function evidenceResult(query: unknown) {
+  const record = query as { sql?: string; args?: unknown[] };
+  if (!record.sql?.includes('FROM recovery_canary_evidence')) return null;
+  const [sessionId, fingerprint] = record.args ?? [];
+  const receiptId = canaryEvidence.get(`${String(sessionId)}:${String(fingerprint)}`);
+  return { rows: receiptId ? [{ canary_status: 'passed', receipt_id: receiptId }] : [] };
+}
+
 describe('governed tool execution integration boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canaryEvidence.clear();
     interceptToolCall.mockResolvedValue(approvedDecision());
-    dbExecute.mockResolvedValue({ rows: [{ last_c: 1.0, last_r: 1.0, last_s: 1.0, last_m: 1.0, sigma_viol: 0, n_stable: 3, tool_calls: 0 }], rowsAffected: 1 });
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const evidence = evidenceResult(query);
+      if (evidence) return evidence;
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      if (sql.includes('FROM z_traj')) {
+        return { rows: [{ last_c: 1, last_r: 1, last_s: 1, sigma_viol: 0, n_stable: 3, updated_at: DEFAULT_UPDATED_AT }] };
+      }
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
+      return { rows: [], rowsAffected: 1 };
+    });
     vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', 'integration-approval-secret');
   });
 
@@ -111,6 +150,7 @@ describe('governed tool execution integration boundary', () => {
     };
 
     const baseArgs = { path: 'a.ts', content: 'x' };
+    addPassingCanary('integration-write-session', { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
     const token1 = createGovernanceApprovalToken({ actorId: 'internal-agent', sessionId: 'integration-write-session', toolName: 'write_file', args: baseArgs });
     const token2 = createGovernanceApprovalToken({ actorId: 'internal-agent', sessionId: 'integration-write-session', toolName: 'write_file', args: baseArgs });
     await executeGovernedTool('write_file', { ...baseArgs, approval_token: token1 }, write, 'integration-write-session');
@@ -123,6 +163,7 @@ describe('governed tool execution integration boundary', () => {
   it('never executes a denied tool call', async () => {
     interceptToolCall.mockResolvedValue(deniedDecision());
     const tool = vi.fn(async () => 'SHOULD_NOT_EXECUTE');
+    addPassingCanary('integration-deny-session', { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
 
     const result = await executeGovernedTool('write_file', { path: 'blocked.ts' }, tool, 'integration-deny-session');
 
@@ -132,6 +173,7 @@ describe('governed tool execution integration boundary', () => {
 
   it('returns typed approval metadata without requiring string parsing', async () => {
     const tool = vi.fn(async () => 'STRUCTURED_OK');
+    addPassingCanary('structured-approval-session', { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
 
     const result = await executeGovernedToolStructured(
       'write_file',
@@ -152,6 +194,7 @@ describe('governed tool execution integration boundary', () => {
   it('returns typed denial metadata and never invokes the tool', async () => {
     interceptToolCall.mockResolvedValue(deniedDecision());
     const tool = vi.fn(async () => 'SHOULD_NOT_EXECUTE');
+    addPassingCanary('structured-denial-session', { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
 
     const result = await executeGovernedToolStructured(
       'write_file',
@@ -198,13 +241,16 @@ describe('governed tool execution integration boundary', () => {
 
   it('records post-action canonical state instead of only the pre-action snapshot', async () => {
     const tool = vi.fn(async () => 'WRITE_OK');
+    addPassingCanary('post-action-session', { C: 0.4, R: 0.4, S: 0.4, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
     let trajectoryReads = 0;
     dbExecute.mockImplementation(async (query: { sql?: string }) => {
+      const evidence = evidenceResult(query);
+      if (evidence) return evidence;
       if (query.sql?.includes('FROM z_traj')) {
         trajectoryReads += 1;
         return trajectoryReads === 1
-          ? { rows: [{ last_c: 0.40, last_r: 0.40, last_s: 0.40, sigma_viol: 0, n_stable: 3 }] }
-          : { rows: [{ last_c: 0.04, last_r: 0.48, last_s: 0.48, sigma_viol: 1 }] };
+          ? { rows: [{ last_c: 0.40, last_r: 0.40, last_s: 0.40, sigma_viol: 0, n_stable: 3, updated_at: DEFAULT_UPDATED_AT }] }
+          : { rows: [{ last_c: 0.04, last_r: 0.48, last_s: 0.48, sigma_viol: 1, n_stable: 0, updated_at: '2026-10-10T00:00:01.000Z' }] };
       }
       if (query.sql?.includes('FROM tool_sessions')) {
         return { rows: [{ sigma_viol: 0, tool_calls: 1 }] };

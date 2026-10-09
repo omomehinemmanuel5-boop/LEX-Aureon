@@ -6,6 +6,7 @@ import {
 } from '../aureonics_core';
 import { CONSTITUTION } from '../constitution';
 import { getCachedKernel } from '../kernel_cache';
+import { readCanonicalGovernanceState } from './canonical_governance_state';
 
 const MAX_RECOVERY_STEP = 0.08;
 
@@ -110,20 +111,27 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
 
   const updatedM = Math.min(updated.last_c, updated.last_r, updated.last_s);
   const stabilized = updated.velocity < 0.02;
-  const state =
-    updatedM < TAU ? 'QUARANTINED'
-      : updatedM < CONSTITUTION.TAU_RECOVERY ? 'RECOVERING'
-        : updated.n_stable >= CONSTITUTION.N_MIN && updated.sigma_viol <= CONSTITUTION.SIGMA_THRESHOLD
-          ? (updatedM < 0.25 ? 'VERIFIED' : 'NORMAL')
-          : 'RESTORING';
+  const canonical = await readCanonicalGovernanceState({
+    sessionId,
+    actorId: 'recovery-plane',
+    capability: 'read',
+  });
+  const state = canonical.available ? canonical.state.recoveryState : 'RESTORING';
+  const recoveryReason = state === 'RESTORING' && canonical.available
+    ? canonical.state.nStable < CONSTITUTION.N_MIN
+      ? `Recovery observation ${canonical.state.nStable}/${CONSTITUTION.N_MIN}; continue safe governed observations before canary verification.`
+      : canonical.state.sigmaViol > CONSTITUTION.SIGMA_THRESHOLD
+        ? `Sigma violations ${canonical.state.sigmaViol.toFixed(3)} exceed ${CONSTITUTION.SIGMA_THRESHOLD}; investigate before canary verification.`
+        : 'Stability thresholds are met, but no passing canary is persisted for this exact state snapshot; run the operator-only run_recovery_canary probe.'
+    : reason;
 
   return {
     advanced: true,
     stabilized,
     state,
     M: updatedM,
-    nStable: updated.n_stable,
+    nStable: canonical.available ? canonical.state.nStable : updated.n_stable,
     velocity: updated.velocity,
-    reason,
+    reason: recoveryReason,
   };
 }

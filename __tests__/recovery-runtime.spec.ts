@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getZTraj: vi.fn(),
   updateZTraj: vi.fn(),
+  readCanonicalGovernanceState: vi.fn(),
 }));
 
 vi.mock('../lib/kv', () => ({
@@ -10,10 +11,20 @@ vi.mock('../lib/kv', () => ({
   updateZTraj: mocks.updateZTraj,
 }));
 
+vi.mock('../lib/agents/canonical_governance_state', () => ({
+  readCanonicalGovernanceState: mocks.readCanonicalGovernanceState,
+}));
+
 import { advanceRecoveryPlane } from '../lib/agents/recovery_runtime';
 
 describe('bounded recovery plane', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: { recoveryState: 'RESTORING', nStable: 3, sigmaViol: 0, canaryPassed: false },
+    });
+  });
 
   it('moves a degraded state toward recovery without breaching the 0.05 floor', async () => {
     mocks.getZTraj.mockResolvedValue({
@@ -99,7 +110,8 @@ describe('bounded recovery plane', () => {
 
     const result = await advanceRecoveryPlane('s');
 
-    expect(result.state).toBe('VERIFIED');
+    expect(result.state).toBe('RESTORING');
+    expect(result.reason).toContain('no passing canary is persisted');
     expect(result.nStable).toBe(3);
     expect(result.velocity).toBe(0);
     expect(mocks.updateZTraj).toHaveBeenCalledWith(
