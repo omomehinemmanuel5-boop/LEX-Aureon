@@ -805,6 +805,7 @@ const READ_ONLY_TOOLS = new Set([
   'get_workflow_run', 'get_workflow_log', 'get_workflow_artifact',
   'check_github_token_scope', 'get_constitutional_state', 'get_recent_receipts',
   'get_vercel_logs', 'run_self_test', 'self_reflect', 'narrate_origin',
+  'preview_patch_file',
   'get_trajectory_status'
 ]);
 

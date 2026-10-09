@@ -310,4 +310,15 @@ describe('trajectory-aware MCP dispatch', () => {
     const after = await getTrajectoryState(sessionId);
     expect(after).toMatchObject({ currentStep: 0, locked: true, lockReason: 'test_lock' });
   });
+
+  it('routes patch_file dry_run through the read-only preview capability', async () => {
+    await call('patch_file', {
+      path: 'app/api/mcp/route.ts', old_str: 'before', new_str: 'after',
+      message: 'preview only', dry_run: true, session_id: sessionId,
+    });
+
+    expect(executeGovernedTool).toHaveBeenCalledTimes(1);
+    expect(executeGovernedTool.mock.calls[0][0]).toBe('preview_patch_file');
+    expect(executeGovernedTrajectoryAction).not.toHaveBeenCalled();
+  });
 });

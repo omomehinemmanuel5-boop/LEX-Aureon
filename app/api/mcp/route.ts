@@ -8,7 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
-import { PATCH_FILE_DEFINITION, patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
+import { PATCH_FILE_DEFINITION, patch_file, preview_patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
 import { executeGovernedTool } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
 import { bindGovernanceToolSession } from '@/lib/agents/governance_tool_session';
@@ -216,6 +216,7 @@ const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
     args as unknown as Parameters<typeof patch_file>[0],
     signal,
   ),
+  preview_patch_file: (args, signal) => preview_patch_file(args, signal),
 };
 
 function servedTools() {
@@ -433,6 +434,11 @@ export async function POST(req: Request) {
       return invalidParams(id ?? null);
     }
     const args = suppliedArgs ?? {};
+    // Preview uses a separate read-only capability and a handler that is
+    // restricted to this public repository and cannot commit.
+    const dispatchToolName = toolName === 'patch_file' && args.dry_run === true
+      ? 'preview_patch_file'
+      : toolName;
     if (args.session_id !== undefined && !validSessionId(args.session_id)) {
       return invalidParams(id ?? null, `session_id must be a non-empty string of at most ${MAX_SESSION_ID_LENGTH} characters`);
     }
@@ -657,7 +663,7 @@ export async function POST(req: Request) {
     // Capability is explicit and fail-closed; execution applies the same
     // check again inside executeGovernedTool for defense in depth.
     try {
-      requireKnownToolCapability(toolName);
+      requireKnownToolCapability(dispatchToolName);
     } catch {
       // Discovery is advisory only. It can inform registration workflows, but
       // it must never become an authorization source at the execution boundary.
@@ -675,14 +681,14 @@ export async function POST(req: Request) {
     // Capability filtering is enforced again at call time. Hiding a tool from
     // tools/list is not an authorization boundary by itself because clients
     // can still guess a tool name.
-    if (!canCallTool(profile, toolName)) {
+    if (!canCallTool(profile, dispatchToolName)) {
       return NextResponse.json({
         jsonrpc: '2.0',
         error: { code: -32601, message: `Tool not found: ${toolName}` },
         id,
       });
     }
-    const toolFn = resolveTool(toolName);
+    const toolFn = resolveTool(dispatchToolName);
 
     if (!toolFn) {
       return NextResponse.json({
@@ -701,7 +707,7 @@ export async function POST(req: Request) {
       ownerId = String(consumption.key?.id ?? 'anonymous');
       actorId = `api_key:${ownerId}`;
       profile = profileForApiKey(consumption.key?.plan);
-      if (!canCallTool(profile, toolName)) return unauthorized(id);
+      if (!canCallTool(profile, dispatchToolName)) return unauthorized(id);
     }
 
     try {
@@ -744,7 +750,10 @@ export async function POST(req: Request) {
         ? Object.fromEntries(Object.entries(scopedArgs).filter(([key]) =>
           !['run_id', 'lease_token', 'idempotency_key', 'risk_cost'].includes(key)))
         : scopedArgs;
-      const toolArgs = bindGovernanceToolSession(toolName, baseToolArgs, sessionId);
+      const executionArgs = dispatchToolName === 'preview_patch_file'
+        ? Object.fromEntries(Object.entries(baseToolArgs).filter(([key]) => key !== 'approval_token'))
+        : baseToolArgs;
+      const toolArgs = bindGovernanceToolSession(dispatchToolName, executionArgs, sessionId);
       let runContext: AutonomousRunContext | undefined;
       if (runId && leaseToken && idempotencyKey) {
         const run = await getAutonomousRun(runId);
@@ -780,10 +789,10 @@ export async function POST(req: Request) {
       // so authentication, capability, and constitutional checks are intact;
       // they simply do not consume or require a plan step.
       const TRAJECTORY_DIAGNOSTIC_TOOLS = new Set([
-        'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file',
       ]);
       const trajectoryBypass = TRAJECTORY_META_TOOLS.has(toolName)
-        || TRAJECTORY_DIAGNOSTIC_TOOLS.has(toolName);
+        || TRAJECTORY_DIAGNOSTIC_TOOLS.has(dispatchToolName);
       const trajectoryState = trajectoryBypass ? undefined : await getTrajectoryState(sessionId);
       if (runContext && (!trajectoryState || !isTrajectoryActive(trajectoryState))) {
         return NextResponse.json({ jsonrpc: '2.0', error: { code: -32042, message: 'Long-horizon actions require an active trajectory checkpoint' }, id });
@@ -818,12 +827,12 @@ export async function POST(req: Request) {
         // therefore cannot execute this same declared step a second time.
         const claimedVersion = claimedState.version ?? 0;
         const expected = claimedState.plan.actions[claimedState.currentStep];
-        const attemptedCapability = getToolCapability(toolName);
+        const attemptedCapability = getToolCapability(dispatchToolName);
         const attemptedAction: TrajectoryAction = {
-          actionId: trajectoryActionId(toolName, claimedState.currentStep),
-          toolName,
-          declaredIntent: expected?.toolName === toolName ? expected.declaredIntent : `Undeclared call to ${toolName}`,
-          risk: expected?.toolName === toolName ? expected.risk : trajectoryRiskForCapability(attemptedCapability?.capability),
+          actionId: trajectoryActionId(dispatchToolName, claimedState.currentStep),
+          toolName: dispatchToolName,
+          declaredIntent: expected?.toolName === dispatchToolName ? expected.declaredIntent : `Undeclared call to ${dispatchToolName}`,
+          risk: expected?.toolName === dispatchToolName ? expected.risk : trajectoryRiskForCapability(attemptedCapability?.capability),
           target: expected?.target,
         };
 
@@ -898,7 +907,7 @@ export async function POST(req: Request) {
 
       const controller = new AbortController();
       const outcome = await withDeadline(executeGovernedTool(
-        toolName,
+        dispatchToolName,
         toolArgs,
         toolFn,
         sessionId,

@@ -68,11 +68,11 @@ import type * as TS from 'typescript';
 const FRONTEND_REPO = 'omomehinemmanuel5-boop/LEX-Aureon';
 const API = 'https://api.github.com';
 
-function ghFetch(path: string, credential: string, opts: RequestInit = {}) {
+function ghFetch(path: string, credential: string | undefined, opts: RequestInit = {}) {
   return fetch(`${API}${path}`, {
     ...opts,
     headers: {
-      Authorization: `Bearer ${credential}`,
+      ...(credential ? { Authorization: `Bearer ${credential}` } : {}),
       'Content-Type': 'application/json',
       Accept: 'application/vnd.github+json',
       ...opts.headers,
@@ -237,15 +237,23 @@ export async function patch_file(input: {
     approval_token,
   } = input;
   signal?.throwIfAborted();
-  let credential: string;
-  try {
-    credential = await getGitHubCredentialForApprovedAction({
-      token: approval_token,
-      toolName: 'patch_file',
-      args: input,
-    });
-  } catch (error) {
-    return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
+  let credential: string | undefined;
+  if (dry_run) {
+    // Preview is a read-only operation. Limit the unauthenticated path to this
+    // project's public repository; it cannot access private content or commit.
+    if (repo !== FRONTEND_REPO) {
+      return `Error: unauthenticated dry_run previews are limited to the public repository ${FRONTEND_REPO}.`;
+    }
+  } else {
+    try {
+      credential = await getGitHubCredentialForApprovedAction({
+        token: approval_token,
+        toolName: 'patch_file',
+        args: input,
+      });
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
+    }
   }
   const head = await ghFetch(`/repos/${repo}/contents/${path}`, credential, { signal });
   if (!head.ok) return `Error: ${head.status} — file not found at ${path} in ${repo}`;
@@ -300,6 +308,11 @@ export async function patch_file(input: {
   const d = (await res.json()) as { commit?: { sha?: string } };
   report.push(`✓ Committed: ${d.commit?.sha?.slice(0, 10)} — ${path} [${repo}]`);
   return report.join('\n');
+}
+
+/** Read-only MCP dispatch target used when patch_file is called with dry_run=true. */
+export async function preview_patch_file(input: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+  return patch_file({ ...input, dry_run: true, approval_token: undefined } as Parameters<typeof patch_file>[0], signal);
 }
 
 /** MCP tool definition, merged into the served tool list by app/api/mcp/route.ts. */

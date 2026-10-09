@@ -30,6 +30,7 @@ export const INTERNAL_MCP_TOOLS = new Set([
   'search_code',
   'write_file',
   'patch_file',
+  'preview_patch_file',
   'get_build_status',
   'get_workflow_run',
   'get_workflow_log',
