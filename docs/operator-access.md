@@ -1,6 +1,6 @@
 # Lex Aureon operator MCP access
 
-The operator path is a **server-to-server control-plane credential**, not a private test key.
+The MCP authorization control plane is available to authenticated, admin-issued `private_test` API keys and to a dedicated operator using the optional server-to-server `MCP_OPERATOR_SECRET`.
 
 ## Configure the operator secret
 
@@ -11,7 +11,7 @@ Set a high-entropy value for `MCP_OPERATOR_SECRET` in the deployment environment
 
 Do not commit the value, put it in an agent prompt, or send it through a model-visible tool argument. The agent host or MCP client should inject it as an HTTP header.
 
-The secret is deliberately separate from `ADMIN_PASSWORD`, API keys, and private-test keys. If it is unset, the operator profile is unavailable and only public MCP tools can be used.
+The secret remains separate from `ADMIN_PASSWORD` and API keys. It is an optional alternative for a distinct operator principal; a `private_test` key does not need this header. Private-test calls remain bound to the API-key actor and consume that key's normal quota.
 
 ## MCP endpoint
 
@@ -23,7 +23,7 @@ Header: x-lex-operator-secret: <MCP_OPERATOR_SECRET>
 Header: content-type: application/json
 ```
 
-An operator does not need an API key for the MCP operator path. The server identifies the actor as `operator` and exposes the public tools plus the internal infrastructure tools.
+An operator using this header does not need an API key. The server identifies that caller as `operator` and exposes the operator tools. Private-test callers instead authenticate with `x-lex-api-key` (or Bearer) and are identified as `api_key:<key-id>`.
 
 ## Discover the operator tool surface
 
@@ -78,4 +78,4 @@ Prefer a dedicated service account/agent deployment, a separate operator secret 
 
 ## Private test keys versus operator access
 
-A `private_test` API key receives the complete internal tool surface, including repository writes, CI dispatch, database reads, and receipt operations. Those calls still pass through the constitutional execution gateway. Use the operator header when an agent needs authorization control-plane operations (`authorize_tool_action` or `authorize_external_action`) or when you want a distinct operator principal; private-test keys cannot issue authorization tokens.
+A `private_test` API key receives the complete internal and authorization-control surface, including repository writes, CI dispatch, database reads, receipt operations, `authorize_tool_action`, and `authorize_external_action`. Calls remain authenticated, quota checked, and subject to the constitutional execution gateway; approval tokens are bound to the API-key actor and exact action. Use the optional operator header only when a distinct operator principal is needed.
