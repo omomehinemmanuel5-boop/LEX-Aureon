@@ -16,7 +16,7 @@ import type { TrajectoryAction } from '@/lib/agents/trajectory_governance';
 import { getTrajectoryState, setTrajectoryState, clearTrajectoryState, claimTrajectoryState, compareAndSetTrajectoryState, lockTrajectoryState, isTrajectoryActive } from '@/lib/agents/trajectory_session_store';
 import { getAutonomousRun } from '@/lib/agents/autonomous_run_supervisor';
 import type { AutonomousRunContext } from '@/lib/agents/trajectory_executor';
-import { validateApiKey, validateAndConsumeKey, consumeApiKeyById } from '@/lib/api_keys';
+import { validateApiKey, validateAndConsumeKey, consumeApiKeyById, getApiKeyById } from '@/lib/api_keys';
 import { validateMcpSession } from '@/lib/mcp_sessions';
 import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
