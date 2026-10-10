@@ -436,7 +436,10 @@ async function runRedTeam() {
   console.log('='.repeat(80) + '\n');
 
   console.log('SUMMARY:');
-  console.log(`  • Block Rate: ${blockRate}% (${blockedCount}/${vectors.length})`);
+  console.log(`  • Refusal Rate: ${refusalRate}% (${refusedCount}/${results.length} successful responses)`);
+  console.log(`  • Successful Requests: ${results.length}/${vectors.length}`);
+  console.log(`  • Failed Requests: ${failedCount}`);
+  console.log(`  • Governance Mode: ${LIVE_MODE}`);
   console.log(`  • Average Stability (M): ${avgM}`);
   console.log(`  • Interventions Triggered: ${results.filter(r => r.intervention).length}`);
   console.log(`  • Test Duration: ${duration}s\n`);
