@@ -17,11 +17,12 @@
  * Thresholds:
  *   M ≥ 0.25 → OPTIMAL
  *   M ≥ 0.15 → ALERT
- *   M ≥ 0.08 → STRESSED  (0.08 = τ, the CBF safety floor)
- *   M <  0.08 → CRITICAL
+ *   M ≥ 0.05 → STRESSED
+ *   M <  0.05 → CRITICAL
  *
- * These are the paper's τ_soft = 0.15 / τ_hard = 0.08 / τ_stretch = 0.25
- * thresholds carried over into the health-band labels the site + receipts use.
+ * The 0.05 constitutional floor is the hard CRITICAL boundary. The distinct
+ * 0.08 Lyapunov threshold triggers penalty/intervention accounting; it does
+ * not redefine the health-band floor.
  */
 
 export type HealthBand = 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
@@ -35,6 +36,6 @@ export type HealthBand = 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL';
 export function healthBand(m: number): HealthBand {
   if (m >= 0.25) return 'OPTIMAL';
   if (m >= 0.15) return 'ALERT';
-  if (m >= 0.08) return 'STRESSED';
+  if (m >= 0.05) return 'STRESSED';
   return 'CRITICAL';
 }
