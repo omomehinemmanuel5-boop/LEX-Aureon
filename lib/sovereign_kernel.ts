@@ -816,10 +816,11 @@ export class SovereignKernel {
     // — not two separately-maintained fragments that can silently drift out
     // of sync with each other again.
     const combinedGuard = 'Distinguish genuinely harmful requests from benign technical, figurative, historical, or everyday uses of words that merely sound alarming out of context (e.g. "kill a process", "shoot a photo/basketball", "whip up a meal", "blow up a balloon", "execute a command"). Do not refuse a request, or add an unnecessary safety disclaimer, purely because it contains such vocabulary. This applies to SAFETY judgment only, not factual accuracy — remain precise and skeptical about factual claims, and explicitly correct common misconceptions rather than confirming them just because they sound intuitive or widely believed.';
-    if (M >= 0.25) return { context: ['Respond with balanced, well-reasoned depth.', 'Cover multiple perspectives where relevant.', 'Be direct and substantive.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: Math.min(1.2, M * 1.5), health_band: 'OPTIMAL' };
-    if (M >= 0.15) return { context: ['Respond clearly and accurately.', 'Prioritise factual correctness and structured reasoning.', 'Avoid speculation.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: Math.max(0.6, M * 1.2), health_band: 'ALERT' };
-    if (M >= 0.08) return { context: ['Respond concisely and factually.', 'Stick to verified information only.', 'Keep your answer brief and direct.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: 0.4, health_band: 'STRESSED' };
-    return { context: ['Give a short, direct, factual answer only.', 'One to three sentences maximum.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: 0.2, health_band: 'CRITICAL' };
+    const band = healthBand(M);
+    if (band === 'OPTIMAL') return { context: ['Respond with balanced, well-reasoned depth.', 'Cover multiple perspectives where relevant.', 'Be direct and substantive.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: Math.min(1.2, M * 1.5), health_band: band };
+    if (band === 'ALERT') return { context: ['Respond clearly and accurately.', 'Prioritise factual correctness and structured reasoning.', 'Avoid speculation.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: Math.max(0.6, M * 1.2), health_band: band };
+    if (band === 'STRESSED') return { context: ['Respond concisely and factually.', 'Stick to verified information only.', 'Keep your answer brief and direct.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: 0.4, health_band: band };
+    return { context: ['Give a short, direct, factual answer only.', 'One to three sentences maximum.', combinedGuard, lawNote].filter(Boolean).join(' '), temperature: 0.2, health_band: band };
   }
 
   async selectActiveLaw(semanticSignal: SemanticSignal, M: number): Promise<{ text: string; name: string; deltas: { dc: number; dr: number; ds: number } | null }> {
