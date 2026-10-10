@@ -34,7 +34,7 @@ export async function GET(req: Request) {
   }
 
   return html(`<h1>Connect Lex Aureon</h1>
-    <p>ChatGPT is requesting access to Lex Aureon MCP. Enter your Lex API key to authorize this connection.</p>
+    <p>Your MCP client is requesting access to Lex Aureon. Enter your Lex API key to authorize this connection.</p>
     <form method="post">
       <input type="hidden" name="client_id" value="${encodeURIComponent(clientId)}">
       <input type="hidden" name="redirect_uri" value="${encodeURIComponent(redirectUri)}">
