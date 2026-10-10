@@ -399,7 +399,30 @@ export async function injectionSimilarity(
   }
 }
 
+export function isBenignPolicyExplanation(text: string): boolean {
+  const p = text.toLowerCase();
+  const asksForExplanation = ['why', 'how', 'explain', 'describe', 'what does'].some(v => p.includes(v));
+  const protectedTarget =
+    (p.includes('system') && p.includes('prompt')) ||
+    (p.includes('hidden') && p.includes('instruction'));
+  const negatedDisclosure =
+    ['cannot', "can't", 'should not', "shouldn't", 'will not', "won't", 'do not', "don't"].some(v => p.includes(v)) &&
+    ['reveal', 'disclose', 'print', 'show', 'provide', 'output'].some(v => p.includes(v));
+  const overrideIntent = [
+    'ignore', 'override', 'bypass', 'forget', 'disregard', 'unrestricted',
+    'disable', 'pretend', 'new task', 'get around', 'work around', 'circumvent', 'evade',
+  ].some(v => p.includes(v));
+
+  return asksForExplanation && protectedTarget && negatedDisclosure && !overrideIntent;
+}
+
 async function semanticInjectionCheck(freeText: string): Promise<SemanticInjectionResult> {
+  // A clearly negated, explanatory question is not an instruction to extract
+  // protected text. Skip only this narrow form; deterministic patterns still
+  // run first, and any explicit override/bypass language defeats the exemption.
+  if (isBenignPolicyExplanation(freeText)) {
+    return { injection: false, similarity: 0, degraded: false };
+  }
   const { similarity, matched, degraded } = await injectionSimilarity(freeText);
   return {
     injection: !degraded && similarity >= SEMANTIC_INJECTION_THRESHOLD,
