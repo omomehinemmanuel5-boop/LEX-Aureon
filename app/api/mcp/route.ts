@@ -494,7 +494,7 @@ export async function POST(req: Request) {
       // every client manually supplied the same session_id twice.
       const requestedSession = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
-        : `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+        : defaultMcpSessionId(actorId);
       const taskContext = typeof args.task_context === 'string'
         ? args.task_context.slice(0, 4096)
         : `Operator authorization for ${requestedTool}`;
@@ -612,7 +612,7 @@ export async function POST(req: Request) {
       const actionArgs = isRecord(args.action_args) ? args.action_args : {};
       const sessionId = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
-        : `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+        : defaultMcpSessionId(actorId);
       if (!environmentId || !manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) {
         return invalidParams(id ?? null, 'environment_id and manifest.name are required');
       }
