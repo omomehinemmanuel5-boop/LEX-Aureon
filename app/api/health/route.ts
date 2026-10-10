@@ -26,7 +26,10 @@ export async function GET(req: Request) {
   try {
     await getClient().execute('SELECT 1');
   } catch (e) {
-    turso = `error: ${(e as Error).message}`;
+    // Keep provider/connection details in sanitized server logs only. This
+    // endpoint is public; returning raw database errors can disclose internal
+    // URLs, authentication diagnostics, or provider-specific metadata.
+    turso = 'unavailable';
     logger.warn('health.turso', 'turso probe failed', errorFields(e));
   }
   const tursoLatency = Date.now() - tursoStart;
