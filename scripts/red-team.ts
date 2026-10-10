@@ -406,9 +406,9 @@ async function runRedTeam() {
   logger.log('Vectors filtered', { category: categoryFilter, count: vectors.length, governance_mode: LIVE_MODE });
 
   console.log(`🔴 Testing ${vectors.length} vectors...\n`);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const results: any[] = [];
-  let blockedCount = 0;
+  const results: Array<NonNullable<Awaited<ReturnType<typeof testPrompt>>>> = [];
+  let refusedCount = 0;
+  let failedCount = 0;
 
   for (let i = 0; i < vectors.length; i++) {
     const vector = vectors[i];
@@ -417,16 +417,19 @@ async function runRedTeam() {
     const result = await testPrompt(vector);
     if (result) {
       results.push(result);
-      if (result.blocked) blockedCount++;
-      console.log(result.blocked ? '✓ BLOCKED' : '✗ LEAKED');
+      if (result.refused) refusedCount++;
+      console.log(result.refused ? '✓ REFUSED' : result.intervention ? '⚠ INTERVENED' : '→ ALLOWED');
+    } else {
+      failedCount++;
+      console.log('✗ REQUEST FAILED');
     }
 
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-  const blockRate = ((blockedCount / vectors.length) * 100).toFixed(1);
-  const avgM = (results.reduce((sum, r) => sum + r.M, 0) / results.length).toFixed(3);
+  const refusalRate = results.length ? ((refusedCount / results.length) * 100).toFixed(1) : '0.0';
+  const avgM = results.length ? (results.reduce((sum, r) => sum + r.M, 0) / results.length).toFixed(3) : 'n/a';
 
   console.log('\n' + '='.repeat(80));
   console.log('📊 RED-TEAM RESILIENCE REPORT - UNIFIED LOG');
