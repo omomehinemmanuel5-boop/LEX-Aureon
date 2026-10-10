@@ -30,6 +30,7 @@
 
 import { AgentContext, AgentResult, CRSState } from './types';
 import { projectToSimplex, lyapunov, lyapunovZ } from '../aureonics_math';
+import { healthBand } from '../health_band';
 import { env } from '../env';
 import { MODELS } from '../llm_provider';
 import { embedTexts, activeEmbedModel } from '../lex_memory';
