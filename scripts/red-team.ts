@@ -495,6 +495,8 @@ async function runRedTeam() {
       api_base_url: LEX_API_BASE_URL,
     },
     results: {
+      expected_behavior_match_rate: parseFloat(expectationMatchRate),
+      matched_expectation_count: matchedCount,
       refusal_rate: parseFloat(refusalRate),
       refused_count: refusedCount,
       successful_count: results.length,
