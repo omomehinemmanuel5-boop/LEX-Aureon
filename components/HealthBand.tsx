@@ -43,7 +43,7 @@ const BAND_CONFIG: Record<string, {
     border: 'border-orange-800/40',
     bar: 'bg-orange-500',
     description: 'Constrained reasoning · Lyapunov penalty active · Governor in nudge/recovery mode',
-    range: '0.08 ≤ M < 0.15',
+    range: '0.05 ≤ M < 0.15',
   },
   CRITICAL: {
     label: 'CRITICAL',
