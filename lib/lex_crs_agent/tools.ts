@@ -781,34 +781,27 @@ export async function run_self_test(): Promise<string> {
   } catch (e) { results.push(`  ✗ Exception: ${String(e)}`); }
 
   results.push('');
-  results.push('TEST 3: DB write verification (praxis_receipts)');
+  results.push('TEST 3: Simulation persistence isolation (praxis_receipts)');
   try {
     const db  = await getDB();
     const res = await db.execute({ sql: 'SELECT COUNT(*) as cnt FROM praxis_receipts WHERE session_id = ?', args: [sessionId] });
     const cnt = Number(res.rows[0]?.cnt ?? 0);
-    results.push(`  ${cnt >= 2 ? '✓' : '✗'} ${cnt} receipts written for two-turn test session (expected >= 2)`);
+    results.push(`  ${cnt === 0 ? '✓' : '✗'} ${cnt} receipts persisted for simulation session (expected 0)`);
   } catch (e) { results.push(`  ✗ DB check failed: ${String(e)}`); }
 
   results.push('');
-  results.push('TEST 4: z_traj live state updated');
+  results.push('TEST 4: Simulation trajectory isolation and simplex invariants');
   try {
     const db  = await getDB();
-    const res = await db.execute({ sql: 'SELECT last_c, last_r, last_s, last_m, drift_dir, sigma_viol FROM z_traj WHERE session_id = ?', args: [sessionId] });
-    if (!res.rows.length) { results.push('  ✗ No z_traj row found for test session'); }
-    else {
-      const r = res.rows[0];
-      const c = Number(r.last_c);
-      const rec = Number(r.last_r);
-      const s = Number(r.last_s);
-      const m = Number(r.last_m);
-      const sigmaViol = Number(r.sigma_viol);
-      const sum = c + rec + s;
-      const simplexValid = Math.abs(sum - 1.0) < 0.01;
-      const marginValid = Math.abs(m - Math.min(c, rec, s)) < 0.01;
-      const valid = simplexValid && marginValid && Number.isFinite(sigmaViol) && Math.abs(sigmaViol) < 1e-9;
-      results.push(`  ${valid ? '✓' : '✗'} C=${c.toFixed(3)} R=${rec.toFixed(3)} S=${s.toFixed(3)} sum=${sum.toFixed(3)} M=${m.toFixed(3)} sigma_viol=${sigmaViol} drift=${r.drift_dir}`);
-    }
-  } catch (e) { results.push(`  ✗ z_traj check failed: ${String(e)}`); }
+    const res = await db.execute({ sql: 'SELECT COUNT(*) as cnt FROM z_traj WHERE session_id = ?', args: [sessionId] });
+    const rows = Number(res.rows[0]?.cnt ?? 0);
+    const metricsValid = [safeMetrics, attackMetrics].every(m => Boolean(m
+      && [m.C, m.R, m.S, m.M].every(Number.isFinite)
+      && Math.abs(m.C + m.R + m.S - 1) < 0.01
+      && Math.abs(m.M - Math.min(m.C, m.R, m.S)) < 0.01));
+    const valid = rows === 0 && metricsValid;
+    results.push(`  ${valid ? '✓' : '✗'} z_traj rows=${rows}; both simulated states normalized=${metricsValid}; expected no persisted trajectory`);
+  } catch (e) { results.push(`  ✗ z_traj isolation check failed: ${String(e)}`); }
 
   results.push('');
   results.push('TEST 5: Public health contract');
