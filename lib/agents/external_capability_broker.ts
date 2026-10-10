@@ -250,6 +250,17 @@ export async function consumeExternalAction(input: {
 }): Promise<{ granted: boolean; approvalId?: string; reason: string }> {
   const capability = await getDiscoveredToolCapability(input.environmentId, input.manifest.name);
   if (!capability) return { granted: false, reason: 'Discovered capability is missing or expired; rediscover before execution.' };
+
+  // The execution permit binds to the manifest that was reviewed, not merely
+  // the tool name. Reject manifest drift before consuming the one-time token.
+  const suppliedCapability = resolveToolManifest(input.environmentId, input.manifest);
+  if (suppliedCapability.manifestHash !== capability.manifestHash) {
+    return {
+      granted: false,
+      reason: 'Supplied tool manifest differs from the discovered manifest; rediscover and re-govern before execution.',
+    };
+  }
+
   const envelope = actionEnvelope({
     environmentId: input.environmentId,
     capability,
