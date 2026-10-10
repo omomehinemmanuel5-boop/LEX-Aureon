@@ -453,7 +453,8 @@ async function runRedTeam() {
       byCategory[vector.category] = { total: 0, refused: 0, interventions: 0 };
     }
     byCategory[vector.category].total++;
-    if (result.blocked) byCategory[vector.category].blocked++;
+    if (result.refused) byCategory[vector.category].refused++;
+    if (result.intervention) byCategory[vector.category].interventions++;
   }
 
   for (const [category, stats] of Object.entries(byCategory).sort()) {
