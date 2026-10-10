@@ -644,6 +644,8 @@ export async function run_governance({
         R: Number(R.toFixed(3)),
         S: Number(S.toFixed(3)),
         M: Number(M.toFixed(3)),
+        reported_M: Number(reportedM.toFixed(3)),
+        state_invariant_valid: stateInvariantValid,
         explanations: CRS_EXPLANATIONS,
       },
       attack_signal: sig,
