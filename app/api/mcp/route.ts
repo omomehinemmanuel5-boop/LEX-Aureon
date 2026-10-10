@@ -407,7 +407,7 @@ export async function POST(req: Request) {
       } else {
         const apiKey = extractApiKey(req);
         if (apiKey?.startsWith('lex_at_')) {
-          const oauth = await resolveAccessToken(apiKey, MCP_RESOURCE);
+          const oauth = await resolveAccessToken(apiKey);
           if (oauth.valid) {
             const oauthKey = await getApiKeyById(oauth.keyId);
             if (oauthKey) profile = profileForApiKey(oauthKey.plan);
@@ -480,7 +480,7 @@ export async function POST(req: Request) {
         // Resolve the token to its backing key, then retain the existing atomic
         // per-key quota consumption and plan-based capability checks below.
         if (apiKey.startsWith('lex_at_')) {
-          const oauth = await resolveAccessToken(apiKey, MCP_RESOURCE);
+          const oauth = await resolveAccessToken(apiKey);
           if (!oauth.valid) return unauthorized(id);
           const oauthKey = await getApiKeyById(oauth.keyId);
           if (!oauthKey) return unauthorized(id);
