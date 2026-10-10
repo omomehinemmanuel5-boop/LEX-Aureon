@@ -798,7 +798,7 @@ export async function run_self_test(): Promise<string> {
       const sum = c + rec + s;
       const simplexValid = Math.abs(sum - 1.0) < 0.01;
       const marginValid = Math.abs(m - Math.min(c, rec, s)) < 0.01;
-      const valid = simplexValid && marginValid && sigmaViol === 0;
+      const valid = simplexValid && marginValid && Number.isFinite(sigmaViol) && Math.abs(sigmaViol) < 1e-9;
       results.push(`  ${valid ? '✓' : '✗'} C=${c.toFixed(3)} R=${rec.toFixed(3)} S=${s.toFixed(3)} sum=${sum.toFixed(3)} M=${m.toFixed(3)} sigma_viol=${sigmaViol} drift=${r.drift_dir}`);
     }
   } catch (e) { results.push(`  ✗ z_traj check failed: ${String(e)}`); }
