@@ -52,7 +52,7 @@ const BAND_CONFIG: Record<string, {
     border: 'border-red-800/50',
     bar: 'bg-red-500',
     description: 'Near constitutional floor · Correction mode imminent (CBF activates at M ≤ 0.05)',
-    range: 'M < 0.08',
+    range: 'M < 0.05',
   },
   SAFE: {
     label: 'SAFE',
