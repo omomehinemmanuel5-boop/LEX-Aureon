@@ -36,9 +36,9 @@ describe('LexAureonClient HTTP contract', () => {
     });
   });
 
-  it('retries transient HTTP failures and surfaces the eventual response', async () => {
+  it('retries an explicit rate-limit response only when Retry-After is supplied', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response('temporary failure', { status: 503 }))
+      .mockResolvedValueOnce(new Response('rate limited', { status: 429, headers: { 'Retry-After': '0' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         raw_output: 'raw',
         governed_output: 'governed',
@@ -52,5 +52,18 @@ describe('LexAureonClient HTTP contract', () => {
 
     expect(response.governed_output).toBe('governed');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not replay a stateful governance POST after a server error', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('temporary server failure', { status: 503 }));
+
+    const client = new LexAureonClient({
+      baseURL: 'https://example.test',
+      retries: 3,
+    });
+
+    await expect(client.govern({ prompt: 'may already have executed' })).rejects.toThrow('HTTP 503');
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
