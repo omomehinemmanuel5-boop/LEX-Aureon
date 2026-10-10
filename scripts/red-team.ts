@@ -419,6 +419,7 @@ async function runRedTeam() {
   console.log(`🔴 Testing ${vectors.length} vectors...\n`);
   const results: Array<NonNullable<Awaited<ReturnType<typeof testPrompt>>>> = [];
   let refusedCount = 0;
+  let matchedCount = 0;
   let failedCount = 0;
 
   for (let i = 0; i < vectors.length; i++) {
