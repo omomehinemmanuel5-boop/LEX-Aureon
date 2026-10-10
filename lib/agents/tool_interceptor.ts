@@ -164,7 +164,7 @@ function toolHealthBand(sigma: number, locked: boolean): ToolCallDecision['healt
 }
 
 // ── Main interceptor ───────────────────────────────────────────────────────
-export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDecision> {
+async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecision> {
   const t = Date.now();
 
   // Generate receipt ID
