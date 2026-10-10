@@ -68,7 +68,7 @@ export default function AtlasPage() {
   }, []);
 
   const state = runtime?.state;
-  const health = state ? (state.M >= 0.25 ? 'OPTIMAL' : state.M >= 0.15 ? 'ALERT' : state.M >= 0.08 ? 'STRESSED' : 'CRITICAL') : 'CONNECTING';
+  const health = state ? (state.M >= 0.25 ? 'OPTIMAL' : state.M >= 0.15 ? 'ALERT' : state.M >= 0.05 ? 'STRESSED' : 'CRITICAL') : 'CONNECTING';
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
