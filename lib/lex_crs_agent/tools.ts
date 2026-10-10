@@ -736,8 +736,10 @@ export async function get_vercel_logs({ limit = 1 }: { limit?: number }): Promis
 export async function run_self_test(): Promise<string> {
   const sessionId = `self-test-${Date.now()}`;
   const results: string[] = ['=== LEX AUREON SELF-TEST ===', ''];
+  let safeMetrics: { C: number; R: number; S: number; M: number } | null = null;
+  let attackMetrics: { C: number; R: number; S: number; M: number } | null = null;
 
-  results.push('TEST 1: Safe governance cycle');
+  results.push('TEST 1: Safe governance simulation');
   try {
     const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
       method:  'POST',
