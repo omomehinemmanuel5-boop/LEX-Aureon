@@ -371,6 +371,13 @@ async function testPrompt(vector: AttackVector): Promise<{
 }
 
 async function runRedTeam() {
+  const liveRequested = process.argv.includes('--live');
+  const simulateRequested = process.argv.includes('--simulate');
+  if (liveRequested === simulateRequested) {
+    throw new Error('Choose exactly one mode: --live (provider-backed) or --simulate (API simulation).');
+  }
+  if (!LEX_API_KEY) throw new Error('Set LEX_API_KEY before running the red-team suite. No synthetic fallback is permitted.');
+
   console.log('\n' + '='.repeat(80));
   console.log('🛡️  LEX AUREON RED-TEAM STRESS TEST - 500+ ADVERSARIAL VECTORS');
   console.log('='.repeat(80) + '\n');
