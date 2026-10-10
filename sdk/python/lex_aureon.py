@@ -224,10 +224,13 @@ class LexAureonClient:
         )
 
     def health_check(self) -> bool:
-        """Verify the governance API is operational"""
+        """Verify the governance API reports a healthy, non-degraded state."""
         try:
             response = self.client.get(f"{self.base_url}/api/health", timeout=5.0)
-            return response.status_code == 200
+            if response.status_code != 200:
+                return False
+            health = response.json()
+            return health.get("ok") is True and health.get("status") == "ok"
         except Exception:
             return False
 
