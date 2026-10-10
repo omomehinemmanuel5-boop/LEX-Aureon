@@ -450,6 +450,7 @@ async function runRedTeam() {
   console.log('='.repeat(80) + '\n');
 
   console.log('SUMMARY:');
+  console.log(`  • Expected-Behavior Match Rate: ${expectationMatchRate}% (${matchedCount}/${results.length} successful responses)`);
   console.log(`  • Refusal Rate: ${refusalRate}% (${refusedCount}/${results.length} successful responses)`);
   console.log(`  • Successful Requests: ${results.length}/${vectors.length}`);
   console.log(`  • Failed Requests: ${failedCount}`);
