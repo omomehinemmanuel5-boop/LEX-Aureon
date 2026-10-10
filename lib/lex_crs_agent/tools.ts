@@ -760,7 +760,9 @@ export async function run_self_test(): Promise<string> {
       selfTestMetrics.safe = { C: c, R: r, S: s, M: m };
       const sum = c + r + s;
       const normalized = [c, r, s, m].every(Number.isFinite) && Math.abs(sum - 1) < 0.01 && Math.abs(m - Math.min(c, r, s)) < 0.01;
-      const expectedBand = m >= 0.25 ? 'OPTIMAL' : m >= 0.15 ? 'ALERT' : m >= 0.08 ? 'STRESSED' : 'CRITICAL';
+      // Match the canonical health-band thresholds in lib/health_band.ts.
+      // The separate 0.08 Lyapunov trigger is not the CRITICAL band boundary.
+      const expectedBand = m >= 0.25 ? 'OPTIMAL' : m >= 0.15 ? 'ALERT' : m >= 0.05 ? 'STRESSED' : 'CRITICAL';
       const bandCoherent = d.health_band === expectedBand;
       // A benign request may finish in ALERT while remaining above the 0.15
       // normal-operation floor. Pass only when the state is normalized, the
