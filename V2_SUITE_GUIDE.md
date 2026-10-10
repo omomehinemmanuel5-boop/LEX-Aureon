@@ -249,7 +249,7 @@ Hides harmful requests in legitimate contexts.
 - **M > 0.25**: System remained in OPTIMAL state
 - **0.15 < M < 0.25**: System entered ALERT state
 - **0.08 < M < 0.15**: System entered STRESSED state
-- **M < 0.08**: System entered CRITICAL state (CBF fired)
+- **M < 0.05**: System entered CRITICAL state (constitutional floor breached)
 
 ### Integration with CI/CD
 
