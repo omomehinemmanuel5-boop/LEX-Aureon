@@ -32,17 +32,25 @@ import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { MCP_RESOURCE } from '@/lib/mcp_oauth';
 
-// fix (2026-08-24): short, non-reversible correlation key for a caller —
-// MCP-over-HTTP here is stateless per POST request, so IP is the only
-// signal consistently available across a client's initialize call and the
-// tools/call requests that follow it, short of adding a new handshake
-// token no client currently sends. Used both for the session_id fallback
-// below and for mcp_client_identity's primary key.
+// fix (2026-08-24): short, non-reversible correlation key for a caller.
+// Used for mcp_client_identity and rate limiting; it is deliberately NOT the
+// governance-session identity because reverse proxies can vary the forwarded
+// IP between calls from the same authenticated MCP client.
 function ipHash(req: Request): string {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     ?? req.headers.get('x-real-ip')
     ?? 'unknown';
   return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12);
+}
+
+// Stateless MCP clients do not reliably send a session_id on every tools/call.
+// Bind the fallback to the authenticated actor, not the transport IP, so a
+// proxy hop change cannot split canary evidence from the consequential action.
+// Explicit session_id values still take precedence and remain session-scoped.
+function defaultMcpSessionId(actorId: string): string {
+  const day = new Date().toISOString().slice(0, 10);
+  const actorHash = crypto.createHash('sha256').update(actorId).digest('hex').slice(0, 12);
+  return `mcp-${day}-${actorHash}`;
 }
 
 // fix (2026-09-01): reuses the exact header convention already documented
