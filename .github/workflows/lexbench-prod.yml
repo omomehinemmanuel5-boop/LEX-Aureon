@@ -228,6 +228,9 @@ jobs:
   # Matches lexbench-extended.yml's same-day increase to the same value.
   run-lexbench:
     needs: determine-shards
+    # A skipped auth precheck is normal for PR events. Override GitHub's
+    # implicit success() so the matrix still runs when that dependency skipped.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -330,8 +333,8 @@ jobs:
           LINES=$(wc -l < all_results.jsonl 2>/dev/null || echo 0)
           echo "Total result rows: $LINES"
           if [ "$LINES" -eq 0 ]; then
-            echo "::warning::No shard results found — every shard may have failed. Skipping aggregate/publish."
-            exit 0
+            echo "::error::No shard results found. Refusing to report a green benchmark run without measured results."
+            exit 1
           fi
           npx tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary.json
           echo "Summary:"
