@@ -145,12 +145,14 @@ export async function refreshAccessToken(input: { refreshToken: string; clientId
   return issueTokens({ clientId: input.clientId, keyId: String(row.key_id), scope: String(row.scope), resource: input.resource });
 }
 
-export async function resolveAccessToken(token: string, resource = MCP_RESOURCE) {
+export async function resolveAccessToken(token: string, resource?: string) {
   await initMcpOAuthSchema();
   const r = await getClient().execute({ sql: 'SELECT * FROM mcp_oauth_tokens WHERE access_hash = ? LIMIT 1', args: [hash(token)] });
   if (!r.rows.length) return { valid: false } as const;
   const row = r.rows[0] as Record<string, unknown>;
-  if (row.revoked_at != null || Date.now() >= Number(row.expires_at) || String(row.resource) !== resource) return { valid: false } as const;
+  const tokenResource = String(row.resource);
+  const resourceMatches = resource ? tokenResource === resource : isMcpResource(tokenResource);
+  if (row.revoked_at != null || Date.now() >= Number(row.expires_at) || !resourceMatches) return { valid: false } as const;
   const key = await getApiKeyById(String(row.key_id));
   if (!key) return { valid: false } as const;
   return { valid: true, keyId: String(row.key_id), scope: String(row.scope) } as const;
