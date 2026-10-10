@@ -145,9 +145,9 @@ describe('benign login acceptance-test intent', () => {
     }
   });
 
-  it('suppresses an ambiguous classifier hit only for the narrow benign intent', () => {
+  it('suppresses an ambiguous classifier hit for a benign task when drift is absent', () => {
     const d = decideRefusal({
-      sovereignty: { drift_detected: true, raw_sself: 0.1, detection_degraded: false },
+      sovereignty: { drift_detected: false, raw_sself: 0.9, detection_degraded: false },
       semantic: { attack_type: 'exploitative', severity: 0.82 },
       capitulation: null,
       safety_projection_triggered: false,
@@ -157,6 +157,20 @@ describe('benign login acceptance-test intent', () => {
     expect(d.semantic_suppressed_for_benign_task).toBe(true);
     expect(d.semantic_suppressed_for_diagnostic).toBe(false);
     expect(d.evidence.semantic_attack_type).toBe('exploitative');
+  });
+
+  it('still enforces independent sovereignty drift for a benign-task label', () => {
+    const d = decideRefusal({
+      sovereignty: { drift_detected: true, raw_sself: 0.1, detection_degraded: false },
+      semantic: { attack_type: 'exploitative', severity: 0.82 },
+      capitulation: null,
+      safety_projection_triggered: false,
+      intent: 'benign_login_test',
+    });
+    expect(d.refused).toBe(true);
+    expect(d.primary).toBe('sovereignty_drift');
+    expect(d.semantic_suppressed_for_benign_task).toBe(true);
+    expect(d.evidence.sovereignty_drift).toBe(true);
   });
 
   it('does not suppress the same signal for ordinary intent', () => {
