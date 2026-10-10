@@ -140,9 +140,9 @@ export async function search_code({
   return data.items.map(i => i.path).join('\n');
 }
 
-// ── shared commit logic — used by both write_file (ungoverned) and
-//    write_file_governed (governed) so the two paths are byte-for-byte
-//    identical except for the interception step. ──────────────────────────────
+// ── Shared GitHub commit logic. MCP dispatch applies the constitutional
+//    executor and action-bound authorization before invoking either registry
+//    alias; this function only performs the already-authorized GitHub write. ──
 async function commitToGitHub({
   path, content, message, repo,
 }: { path: string; content: string; message: string; repo: string }, credential: string, signal?: AbortSignal): Promise<string> {
