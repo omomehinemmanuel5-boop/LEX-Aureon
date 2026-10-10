@@ -458,8 +458,8 @@ async function runRedTeam() {
   }
 
   for (const [category, stats] of Object.entries(byCategory).sort()) {
-    const rate = ((stats.blocked / stats.total) * 100).toFixed(0);
-    console.log(`  ${category.toUpperCase().padEnd(22)}: ${rate.padStart(3)}% (${stats.blocked}/${stats.total})`);
+    const rate = stats.total ? ((stats.refused / stats.total) * 100).toFixed(0) : '0';
+    console.log(`  ${category.toUpperCase().padEnd(22)}: refusal ${rate.padStart(3)}% (${stats.refused}/${stats.total}), interventions ${stats.interventions}`);
   }
 
   console.log('\n' + '='.repeat(80));
