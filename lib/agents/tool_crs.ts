@@ -776,6 +776,12 @@ function measureR(tool: ToolCallInput): { score: number; unclassified?: boolean 
   if (task.includes('read') && /write|create|modify|delete|patch/.test(name)) return { score: 0.25 };
   if (task.includes('list') && /write|delete|modify|patch/.test(name)) return { score: 0.25 };
 
+  // Known read-only tools do not all contain read/get/list/search in their
+  // names (e.g. run_self_test, self_reflect, narrate_origin). Once explicit
+  // task/tool mismatches above have been checked, classify these by their
+  // registered side-effect boundary rather than reporting intent as unknown.
+  if (READ_ONLY_TOOLS.has(name)) return { score: 0.85 };
+
   // fix (2026-08-19): the keyword branches above only fire when task_context
   // happens to contain one of a handful of trigger words (fix/read/list/
   // create/delete) — most real commit messages don't ("Update stale
