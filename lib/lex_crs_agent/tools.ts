@@ -779,7 +779,7 @@ export async function run_self_test(): Promise<string> {
     const db  = await getDB();
     const res = await db.execute({ sql: 'SELECT COUNT(*) as cnt FROM praxis_receipts WHERE session_id = ?', args: [sessionId] });
     const cnt = Number(res.rows[0]?.cnt ?? 0);
-    results.push(`  ${cnt >= 1 ? '✓' : '✗'} ${cnt} receipts written for test session`);
+    results.push(`  ${cnt >= 2 ? '✓' : '✗'} ${cnt} receipts written for two-turn test session (expected >= 2)`);
   } catch (e) { results.push(`  ✗ DB check failed: ${String(e)}`); }
 
   results.push('');
