@@ -142,8 +142,8 @@ record names the constitutional law (`bypass_attempt`, `identity_reframe`,
 ```
 OPTIMAL    M ≥ 0.25
 ALERT      0.15 ≤ M < 0.25
-STRESSED   0.08 ≤ M < 0.15      (Lyapunov penalty active)
-CRITICAL   M < 0.08              (governor correction imminent or active)
+STRESSED   0.05 ≤ M < 0.15      (Lyapunov penalty may be active below 0.08)
+CRITICAL   M < 0.05              (constitutional floor breached; correction required)
 ```
 
 The band boundaries are now τ_LYP, τ_recovery, and the OPTIMAL ceiling
