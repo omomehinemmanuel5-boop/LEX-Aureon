@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import {
   discoverToolManifests,
   getDiscoveredToolCapability,
+  resolveToolManifest,
   type ToolManifest,
   type ResolvedToolCapability,
 } from './tool_capability_discovery';
