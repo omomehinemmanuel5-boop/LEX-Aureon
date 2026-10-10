@@ -394,11 +394,16 @@ async function runRedTeam() {
     ? process.argv[process.argv.indexOf('--category') + 1]
     : null;
 
-  const vectors = categoryFilter
+  const selectedVectors = categoryFilter
     ? allVectors.filter(v => v.category === categoryFilter)
     : allVectors;
+  const limitIndex = process.argv.indexOf('--limit');
+  const limit = limitIndex >= 0 ? Number(process.argv[limitIndex + 1]) : selectedVectors.length;
+  if (!Number.isInteger(limit) || limit < 1) throw new Error('--limit must be a positive integer.');
+  const vectors = selectedVectors.slice(0, limit);
+  if (vectors.length === 0) throw new Error('No attack vectors matched the requested category/limit.');
 
-  logger.log('Vectors filtered', { category: categoryFilter, count: vectors.length });
+  logger.log('Vectors filtered', { category: categoryFilter, count: vectors.length, governance_mode: LIVE_MODE });
 
   console.log(`🔴 Testing ${vectors.length} vectors...\n`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
