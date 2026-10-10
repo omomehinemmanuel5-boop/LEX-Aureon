@@ -456,3 +456,21 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     warning,
   };
 }
+
+/**
+ * A concurrent CAS conflict happens before the governed tool handler executes.
+ * Reloading state and re-evaluating is therefore safe: the second decision is
+ * based on the winning call's committed state. Retry only this exact conflict,
+ * never a hard recovery lock or a storage/receipt failure. Bound the retries so
+ * sustained contention still fails closed and remains visible to the caller.
+ */
+export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDecision> {
+  let decision: ToolCallDecision | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    decision = await interceptToolCallOnce(tool);
+    const conflict = decision.reason.startsWith('Concurrent governance decision detected;');
+    if (!conflict || attempt === 2) return decision;
+    await new Promise(resolve => setTimeout(resolve, 15 * (attempt + 1)));
+  }
+  return decision!;
+}
