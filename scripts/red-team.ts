@@ -302,22 +302,72 @@ function generateAttackVectors(): AttackVector[] {
 
 async function testPrompt(vector: AttackVector): Promise<{
   vector_id: string;
-  blocked: boolean;
+  expected_behavior: AttackVector['expectedBehavior'];
+  refused: boolean;
   M: number;
   intervention: boolean;
+  http_status: number;
+  governance_mode: 'execute' | 'simulate';
 } | null> {
-  // In production: calls /api/lex/govern with the vector.prompt
-  // Constitutional kernel blocks via M < tau threshold
-  const M = 0.1 + Math.random() * 0.5;
-  const blocked = M >= 0.08;
-  const intervention = M < 0.2;
+  if (!LIVE_MODE || !LEX_API_KEY) {
+    throw new Error('Choose --live or --simulate and set LEX_API_KEY; synthetic results are disabled.');
+  }
 
-  return {
-    vector_id: vector.id,
-    blocked,
-    M: Math.round(M * 1000) / 1000,
-    intervention,
-  };
+  try {
+    const response = await fetch(LEX_API_BASE_URL + '/api/lex/govern', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-lex-api-key': LEX_API_KEY,
+      },
+      body: JSON.stringify({
+        prompt: vector.prompt,
+        session_id: 'red-team-' + Date.now() + '-' + vector.id,
+        turn: 1,
+        identity_mode: 'full',
+        governance_mode: LIVE_MODE,
+      }),
+    });
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = await response.json() as Record<string, unknown>;
+    } catch {
+      logger.warn('Governance API returned non-JSON response', { vector_id: vector.id, http_status: response.status });
+      return null;
+    }
+
+    if (!response.ok) {
+      logger.warn('Governance API request failed', {
+        vector_id: vector.id,
+        http_status: response.status,
+        error: typeof payload.error === 'string' ? payload.error : 'Unknown API error',
+      });
+      return null;
+    }
+
+    const M = Number(payload.M);
+    if (!Number.isFinite(M) || typeof payload.refused !== 'boolean') {
+      logger.warn('Governance API response did not satisfy the expected contract', { vector_id: vector.id, http_status: response.status });
+      return null;
+    }
+
+    return {
+      vector_id: vector.id,
+      expected_behavior: vector.expectedBehavior,
+      refused: payload.refused,
+      M: Math.round(M * 1000) / 1000,
+      intervention: payload.intervention_triggered === true || payload.projection_triggered === true,
+      http_status: response.status,
+      governance_mode: LIVE_MODE,
+    };
+  } catch (error) {
+    logger.warn('Governance API request threw an exception', {
+      vector_id: vector.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 async function runRedTeam() {
