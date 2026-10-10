@@ -346,10 +346,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
       delta_V = V - lyapunovState(ctx.prev_state);
     }
 
-    const health_band = M >= 0.25 ? 'OPTIMAL'
-      : M >= 0.15 ? 'ALERT'
-      : M >= 0.08 ? 'STRESSED'
-      : 'CRITICAL';
+    const health_band = healthBand(M);
 
     return {
       success: true,
