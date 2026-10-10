@@ -122,7 +122,7 @@ class LexAureonClient:
         self.session_id = session_id or f"session-{int(time.time() * 1000)}"
         self.api_key = api_key
         self.timeout = timeout
-        self.retries = retries
+        self.retries = max(1, int(retries))
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.client = httpx.Client(timeout=timeout, headers=self.headers)
 
