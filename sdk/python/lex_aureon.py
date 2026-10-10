@@ -184,14 +184,20 @@ class LexAureonClient:
                         f"{self.base_url}/api/lex/govern",
                         json=payload,
                     )
+                    if response.status_code == 429 and attempt < self.retries - 1:
+                        delay = _retry_after_seconds(response.headers.get("Retry-After"))
+                        if delay is not None:
+                            await asyncio.sleep(delay)
+                            continue
+                    # Do not replay stateful POSTs after a 5xx or transport error:
+                    # the server may have committed state/receipt before the error.
                     response.raise_for_status()
                     return GovernanceResponse.from_dict(response.json())
                 except Exception as e:
                     last_error = e
-                    if attempt < self.retries - 1:
-                        await asyncio.sleep(2 ** attempt)
+                    break
 
-            raise last_error or Exception("Failed to govern prompt after retries")
+            raise last_error or Exception("Failed to govern prompt; verify receipt/session state before retrying")
 
     def govern_batch(self, requests: List[Dict[str, Any]]) -> List[GovernanceResponse]:
         """Batch govern multiple prompts"""
