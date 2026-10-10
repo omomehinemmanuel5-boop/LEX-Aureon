@@ -17,6 +17,7 @@ import { getCachedKernel } from './kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from './kernel_bridge';
 import { advanceRecoveryPlane, type RecoveryPulseResult } from './agents/recovery_runtime';
 import { TAU, projectToSimplex } from './aureonics_core';
+import { getRecoveryMinimumM } from './recovery_margin';
 import { incrementRuns } from './db';
 import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
@@ -281,9 +282,7 @@ export async function executeGovern(
   // If the saved state is already below that threshold, preserve that baseline
   // rather than allowing another regression; otherwise, never persist a turn
   // that crosses from the normal range into recovery.
-  const recoveryMinimumM = recoveryBaselineM === null
-    ? null
-    : Math.min(recoveryBaselineM, 0.15);
+  const recoveryMinimumM = getRecoveryMinimumM(recoveryBaselineM);
   if (!simulation && recoveryBaselineM !== null
     && recoveryMinimumM !== null && postMeasurementM < recoveryMinimumM) {
     kernel.state = { ...savedState! };
