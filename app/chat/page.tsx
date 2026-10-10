@@ -247,7 +247,7 @@ function Seal({ m, health, active }: { m: number | null; health: string; active:
 ───────────────────────────────────────────────────────────────────── */
 function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) {
   const total  = (c + r + s) || 1;
-  const mColor = m < 0.08 ? '#ef4444' : m < 0.15 ? G.S : G.R;
+  const mColor = m < 0.05 ? '#ef4444' : m < 0.15 ? G.S : G.R;
   return (
     <div className="space-y-[5px] pt-2.5 mt-2.5" style={{ borderTop: `1px solid ${G.border}` }}>
       {([['C', c, G.C], ['R', r, G.R], ['S', s, G.S]] as [string, number, string][]).map(([k, v, col]) => (
