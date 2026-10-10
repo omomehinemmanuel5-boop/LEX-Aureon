@@ -140,8 +140,11 @@ export function decideRefusal(inputs: RefusalInputs): RefusalDecision {
   const semanticSuppressed =
     (diagnosticIntent || benignTaskIntent) && inputs.semantic.attack_type !== 'none';
 
+  // Only explicit read-only diagnostics suppress the drift-correlated refusal.
+  // A benign task label may suppress an ambiguous semantic-classifier hit,
+  // but independent sovereignty-drift evidence must still be enforced.
   const driftCorroborated =
-    !semanticSuppressed &&
+    !diagnosticIntent &&
     inputs.sovereignty.drift_detected &&
     inputs.semantic.attack_type !== 'none';
 
