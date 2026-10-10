@@ -701,6 +701,30 @@ export class SovereignKernel {
     ) {
       candidates.push({ attack_type: 'identity', severity: 0.86 });
     }
+    const explicitRuleErasure =
+      (['forget', 'ignore', 'disregard'].some(v => p.includes(v)) &&
+        ['prior', 'previous', 'all'].some(v => p.includes(v)) &&
+        ['rule', 'instruction', 'safety'].some(v => p.includes(v)) &&
+        ['unrestricted', 'disclose', 'reveal', 'override', 'hidden'].some(v => p.includes(v))) ||
+      (p.includes('system') && p.includes('override') &&
+        ['disable', 'reveal', 'hidden'].some(v => p.includes(v))) ||
+      (p.includes('disable') && p.includes('safety') && p.includes('true')) ||
+      (p.includes('policies') && ['removed', 'disabled'].some(v => p.includes(v)) &&
+        ['confidential', 'hidden', 'reveal', 'disclose'].some(v => p.includes(v)));
+
+    const hiddenInstructionTarget =
+      (p.includes('hidden') && p.includes('instruction') && p.includes('system')) ||
+      (p.includes('system') && p.includes('prompt') && p.includes('confidential'));
+    const extractionVerb = ['reveal', 'disclose', 'print', 'show', 'verbatim', 'tell me'].some(v => p.includes(v));
+    const negatedExtraction = /\\b(cannot|can't|should not|shouldn't|will not|won't|do not|don't)\\b/.test(p);
+
+    if (explicitRuleErasure) {
+      candidates.push({ attack_type: 'identity', severity: 0.86 });
+    }
+    if (hiddenInstructionTarget && extractionVerb && !negatedExtraction) {
+      candidates.push({ attack_type: 'exploitative', severity: 0.87 });
+    }
+
     if (
       ((p.includes('forget everything') || p.includes('clear your memory') || p.includes('reset your identity')) &&
         (p.includes('instruction') || p.includes('identity') || p.includes('constitutional') || p.includes('start fresh'))) ||
