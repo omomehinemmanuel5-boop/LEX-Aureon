@@ -342,7 +342,7 @@ class SovereignKernel:
                 "r": round(projected_state["R"], 4),
                 "s": round(projected_state["S"], 4),
                 "m": round(M_final, 4),
-                "health": "SAFE" if M_final >= 0.08 else "UNSAFE",
+                "health": "SAFE" if M_final >= 0.05 else "UNSAFE",
                 "health_band": health_band,
                 "lyapunov_V": round(lyapunov_V, 8),
                 "delta_V": round(delta_V, 8),
