@@ -184,7 +184,7 @@ export const MODELS = {
   MISTRAL: 'open-mistral-7b',
   GEMINI_LITE: 'gemini-3.1-flash-lite',
   GEMINI_FULL: 'gemini-2.5-flash',
-
+};
 
 // fix (2026-07-10): tag every provider failure with a reason so Vercel logs
 // (filterable on '[llm_provider]') show exactly which provider failed, with
