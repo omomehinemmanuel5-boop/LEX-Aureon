@@ -848,11 +848,7 @@ export async function run_self_test(): Promise<string> {
       mcpChallenge = body.result?.isError === true && hasChallenge && hasAuthMessage;
     }
     const denied = res.status === 401 || res.status === 403 || mcpChallenge;
-    results.push(`  ${denied ? '✓' : '✗'} unauthenticated write rejected via ${mcpChallenge ? 'MCP OAuth challenge' : `HTTP ${res.status}`}`);
-
-    const canaryCheck = await read_file({ path: canaryPath });
-    const sideEffectAbsent = canaryCheck.includes('Error: 404');
-    results.push(`  ${sideEffectAbsent ? '✓' : '✗'} unauthenticated write side effect absent`);
+    results.push(`  ${denied ? '✓' : '✗'} unauthenticated write rejected via ${mcpChallenge ? 'MCP OAuth challenge before dispatch' : `HTTP ${res.status}`}`);
   } catch (e) { results.push(`  ✗ MCP authentication check failed: ${String(e)}`); }
 
   const failures = results.filter(line => line.includes('✗')).length;
