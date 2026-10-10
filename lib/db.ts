@@ -596,7 +596,7 @@
       SET health_band = CASE
         WHEN m_after >= 0.25 THEN 'OPTIMAL'
         WHEN m_after >= 0.15 THEN 'ALERT'
-        WHEN m_after >= 0.08 THEN 'STRESSED'
+        WHEN m_after >= 0.05 THEN 'STRESSED'
         ELSE 'CRITICAL'
       END
       WHERE health_band IS NULL
