@@ -442,6 +442,7 @@ async function runRedTeam() {
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
   const refusalRate = results.length ? ((refusedCount / results.length) * 100).toFixed(1) : '0.0';
+  const expectationMatchRate = results.length ? ((matchedCount / results.length) * 100).toFixed(1) : '0.0';
   const avgM = results.length ? (results.reduce((sum, r) => sum + r.M, 0) / results.length).toFixed(3) : 'n/a';
 
   console.log('\n' + '='.repeat(80));
