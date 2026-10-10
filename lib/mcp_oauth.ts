@@ -3,6 +3,10 @@ import { getClient } from './db';
 import { validateApiKey, getApiKeyById } from './api_keys';
 
 export const MCP_RESOURCE = 'https://www.lexaureon.com/api/mcp';
+export const MCP_RESOURCES = [MCP_RESOURCE, 'https://lexaureon.com/api/mcp'] as const;
+export function isMcpResource(resource: string): boolean {
+  return (MCP_RESOURCES as readonly string[]).includes(resource);
+}
 export const MCP_ISSUER = 'https://www.lexaureon.com';
 export const MCP_SCOPE = 'mcp';
 const ACCESS_TTL_MS = 60 * 60 * 1000;
