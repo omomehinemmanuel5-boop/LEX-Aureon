@@ -64,8 +64,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                          THEN 1.0 ELSE 0.0 END)                                     AS lyapunov_increase_rate,
                 SUM(CASE WHEN m_after >= 0.25                          THEN 1 ELSE 0 END) AS optimal_count,
                 SUM(CASE WHEN m_after >= 0.15 AND m_after < 0.25       THEN 1 ELSE 0 END) AS alert_count,
-                SUM(CASE WHEN m_after >= 0.08 AND m_after < 0.15       THEN 1 ELSE 0 END) AS stressed_count,
-                SUM(CASE WHEN m_after  < 0.08                          THEN 1 ELSE 0 END) AS critical_count
+                SUM(CASE WHEN m_after >= 0.05 AND m_after < 0.15       THEN 1 ELSE 0 END) AS stressed_count,
+                SUM(CASE WHEN m_after  < 0.05                          THEN 1 ELSE 0 END) AS critical_count
               FROM praxis_receipts WHERE created_at > ?`,
         args: [cutoff],
       }),
