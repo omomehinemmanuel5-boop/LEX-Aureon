@@ -610,6 +610,9 @@ export async function run_governance({
       primary_refusal_reason?: string | null;
       intervention_triggered?: boolean;
       health_band?: string;
+      C?: number;
+      R?: number;
+      S?: number;
       M?: number;
       m_before?: number;
       state?: { C?: number; R?: number; S?: number };
@@ -621,11 +624,11 @@ export async function run_governance({
       projection_triggered?: boolean;
     };
     const sig = d.semantic_signal ?? { attack_type: 'none', severity: 0 };
-    const met = d.metrics ?? {};
-    const C = Number(met.c_measured ?? 0);
-    const R = Number(met.r_measured ?? 0);
-    const S = Number(met.s_measured ?? 0);
-    const M = Number(d.M ?? Math.min(C, R, S));
+    const { adaptGovernanceState } = await import('./governance_state_adapter');
+    const adaptedState = adaptGovernanceState({
+      C: d.C, R: d.R, S: d.S, M: d.M, state: d.state, metrics: d.metrics,
+    });
+    const { C, R, S, M, reportedM, stateInvariantValid } = adaptedState;
     const policyRefused = Boolean(d.refused);
     const disposition = describeGovernanceOutput(policyRefused, d.governed_output ?? '');
     return JSON.stringify({
