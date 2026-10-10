@@ -5,6 +5,8 @@ const ALLOWED_ORIGINS = new Set([
   'https://chatgpt.com',
   'https://chat.openai.com',
   'https://platform.openai.com',
+  'https://claude.ai',
+  'https://claude.com',
 ]);
 
 function corsHeaders(req: Request, extra: HeadersInit = {}): Headers {
