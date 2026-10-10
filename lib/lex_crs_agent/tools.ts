@@ -803,6 +803,41 @@ export async function run_self_test(): Promise<string> {
     }
   } catch (e) { results.push(`  ✗ z_traj check failed: ${String(e)}`); }
 
+  results.push('');
+  results.push('TEST 5: Public health contract');
+  try {
+    const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/health`, { signal: AbortSignal.timeout(5000) });
+    const d = await res.json() as {
+      ok?: boolean; status?: string; kernel_active?: boolean;
+      storage?: { stats_readable?: boolean; mode?: string };
+      services?: { turso?: string };
+    };
+    const healthy = res.ok && d.ok === true && d.status === 'ok'
+      && d.kernel_active === true && d.storage?.stats_readable === true
+      && d.services?.turso === 'connected';
+    results.push(`  ${healthy ? '✓' : '✗'} HTTP=${res.status} status=${d.status} kernel=${d.kernel_active} storage_readable=${d.storage?.stats_readable} turso=${d.services?.turso}`);
+  } catch (e) { results.push(`  ✗ Health endpoint check failed: ${String(e)}`); }
+
+  results.push('');
+  results.push('TEST 6: Unauthenticated MCP write must be denied');
+  try {
+    const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 'lex-self-test-unauth-write', method: 'tools/call',
+        params: { name: 'write_file', arguments: {
+          path: 'docs/.lex-unauthenticated-self-test-canary.md',
+          content: 'This file must never be written by an unauthenticated request.',
+          message: 'unauthenticated self-test must be denied',
+        } },
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const denied = res.status === 401 || res.status === 403;
+    results.push(`  ${denied ? '✓' : '✗'} unauthenticated write returned HTTP ${res.status} (expected 401/403)`);
+  } catch (e) { results.push(`  ✗ MCP authentication check failed: ${String(e)}`); }
+
   const failures = results.filter(line => line.includes('✗')).length;
   const warnings = results.filter(line => line.includes('⚠')).length;
   const overall = failures > 0 ? 'FAIL' : warnings > 0 ? 'WARN' : 'PASS';
