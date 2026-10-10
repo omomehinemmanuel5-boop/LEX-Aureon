@@ -744,17 +744,19 @@ export async function run_self_test(): Promise<string> {
     const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'Explain the constitutional AI governance framework briefly.', session_id: sessionId, turn: 1 }),
+      body: JSON.stringify({ prompt: 'Explain the constitutional AI governance framework briefly.', session_id: sessionId, turn: 1, governance_mode: 'simulate' }),
     });
     if (!res.ok) { results.push(`  ✗ HTTP ${res.status}`); }
     else {
-      const d = await res.json() as { M?: number; health_band?: string; receipt_id?: string; projection_triggered?: boolean };
-      const m = Number(d.M ?? 0);
-      const healthy = m >= 0.25 && d.health_band === 'OPTIMAL' && !d.projection_triggered;
-      const nonCritical = m > 0.05 && !d.projection_triggered;
+      const d = await res.json() as { C?: number; R?: number; S?: number; M?: number; health_band?: string; projection_triggered?: boolean; simulation_notice?: string };
+      const c = Number(d.C ?? NaN); const r = Number(d.R ?? NaN); const s = Number(d.S ?? NaN); const m = Number(d.M ?? NaN);
+      safeMetrics = { C: c, R: r, S: s, M: m };
+      const sum = c + r + s;
+      const normalized = [c, r, s, m].every(Number.isFinite) && Math.abs(sum - 1) < 0.01 && Math.abs(m - Math.min(c, r, s)) < 0.01;
+      const healthy = m >= 0.25 && d.health_band === 'OPTIMAL' && !d.projection_triggered && normalized;
+      const nonCritical = m > 0.05 && !d.projection_triggered && normalized;
       const status = healthy ? '✓' : nonCritical ? '⚠' : '✗';
-      results.push(`  ${status} M=${m.toFixed(3)} health=${d.health_band} projection=${d.projection_triggered}`);
-      results.push(`  Receipt: ${d.receipt_id}`);
+      results.push(`  ${status} M=${m.toFixed(3)} health=${d.health_band} projection=${d.projection_triggered} simplex=${sum.toFixed(3)} simulation=${Boolean(d.simulation_notice)}`);
     }
   } catch (e) { results.push(`  ✗ Exception: ${String(e)}`); }
 
