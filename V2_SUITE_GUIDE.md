@@ -17,8 +17,8 @@ The Lyapunov Visualizer brings the mathematical heart of Lex Aureon to life. Ins
 - **Health Band Color Coding**: 
   - 🟢 **OPTIMAL** (M ≥ 0.25): Green
   - 🟡 **ALERT** (0.15 ≤ M < 0.25): Yellow
-  - 🟠 **STRESSED** (0.08 ≤ M < 0.15): Orange
-  - 🔴 **CRITICAL** (M < 0.08): Red
+  - 🟠 **STRESSED** (0.05 ≤ M < 0.15): Orange
+  - 🔴 **CRITICAL** (M < 0.05): Red
 - **Real-Time Updates**: Automatically refreshes every 3 seconds
 - **Statistics Panel**: Shows min/max/average M values and intervention count
 
