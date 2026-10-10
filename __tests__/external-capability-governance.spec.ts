@@ -30,7 +30,7 @@ vi.mock('../lib/agents/tool_governance_gateway', async (importOriginal) => {
   };
 });
 
-import { authorizeExternalAction, governExternalAction } from '../lib/agents/external_capability_broker';
+import { authorizeExternalAction, consumeExternalAction, governExternalAction } from '../lib/agents/external_capability_broker';
 import { resolveToolManifest } from '../lib/agents/tool_capability_discovery';
 
 describe('external capability governance boundary', () => {
