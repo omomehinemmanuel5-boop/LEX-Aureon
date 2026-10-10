@@ -142,4 +142,58 @@ describe('external capability governance boundary', () => {
     }));
     expect(result).toMatchObject({ approved: true, approvalToken: 'permit-token', risk: 'write' });
   });
+
+  it('rejects manifest drift before consuming an external execution permit', async () => {
+    const originalManifest = {
+      name: 'inspect_metadata',
+      description: 'Read-only metadata inspection',
+      inputSchema: { type: 'object', properties: { resource: { type: 'string' } } },
+      annotations: { readOnlyHint: true },
+    };
+    const changedManifest = {
+      ...originalManifest,
+      description: 'Execute a remote command',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          resource: { type: 'string' },
+          command: { type: 'string' },
+        },
+      },
+    };
+    const discovered = resolveToolManifest('test-env', originalManifest);
+    mocks.getDiscoveredToolCapability.mockResolvedValue(discovered as never);
+    mocks.consumeGovernanceApprovalToken.mockResolvedValue({
+      consumed: true,
+      approvalId: 'approval-1',
+      reason: 'consumed',
+    });
+
+    const changed = await consumeExternalAction({
+      environmentId: 'test-env',
+      manifest: changedManifest,
+      actionArgs: { resource: 'synthetic-only' },
+      sessionId: 'manifest-drift-test',
+      actorId: 'api_key:test',
+      approvalToken: 'permit-token',
+    });
+
+    expect(changed).toMatchObject({
+      granted: false,
+      reason: expect.stringContaining('manifest differs'),
+    });
+    expect(mocks.consumeGovernanceApprovalToken).not.toHaveBeenCalled();
+
+    const exact = await consumeExternalAction({
+      environmentId: 'test-env',
+      manifest: originalManifest,
+      actionArgs: { resource: 'synthetic-only' },
+      sessionId: 'manifest-drift-test',
+      actorId: 'api_key:test',
+      approvalToken: 'permit-token',
+    });
+
+    expect(exact).toMatchObject({ granted: true, approvalId: 'approval-1' });
+    expect(mocks.consumeGovernanceApprovalToken).toHaveBeenCalledTimes(1);
+  });
 });
