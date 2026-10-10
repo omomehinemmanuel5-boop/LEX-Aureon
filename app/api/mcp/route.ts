@@ -480,9 +480,13 @@ export async function POST(req: Request) {
       if (!operator && profile !== 'operator') return unauthorized(id);
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
+      // Match the exact default used by ordinary MCP tool calls. Previously
+      // this control plane minted approvals for `operator-...` while the target
+      // write ran in `mcp-...`, so valid approvals failed session binding unless
+      // every client manually supplied the same session_id twice.
       const requestedSession = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
-        : `operator-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+        : `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
       const taskContext = typeof args.task_context === 'string'
         ? args.task_context.slice(0, 4096)
         : `Operator authorization for ${requestedTool}`;
