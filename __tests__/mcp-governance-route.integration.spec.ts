@@ -69,6 +69,7 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
     get_constitutional_state: toolFn,
     run_recovery_canary: toolFn,
     read_file: toolFn,
+    write_file: toolFn,
   },
 }));
 
