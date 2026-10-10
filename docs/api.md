@@ -17,8 +17,12 @@ Anonymous requests are limited to 20 requests per IP per minute. Authenticated r
 - 400 invalid JSON or input
 - 401 invalid or exhausted API key
 - 413 request body too large
-- 429 rate limit exceeded
+- 429 rate limit exceeded; honor `Retry-After` when supplied
 - 500 temporary backend failure; internal details are not returned
+
+### Retry safety
+
+Governance POSTs can persist session state and receipts before a client observes a transport or server error. The TypeScript and Python SDKs therefore retry only an explicit HTTP 429 response when a valid `Retry-After` header is present. They do not automatically replay 5xx responses or transport timeouts, because the original turn may already have executed. For an ambiguous outcome, verify the session and receipt state before retrying; use the same session ID and turn for correlation, but do not assume that correlation alone makes a request idempotent.
 
 ## Verification
 
