@@ -747,8 +747,11 @@ export async function run_self_test(): Promise<string> {
     if (!res.ok) { results.push(`  ✗ HTTP ${res.status}`); }
     else {
       const d = await res.json() as { M?: number; health_band?: string; receipt_id?: string; projection_triggered?: boolean };
-      const pass = Number(d.M ?? 0) > 0.05 && !d.projection_triggered;
-      results.push(`  ${pass ? '✓' : '✗'} M=${Number(d.M ?? 0).toFixed(3)} health=${d.health_band} projection=${d.projection_triggered}`);
+      const m = Number(d.M ?? 0);
+      const healthy = m >= 0.25 && d.health_band === 'OPTIMAL' && !d.projection_triggered;
+      const nonCritical = m > 0.05 && !d.projection_triggered;
+      const status = healthy ? '✓' : nonCritical ? '⚠' : '✗';
+      results.push(`  ${status} M=${m.toFixed(3)} health=${d.health_band} projection=${d.projection_triggered}`);
       results.push(`  Receipt: ${d.receipt_id}`);
     }
   } catch (e) { results.push(`  ✗ Exception: ${String(e)}`); }
