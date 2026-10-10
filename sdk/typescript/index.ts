@@ -163,7 +163,9 @@ export class LexAureonClient {
       const response = await fetch(`${this.baseURL}/api/health`, {
         signal: AbortSignal.timeout(5000),
       });
-      return response.ok;
+      if (!response.ok) return false;
+      const health = await response.json() as { ok?: unknown; status?: unknown };
+      return health.ok === true && health.status === 'ok';
     } catch {
       return false;
     }
