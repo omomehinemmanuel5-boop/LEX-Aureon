@@ -60,7 +60,8 @@ For a trajectory-controlled sequence, first call `declare_trajectory_plan` with 
 The operator profile is broad, but it is not a bypass around Lex governance:
 
 - Every tool call still passes through the constitutional tool executor.
-- `authorize_tool_action` can issue a short-lived, exact-arguments approval token for consequential capabilities.
+- Admin-issued `private_test` API-key calls automatically receive a short-lived, single-use approval bound to the authenticated key actor, resolved MCP session, tool, and exact arguments for registered consequential capabilities. This removes the second authorization round-trip without bypassing the constitutional executor or trajectory gates.
+- `authorize_tool_action` remains available for clients that want explicit pre-authorization; its default session ID now matches ordinary MCP calls.
 - `authorize_external_action` remains operator-only and does not itself execute an external action.
 - Unknown, unregistered, out-of-scope, or constitutionally denied tools remain blocked.
 - An uncertain trajectory outcome is locked fail-closed; verify the receipt/state before retrying.
