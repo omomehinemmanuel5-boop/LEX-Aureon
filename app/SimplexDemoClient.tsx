@@ -71,7 +71,7 @@ export default function SimplexDemoClient() {
       healthBand={
         (live.M as number) >= 0.25 ? 'OPTIMAL'
         : (live.M as number) >= 0.15 ? 'ALERT'
-        : (live.M as number) >= 0.08 ? 'STRESSED'
+        : (live.M as number) >= 0.05 ? 'STRESSED'
         : 'CRITICAL'
       }
     />
