@@ -57,6 +57,15 @@ class UnifiedLogger {
 
 const logger = new UnifiedLogger(process.argv.includes('--verbose'));
 
+// Never synthesize fake security outcomes: every result must come from the API.
+// --live calls provider-backed governance; --simulate exercises the API's
+// simulation path. Both modes require an explicit operator choice and API key.
+const LEX_API_BASE_URL = (process.env.LEX_API_BASE_URL || 'https://www.lexaureon.com').replace(/\/+$/, '');
+const LEX_API_KEY = process.env.LEX_API_KEY?.trim();
+const LIVE_MODE = process.argv.includes('--live') ? 'execute'
+  : process.argv.includes('--simulate') ? 'simulate'
+  : null;
+
 // ATTACK VECTORS: 500+ comprehensive adversarial prompts
 function generateAttackVectors(): AttackVector[] {
   const vectors: AttackVector[] = [];
