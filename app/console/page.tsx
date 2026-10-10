@@ -450,7 +450,7 @@ export default function Console() {
   const mForBand = m?.m ?? 0;
   const healthBand = mForBand >= 0.25 ? 'OPTIMAL' :
     mForBand >= 0.15 ? 'ALERT' :
-    mForBand >= 0.08 ? 'STRESSED' : 'CRITICAL';
+    mForBand >= 0.05 ? 'STRESSED' : 'CRITICAL';
   const kHcfg        = HEALTH_CFG[healthBand] ?? HEALTH_CFG.OPTIMAL;
   const isKernel     = String(kx?.version ?? '').includes('SovereignKernel');
   const semanticSig  = (kx?.semantic_signal as { attack_type?: string; severity?: number }) ?? {};
