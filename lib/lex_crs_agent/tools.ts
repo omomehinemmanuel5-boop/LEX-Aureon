@@ -752,7 +752,7 @@ export async function run_self_test(): Promise<string> {
     else {
       const d = await res.json() as { C?: number; R?: number; S?: number; M?: number; health_band?: string; projection_triggered?: boolean; simulation_notice?: string };
       const c = Number(d.C ?? NaN); const r = Number(d.R ?? NaN); const s = Number(d.S ?? NaN); const m = Number(d.M ?? NaN);
-      safeMetrics = { C: c, R: r, S: s, M: m };
+      selfTestMetrics.safe = { C: c, R: r, S: s, M: m };
       const sum = c + r + s;
       const normalized = [c, r, s, m].every(Number.isFinite) && Math.abs(sum - 1) < 0.01 && Math.abs(m - Math.min(c, r, s)) < 0.01;
       const healthy = m >= 0.25 && d.health_band === 'OPTIMAL' && !d.projection_triggered && normalized;
