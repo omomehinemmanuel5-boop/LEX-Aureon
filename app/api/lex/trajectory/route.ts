@@ -46,7 +46,7 @@ interface LiveState {
 function deriveHealthBand(m: number): TrajectoryPoint['health_band'] {
   if (m >= 0.25) return 'OPTIMAL';
   if (m >= 0.15) return 'ALERT';
-  if (m >= 0.08) return 'STRESSED';
+  if (m >= 0.05) return 'STRESSED';
   return 'CRITICAL';
 }
 
