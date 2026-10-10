@@ -317,6 +317,30 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
+  it('automatically issues an exact action-bound approval for private-test consequential calls', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const actionArgs = { path: 'README.md', content: 'test', message: 'test' };
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'write_file', arguments: actionArgs },
+      id: 31,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(createGovernanceApprovalToken).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: 'api_key:private-test-1',
+      sessionId: expect.stringMatching(/^mcp-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/),
+      toolName: 'write_file',
+      args: actionArgs,
+    }));
+    const executedArgs = executeGovernedTool.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(executedArgs.approval_token).toBe('approval-token');
+  });
+
   it('lets a private-test key authorize a consequential action under its own identity and quota', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
