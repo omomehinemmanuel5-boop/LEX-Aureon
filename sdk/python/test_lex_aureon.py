@@ -111,6 +111,18 @@ class PythonSdkRetryTests(unittest.TestCase):
                 asyncio.run(client.govern_async("hello"))
         self.assertEqual(fake.calls, 1)
 
+    def test_health_check_rejects_http_200_degraded_payload(self):
+        fake = FakeClient([FakeResponse(200, {"ok": False, "status": "degraded"})])
+        with patch("lex_aureon.httpx.Client", return_value=fake):
+            client = LexAureonClient()
+            self.assertFalse(client.health_check())
+
+    def test_health_check_accepts_only_healthy_payload(self):
+        fake = FakeClient([FakeResponse(200, {"ok": True, "status": "ok"})])
+        with patch("lex_aureon.httpx.Client", return_value=fake):
+            client = LexAureonClient()
+            self.assertTrue(client.health_check())
+
 
 if __name__ == "__main__":
     unittest.main()
