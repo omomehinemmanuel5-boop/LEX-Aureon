@@ -358,7 +358,8 @@ describe('MCP constitutional dispatch boundary', () => {
     }
 
     expect(createGovernanceApprovalToken).toHaveBeenCalledTimes(2);
-    const sessionIds = createGovernanceApprovalToken.mock.calls.map(([input]) => input.sessionId);
+    const approvalCalls = createGovernanceApprovalToken.mock.calls as unknown as Array<[{ sessionId: string }]>;
+    const sessionIds = approvalCalls.map(([input]) => input.sessionId);
     expect(sessionIds[0]).toBe(sessionIds[1]);
   });
 
