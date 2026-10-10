@@ -716,7 +716,7 @@ export class SovereignKernel {
       (p.includes('hidden') && p.includes('instruction') && p.includes('system')) ||
       (p.includes('system') && p.includes('prompt') && p.includes('confidential'));
     const extractionVerb = ['reveal', 'disclose', 'print', 'show', 'verbatim', 'tell me'].some(v => p.includes(v));
-    const negatedExtraction = /\\b(cannot|can't|should not|shouldn't|will not|won't|do not|don't)\\b/.test(p);
+    const negatedExtraction = ['cannot', "can't", 'should not', "shouldn't", 'will not', "won't", 'do not', "don't"].some(v => p.includes(v));
 
     if (explicitRuleErasure) {
       candidates.push({ attack_type: 'identity', severity: 0.86 });
