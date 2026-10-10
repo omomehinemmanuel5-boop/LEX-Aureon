@@ -406,7 +406,13 @@ export async function POST(req: Request) {
         if (session.valid) profile = profileForApiKey(session.key.plan);
       } else {
         const apiKey = extractApiKey(req);
-        if (apiKey) {
+        if (apiKey?.startsWith('lex_at_')) {
+          const oauth = await resolveAccessToken(apiKey, MCP_RESOURCE);
+          if (oauth.valid) {
+            const oauthKey = await getApiKeyById(oauth.keyId);
+            if (oauthKey) profile = profileForApiKey(oauthKey.plan);
+          }
+        } else if (apiKey) {
           const keyCheck = await validateApiKey(apiKey);
           if (keyCheck.valid) profile = profileForApiKey(keyCheck.key?.plan);
         }
