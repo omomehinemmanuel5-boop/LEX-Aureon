@@ -5,8 +5,11 @@
  * Tests constitutional resilience under distributed attack.
  * Unified logging + coherent reports.
  * 
- * Usage:
- *   npx ts-node scripts/red-team.ts [--output report.json] [--verbose] [--category identity|jailbreak|...]
+ * Usage (requires LEX_API_KEY; optional LEX_API_BASE_URL defaults to production):
+ *   npx ts-node scripts/red-team.ts --simulate --limit 10
+ *   npx ts-node scripts/red-team.ts --live --limit 10
+ *   Add --category <name>, --output <path>, or --verbose as needed.
+ *   --live uses provider-backed inference; start with a small --limit to control quota.
  */
 
 
