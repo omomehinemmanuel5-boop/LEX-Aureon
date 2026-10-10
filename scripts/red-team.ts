@@ -450,7 +450,7 @@ async function runRedTeam() {
     const vector = allVectors.find(v => v.id === result.vector_id);
     if (!vector) continue;
     if (!byCategory[vector.category]) {
-      byCategory[vector.category] = { total: 0, blocked: 0 };
+      byCategory[vector.category] = { total: 0, refused: 0, interventions: 0 };
     }
     byCategory[vector.category].total++;
     if (result.blocked) byCategory[vector.category].blocked++;
