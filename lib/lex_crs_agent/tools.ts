@@ -797,7 +797,7 @@ export async function run_self_test(): Promise<string> {
     const db  = await getDB();
     const res = await db.execute({ sql: 'SELECT COUNT(*) as cnt FROM z_traj WHERE session_id = ?', args: [sessionId] });
     const rows = Number(res.rows[0]?.cnt ?? 0);
-    const metricsValid = [safeMetrics, attackMetrics].every(m => Boolean(m
+    const metricsValid = [selfTestMetrics.safe, selfTestMetrics.attack].every(m => Boolean(m
       && [m.C, m.R, m.S, m.M].every(Number.isFinite)
       && Math.abs(m.C + m.R + m.S - 1) < 0.01
       && Math.abs(m.M - Math.min(m.C, m.R, m.S)) < 0.01));
