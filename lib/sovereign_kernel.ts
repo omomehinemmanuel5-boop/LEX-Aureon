@@ -213,6 +213,7 @@
  */
 
 import { env } from './env';
+import { healthBand } from './health_band';
 import { generateGoverned } from './llm_provider';
 import type { LLMResult } from './llm_provider';
 import { LEX_IDENTITY, LEX_IDENTITY_MINIMAL, LEX_IDENTITY_STABLE_CORE, LEX_IDENTITY_DYNAMIC_BASE } from './lex_identity';
