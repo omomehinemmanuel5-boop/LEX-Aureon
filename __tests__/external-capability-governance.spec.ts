@@ -165,7 +165,6 @@ describe('external capability governance boundary', () => {
     mocks.getDiscoveredToolCapability.mockResolvedValue(discovered as never);
     mocks.consumeGovernanceApprovalToken.mockResolvedValue({
       consumed: true,
-      approvalId: 'approval-1',
       reason: 'consumed',
     });
 
