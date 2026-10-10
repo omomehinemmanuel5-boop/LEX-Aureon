@@ -695,7 +695,7 @@ export async function get_recent_receipts({ limit = 5 }: { limit?: number }): Pr
               CASE
                 WHEN m_after >= 0.25 THEN 'OPTIMAL'
                 WHEN m_after >= 0.15 THEN 'ALERT'
-                WHEN m_after >= 0.08 THEN 'STRESSED'
+                WHEN m_after >= 0.05 THEN 'STRESSED'
                 ELSE 'CRITICAL'
               END AS health_band,
               created_at
