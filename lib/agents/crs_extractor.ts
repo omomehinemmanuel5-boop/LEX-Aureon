@@ -366,7 +366,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
         anchor_sim: C_raw,
         iec_score: R_raw,
         triggers: {
-          collapse: M < 0.08,
+          collapse: M < 0.08, // early-warning/Lyapunov trigger; CRITICAL health band begins below 0.05
           velocity: velocity > 0.15,
           per_invariant: {
             C: ctx.prev_state ? (C - ctx.prev_state.C) < -0.05 : false,
@@ -406,7 +406,7 @@ export async function CRSExtractorAgent(ctx: AgentContext): Promise<AgentResult>
           health_band,
           method: 'groq-llama-3.1-8b-instant (embeddings unavailable)',
           triggers: {
-            collapse: M < 0.08,
+            collapse: M < 0.08, // early-warning/Lyapunov trigger; CRITICAL health band begins below 0.05
             velocity: velocity > 0.15,
             per_invariant: {
               C: ctx.prev_state ? (C - ctx.prev_state.C) < -0.05 : false,
