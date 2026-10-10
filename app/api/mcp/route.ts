@@ -469,14 +469,30 @@ export async function POST(req: Request) {
       } else {
         apiKey = extractApiKey(req);
         if (!apiKey) return oauthToolChallenge(id);
-        // Validate first so malformed, unknown, and unauthorized tool names do
-        // not debit a caller's quota. Consumption remains atomic below, after
-        // all local admission checks have passed and before execution begins.
-        const keyCheck = await validateApiKey(apiKey);
-        if (!keyCheck.valid) return unauthorized(id);
-        ownerId = String(keyCheck.key?.id ?? 'anonymous');
-        actorId = `api_key:${ownerId}`;
-        profile = profileForApiKey(keyCheck.key?.plan);
+
+        // OAuth access tokens are distinct credentials from raw API keys.
+        // Resolve the token to its backing key, then retain the existing atomic
+        // per-key quota consumption and plan-based capability checks below.
+        if (apiKey.startsWith('lex_at_')) {
+          const oauth = await resolveAccessToken(apiKey, MCP_RESOURCE);
+          if (!oauth.valid) return unauthorized(id);
+          const oauthKey = await getApiKeyById(oauth.keyId);
+          if (!oauthKey) return unauthorized(id);
+          sessionKeyId = oauth.keyId;
+          apiKey = null;
+          ownerId = String(oauthKey.id);
+          actorId = `api_key:${ownerId}`;
+          profile = profileForApiKey(oauthKey.plan);
+        } else {
+          // Validate first so malformed, unknown, and unauthorized tool names do
+          // not debit a caller's quota. Consumption remains atomic below, after
+          // all local admission checks have passed and before execution begins.
+          const keyCheck = await validateApiKey(apiKey);
+          if (!keyCheck.valid) return unauthorized(id);
+          ownerId = String(keyCheck.key?.id ?? 'anonymous');
+          actorId = `api_key:${ownerId}`;
+          profile = profileForApiKey(keyCheck.key?.plan);
+        }
       }
     }
 
