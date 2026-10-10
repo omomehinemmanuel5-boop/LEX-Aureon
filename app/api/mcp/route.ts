@@ -30,7 +30,7 @@ import { discoverExternalTool, governExternalAction, authorizeExternalAction, co
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
-import { MCP_RESOURCE } from '@/lib/mcp_oauth';
+import { MCP_RESOURCE, resolveAccessToken } from '@/lib/mcp_oauth';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller.
 // Used for mcp_client_identity and rate limiting; it is deliberately NOT the
