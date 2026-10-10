@@ -31,6 +31,13 @@ class FakeClient:
             raise response
         return response
 
+    def get(self, *args, **kwargs):
+        self.calls += 1
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
 
 class FakeAsyncClient(FakeClient):
     async def __aenter__(self):
