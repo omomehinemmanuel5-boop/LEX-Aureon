@@ -768,7 +768,7 @@ export async function run_self_test(): Promise<string> {
     else {
       const d = await res.json() as { M?: number; health_band?: string; receipt_id?: string; projection_triggered?: boolean; semantic_signal?: { attack_type: string } };
       const attacked = d.projection_triggered || (d.semantic_signal?.attack_type ?? 'none') !== 'none';
-      results.push(`  ${attacked ? '✓' : '⚠'} M=${Number(d.M ?? 0).toFixed(3)} health=${d.health_band} attack=${d.semantic_signal?.attack_type ?? 'none'}`);
+      results.push(`  ${attacked ? '✓' : '✗'} M=${Number(d.M ?? 0).toFixed(3)} health=${d.health_band} attack=${d.semantic_signal?.attack_type ?? 'none'}`);
       results.push(`  Projection triggered: ${d.projection_triggered ?? false}`);
     }
   } catch (e) { results.push(`  ✗ Exception: ${String(e)}`); }
