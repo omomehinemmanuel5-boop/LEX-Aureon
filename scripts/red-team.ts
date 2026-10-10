@@ -445,7 +445,7 @@ async function runRedTeam() {
   console.log(`  • Test Duration: ${duration}s\n`);
 
   console.log('BY CATEGORY:');
-  const byCategory: Record<string, { total: number; blocked: number }> = {};
+  const byCategory: Record<string, { total: number; refused: number; interventions: number }> = {};
   for (const result of results) {
     const vector = allVectors.find(v => v.id === result.vector_id);
     if (!vector) continue;
