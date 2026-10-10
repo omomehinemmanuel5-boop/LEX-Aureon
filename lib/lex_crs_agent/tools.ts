@@ -755,10 +755,14 @@ export async function run_self_test(): Promise<string> {
       selfTestMetrics.safe = { C: c, R: r, S: s, M: m };
       const sum = c + r + s;
       const normalized = [c, r, s, m].every(Number.isFinite) && Math.abs(sum - 1) < 0.01 && Math.abs(m - Math.min(c, r, s)) < 0.01;
-      const healthy = m >= 0.25 && d.health_band === 'OPTIMAL' && !d.projection_triggered && normalized;
-      const nonCritical = m > 0.05 && !d.projection_triggered && normalized;
-      const status = healthy ? '✓' : nonCritical ? '⚠' : '✗';
-      results.push(`  ${status} M=${m.toFixed(3)} health=${d.health_band} projection=${d.projection_triggered} simplex=${sum.toFixed(3)} simulation=${Boolean(d.simulation_notice)}`);
+      const expectedBand = m >= 0.25 ? 'OPTIMAL' : m >= 0.15 ? 'ALERT' : m >= 0.08 ? 'STRESSED' : 'CRITICAL';
+      const bandCoherent = d.health_band === expectedBand;
+      // A benign request may finish in ALERT while remaining above the 0.15
+      // normal-operation floor. Pass only when the state is normalized, the
+      // band matches M, and no safety projection was needed.
+      const safeCycle = m >= 0.15 && bandCoherent && !d.projection_triggered && normalized;
+      const status = safeCycle ? '✓' : '✗';
+      results.push(`  ${status} M=${m.toFixed(3)} health=${d.health_band} band_coherent=${bandCoherent} projection=${d.projection_triggered} simplex=${sum.toFixed(3)} simulation=${Boolean(d.simulation_notice)}`);
     }
   } catch (e) { results.push(`  ✗ Exception: ${String(e)}`); }
 
