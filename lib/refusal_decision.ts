@@ -118,7 +118,7 @@ export function isBenignLoginAcceptanceTestPrompt(prompt: string): boolean {
     /\b(design|write|create|draft|build|list|suggest)\b/.test(p) &&
     /\b(acceptance test|acceptance tests|test case|test cases|expected behavior|expected-behavior|test)\b/.test(p);
   const unsafeIntent =
-    /\b(ignore previous instructions|bypass|circumvent|exploit|steal|exfiltrat\w*|credential theft|brute.?force|disable security|evade|override|unauthorized|phish)\b/.test(p);
+    /\b(ignore previous instructions|bypass\w*|circumvent\w*|exploit\w*|steal\w*|exfiltrat\w*|credential theft|brute.?force|disable security|evade\w*|override\w*|unauthorized|phish\w*)\b/.test(p);
 
   return targetsLoginForm && asksForTesting && !unsafeIntent;
 }
