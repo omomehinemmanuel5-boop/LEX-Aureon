@@ -65,7 +65,10 @@ export class LexAureonClient {
     this.sessionId = config.sessionId ?? `session-${Date.now()}`;
     this.apiKey = config.apiKey;
     this.timeout = config.timeout ?? 30000;
-    this.retries = config.retries ?? 3;
+    const configuredRetries = config.retries ?? 3;
+    this.retries = Number.isFinite(configuredRetries)
+      ? Math.max(1, Math.floor(configuredRetries))
+      : 3;
   }
 
   /**
