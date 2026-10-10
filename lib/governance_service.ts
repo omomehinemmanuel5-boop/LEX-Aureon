@@ -30,7 +30,7 @@ import { CANONICAL_REFUSAL } from './refusals';
 import { logger, errorFields } from './logger';
 import { governorState } from './aureonics_math';
 import { judgeCapitulation } from './capitulation_judge';
-import { decideRefusal, isReadOnlyDiagnosticPrompt, type RefusalDecision } from './refusal_decision';
+import { decideRefusal, isReadOnlyDiagnosticPrompt, isBenignLoginAcceptanceTestPrompt, type RefusalDecision } from './refusal_decision';
 import { healthBand } from './health_band';
 import { persistCapitulationCalibration } from './capitulation_calibration';
 import { SovereignKernel, type IdentityMode, type SemanticSignal, type GovernorSensingReport } from './sovereign_kernel';
@@ -277,8 +277,15 @@ export async function executeGovern(
   let recoveryClamped = false;
   let floorBreached = false;
   const postMeasurementM = Math.min(kernel.state.C, kernel.state.R, kernel.state.S);
+  // During recovery, 0.15 is the minimum normal-operation margin.
+  // If the saved state is already below that threshold, preserve that baseline
+  // rather than allowing another regression; otherwise, never persist a turn
+  // that crosses from the normal range into recovery.
+  const recoveryMinimumM = recoveryBaselineM === null
+    ? null
+    : Math.min(recoveryBaselineM, 0.15);
   if (!simulation && recoveryBaselineM !== null
-    && recoveryBaselineM < 0.15 && postMeasurementM < recoveryBaselineM) {
+    && recoveryMinimumM !== null && postMeasurementM < recoveryMinimumM) {
     kernel.state = { ...savedState! };
     result.state = { ...kernel.state };
     result.M = recoveryBaselineM;
@@ -294,9 +301,12 @@ export async function executeGovern(
 
   // ── Single-source refusal decision ────────────────────────────────────────
   const readonlyDiagnostic = isReadOnlyDiagnosticPrompt(prompt);
+  const benignLoginTest = isBenignLoginAcceptanceTestPrompt(prompt);
 
   const measuredDecision = decideRefusal({
-    intent: readonlyDiagnostic ? 'readonly_diagnostic' : 'normal',
+    intent: readonlyDiagnostic
+      ? 'readonly_diagnostic'
+      : benignLoginTest ? 'benign_login_test' : 'normal',
     sovereignty: {
       drift_detected:     sovereigntyDriftDetected,
       raw_sself:          sovereigntyRaw,
