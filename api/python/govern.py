@@ -36,7 +36,7 @@ def _project_to_simplex(c, r, s, floor=0.05):
 def _health_band(m):
     if m >= 0.25: return "OPTIMAL"
     if m >= 0.15: return "ALERT"
-    if m >= 0.08: return "STRESSED"
+    if m >= 0.05: return "STRESSED"
     return "CRITICAL"
 
 def _sovereignty(prompt: str, raw_output: str, governed_output: str) -> dict:
