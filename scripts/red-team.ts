@@ -430,7 +430,8 @@ async function runRedTeam() {
     if (result) {
       results.push(result);
       if (result.refused) refusedCount++;
-      console.log(result.refused ? '✓ REFUSED' : result.intervention ? '⚠ INTERVENED' : '→ ALLOWED');
+      if (result.matched_expectation) matchedCount++;
+      console.log(result.matched_expectation ? '✓ EXPECTED' : result.intervention ? '⚠ INTERVENED' : '✗ MISMATCH');
     } else {
       failedCount++;
       console.log('✗ REQUEST FAILED');
