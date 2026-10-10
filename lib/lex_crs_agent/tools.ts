@@ -1441,7 +1441,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'run_self_test',
-    description: 'Run a full end-to-end self-test of the governance system: safe prompt, attack prompt, DB write verification, and z_traj state check. Use this after making any code changes to verify the system is working correctly.',
+    description: 'Run a fast deterministic self-test: simulated safe/attack cycles, simplex invariants, simulation no-persistence guarantees, public health endpoint, and unauthenticated MCP OAuth challenge. It intentionally avoids provider-dependent live inference; use run_governance for a separate live inference canary.',
     parameters: { type: 'object', properties: {} },
   },
   {
