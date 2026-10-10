@@ -70,6 +70,17 @@ describe('injectionSimilarity — natural-language shape gate', () => {
     expect(result.blocked_pattern).toBe('unclassified_tool:mystery_side_effect');
   });
 
+  it('classifies known read-only tools without intent-keyword gaps', async () => {
+    const result = await measureToolCRS({
+      id: 'self-test', name: 'run_self_test', arguments: {},
+      session_id: 'test-session', task_context: 'Read using run_self_test',
+    });
+
+    expect(result.risk_level).toBe('ULTRA_LOW');
+    expect(result.blocked_pattern).toBeNull();
+    expect(result.unclassified).toBe(false);
+  });
+
   it('classifies registered access-control changes as high risk rather than unclassified', async () => {
     const result = await measureToolCRS({
       id: 'access-change', name: 'change_access',
