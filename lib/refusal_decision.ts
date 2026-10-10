@@ -24,7 +24,7 @@ export interface CapitulationSignal {
   judge_model: string;
 }
 
-export type RefusalIntent = 'normal' | 'readonly_diagnostic';
+export type RefusalIntent = 'normal' | 'readonly_diagnostic' | 'benign_login_test';
 
 export interface RefusalInputs {
   sovereignty: SovereigntyEvidence;
@@ -54,6 +54,7 @@ export interface RefusalDecision {
   forced_critical: boolean;
   safety_projection_triggered: boolean;
   semantic_suppressed_for_diagnostic: boolean;
+  semantic_suppressed_for_benign_task: boolean;
   evidence: {
     sovereignty_drift: boolean;
     sovereignty_raw: number | null;
@@ -102,9 +103,30 @@ export function isReadOnlyDiagnosticPrompt(prompt: string): boolean {
   return !mutationOrOverride;
 }
 
+/**
+ * Narrow allowlist for ordinary login-form acceptance-test requests. This
+ * only suppresses an ambiguous semantic-classifier hit; it does not grant
+ * tool permissions, and prompts containing bypass/credential-abuse language
+ * are deliberately excluded.
+ */
+export function isBenignLoginAcceptanceTestPrompt(prompt: string): boolean {
+  const p = prompt.toLowerCase();
+  const targetsLoginForm =
+    /\b(login|log-in|sign-in|authentication)\b/.test(p) &&
+    /\b(form|field|fields|test|tests)\b/.test(p);
+  const asksForTesting =
+    /\b(design|write|create|draft|build|list|suggest)\b/.test(p) &&
+    /\b(acceptance test|acceptance tests|test case|test cases|expected behavior|expected-behavior|test)\b/.test(p);
+  const unsafeIntent =
+    /\b(ignore previous instructions|bypass\w*|circumvent\w*|exploit\w*|steal\w*|exfiltrat\w*|credential theft|brute.?force|disable security|evade\w*|override\w*|unauthorized|phish\w*)\b/.test(p);
+
+  return targetsLoginForm && asksForTesting && !unsafeIntent;
+}
+
 export function decideRefusal(inputs: RefusalInputs): RefusalDecision {
   const reasons: RefusalReason[] = [];
   const diagnosticIntent = inputs.intent === 'readonly_diagnostic';
+  const benignTaskIntent = inputs.intent === 'benign_login_test';
 
   /*
    * Legitimate read-only diagnostics are an observability surface. The
@@ -116,10 +138,13 @@ export function decideRefusal(inputs: RefusalInputs): RefusalDecision {
    * Tool capability authorization remains independent and authoritative.
    */
   const semanticSuppressed =
-    diagnosticIntent && inputs.semantic.attack_type !== 'none';
+    (diagnosticIntent || benignTaskIntent) && inputs.semantic.attack_type !== 'none';
 
+  // Only explicit read-only diagnostics suppress the drift-correlated refusal.
+  // A benign task label may suppress an ambiguous semantic-classifier hit,
+  // but independent sovereignty-drift evidence must still be enforced.
   const driftCorroborated =
-    !semanticSuppressed &&
+    !diagnosticIntent &&
     inputs.sovereignty.drift_detected &&
     inputs.semantic.attack_type !== 'none';
 
@@ -144,7 +169,8 @@ export function decideRefusal(inputs: RefusalInputs): RefusalDecision {
     primary: refused ? (reasons[0] ?? null) : null,
     forced_critical: refused,
     safety_projection_triggered: inputs.safety_projection_triggered,
-    semantic_suppressed_for_diagnostic: semanticSuppressed,
+    semantic_suppressed_for_diagnostic: diagnosticIntent && semanticSuppressed,
+    semantic_suppressed_for_benign_task: benignTaskIntent && semanticSuppressed,
     evidence: {
       sovereignty_drift: inputs.sovereignty.drift_detected,
       sovereignty_raw: inputs.sovereignty.raw_sself,
