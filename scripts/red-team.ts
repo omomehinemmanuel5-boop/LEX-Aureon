@@ -476,6 +476,8 @@ async function runRedTeam() {
       duration_seconds: parseFloat(duration),
       vectors_tested: vectors.length,
       category_filter: categoryFilter,
+      governance_mode: LIVE_MODE,
+      api_base_url: LEX_API_BASE_URL,
     },
     results: {
       block_rate: parseFloat(blockRate),
