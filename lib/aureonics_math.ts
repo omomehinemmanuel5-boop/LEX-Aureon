@@ -330,7 +330,7 @@ export function runRealAureonicsMath(
   const lyapunov_V = lyapunov(C, R, S);
 
   // Health band — boundaries match deriveHealthBand() in lib/kv.ts
-  const health_band = M >= 0.25 ? 'OPTIMAL' : M >= 0.15 ? 'ALERT' : M >= 0.08 ? 'STRESSED' : 'CRITICAL';
+  const health_band = M >= 0.25 ? 'OPTIMAL' : M >= 0.15 ? 'ALERT' : M >= 0.05 ? 'STRESSED' : 'CRITICAL';
 
   // Governor
   const governor = governorState(C, R, S);
