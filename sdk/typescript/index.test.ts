@@ -66,4 +66,22 @@ describe('LexAureonClient HTTP contract', () => {
     await expect(client.govern({ prompt: 'may already have executed' })).rejects.toThrow('HTTP 503');
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it('reports HTTP-200 degraded health as unhealthy', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: false, status: 'degraded',
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const client = new LexAureonClient({ baseURL: 'https://example.test' });
+    await expect(client.healthCheck()).resolves.toBe(false);
+  });
+
+  it('reports healthy status only when the health payload is healthy', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: true, status: 'ok',
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const client = new LexAureonClient({ baseURL: 'https://example.test' });
+    await expect(client.healthCheck()).resolves.toBe(true);
+  });
 });
