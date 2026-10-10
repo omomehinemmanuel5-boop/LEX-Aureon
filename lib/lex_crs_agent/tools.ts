@@ -821,21 +821,38 @@ export async function run_self_test(): Promise<string> {
   results.push('');
   results.push('TEST 6: Unauthenticated MCP write must be denied');
   try {
+    const canaryPath = 'docs/.lex-unauthenticated-self-test-canary.md';
     const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/mcp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jsonrpc: '2.0', id: 'lex-self-test-unauth-write', method: 'tools/call',
         params: { name: 'write_file', arguments: {
-          path: 'docs/.lex-unauthenticated-self-test-canary.md',
+          path: canaryPath,
           content: 'This file must never be written by an unauthenticated request.',
           message: 'unauthenticated self-test must be denied',
         } },
       }),
       signal: AbortSignal.timeout(5000),
     });
-    const denied = res.status === 401 || res.status === 403;
-    results.push(`  ${denied ? '✓' : '✗'} unauthenticated write returned HTTP ${res.status} (expected 401/403)`);
+    let mcpChallenge = false;
+    if (res.status === 200) {
+      const body = await res.json() as {
+        result?: { isError?: boolean; content?: Array<{ text?: string }> };
+        _meta?: Record<string, unknown>;
+      };
+      const challenges = body._meta?.['mcp/www_authenticate'];
+      const hasChallenge = Array.isArray(challenges)
+        && challenges.some(value => typeof value === 'string' && value.includes('invalid_token'));
+      const hasAuthMessage = body.result?.content?.some(item => item.text?.includes('Authentication required')) ?? false;
+      mcpChallenge = body.result?.isError === true && hasChallenge && hasAuthMessage;
+    }
+    const denied = res.status === 401 || res.status === 403 || mcpChallenge;
+    results.push(`  ${denied ? '✓' : '✗'} unauthenticated write rejected via ${mcpChallenge ? 'MCP OAuth challenge' : `HTTP ${res.status}`}`);
+
+    const canaryCheck = await read_file({ path: canaryPath });
+    const sideEffectAbsent = canaryCheck.includes('Error: 404');
+    results.push(`  ${sideEffectAbsent ? '✓' : '✗'} unauthenticated write side effect absent`);
   } catch (e) { results.push(`  ✗ MCP authentication check failed: ${String(e)}`); }
 
   const failures = results.filter(line => line.includes('✗')).length;
