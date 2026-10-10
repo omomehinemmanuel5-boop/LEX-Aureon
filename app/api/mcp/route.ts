@@ -718,7 +718,7 @@ export async function POST(req: Request) {
     try {
       await runZTrajMigrations();
       const clientSessionId = (args.session_id as string | undefined)
-        ?? `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+        ?? defaultMcpSessionId(actorId);
       const sessionId = profile === 'public' ? `${ownerId}:${clientSessionId}` : clientSessionId;
       if (!(await ensureCanonicalTrajectoryState(sessionId))) {
         return NextResponse.json({
@@ -737,7 +737,7 @@ export async function POST(req: Request) {
 
     try {
       const clientSessionId = (args.session_id as string | undefined)
-        ?? `mcp-${new Date().toISOString().slice(0, 10)}-${ipHash(req)}`;
+        ?? defaultMcpSessionId(actorId);
       // Public sessions are namespaced by API-key identity. A caller-supplied
       // session_id is only a label, never an authorization credential.
       const sessionId = profile === 'public' ? `${ownerId}:${clientSessionId}` : clientSessionId;
