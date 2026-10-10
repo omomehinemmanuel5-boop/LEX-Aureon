@@ -34,20 +34,13 @@
  *              an optional `repo` parameter. Defaults to the frontend repo.
  *              Set repo: BENCHMARK_REPO to target Lexaureon-Benchmark.
  *
- * fix (2026-07-11) — GOVERNED WRITE PATH, DELIBERATELY SEPARATE FROM write_file:
- * discovered that this MCP server's actual dispatch (app/api/mcp/route.ts ->
- * TOOL_REGISTRY) has never routed through lib/agents/tool_interceptor.ts,
- * despite lib/lex_crs_agent/tools/file-operations.ts's own docstring claiming
- * "All operations are measured by CRS and gated by tool-proxy" — that file is
- * dead code, never imported into TOOL_REGISTRY. Every write_file call all
- * session has been an ungoverned direct PUT to the GitHub Contents API.
- *
- * write_file_governed adds interceptToolCall() (the REAL, already-built
- * tool-call governor — kernel-informed thresholds, injection detection,
- * slow-drip/cumulative sigma_viol tracking, tool_receipts audit trail) in
- * front of the identical commit logic write_file already uses — as a NEW,
- * additive tool, not a replacement. write_file is untouched and still works
- * exactly as before.
+ * Historical note (2026-10): the old implementation had a separate
+ * write_file_governed path because the MCP dispatcher did not consistently
+ * apply the interceptor. The dispatcher now applies the constitutional
+ * executor and centralized action-approval policy to all registered tools,
+ * including write_file and patch_file. write_file_governed is a deprecated
+ * compatibility alias; do not invoke registry handlers outside the governed
+ * MCP dispatcher.
  *
  * feat (2026-07-11) — SELF-REFLECTION: self_reflect lets the agent read back
  * its own tool_receipts history and compute real aggregate statistics — see
