@@ -391,33 +391,44 @@ export async function POST(req: Request) {
   }
 
   if (method === 'tools/list') {
-    // Tool discovery is intentionally public. Authentication belongs at the
-    // execution boundary, not the catalog boundary: ChatGPT and other MCP
-    // clients must be able to complete discovery before a user credential is
-    // available. No tool is executed by this branch and no secret is exposed.
+    // Claude can otherwise treat a successful unauthenticated catalog request
+    // as a completed connection and never launch OAuth. Require a valid
+    // credential here so clients receive the standard 401 resource-metadata
+    // challenge and can start sign-in before accepting the tool catalog.
     const operator = isOperator(req);
     let profile: McpAccessProfile = 'public';
+    let authenticated = operator;
     if (operator) {
       profile = 'operator';
     } else {
       const sessionToken = extractSessionToken(req);
       if (sessionToken) {
         const session = await validateMcpSession(sessionToken);
-        if (session.valid) profile = profileForApiKey(session.key.plan);
+        if (session.valid) {
+          profile = profileForApiKey(session.key.plan);
+          authenticated = true;
+        }
       } else {
         const apiKey = extractApiKey(req);
         if (apiKey?.startsWith('lex_at_')) {
           const oauth = await resolveAccessToken(apiKey);
           if (oauth.valid) {
             const oauthKey = await getApiKeyById(oauth.keyId);
-            if (oauthKey) profile = profileForApiKey(oauthKey.plan);
+            if (oauthKey) {
+              profile = profileForApiKey(oauthKey.plan);
+              authenticated = true;
+            }
           }
         } else if (apiKey) {
           const keyCheck = await validateApiKey(apiKey);
-          if (keyCheck.valid) profile = profileForApiKey(keyCheck.key?.plan);
+          if (keyCheck.valid) {
+            profile = profileForApiKey(keyCheck.key?.plan);
+            authenticated = true;
+          }
         }
       }
     }
+    if (!authenticated) return unauthorized(id);
     const allTools = [
       ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
       ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
