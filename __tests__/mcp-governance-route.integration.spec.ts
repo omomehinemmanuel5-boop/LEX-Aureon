@@ -341,6 +341,27 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(executedArgs.approval_token).toBe('approval-token');
   });
 
+  it('keeps default governance-session binding stable when the proxy IP changes', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const actionArgs = { path: 'README.md', content: 'test', message: 'test' };
+
+    for (const [index, ip] of ['198.51.100.10', '203.0.113.9'].entries()) {
+      const response = await POST(request({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: { name: 'write_file', arguments: actionArgs },
+        id: index + 1,
+      }, { 'x-forwarded-for': ip }));
+      expect(response.status).toBe(200);
+    }
+
+    expect(createGovernanceApprovalToken).toHaveBeenCalledTimes(2);
+    const sessionIds = createGovernanceApprovalToken.mock.calls.map(([input]) => input.sessionId);
+    expect(sessionIds[0]).toBe(sessionIds[1]);
+  });
+
   it('lets a private-test key authorize a consequential action under its own identity and quota', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
