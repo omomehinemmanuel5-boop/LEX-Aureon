@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   const codeChallenge = decode('code_challenge');
   const apiKey = String(form.get('api_key') ?? '');
 
-  if (!clientId || !redirectUri || !state || resource !== MCP_RESOURCE || !apiKey) {
+  if (!clientId || !redirectUri || !state || !isMcpResource(resource) || !apiKey) {
     return new NextResponse('Invalid authorization request', { status: 400 });
   }
 
