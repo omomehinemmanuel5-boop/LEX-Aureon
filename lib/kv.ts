@@ -139,14 +139,14 @@ const LAW_ATTACK_SIGNAL: Record<string, { sev: number; dir: [number, number, num
   attack_vector_disclosure: { sev: 0.9, dir: [-0.5, -0.0, -0.5] },
 };
 
-// ── Health Band — single source of truth ─────────────────────────────────────
-// Boundaries: TAU_LYP (0.08), TAU_RECOVERY (0.15), and 0.25 (optimal ceiling)
-// Aligned with Lyapunov stability analysis and governor mode transitions.
+// ── Health Band ──────────────────────────────────────────────────────────────
+// Critical begins below the constitutional floor (0.05); TAU_LYP (0.08) remains
+// the separate Lyapunov penalty threshold used by stress accounting.
 export function deriveHealthBand(m: number): string {
-  if (m >= 0.25)          return 'OPTIMAL';   // governor suppresses; V ≈ pure log barrier
-  if (m >= TAU_RECOVERY)  return 'ALERT';     // above recovery floor, approaching optimal
-  if (m >= TAU_LYP)       return 'STRESSED';  // Lyapunov penalty active, nudge/recovery mode
-  return 'CRITICAL';                           // near CBF floor, correction imminent or active
+  if (m >= 0.25)          return 'OPTIMAL';
+  if (m >= TAU_RECOVERY)  return 'ALERT';
+  if (m >= TAU_FLOOR)     return 'STRESSED';
+  return 'CRITICAL';
 }
 
 // ── Z-Traj Governor Types ─────────────────────────────────────────────────────
