@@ -127,7 +127,7 @@ export async function runSelfReflection(): Promise<SelfReflectionResult | null> 
   if (denied_blocked   > 0) parts.push(`${denied_blocked} denied against a hardcoded invariant.`);
   if (denied_locked    > 0) parts.push(`${denied_locked} denied due to session lock (slow-drip protection).`);
   parts.push(`Mean constitutional state across approved calls: C=${avg_c.toFixed(3)} R=${avg_r.toFixed(3)} S=${avg_s.toFixed(3)} M=${avg_m.toFixed(3)}. Minimum M observed: ${min_m.toFixed(3)}.`);
-  if (max_sigma_viol >= 0.5) parts.push(`Session lock threshold (sigma_viol >= 0.5) was reached at least once in this period.`);
+  if (max_sigma_viol >= 0.25) parts.push(`Session lock threshold (sigma_viol >= 0.25) was reached at least once in this period.`);
 
   const summary = parts.join(' ');
 
