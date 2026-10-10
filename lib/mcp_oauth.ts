@@ -17,8 +17,19 @@ function hash(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 function validRedirectUri(uri: string): boolean {
-  return uri === 'https://chatgpt.com/connector_platform_oauth_redirect'
-    || /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]+$/.test(uri);
+  // OAuth clients register their exact callback URI before authorization.
+  // Support arbitrary HTTPS callbacks (Claude, ChatGPT, and other MCP clients)
+  // while allowing HTTP only for native-app loopback redirects.
+  try {
+    const parsed = new URL(uri);
+    if (parsed.username || parsed.password || parsed.hash) return false;
+    if (parsed.protocol === 'https:') return Boolean(parsed.hostname);
+    if (parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+  } catch {
+    return false;
+  }
 }
 
 export async function initMcpOAuthSchema(): Promise<void> {
