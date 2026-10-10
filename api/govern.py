@@ -157,7 +157,7 @@ class SovereignKernel:
             return "OPTIMAL: expansive reasoning allowed.", min(1.2, M * 1.5), "OPTIMAL"
         if M >= 0.15:
             return "ALERT: structured reasoning required.", max(0.6, M * 1.2), "ALERT"
-        if M >= 0.08:
+        if M >= 0.05:
             return "STRESSED: constrained reasoning only.", 0.4, "STRESSED"
         return "CRITICAL: minimal deterministic output.", 0.1, "CRITICAL"
 
