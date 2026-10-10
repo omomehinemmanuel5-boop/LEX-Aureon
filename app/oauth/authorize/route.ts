@@ -72,6 +72,11 @@ export async function POST(req: Request) {
 
   const result = await createAuthorizationCode({ clientId, redirectUri, apiKey, scope, resource, codeChallenge });
   if ('error' in result) {
+    // Never redirect to an unregistered callback. The client/redirect pair is
+    // validated before any authorization code is issued.
+    if (result.error === 'invalid_client') {
+      return new NextResponse('OAuth client or redirect URI is not registered', { status: 400 });
+    }
     const description = result.error === 'invalid_api_key' ? 'The Lex API key was invalid, expired, or exhausted.' : 'The OAuth authorization request was rejected.';
     return redirectError(redirectUri, state, 'access_denied', description);
   }
