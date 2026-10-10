@@ -638,7 +638,7 @@ export async function run_governance({
       refusal_reasons: d.refusal_reasons ?? [],
       primary_refusal_reason: d.primary_refusal_reason ?? null,
       intervention_triggered: Boolean(d.intervention_triggered),
-      health_band: d.health_band ?? 'UNKNOWN',
+      health_band: stateInvariantValid ? (d.health_band ?? 'UNKNOWN') : 'INCONSISTENT',
       constitutional_state: {
         C: Number(C.toFixed(3)),
         R: Number(R.toFixed(3)),
