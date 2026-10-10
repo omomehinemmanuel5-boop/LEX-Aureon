@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createAuthorizationCode, isMcpResource, MCP_ISSUER, MCP_RESOURCE, MCP_SCOPE } from '@/lib/mcp_oauth';
+import { createAuthorizationCode, isMcpResource, MCP_ISSUER, MCP_SCOPE } from '@/lib/mcp_oauth';
 
 function html(body: string) {
   return new NextResponse(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Lex Aureon</title><style>body{font-family:system-ui;max-width:520px;margin:10vh auto;padding:24px}input{width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box}button{padding:12px 18px;border:0;border-radius:8px;cursor:pointer}small{color:#666}</style></head><body>${body}</body></html>`, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
