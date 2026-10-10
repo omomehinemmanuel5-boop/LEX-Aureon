@@ -41,7 +41,9 @@ on:
 # workflow — e.g. a manual dispatch overlapping the daily cron) via the same
 # group name below.
 concurrency:
-  group: lexbench-live-api-provider-quota
+  # PR validation is a tiny smoke test; keep it out of the full-suite mutex.
+  # Full/manual runs still share one lock to protect provider quotas.
+  group: ${{ github.event_name == 'pull_request' && format('lexbench-pr-smoke-{0}', github.event.pull_request.number) || 'lexbench-live-api-provider-quota' }}
   cancel-in-progress: false
 
 env:
@@ -148,11 +150,18 @@ jobs:
       - name: Determine total prompts and shards
         id: set-matrix
         run: |
+          EVENT_NAME="${{ github.event_name }}"
           LIMIT="${{ github.event.inputs.limit }}"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # Pull requests validate runner → aggregation with one prompt per
+            # benchmark. The expensive full suite remains an explicit dispatch.
+            LIMIT=1
+            echo "PR smoke-test mode: 1 prompt per benchmark, no live publish."
+          fi
           if [ -n "$LIMIT" ]; then
-            # Quick-test mode (manual dispatch only): a single shard whose size is
-            # the requested limit, so each benchmark runs just its first $LIMIT
-            # prompts. Fast end-to-end validation of run → aggregate → publish.
+            # Quick-test mode (PR smoke test or manual dispatch): a single shard
+            # whose size is the requested limit, so each benchmark runs just its
+            # first $LIMIT prompts. Quick tests never publish to the live site.
             echo "Quick-test mode: ${LIMIT} prompts per benchmark, single shard."
             echo "matrix={\"shard-index\":[0]}" >> $GITHUB_OUTPUT
             echo "shard-size=${LIMIT}" >> $GITHUB_OUTPUT
@@ -228,6 +237,9 @@ jobs:
   # Matches lexbench-extended.yml's same-day increase to the same value.
   run-lexbench:
     needs: determine-shards
+    # A skipped auth precheck is normal for PR events. Override GitHub's
+    # implicit success() so the matrix still runs when that dependency skipped.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -330,8 +342,8 @@ jobs:
           LINES=$(wc -l < all_results.jsonl 2>/dev/null || echo 0)
           echo "Total result rows: $LINES"
           if [ "$LINES" -eq 0 ]; then
-            echo "::warning::No shard results found — every shard may have failed. Skipping aggregate/publish."
-            exit 0
+            echo "::error::No shard results found. Refusing to report a green benchmark run without measured results."
+            exit 1
           fi
           npx tsx scripts/lexbench/aggregate-report.ts all_results.jsonl > summary.json
           echo "Summary:"
