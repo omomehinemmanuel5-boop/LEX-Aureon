@@ -81,6 +81,18 @@ describe('injectionSimilarity — natural-language shape gate', () => {
     expect(result.unclassified).toBe(false);
   });
 
+  it('classifies read-only database queries using the shared SQL operation policy', async () => {
+    const result = await measureToolCRS({
+      id: 'query-db-read', name: 'query_database',
+      arguments: { sql: 'SELECT session_id FROM z_traj LIMIT 1' },
+      session_id: 'test-session', task_context: 'Read using query_database',
+    });
+
+    expect(result.risk_level).toBe('LOW');
+    expect(result.blocked_pattern).toBeNull();
+    expect(result.unclassified).toBe(false);
+  });
+
   it('classifies registered access-control changes as high risk rather than unclassified', async () => {
     const result = await measureToolCRS({
       id: 'access-change', name: 'change_access',
