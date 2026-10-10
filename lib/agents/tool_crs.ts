@@ -777,6 +777,16 @@ function measureR(tool: ToolCallInput): { score: number; unclassified?: boolean 
   if (task.includes('read') && /write|create|modify|delete|patch/.test(name)) return { score: 0.25 };
   if (task.includes('list') && /write|delete|modify|patch/.test(name)) return { score: 0.25 };
 
+  // Database inspection is governed by the SQL statement, not the tool name.
+  // Reuse the gateway's single-statement classifier so a SELECT/CTE receives
+  // read alignment, while a mutating/invalid statement cannot inherit that score.
+  if (name === 'query_database') {
+    const operation = classifyDatabaseOperation(String(tool.arguments.sql ?? ''));
+    const destructiveIntent = /\b(write|create|modify|update|delete|drop|alter|insert|truncate)\b/.test(task);
+    if (operation === 'read') return { score: destructiveIntent ? 0.25 : 0.85 };
+    if (/\b(read|query|inspect|check|verify|select)\b/.test(task)) return { score: 0.25 };
+  }
+
   // Known read-only tools do not all contain read/get/list/search in their
   // names (e.g. run_self_test, self_reflect, narrate_origin). Once explicit
   // task/tool mismatches above have been checked, classify these by their
