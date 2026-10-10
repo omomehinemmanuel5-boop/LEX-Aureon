@@ -350,6 +350,9 @@ jobs:
           cat summary.json
 
       - name: Run regression check
+        # PR smoke tests are structural checks, not representative regression
+        # samples. Run regression analysis only for full scheduled/manual suites.
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.event.inputs.limit == ''
         continue-on-error: true
         run: |
           if [ -f summary.json ] && [ -f data/lexbench-summary.json ]; then
@@ -406,9 +409,9 @@ jobs:
       # this path since it was introduced. `git add -f` overrides the ignore
       # rule for this one intentionally-tracked exception.
       - name: Commit summary to repo
-        # Don't overwrite the committed baseline with a tiny quick-test summary,
-        # and don't commit if nothing was produced this run.
-        if: github.event.inputs.limit == ''
+        # Never mutate the repository from pull_request runs. Only scheduled or
+        # explicit full manual runs may update the committed baseline.
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.event.inputs.limit == ''
         continue-on-error: true
         run: |
           if [ ! -f summary.json ]; then
