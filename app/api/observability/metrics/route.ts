@@ -101,7 +101,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const interventionRate   = totalCalls > 0 ? totalInterventions / totalCalls : 0;
 
     let healthStatus: MetricsResponse['health_status'] = 'OPTIMAL';
-    if      (interventionRate > 0.1  || avgMAfter < 0.08) healthStatus = 'CRITICAL';
+    if      (interventionRate > 0.1  || avgMAfter < 0.05) healthStatus = 'CRITICAL';
     else if (interventionRate > 0.05 || avgMAfter < 0.15) healthStatus = 'STRESSED';
     else if (interventionRate > 0.01 || avgMAfter < 0.25) healthStatus = 'ALERT';
 
