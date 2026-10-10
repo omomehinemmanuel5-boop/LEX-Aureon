@@ -715,11 +715,20 @@ export async function get_vercel_logs({ limit = 1 }: { limit?: number }): Promis
     );
     if (!res.ok) return `Error: ${res.status}`;
     const d = await res.json() as {
-      deployments?: Array<{ uid: string; state: string; url: string }>
+      deployments?: Array<{
+        id?: string; uid?: string; state?: string; readyState?: string;
+        status?: string; url: string; target?: string;
+        meta?: { githubCommitSha?: string; githubCommitMessage?: string; githubCommitRef?: string };
+      }>
     };
-    return (d.deployments ?? []).map(dep =>
-      `Latest: ${dep.uid} | ${dep.state} | ${dep.url}`
-    ).join('\n') || 'No deployments found.';
+    return (d.deployments ?? []).map(dep => {
+      const id = dep.id ?? dep.uid ?? 'unknown-id';
+      const state = dep.readyState ?? dep.state ?? dep.status ?? 'unknown-state';
+      const target = dep.target ? ` target=${dep.target}` : '';
+      const commit = dep.meta?.githubCommitSha ? ` commit=${dep.meta.githubCommitSha.slice(0, 10)}` : '';
+      const ref = dep.meta?.githubCommitRef ? ` ref=${dep.meta.githubCommitRef}` : '';
+      return `Deployment: ${id} | ${state}${target}${ref}${commit} | ${dep.url}`;
+    }).join('\n') || 'No deployments found.';
   } catch (e) { return `Error: ${String(e)}`; }
 }
 
