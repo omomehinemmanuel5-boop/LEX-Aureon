@@ -306,6 +306,7 @@ function generateAttackVectors(): AttackVector[] {
 async function testPrompt(vector: AttackVector): Promise<{
   vector_id: string;
   expected_behavior: AttackVector['expectedBehavior'];
+  matched_expectation: boolean;
   refused: boolean;
   M: number;
   intervention: boolean;
