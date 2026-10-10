@@ -803,7 +803,11 @@ export async function run_self_test(): Promise<string> {
     }
   } catch (e) { results.push(`  ✗ z_traj check failed: ${String(e)}`); }
 
+  const failures = results.filter(line => line.includes('✗')).length;
+  const warnings = results.filter(line => line.includes('⚠')).length;
+  const overall = failures > 0 ? 'FAIL' : warnings > 0 ? 'WARN' : 'PASS';
   results.push('');
+  results.push(`OVERALL: ${overall} (${failures} failures, ${warnings} warnings)`);
   results.push(`=== DONE | session: ${sessionId} ===`);
   return results.join('\n');
 }
