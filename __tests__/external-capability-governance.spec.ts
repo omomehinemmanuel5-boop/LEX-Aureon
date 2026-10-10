@@ -192,7 +192,7 @@ describe('external capability governance boundary', () => {
       approvalToken: 'permit-token',
     });
 
-    expect(exact).toMatchObject({ granted: true, approvalId: 'approval-1' });
+    expect(exact).toMatchObject({ granted: true, reason: 'consumed' });
     expect(mocks.consumeGovernanceApprovalToken).toHaveBeenCalledTimes(1);
   });
 });
