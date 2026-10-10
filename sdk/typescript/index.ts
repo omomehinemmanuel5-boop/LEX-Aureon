@@ -98,6 +98,25 @@ export class LexAureonClient {
           signal: AbortSignal.timeout(this.timeout),
         });
 
+        // A 429 from the API is an admission/rate-limit response and is safe
+        // to retry only when the server explicitly supplies Retry-After.
+        // A 5xx or transport timeout may happen after governance state and a
+        // receipt were committed, so replaying this POST can duplicate a turn.
+        if (response.status === 429 && attempt < this.retries - 1) {
+          const retryAfter = response.headers.get('Retry-After');
+          if (retryAfter !== null) {
+            const seconds = Number(retryAfter);
+            const parsedDate = Date.parse(retryAfter);
+            const delayMs = Number.isFinite(seconds) && seconds >= 0
+              ? seconds * 1000
+              : Number.isFinite(parsedDate) ? Math.max(0, parsedDate - Date.now()) : null;
+            if (delayMs !== null) {
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              continue;
+            }
+          }
+        }
+
         if (!response.ok) {
           const error = await response.text();
           throw new Error(`HTTP ${response.status}: ${error}`);
@@ -106,10 +125,9 @@ export class LexAureonClient {
         return (await response.json()) as GovernanceResponse;
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));
-        if (attempt < this.retries - 1) {
-          // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-        }
+        // Do not blindly replay stateful POSTs after transport or server errors.
+        // The caller must verify the receipt/session state before retrying.
+        break;
       }
     }
 
