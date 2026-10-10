@@ -276,7 +276,7 @@ function CRSBar({ c, r, s, m }: { c: number; r: number; s: number; m: number }) 
    CRS DELTA — before → after governance
 ───────────────────────────────────────────────────────────────────── */
 function mColorOf(m: number): string {
-  return m < 0.08 ? '#ef4444' : m < 0.15 ? G.S : G.R;
+  return m < 0.05 ? '#ef4444' : m < 0.15 ? G.S : G.R;
 }
 
 function CRSDelta({ before, after }: {
