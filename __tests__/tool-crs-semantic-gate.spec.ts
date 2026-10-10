@@ -13,7 +13,7 @@ vi.mock('../lib/lex_memory', () => ({
   embedTextWithProvider,
 }));
 
-import { injectionSimilarity, measureToolCRS } from '../lib/agents/tool_crs';
+import { injectionSimilarity, isBenignPolicyExplanation, measureToolCRS } from '../lib/agents/tool_crs';
 
 describe('injectionSimilarity — natural-language shape gate', () => {
   beforeEach(() => {
