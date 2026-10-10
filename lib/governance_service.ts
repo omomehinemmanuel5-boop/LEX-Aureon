@@ -17,7 +17,7 @@ import { getCachedKernel } from './kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from './kernel_bridge';
 import { advanceRecoveryPlane, type RecoveryPulseResult } from './agents/recovery_runtime';
 import { TAU, projectToSimplex } from './aureonics_core';
-import { getRecoveryMinimumM } from './recovery_margin';
+import { getRecoveryBaselineState, getRecoveryMinimumM } from './recovery_margin';
 import { incrementRuns } from './db';
 import {
   embedTextResolved, embedTextWithProvider, retrieveSimilar, buildMemoryContext,
@@ -191,10 +191,6 @@ export async function executeGovern(
       memoryPromise,
     ]);
   }
-  const recoveryBaselineM = savedState
-    ? Math.min(savedState.C, savedState.R, savedState.S)
-    : null;
-
   // ── Input-side threat signal ──────────────────────────────────────────────
   let threatSignal = 0;
   if (promptEmbedding.length && promptEmbedProvider) {
@@ -215,6 +211,16 @@ export async function executeGovern(
 
   // ── TypeScript kernel cycle ───────────────────────────────────────────────
   const kernel = simulation ? new SovereignKernel() : getCachedKernel(session_id, savedState);
+  // The recovery floor must also apply on the first turn, when no z_traj row
+  // exists yet. In that case the kernel's actual pre-turn state (normally
+  // neutral CRS) is the baseline; a missing DB row is not permission to skip
+  // the recovery guard.
+  const recoveryBaselineState = getRecoveryBaselineState(savedState, kernel.state);
+  const recoveryBaselineM = Math.min(
+    recoveryBaselineState.C,
+    recoveryBaselineState.R,
+    recoveryBaselineState.S,
+  );
   const result = await kernel.runCycle(
     prompt,
     memoryContext,
@@ -285,7 +291,7 @@ export async function executeGovern(
   const recoveryMinimumM = getRecoveryMinimumM(recoveryBaselineM);
   if (!simulation && recoveryBaselineM !== null
     && recoveryMinimumM !== null && postMeasurementM < recoveryMinimumM) {
-    kernel.state = { ...savedState! };
+    kernel.state = { ...recoveryBaselineState };
     result.state = { ...kernel.state };
     result.M = recoveryBaselineM;
     recoveryClamped = true;
