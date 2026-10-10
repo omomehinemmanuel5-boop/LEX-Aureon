@@ -109,20 +109,13 @@
  * shipped and checked afterward.
  *
  * Fallback chain (in order, generateWithFallback — the general default):
- *   1. Groq     llama-3.3-70b-versatile  — primary, best quality
- *   2. Groq     llama-3.1-8b-instant     — same provider; LOWER 6k TPM ceiling
- *                                          than the primary, capped accordingly
- *                                          (see 2026-07-13 fix note below)
- *   3. Cerebras gpt-oss-120b             — independent quota, high daily volume
- *   4. Groq     gpt-oss-120b             — same weights as #3, independent
- *                                          quota bucket on Groq's own
- *                                          infrastructure (see 2026-07-13 fix
- *                                          note below) — resilience, not a
- *                                          capability upgrade over #3
- *   5. Mistral  open-mistral-7b          — different provider, confirmed live
- *   6. Gemini   gemini-3.1-flash-lite    — confirmed live, cost-efficient
- *   7. Gemini   gemini-2.5-flash         — higher capability fallback
- *   8. Static constitutional response    — deterministic, no LLM
+ *   1. Groq     openai/gpt-oss-120b — primary production model
+ *   2. Groq     openai/gpt-oss-20b  — smaller, faster fallback
+ *   3. Cerebras gpt-oss-120b        — independent quota, same 120B weights
+ *   4. Mistral  open-mistral-7b     — different provider
+ *   5. Gemini   gemini-3.1-flash-lite — cost-efficient fallback
+ *   6. Gemini   gemini-2.5-flash    — higher-capability fallback
+ *   7. Static constitutional response — deterministic, no LLM
  */
 
 import { isOnCooldown, markCooldown } from './provider_cooldown';
@@ -150,35 +143,10 @@ const TIMEOUT_MS = 25_000;
 // stay short, so the cost/latency impact on typical turns is minimal.
 const MAX_OUTPUT_TOKENS = 8192;
 
-// fix (2026-07-13) — llama-3.1-8b-instant has a 6,000 TPM ceiling on Groq's
-// on_demand tier (confirmed directly against the API's own error response),
-// far below every other model in the chain. Groq counts requested max_tokens
-// toward that per-minute budget, so sending the global MAX_OUTPUT_TOKENS
-// (8192) to this model alone exceeds its entire TPM cap before a single
-// input token is counted — confirmed firing on nearly every call to this
-// model across two full benchmark runs' worth of Vercel logs (413 "Request
-// too large... Limit 6000, Requested 8xxx-9xxx", not intermittent). This
-// model sits as the 2nd link in generateWithFallback/generateGoverned's
-// chain specifically because the in-code comment assumed it had HIGHER TPM
-// headroom than the 70B primary — live evidence says the opposite; as
-// configured it was a guaranteed-dead fallback link, wasting one full
-// round-trip on every request that reached it instead of ever actually
-// catching one. Per-model cap, well under its real ceiling with margin for
-// input tokens, restores it as a genuine fallback rather than dead weight.
-//
-// fix (2026-07-14) — SAME BUG CLASS, SELF-INFLICTED THIS TIME: adding
-// reasoning_effort (see GPT_OSS_REASONING_EFFORT below) made openai/gpt-oss-120b
-// on Groq hit the identical failure — confirmed directly in Vercel logs from
-// the benchmark run that tested this change: "413 Request too large...
-// Limit 8000, Requested 9083-9126" on nearly every call. Groq's real TPM
-// ceiling for THIS model is 8000, and reasoning tokens count against the
-// same max_tokens budget as the final answer — the previous global default
-// (8192) was already at the model's ceiling with zero room for reasoning
-// tokens or input, guaranteeing overflow the moment reasoning_effort asked
-// the model to spend tokens thinking before answering. That benchmark run's
-// results are not a valid read on reasoning_effort's real effect: this
-// model was a dead fallback link for nearly the entire run, same as FAST
-// was before its fix above.
+// Keep reasoning-model completion budgets below Groq's TPM ceiling: requested
+// output tokens count toward the limit before input tokens are considered.
+// GPT-OSS uses reasoning tokens as well as visible output, so a conservative
+// 4,000-token cap avoids the guaranteed 413 failures seen with the old 8,192 cap.
 function maxTokensFor(model: string): number {
   if (model === MODELS.FAST) return 2048;
   if (isReasoningModel(model)) return 4000;
@@ -204,38 +172,19 @@ function maxTokensFor(model: string): number {
 const GPT_OSS_REASONING_EFFORT: 'low' | 'medium' | 'high' = 'medium';
 
 function isReasoningModel(model: string): boolean {
-  return model === MODELS.CEREBRAS || model === MODELS.GROQ_OSS;
+  return model === MODELS.CEREBRAS || model === MODELS.PRIMARY || model === MODELS.FAST;
 }
 
 export const MODELS = {
-  PRIMARY: 'llama-3.3-70b-versatile',
-  FAST: 'llama-3.1-8b-instant',
+  // Groq deprecated both Llama model IDs on 2026-08-16. Use documented
+  // production replacements instead of guaranteed HTTP 404 fallback calls.
+  PRIMARY: 'openai/gpt-oss-120b',
+  FAST: 'openai/gpt-oss-20b',
   CEREBRAS: 'gpt-oss-120b', // verified against this account's live GET /v1/models — see file header
-  // fix (2026-07-13): same underlying model as CEREBRAS above, but hosted on
-  // GROQ's infrastructure instead — an independent quota bucket for the
-  // exact model Groq's own deprecation notices confirm they've consolidated
-  // Kimi K2, Qwen3-32B, Llama 4 Scout, and DeepSeek-R1-Distill-70B users onto
-  // as of mid-2026 (console.groq.com/docs/deprecations), so this is Groq's
-  // current recommended model, not a guess. NOT a capability upgrade over
-  // CEREBRAS's gpt-oss-120b (same weights) — this is purely resilience: if
-  // Cerebras is in cooldown/exhausted, Groq's copy of the same model can
-  // still catch the request, and vice versa, rather than falling straight
-  // through to a smaller/different model.
-  GROQ_OSS: 'openai/gpt-oss-120b',
   MISTRAL: 'open-mistral-7b',
   GEMINI_LITE: 'gemini-3.1-flash-lite',
   GEMINI_FULL: 'gemini-2.5-flash',
-  // gemini-3.6-flash — GA 2026-07-21 (generativelanguage v1beta; 1M ctx, 64k
-  // out, thinking + tools). NOT yet wired into the production fallback chain:
-  // it is a PAID-tier model ($1.50/$7.50 per M tokens vs the flash-lite free
-  // tier), and swapping a base model is the exact class of change the file
-  // header flags as a past safety regression — so it is trialed via a live
-  // smoke test (scripts/try-gemini-36.ts) first, and any promotion into the
-  // chain is a separate, benchmarked decision. tryGemini() is model-agnostic,
-  // so no API-shape change is needed to use it.
-  GEMINI_FLASH_36: 'gemini-3.6-flash',
-  QWEN: 'qwen-2.5-72b-instruct', // Placeholder for future Qwen integration
-};
+
 
 // fix (2026-07-10): tag every provider failure with a reason so Vercel logs
 // (filterable on '[llm_provider]') show exactly which provider failed, with
@@ -410,7 +359,6 @@ export async function generateWithFallback(
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
-    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
@@ -481,7 +429,6 @@ export async function generateGoverned(
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
-    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
@@ -507,7 +454,6 @@ export async function generateRewrite(
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
-    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
@@ -550,7 +496,6 @@ export async function generateJudge(
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
     { provider: 'cerebras', model: MODELS.CEREBRAS,    fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
-    { provider: 'groq',     model: MODELS.GROQ_OSS,    fn: () => tryGroq(messages, MODELS.GROQ_OSS) },
     { provider: 'groq',     model: MODELS.FAST,        fn: () => tryGroq(messages, MODELS.FAST) },
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'mistral',  model: MODELS.MISTRAL,     fn: () => tryMistral(messages) },
