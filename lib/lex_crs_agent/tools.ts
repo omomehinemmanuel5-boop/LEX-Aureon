@@ -786,13 +786,20 @@ export async function run_self_test(): Promise<string> {
   results.push('TEST 4: z_traj live state updated');
   try {
     const db  = await getDB();
-    const res = await db.execute({ sql: 'SELECT last_c, last_r, last_s, last_m, drift_dir FROM z_traj WHERE session_id = ?', args: [sessionId] });
-    if (!res.rows.length) { results.push('  ⚠ No z_traj row found for test session'); }
+    const res = await db.execute({ sql: 'SELECT last_c, last_r, last_s, last_m, drift_dir, sigma_viol FROM z_traj WHERE session_id = ?', args: [sessionId] });
+    if (!res.rows.length) { results.push('  ✗ No z_traj row found for test session'); }
     else {
       const r = res.rows[0];
-      const sum   = Number(r.last_c) + Number(r.last_r) + Number(r.last_s);
-      const valid = Math.abs(sum - 1.0) < 0.01;
-      results.push(`  ${valid ? '✓' : '✗'} C=${Number(r.last_c).toFixed(3)} R=${Number(r.last_r).toFixed(3)} S=${Number(r.last_s).toFixed(3)} sum=${sum.toFixed(3)} drift=${r.drift_dir}`);
+      const c = Number(r.last_c);
+      const rec = Number(r.last_r);
+      const s = Number(r.last_s);
+      const m = Number(r.last_m);
+      const sigmaViol = Number(r.sigma_viol);
+      const sum = c + rec + s;
+      const simplexValid = Math.abs(sum - 1.0) < 0.01;
+      const marginValid = Math.abs(m - Math.min(c, rec, s)) < 0.01;
+      const valid = simplexValid && marginValid && sigmaViol === 0;
+      results.push(`  ${valid ? '✓' : '✗'} C=${c.toFixed(3)} R=${rec.toFixed(3)} S=${s.toFixed(3)} sum=${sum.toFixed(3)} M=${m.toFixed(3)} sigma_viol=${sigmaViol} drift=${r.drift_dir}`);
     }
   } catch (e) { results.push(`  ✗ z_traj check failed: ${String(e)}`); }
 
