@@ -17,6 +17,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
     { name: 'run_recovery_canary', description: 'canary', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
+    { name: 'write_file', description: 'write', parameters: { type: 'object' } },
     { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
     { name: 'query_database', description: 'database', parameters: { type: 'object' } },
     { name: 'authorize_tool_action', description: 'authorize', parameters: { type: 'object' } },
