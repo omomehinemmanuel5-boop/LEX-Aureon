@@ -119,6 +119,7 @@ import { getZTraj }           from '@/lib/kv';
 import { MODELS } from '@/lib/llm_provider';
 import { decideRefusal } from '@/lib/refusal_decision';
 import { CANONICAL_REFUSAL } from '@/lib/refusals';
+import { resolveAnonymousChatIdentity } from '@/lib/anonymous_chat_identity';
 
 function sse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -140,9 +141,19 @@ export async function POST(req: Request) {
   try { body = await req.json(); }
   catch { return new Response('Invalid JSON', { status: 400 }); }
 
-  const { prompt, session_id, turn = 1, identity_mode = 'full' } = body;
-  if (!prompt?.trim() || !session_id?.trim())
+  const { prompt, session_id: clientSessionId, turn = 1, identity_mode = 'full' } = body;
+  if (!prompt?.trim() || !clientSessionId?.trim())
     return new Response('prompt and session_id required', { status: 400 });
+  const anonymousIdentity = resolveAnonymousChatIdentity(req, clientSessionId);
+  if (!anonymousIdentity) return new Response('Anonymous memory identity unavailable', { status: 503 });
+  const { ownerId, sessionId: session_id } = anonymousIdentity;
+  const responseHeaders = new Headers({
+    'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive',
+  });
+  if (anonymousIdentity.setCookie) {
+    try { responseHeaders.append('Set-Cookie', anonymousIdentity.setCookie); }
+    catch { return new Response('Anonymous memory identity unavailable', { status: 503 }); }
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -178,8 +189,8 @@ export async function POST(req: Request) {
         let memoryContext = '';
         if (promptEmbedding.length) {
           const [sessionTurns, memories] = await Promise.all([
-            retrieveSessionHistory(session_id, '', 6),
-            retrieveSimilar(promptEmbedding, '', 5),
+            retrieveSessionHistory(session_id, ownerId, 6),
+            retrieveSimilar(promptEmbedding, ownerId, 5),
           ]);
           memoryContext = [buildSessionContext(sessionTurns), buildMemoryContext(memories)]
             .filter(Boolean)
@@ -227,7 +238,7 @@ export async function POST(req: Request) {
             const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
               embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
               getConstitutionalCentroid(promptEmbedProvider),
-              getSessionCentroid(session_id, ''),
+              getSessionCentroid(session_id, ownerId),
             ]);
             if (outputEmb.length) {
               const sr = kernel.applySelfReferentialMeasurement(outputEmb, promptEmbedding, constCentroid, sessCentroid);
@@ -402,7 +413,7 @@ export async function POST(req: Request) {
 
         const [receiptId] = await Promise.all([
           writeKernelReceipt(session_id, turn, { ...result, governed_output: governedOutput }),
-          promptEmbedding.length ? storeMemory({ owner_id: '', session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined, governed_response: governedOutput }) : Promise.resolve(),
+          promptEmbedding.length ? storeMemory({ owner_id: ownerId, session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined, governed_response: governedOutput }) : Promise.resolve(),
         ]);
 
         // fix (2026-07-11): canonical, persisted id wins — see file header.
@@ -422,5 +433,5 @@ export async function POST(req: Request) {
     },
   });
 
-  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' } });
+  return new Response(stream, { headers: responseHeaders });
 }
