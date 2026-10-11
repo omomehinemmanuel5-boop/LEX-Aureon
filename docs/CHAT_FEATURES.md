@@ -2,7 +2,7 @@
 
 **Route:** `/chat` → `app/chat/page.tsx`
 **Endpoint:** `POST /api/lex/govern/stream` (SSE) via `lib/use_lex_stream.ts`
-**Last verified against the implementation:** 2026-07-26
+**Last verified against the implementation:** 2026-10-11
 
 This document describes what the chat interface actually does, verified against
 the source rather than intended behaviour. Where something is a stub or unproven
@@ -36,7 +36,7 @@ The design rule that follows from it:
 | Code blocks | Rendered by `CodeViewer` (memoised). Individual blocks can be saved to the Sandbox. |
 | Empty state | Mode-aware prompt with an entry point into the Suggestions sheet. |
 
-**Session continuity.** As of 2026-07-26 the governed route injects two distinct
+**Session continuity.** As of 2026-10-11 the governed route injects two distinct
 retrievals before generation:
 
 - **Session transcript** — `retrieveSessionHistory(session_id, owner_id, 6)`, the
@@ -49,6 +49,19 @@ retrievals before generation:
 Both are fenced in an `<untrusted_recall>` block with excerpts capped at 280
 characters, because recalled text is user-authored and therefore a
 prompt-injection surface.
+
+Anonymous chat identity is derived only from the first-party `lex_anon` cookie,
+which contains a random 128-bit ID and is set `HttpOnly`, `Secure`,
+`SameSite=Lax` for one year. The owner is `anon:<id>`; the submitted session
+label is stored as `<owner_id>:<session_id>`. A missing or malformed cookie gets
+a fresh ID. Client-supplied owner fields and headers are ignored. Legacy
+anonymous history under unprefixed session keys or without an owner is
+intentionally inaccessible; there is no cross-owner fallback.
+
+Limits: clearing the cookie starts a new anonymous memory namespace, so prior
+history is no longer reachable from that browser. Anyone with access to the
+browser can read that browser's chat history. This is browser-scoped continuity,
+not an account-level backup or identity system.
 
 Known limits, stated plainly:
 - Semantic recall scans only the **300 most recent rows for the owner**. Older
