@@ -746,11 +746,24 @@ export async function POST(req: Request) {
       if (!canCallTool(profile, dispatchToolName)) return unauthorized(id);
     }
 
+    const clientSessionId = (args.session_id as string | undefined)
+      ?? defaultMcpSessionId(actorId);
+    const ownerSessionPrefix = `${ownerId}:`;
+    const diagnosticSessionTools = new Set([
+      'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+    ]);
+    if (!operator && diagnosticSessionTools.has(dispatchToolName)
+      && args.session_id !== undefined
+      && !clientSessionId.startsWith(ownerSessionPrefix)) {
+      return invalidParams(id ?? null, 'session_id must belong to the authenticated caller');
+    }
+    const sessionId = operator
+      ? clientSessionId
+      : clientSessionId.startsWith(ownerSessionPrefix)
+        ? clientSessionId
+        : `${ownerSessionPrefix}${clientSessionId}`;
     try {
       await runZTrajMigrations();
-      const clientSessionId = (args.session_id as string | undefined)
-        ?? defaultMcpSessionId(actorId);
-      const sessionId = profile === 'public' ? `${ownerId}:${clientSessionId}` : clientSessionId;
       if (!(await ensureCanonicalTrajectoryState(sessionId))) {
         return NextResponse.json({
           jsonrpc: '2.0',
@@ -767,12 +780,10 @@ export async function POST(req: Request) {
     }
 
     try {
-      const clientSessionId = (args.session_id as string | undefined)
-        ?? defaultMcpSessionId(actorId);
-      // Public sessions are namespaced by API-key identity. A caller-supplied
-      // session_id is only a label, never an authorization credential.
-      const sessionId = profile === 'public' ? `${ownerId}:${clientSessionId}` : clientSessionId;
-      const scopedArgs = profile === 'public'
+      // Non-operator sessions are namespaced by authenticated API-key identity,
+      // independent of plan/profile. A supplied label is never an authorization
+      // credential; already-canonical own-prefix IDs are accepted without doubling.
+      const scopedArgs = !operator
         ? { ...args, session_id: sessionId }
         : args;
       const runId = typeof args.run_id === 'string' ? args.run_id : undefined;
