@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
 import { recoverySnapshotFingerprint } from '../lib/agents/recovery_canary_evidence';
+import { readCanonicalGovernanceState } from '../lib/agents/canonical_governance_state';
 
 const { interceptToolCall, dbExecute } = vi.hoisted(() => ({
   interceptToolCall: vi.fn(),
@@ -158,6 +159,46 @@ describe('governed tool execution integration boundary', () => {
 
     expect(executions).toBe(2);
     expect(interceptToolCall).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows the read-only recovery canary through RESTORING without an approval token', async () => {
+    const probe = vi.fn(async () => 'CANARY_PROBE_OK');
+
+    const result = await executeGovernedToolStructured(
+      'run_recovery_canary',
+      { session_id: 'restoring-canary-session' },
+      probe,
+      'restoring-canary-session',
+    );
+
+    expect(result.approved).toBe(true);
+    expect(probe).toHaveBeenCalledOnce();
+    const canonical = await readCanonicalGovernanceState({
+      sessionId: 'restoring-canary-session', actorId: 'operator', capability: 'read',
+    });
+    expect(canonical.state.recoveryState).toBe('RESTORING');
+    expect(result.policy).toMatchObject({ decision: 'allow', requiresApproval: false });
+    expect(dbExecute.mock.calls.some(([query]) =>
+      typeof query === 'object'
+      && query !== null
+      && 'sql' in query
+      && String((query as { sql: unknown }).sql).includes('governance_approval_consumptions'),
+    )).toBe(false);
+  });
+
+  it('does not grant write authority from a passing canary without action approval', async () => {
+    const sessionId = 'canary-is-not-write-authority';
+    const args = { path: 'still-protected.ts', content: 'change' };
+    const write = vi.fn(async () => 'SHOULD_NOT_WRITE');
+    addPassingCanary(sessionId, { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
+
+    const result = await executeGovernedToolStructured(
+      'write_file', args, write, sessionId,
+    );
+
+    expect(result.approved).toBe(false);
+    expect(result.policy).toMatchObject({ decision: 'approval_required' });
+    expect(write).not.toHaveBeenCalled();
   });
 
   it('never executes a denied tool call', async () => {
