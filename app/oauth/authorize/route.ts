@@ -25,7 +25,7 @@ export async function GET(req: Request) {
   const responseType = p.get('response_type') ?? '';
   const scope = p.get('scope') ?? MCP_SCOPE;
   const state = p.get('state') ?? '';
-  const resource = p.get('resource') ?? '';
+  const resource = normalizeMcpResource(p.get('resource')) ?? '';
   const codeChallenge = p.get('code_challenge') ?? '';
   const codeChallengeMethod = p.get('code_challenge_method') ?? '';
 
