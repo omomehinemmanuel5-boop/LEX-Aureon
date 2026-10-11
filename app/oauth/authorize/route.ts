@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   const redirectUri = decode('redirect_uri');
   const scope = decode('scope') || MCP_SCOPE;
   const state = decode('state');
-  const resource = decode('resource');
+  const resource = normalizeMcpResource(decode('resource')) ?? '';
   const codeChallenge = decode('code_challenge');
   const apiKey = String(form.get('api_key') ?? '');
 
