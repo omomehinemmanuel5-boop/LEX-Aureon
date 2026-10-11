@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { exchangeAuthorizationCode, refreshAccessToken } from '@/lib/mcp_oauth';
+import { exchangeAuthorizationCode, normalizeMcpResource, refreshAccessToken } from '@/lib/mcp_oauth';
 
 const ALLOWED_ORIGINS = new Set([
   'https://chatgpt.com',
