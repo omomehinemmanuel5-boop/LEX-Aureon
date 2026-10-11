@@ -33,10 +33,9 @@ const READ_TOOLS = [
   'search_memory','fetch_page','curl','http_get','get_file','cat','head',
   'tail','grep','find','ls','dir','glob','read_json','parse_csv',
   'get_constitutional_state','get_trajectory_status','review_agent_action','query_database',
-  'simulate_agent_plan','explain_denial','declare_trajectory_plan',
-  'clear_trajectory_plan','get_build_status','get_workflow_run',
+  'simulate_agent_plan','explain_denial','get_build_status','get_workflow_run',
   'get_workflow_log','get_workflow_artifact','get_recent_receipts',
-  'search_code','check_github_token_scope','get_vercel_logs','run_self_test','run_recovery_canary',
+  'search_code','check_github_token_scope','get_vercel_logs','run_self_test',
   'self_reflect','query_database','preview_patch_file',
 ] as const;
 
@@ -58,6 +57,9 @@ const DESTRUCTIVE_TOOLS = [
 ] as const;
 
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
+  { name:'run_recovery_canary', capability:'write', approvalRequired:true, reversible:false, source:'mcp' },
+  { name:'declare_trajectory_plan', capability:'write', approvalRequired:true, reversible:false, source:'mcp' },
+  { name:'clear_trajectory_plan', capability:'write', approvalRequired:true, reversible:false, source:'mcp' },
   // Governance analysis is non-effectful: it evaluates a requested/hypothetical
   // action but does not execute that action. The target action's capability
   // remains independently governed before any execution path can proceed.

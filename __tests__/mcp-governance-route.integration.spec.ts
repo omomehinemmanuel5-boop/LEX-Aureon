@@ -218,13 +218,11 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(isOperatorSecret).toHaveBeenCalled();
   });
 
-  it('persists a private-test canary only after its governed receipt and exact snapshot are confirmed', async () => {
-    const key = { id: 'private-test-1', plan: 'private_test' };
-    validateApiKey.mockResolvedValue({ valid: true, key });
-    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+  it('persists an operator canary only after its governed receipt and exact snapshot are confirmed', async () => {
+    isOperatorSecret.mockReturnValue(true);
     const fingerprint = 'a'.repeat(64);
     const state = {
-      sessionId: 'canary-session', actorId: 'api_key:private-test-1',
+      sessionId: 'canary-session', actorId: 'operator',
       C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
       healthBand: 'OPTIMAL', recoveryState: 'RESTORING', sigmaViol: 0,
       toolCalls: 3, trajectoryAvailable: true, nStable: 3,
@@ -260,7 +258,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
     expect(executeGovernedTool).not.toHaveBeenCalled();
     expect(recordRecoveryCanaryEvidence).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'canary-session', actorId: 'api_key:private-test-1',
+      sessionId: 'canary-session', actorId: 'operator',
       stateFingerprint: fingerprint, receiptId: 'canary-test-receipt', status: 'passed',
     }));
     const result = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
@@ -272,13 +270,11 @@ describe('MCP constitutional dispatch boundary', () => {
   });
 
   it('does not activate a canary if the canonical snapshot changes before persistence', async () => {
-    const key = { id: 'private-test-1', plan: 'private_test' };
-    validateApiKey.mockResolvedValue({ valid: true, key });
-    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    isOperatorSecret.mockReturnValue(true);
     const probedFingerprint = 'a'.repeat(64);
     const currentFingerprint = 'b'.repeat(64);
     const currentState = {
-      sessionId: 'canary-race-session', actorId: 'api_key:private-test-1',
+      sessionId: 'canary-race-session', actorId: 'operator',
       C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
       healthBand: 'OPTIMAL', recoveryState: 'RESTORING', sigmaViol: 0,
       toolCalls: 3, trajectoryAvailable: true, nStable: 3,
@@ -317,7 +313,7 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
-  it('automatically issues an exact action-bound approval for private-test consequential calls', async () => {
+  it('does not automatically issue approvals for private-test consequential calls', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -331,17 +327,12 @@ describe('MCP constitutional dispatch boundary', () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(createGovernanceApprovalToken).toHaveBeenCalledWith(expect.objectContaining({
-      actorId: 'api_key:private-test-1',
-      sessionId: expect.stringMatching(/^mcp-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/),
-      toolName: 'write_file',
-      args: actionArgs,
-    }));
+    expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
     const executedArgs = executeGovernedTool.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(executedArgs.approval_token).toBe('approval-token');
+    expect(executedArgs.approval_token).toBeUndefined();
   });
 
-  it('keeps default governance-session binding stable when the proxy IP changes', async () => {
+  it('does not mint approval tokens for private-test keys when the proxy IP changes', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -357,13 +348,10 @@ describe('MCP constitutional dispatch boundary', () => {
       expect(response.status).toBe(200);
     }
 
-    expect(createGovernanceApprovalToken).toHaveBeenCalledTimes(2);
-    const approvalCalls = createGovernanceApprovalToken.mock.calls as unknown as Array<[{ sessionId: string }]>;
-    const sessionIds = approvalCalls.map(([input]) => input.sessionId);
-    expect(sessionIds[0]).toBe(sessionIds[1]);
+    expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
   });
 
-  it('lets a private-test key authorize a consequential action under its own identity and quota', async () => {
+  it('denies authorization from a private-test key without the operator secret', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -383,38 +371,14 @@ describe('MCP constitutional dispatch boundary', () => {
       id: 32,
     }));
 
-    expect(response.status).toBe(200);
-    expect(validateAndConsumeKey).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(401);
+    expect(validateAndConsumeKey).not.toHaveBeenCalled();
     expect(isOperatorSecret).toHaveBeenCalled();
-    expect(interceptToolCall).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'write_file',
-      arguments: actionArgs,
-      session_id: 'private-test-session',
-      actor_id: 'api_key:private-test-1',
-    }));
-    expect(createGovernanceApprovalToken).toHaveBeenCalledWith(expect.objectContaining({
-      actorId: 'api_key:private-test-1',
-      sessionId: 'private-test-session',
-      toolName: 'write_file',
-      args: actionArgs,
-    }));
-    const result = (response.body as unknown as {
-      result: {
-        approved: boolean;
-        approval_token: string;
-        content: Array<{ type: string; text: string }>;
-        structuredContent: Record<string, unknown>;
-      };
-    }).result;
-    expect(result.structuredContent).toMatchObject({ approved: true, approval_token: 'approval-token' });
-    expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(result.structuredContent) }]);
-    expect(result.structuredContent).toMatchObject({ approved: true, approval_token: 'approval-token' });
+    expect(interceptToolCall).not.toHaveBeenCalled();
+    expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
   });
-
   it('returns MCP content for a denied authorization decision without minting a token', async () => {
-    const key = { id: 'private-test-1', plan: 'private_test' };
-    validateApiKey.mockResolvedValue({ valid: true, key });
-    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    isOperatorSecret.mockReturnValue(true);
     interceptToolCall.mockResolvedValueOnce({
       approved: false,
       decision: 'DENIED_BLOCKED',

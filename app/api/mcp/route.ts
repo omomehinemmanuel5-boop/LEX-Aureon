@@ -514,6 +514,7 @@ export async function POST(req: Request) {
     // It is intentionally handled before ordinary tool execution so an
     // approval token cannot be self-issued by the governed tool it authorizes.
     if (toolName === 'authorize_tool_action') {
+      if (!operator) return unauthorized(id);
       if (!operator && profile !== 'operator') return unauthorized(id);
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
@@ -627,6 +628,7 @@ export async function POST(req: Request) {
     // static internal tool registry. They govern client-side adapters rather than
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
+      if (toolName === 'authorize_external_action' && !operator) return unauthorized(id);
       if (toolName === 'authorize_external_action' && !operator && profile !== 'operator') return unauthorized(id);
       if (!operator && (apiKey || sessionKeyId)) {
         const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
@@ -787,35 +789,7 @@ export async function POST(req: Request) {
       const executionArgs = dispatchToolName === 'preview_patch_file'
         ? Object.fromEntries(Object.entries(baseToolArgs).filter(([key]) => key !== 'approval_token'))
         : baseToolArgs;
-      let toolArgs = bindGovernanceToolSession(dispatchToolName, executionArgs, sessionId);
-      // Admin-issued private_test credentials are the trusted internal-agent
-      // route. Treat the authenticated consequential tool call itself as the
-      // operator's action intent and mint a short-lived, single-use approval
-      // bound to this actor, resolved session, tool, and exact arguments. This
-      // removes the separate authorize_tool_action round-trip for private-test
-      // clients without weakening public-key access or constitutional checks.
-      // An explicitly supplied token is never overwritten: invalid/stale tokens
-      // remain fail-closed and can be retried without the token if appropriate.
-      if (!operator && profile === 'operator' && typeof toolArgs.approval_token !== 'string') {
-        const capability = getToolCapability(dispatchToolName);
-        if (capability?.approvalRequired) {
-          try {
-            const approvalToken = createGovernanceApprovalToken({
-              actorId,
-              sessionId,
-              toolName: dispatchToolName,
-              args: toolArgs,
-            });
-            toolArgs = { ...toolArgs, approval_token: approvalToken };
-          } catch {
-            return NextResponse.json({
-              jsonrpc: '2.0',
-              error: { code: -32003, message: 'Private-test action approval could not be issued; authorization denied' },
-              id,
-            }, { status: 503 });
-          }
-        }
-      }
+      const toolArgs = bindGovernanceToolSession(dispatchToolName, executionArgs, sessionId);
       let runContext: AutonomousRunContext | undefined;
       if (runId && leaseToken && idempotencyKey) {
         const run = await getAutonomousRun(runId);
@@ -967,6 +941,7 @@ export async function POST(req: Request) {
         });
       }
 
+      if (dispatchToolName === 'run_recovery_canary' && !operator) return unauthorized(id);
       if (dispatchToolName === 'run_recovery_canary') {
         let rawProbeResult: string | undefined;
         const trackedCanaryHandler: ToolHandler = async (handlerArgs, signal) => {

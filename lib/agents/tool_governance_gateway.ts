@@ -108,7 +108,7 @@ interface GovernanceApprovalClaims {
 }
 
 function approvalSigningSecret(): string | undefined {
-  return process.env.LEX_APPROVAL_SIGNING_SECRET || process.env.AUDITOR_SECRET || undefined;
+  return process.env.LEX_APPROVAL_SIGNING_SECRET || undefined;
 }
 
 function encodeApprovalPart(value: unknown): string {
