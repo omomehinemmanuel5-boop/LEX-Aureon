@@ -143,7 +143,7 @@ describe('MCP constitutional dispatch boundary', () => {
   it('routes every exposed tool call through the constitutional executor', async () => {
     const tools = [
       ['run_governance', { prompt: 'test' }],
-      ['get_constitutional_state', { session_id: 'mine' }],
+      ['get_constitutional_state', { session_id: 'anonymous:mine' }],
     ] as const;
 
     for (const [name, args] of tools) {
@@ -420,16 +420,50 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
   });
 
-  it('namespaces public session IDs by the authenticated key', async () => {
+  it('accepts diagnostic session IDs already prefixed for the authenticated key', async () => {
     await POST(request({
       jsonrpc: '2.0',
       method: 'tools/call',
-      params: { name: 'get_constitutional_state', arguments: { session_id: 'shared-label' } },
+      params: { name: 'get_constitutional_state', arguments: { session_id: 'anonymous:shared-label' } },
       id: 3,
     }));
 
     const scopedArgs = executeGovernedTool.mock.calls[0]?.[1] as { session_id?: string };
     expect(scopedArgs.session_id).toBe('anonymous:shared-label');
+  });
+
+  it('gives two non-operator owners separate sessions for the same raw label', async () => {
+    for (const owner of ['owner-a', 'owner-b']) {
+      validateApiKey.mockResolvedValueOnce({ valid: true, key: { id: owner, plan: 'sovereign' } });
+      validateAndConsumeKey.mockResolvedValueOnce({ valid: true, key: { id: owner, plan: 'sovereign' } });
+      await POST(request({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: { name: 'run_governance', arguments: { prompt: 'hello', session_id: 'same-raw-session' } },
+        id: owner,
+      }));
+    }
+    const scopedSessions = executeGovernedTool.mock.calls.map(call =>
+      (call[1] as { session_id?: string }).session_id,
+    );
+    expect(scopedSessions).toEqual(['owner-a:same-raw-session', 'owner-b:same-raw-session']);
+  });
+
+  it('rejects a non-operator diagnostic read naming another owner session', async () => {
+    validateApiKey.mockResolvedValueOnce({ valid: true, key: { id: 'owner-a', plan: 'sovereign' } });
+    validateAndConsumeKey.mockResolvedValueOnce({ valid: true, key: { id: 'owner-a', plan: 'sovereign' } });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: { session_id: 'owner-b:private-session' } },
+      id: 'cross-owner-read',
+    }));
+    expect(response.status).toBe(200);
+    expect((response.body as { error?: { code?: number; message?: string } }).error).toMatchObject({
+      code: -32602,
+      message: expect.stringContaining('session_id must belong to the authenticated caller'),
+    });
+    expect(executeGovernedTool).not.toHaveBeenCalled();
   });
 
   it('binds run_governance to the resolved operator session when no session_id is supplied', async () => {
