@@ -429,11 +429,7 @@ export async function POST(req: Request) {
       }
     }
     if (!authenticated) return unauthorized(id);
-    const allTools = [
-      ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
-      ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
-      ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => ({ ...t, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
-    ];
+    const allTools = servedTools();
     return NextResponse.json({
       jsonrpc: '2.0',
       result: { tools: allTools.filter(t => toolsForProfile(profile, [t.name]).length > 0) },
