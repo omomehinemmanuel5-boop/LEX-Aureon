@@ -49,6 +49,17 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
   }
 
   const M = Math.min(current.last_c, current.last_r, current.last_s);
+  if (M >= CONSTITUTION.TAU_RECOVERY) {
+    return {
+      advanced: false,
+      stabilized: false,
+      state: 'RESTORING',
+      M,
+      nStable: current.n_stable,
+      velocity: current.velocity,
+      reason: 'No-op observations do not advance stability; only real state changes count.',
+    };
+  }
   if (M < TAU) {
     return {
       advanced: false,

@@ -74,7 +74,7 @@ describe('bounded recovery plane', () => {
     expect(Math.min(next.c, next.r, next.s)).toBeGreaterThanOrEqual(0.05 - 1e-9);
   });
 
-  it('records stationary recovery observations once M is above 0.15', async () => {
+  it('does not count no-op observations toward stability once M reaches 0.15', async () => {
     mocks.getZTraj.mockResolvedValue({
       session_id: 's',
       velocity: 0,
@@ -110,16 +110,13 @@ describe('bounded recovery plane', () => {
 
     const result = await advanceRecoveryPlane('s');
 
+    expect(result.advanced).toBe(false);
+    expect(result.stabilized).toBe(false);
     expect(result.state).toBe('RESTORING');
-    expect(result.reason).toContain('no passing canary is persisted');
-    expect(result.nStable).toBe(3);
+    expect(result.reason).toBe('No-op observations do not advance stability; only real state changes count.');
+    expect(result.nStable).toBe(2);
     expect(result.velocity).toBe(0);
-    expect(mocks.updateZTraj).toHaveBeenCalledWith(
-      's',
-      { c: 0.20, r: 0.40, s: 0.40 },
-      { c: 0.20, r: 0.40, s: 0.40 },
-      0,
-    );
+    expect(mocks.updateZTraj).not.toHaveBeenCalled();
   });
 
   it('does not mutate quarantined states below the hard floor', async () => {
