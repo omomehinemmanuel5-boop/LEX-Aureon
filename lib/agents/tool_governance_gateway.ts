@@ -13,6 +13,7 @@ export function classifyDatabaseOperation(sql: string): 'read' | 'write' | 'inva
     .replace(/^\s*(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/\s*)+/g, '')
     .trim();
   if (!normalized || normalized.includes(';')) return 'invalid';
+  if (/^with\b/i.test(normalized) && /\b(insert|update|delete|replace|drop|alter|create|pragma|attach|detach|vacuum)\b/i.test(normalized)) return 'write';
   if (/^(?:select|with)\b/i.test(normalized)) return 'read';
   return 'write';
 }
@@ -283,7 +284,7 @@ export function evaluateToolGovernance(input: {
   nowMs?: number;
 }): GovernancePolicyDecision {
   const risk = classifyGovernanceRisk(input.toolName, input.args);
-  const requiresApproval = getToolCapability(input.toolName)?.approvalRequired ?? risk !== 'read';
+  const requiresApproval = risk !== 'read' || (getToolCapability(input.toolName)?.approvalRequired ?? false);
   const reasons: string[] = [];
   if (!input.authorized) {
     reasons.push('Caller or capability scope does not authorize this tool.');
