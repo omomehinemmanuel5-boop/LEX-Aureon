@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
@@ -12,7 +12,9 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   isOperatorSecret: vi.fn(),
   interceptToolCall: vi.fn(async () => ({ approved: true, decision: 'approved', reason: 'allowed', receipt_id: 'approval-receipt' })),
   createGovernanceApprovalToken: vi.fn(() => 'approval-token'),
+  createApprovalRequest: vi.fn(async () => ({ requestId: 'a'.repeat(22), expiresAt: Date.now() + 900_000 })),
   definitions: [
+    { name: 'request_approval', description: 'request', parameters: { type: 'object' } },
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
     { name: 'run_recovery_canary', description: 'canary', parameters: { type: 'object' } },
@@ -55,6 +57,8 @@ vi.mock('@/lib/db', () => ({
   runZTrajMigrations: vi.fn(async () => {}),
 }));
 
+vi.mock('@/lib/approval_requests', () => ({ createApprovalRequest }));
+
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
   readCanonicalGovernanceState,
@@ -65,6 +69,7 @@ vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryE
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
   TOOL_REGISTRY: {
+    request_approval: toolFn,
     run_governance: toolFn,
     get_constitutional_state: toolFn,
     run_recovery_canary: toolFn,
@@ -175,6 +180,35 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(Array.isArray(payload.result.structuredContent)).toBe(false);
   });
 
+  it('cannot set an approval request status or owner through MCP arguments', async () => {
+    const key = { id: 'owner-a', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    executeGovernedTool.mockImplementation(async (_name, args, handler) =>
+      (handler as (input: Record<string, unknown>) => Promise<string>)(args as Record<string, unknown>));
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: {
+        name: 'request_approval',
+        arguments: {
+          tool_name: 'write_file',
+          arguments: { path: 'README.md', content: 'safe edit', message: 'test' },
+          status: 'approved', owner_id: 'victim', decided_by: 'client',
+        },
+      },
+      id: 'request-approval',
+    }));
+    expect(response.status).toBe(200);
+    expect(createApprovalRequest).toHaveBeenCalledWith({
+      ownerId: 'owner-a', toolName: 'write_file',
+      sessionId: expect.stringMatching(/^owner-a:/),
+      args: {
+        path: 'README.md', content: 'safe edit', message: 'test',
+        session_id: expect.stringMatching(/^owner-a:/),
+      },
+    });
+  });
+
   it('does not expose or execute infrastructure tools for public API keys', async () => {
     const listResponse = await POST(request({
       jsonrpc: '2.0',
@@ -183,6 +217,7 @@ describe('MCP constitutional dispatch boundary', () => {
     }));
     const listed = (listResponse.body as unknown as { result: { tools: Array<{ name: string }> } }).result.tools;
     expect(listed.map(tool => tool.name)).toEqual([
+      'request_approval',
       'run_governance',
       'get_constitutional_state',
       'discover_external_tool',

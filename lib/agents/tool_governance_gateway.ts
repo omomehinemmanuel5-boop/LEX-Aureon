@@ -93,7 +93,7 @@ export function redactGovernanceText(text: string): string {
 /** Stable hash for receipts and cache keys; raw arguments never enter the receipt text. */
 export function hashGovernanceArguments(args: Record<string, unknown>): string {
   const actionArgs = Object.fromEntries(Object.entries(args)
-    .filter(([key]) => key !== 'approval_token' && key !== 'approval_id'));
+    .filter(([key]) => !['approval_token', 'approval_id', 'approval_request_id'].includes(key)));
   return crypto.createHash('sha256').update(JSON.stringify(stableValue(actionArgs))).digest('hex');
 }
 

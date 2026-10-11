@@ -31,6 +31,8 @@ import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
+import { createApprovalRequest } from '@/lib/approval_requests';
+import { env } from '@/lib/env';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller.
 // Used for mcp_client_identity and rate limiting; it is deliberately NOT the
@@ -724,15 +726,16 @@ export async function POST(req: Request) {
         id,
       });
     }
-    const toolFn = resolveTool(dispatchToolName);
+    const resolvedToolFn = resolveTool(dispatchToolName);
 
-    if (!toolFn) {
+    if (!resolvedToolFn) {
       return NextResponse.json({
         jsonrpc: '2.0',
         error: { code: -32601, message: `Tool not found: ${toolName}` },
         id,
       });
     }
+    let toolFn: ToolHandler = resolvedToolFn;
 
     if (!operator && (apiKey || sessionKeyId)) {
       const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
@@ -783,6 +786,30 @@ export async function POST(req: Request) {
       // Non-operator sessions are namespaced by authenticated API-key identity,
       // independent of plan/profile. A supplied label is never an authorization
       // credential; already-canonical own-prefix IDs are accepted without doubling.
+      if (dispatchToolName === 'request_approval') {
+        toolFn = async requestArgs => {
+          const requestedTool = requestArgs.tool_name;
+          const proposedArgs = requestArgs.arguments;
+          if (typeof requestedTool !== 'string' || !isRecord(proposedArgs)) {
+            return 'Error: tool_name and an arguments object are required.';
+          }
+          if (requestedTool === 'request_approval') return 'Error: request_approval cannot approve itself.';
+          try { requireKnownToolCapability(requestedTool); } catch {
+            return 'Error: the requested tool is not registered as a governed capability.';
+          }
+          if (!canCallTool(profile, requestedTool)) return 'Error: this caller is not authorized for the requested tool.';
+          const rate = await checkRateLimit(`approval-request:${ownerId}`, 5, 60 * 60);
+          if (rate.storageError) throw new Error('Approval request admission is unavailable.');
+          if (!rate.allowed) return 'Error: approval request rate limit reached; try again later.';
+          const exactArgs = { ...proposedArgs, session_id: sessionId };
+          const created = await createApprovalRequest({ ownerId, sessionId, toolName: requestedTool, args: exactArgs });
+          return JSON.stringify({
+            request_id: created.requestId,
+            expires_at: new Date(created.expiresAt).toISOString(),
+            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+          });
+        };
+      }
       const scopedArgs = !operator
         ? { ...args, session_id: sessionId }
         : args;
@@ -830,7 +857,7 @@ export async function POST(req: Request) {
       // per-call constitutional authorization as before. Sessions that
       // never declare a plan are completely unaffected: falls straight
       // through to the original bare path.
-      const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan']);
+      const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan', 'request_approval']);
       // Diagnostics must remain reachable when a plan is stale, locked, or
       // out of sequence. They still pass through executeGovernedTool below,
       // so authentication, capability, and constitutional checks are intact;
@@ -894,6 +921,7 @@ export async function POST(req: Request) {
           runContext,
           actorId,
           trajectoryController.signal,
+          ownerId,
           ownerId,
         ), 30_000, trajectoryController);
 
@@ -968,6 +996,7 @@ export async function POST(req: Request) {
           args.task_context as string | undefined,
           actorId,
           controller.signal,
+          ownerId,
           ownerId,
         ), 30_000, controller);
 
@@ -1085,6 +1114,7 @@ export async function POST(req: Request) {
         args.task_context as string | undefined,
         actorId,
         controller.signal,
+        ownerId,
         ownerId,
       ), 30_000, controller);
 
