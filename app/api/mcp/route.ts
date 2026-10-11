@@ -230,9 +230,9 @@ const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
 
 function servedTools() {
   return [
-    ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
-    ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
-    ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => ({ ...t, securitySchemes: [{ type: 'oauth2', scopes: ['mcp'] }] })),
+    ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
+    ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    ...EXTERNAL_CAPABILITY_DEFINITIONS,
   ];
 }
 
