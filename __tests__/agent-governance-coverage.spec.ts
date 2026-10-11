@@ -18,7 +18,8 @@ describe('agent governance coverage', () => {
     expect(route).toContain('unknown_after_deadline');
     expect(route).toContain('const trajectoryOutcome = await withDeadline(executeGovernedTrajectoryAction(');
     expect(route).toContain('trajectoryController.signal');
-    expect(route).toContain('const toolFn = resolveTool(dispatchToolName);');
+    expect(route).toContain('const resolvedToolFn = resolveTool(dispatchToolName);');
+    expect(route).toContain('let toolFn: ToolHandler = resolvedToolFn;');
     expect(route).toContain('return main ?? EXTENSION_REGISTRY[name];');
     expect(route).not.toContain('await toolFn(args);');
     expect(route).not.toContain('getDiscoveredToolCapability(ownerId, toolName)');

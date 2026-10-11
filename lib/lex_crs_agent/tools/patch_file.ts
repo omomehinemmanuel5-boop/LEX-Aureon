@@ -331,6 +331,7 @@ export const PATCH_FILE_DEFINITION = {
       replace_all: { type: 'boolean', description: 'Replace every occurrence instead of requiring uniqueness. Default false.' },
       dry_run: { type: 'boolean', description: 'Report match count, diff and gate verdict without committing. Default false.' },
       approval_token: { type: 'string', description: 'Action-bound Lex approval token. Issued only through the operator authorization boundary; never log or persist it.' },
+      approval_request_id: { type: 'string', description: 'Single-use operator-approved exact-action request ID, as an alternative to approval_token.' },
     },
     required: ['path', 'old_str', 'new_str', 'message'],
   },

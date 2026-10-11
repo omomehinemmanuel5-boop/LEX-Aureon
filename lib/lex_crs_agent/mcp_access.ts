@@ -12,6 +12,7 @@ import { env } from '../env';
 
 export const PUBLIC_MCP_TOOLS = new Set([
   'run_governance',
+  'request_approval',
   'get_constitutional_state',
   'declare_trajectory_plan',
   'get_trajectory_status',

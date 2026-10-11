@@ -1272,6 +1272,7 @@ export async function explain_denial(input: { reason?: string; tool_name?: strin
 // merge added dispatch-boundary governance but left this file's own wrapping
 // in place — a real correctness bug, not a style cleanup).
 export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>> = {
+  request_approval:         async () => 'Error: request_approval requires authenticated MCP route context.',
   read_file:                (a) => read_file(a as { path: string; repo?: string }),
   list_directory:           (a) => list_directory(a as { path?: string; repo?: string }),
   search_code:              (a) => search_code(a as { query: string; repo?: string }),
@@ -1317,6 +1318,18 @@ const REPO_PARAM = {
 
 export const TOOL_DEFINITIONS = [
   {
+    name: 'request_approval',
+    description: 'Create a pending, exact-action approval request for an approval-gated tool. This never grants approval; an operator must decide at the /approvals page.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tool_name: { type: 'string', description: 'Registered tool name whose exact action needs approval.' },
+        arguments: { type: 'object', description: 'Exact arguments for the proposed action; do not include approval metadata.' },
+      },
+      required: ['tool_name', 'arguments'],
+    },
+  },
+  {
     name: 'read_file',
     description: 'Read any file from the Lexaureon GitHub repository.',
     parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path e.g. lib/agents/generator.ts' }, ...REPO_PARAM }, required: ['path'] },
@@ -1343,6 +1356,7 @@ export const TOOL_DEFINITIONS = [
         session_id: { type: 'string', description: 'Optional. Governance session ID.' },
         task_context: { type: 'string', description: 'Optional. Context for risk measurement.' },
         approval_token: { type: 'string', description: 'Action-bound Lex approval token. Never log or persist it.' },
+        approval_request_id: { type: 'string', description: 'Single-use operator-approved exact-action request ID, as an alternative to approval_token.' },
         ...REPO_PARAM,
       },
       required: ['path', 'content', 'message'],
@@ -1388,6 +1402,7 @@ export const TOOL_DEFINITIONS = [
         ref: { type: 'string', description: 'Branch to run on. Defaults to "main".' },
         inputs: { type: 'object', description: 'Key-value inputs matching the workflow\'s own workflow_dispatch.inputs schema, e.g. { "run_id": "29626879866" } for lexbench-recovery.yml, or { "limit": "5" } for a quick-test dispatch of lexbench-prod.yml.' },
         approval_token: { type: 'string', description: 'Action-bound Lex approval token. Never log or persist it.' },
+        approval_request_id: { type: 'string', description: 'Single-use operator-approved exact-action request ID, as an alternative to approval_token.' },
         ...REPO_PARAM,
       },
       required: ['workflow'],

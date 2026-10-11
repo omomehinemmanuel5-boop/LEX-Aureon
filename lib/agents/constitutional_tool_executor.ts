@@ -15,6 +15,8 @@ import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
 import { advanceRecoveryPlane } from './recovery_runtime';
+import { approvalArgsHash, consumeApprovalRequest } from '../approval_requests';
+import { withConsumedApproval } from './approval_execution_context';
 import type { ToolCallDecision } from './types';
 import {
   consumeGovernanceApprovalToken,
@@ -205,6 +207,7 @@ export async function executeGovernedToolStructured(
   actorId = 'internal-agent',
   signal?: AbortSignal,
   environmentId = 'internal',
+  ownerId = 'operator',
 ): Promise<GovernedToolExecution> {
   // Reference-monitor admission: capability must be explicitly registered.
   // Never infer authority from an unknown tool name or caller-supplied label.
@@ -340,7 +343,7 @@ export async function executeGovernedToolStructured(
     actor_id: actorId,
     task_context: safeTaskContext(toolName, args, taskContext, capability),
   });
-  const policy = evaluateToolGovernance({
+  let policy = evaluateToolGovernance({
     toolName,
     args,
     sessionId,
@@ -348,6 +351,22 @@ export async function executeGovernedToolStructured(
     authorized: true,
     approvalToken: args.approval_token,
   });
+  const approvalRequestId = typeof args.approval_request_id === 'string'
+    ? args.approval_request_id
+    : undefined;
+  if (approvalRequestId && (!policy.requiresApproval || args.approval_token !== undefined)) {
+    policy = {
+      ...policy,
+      decision: 'deny',
+      reasons: ['approval_request_id is valid only for an approval-gated action and cannot be combined with approval_token.'],
+    };
+  }
+  const requestApprovalCanReplaceToken = Boolean(
+    approvalRequestId
+    && args.approval_token === undefined
+    && policy.requiresApproval
+    && policy.decision === 'approval_required',
+  );
 
   if (!decision.approved) {
     const verification = verifyToolResult(toolName, undefined, policy.risk);
@@ -362,7 +381,7 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  if (policy.decision !== 'allow') {
+  if (policy.decision !== 'allow' && !requestApprovalCanReplaceToken) {
     const approvalDecision: ToolCallDecision = {
       ...decision,
       approved: false,
@@ -383,13 +402,21 @@ export async function executeGovernedToolStructured(
   }
 
   if (policy.requiresApproval) {
-    const consumed = await consumeGovernanceApprovalToken({
-      token: args.approval_token,
-      actorId,
-      sessionId,
-      toolName,
-      args,
-    });
+    const consumed = approvalRequestId
+      ? await consumeApprovalRequest({
+        requestId: approvalRequestId,
+        ownerId,
+        sessionId,
+        toolName,
+        args,
+      })
+      : await consumeGovernanceApprovalToken({
+        token: args.approval_token,
+        actorId,
+        sessionId,
+        toolName,
+        args,
+      });
     if (!consumed.consumed) {
       const replayDecision: ToolCallDecision = {
         ...decision,
@@ -407,6 +434,14 @@ export async function executeGovernedToolStructured(
         risk: policy.risk,
         policy,
         verification,
+      };
+    }
+    if (approvalRequestId) {
+      policy = {
+        ...policy,
+        decision: 'allow',
+        approvalId: approvalRequestId,
+        reasons: [...policy.reasons, 'Operator approval request was consumed exactly once for this exact action.'],
       };
     }
   }
@@ -482,7 +517,18 @@ export async function executeGovernedToolStructured(
     key: keyFor(sessionId, toolName, args),
     toolName,
     decision,
-    execute: () => toolFn(args, signal),
+    execute: () => {
+      if (!approvalRequestId) return toolFn(args, signal);
+      const handlerArgs = { ...args };
+      delete handlerArgs.approval_request_id;
+      return withConsumedApproval({
+        requestId: approvalRequestId,
+        ownerId,
+        sessionId,
+        toolName,
+        argsHash: approvalArgsHash(args),
+      }, () => toolFn(handlerArgs, signal));
+    },
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
@@ -520,6 +566,7 @@ export async function executeGovernedTool(
   actorId = 'internal-agent',
   signal?: AbortSignal,
   environmentId = 'internal',
+  ownerId = 'operator',
 ): Promise<string> {
   const execution = await executeGovernedToolStructured(
     toolName,
@@ -530,6 +577,7 @@ export async function executeGovernedTool(
     actorId,
     signal,
     environmentId,
+    ownerId,
   );
   return execution.result;
 }

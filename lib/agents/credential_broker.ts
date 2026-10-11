@@ -7,6 +7,8 @@
  */
 import { env } from '../env';
 import { verifyGovernanceApprovalToken } from './tool_governance_gateway';
+import { currentConsumedApproval } from './approval_execution_context';
+import { approvalArgsHash } from '../approval_requests';
 
 export interface ApprovedCredentialRequest {
   token: unknown;
@@ -41,7 +43,22 @@ export async function getGitHubCredentialForApprovedAction(
   input: ApprovedCredentialRequest,
 ): Promise<string> {
   const token = typeof input.token === 'string' ? input.token : null;
-  if (!token) throw new Error('Privileged credential access denied: no Lex approval token.');
+  if (!token) {
+    const context = currentConsumedApproval();
+    if (!context || context.toolName !== input.toolName || context.argsHash !== approvalArgsHash(input.args)) {
+      throw new Error('Privileged credential access denied: no exact, consumed Lex approval.');
+    }
+    const db = (await import('../db')).getClient();
+    const consumed = await db.execute({
+      sql: `SELECT request_id FROM approval_requests
+            WHERE request_id = ? AND owner_id = ? AND session_id = ? AND tool_name = ?
+              AND args_hash = ? AND status = 'used' AND expires_at > ? LIMIT 1`,
+      args: [context.requestId, context.ownerId, context.sessionId, input.toolName, context.argsHash, Date.now()],
+    });
+    if (!consumed.rows.length) throw new Error('Privileged credential access denied: consumed approval could not be verified.');
+    if (!env.GITHUB_TOKEN) throw new Error('Privileged credential access denied: GitHub credential is not configured.');
+    return env.GITHUB_TOKEN;
+  }
 
   const claims = decodeApprovalClaims(token);
   if (!claims) throw new Error('Privileged credential access denied: invalid Lex approval token.');
