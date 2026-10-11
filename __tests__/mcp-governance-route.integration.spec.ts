@@ -253,6 +253,25 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(isOperatorSecret).toHaveBeenCalled();
   });
 
+  it('refuses a non-operator canary call before execution or evidence persistence', async () => {
+    const key = { id: 'private-test-canary', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    isOperatorSecret.mockReturnValue(false);
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'canary-session' } },
+      id: 'non-operator-canary',
+    }));
+
+    expect(response.status).toBe(401);
+    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
+    expect(recordRecoveryCanaryEvidence).not.toHaveBeenCalled();
+  });
+
   it('persists an operator canary only after its governed receipt and exact snapshot are confirmed', async () => {
     isOperatorSecret.mockReturnValue(true);
     const fingerprint = 'a'.repeat(64);
@@ -291,6 +310,8 @@ describe('MCP constitutional dispatch boundary', () => {
 
     expect(response.status).toBe(200);
     expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    expect(executeGovernedToolStructured.mock.calls[0]?.[0]).toBe('run_recovery_canary');
+    expect(toolFn).toHaveBeenCalledOnce();
     expect(executeGovernedTool).not.toHaveBeenCalled();
     expect(recordRecoveryCanaryEvidence).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'canary-session', actorId: 'operator',
