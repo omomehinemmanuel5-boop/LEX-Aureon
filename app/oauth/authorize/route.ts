@@ -29,7 +29,7 @@ export async function GET(req: Request) {
   const codeChallenge = p.get('code_challenge') ?? '';
   const codeChallengeMethod = p.get('code_challenge_method') ?? '';
 
-  if (responseType !== 'code' || !clientId || !redirectUri || !state || !isMcpResource(resource) || codeChallengeMethod !== 'S256') {
+  if (responseType !== 'code' || !clientId || !redirectUri || !state || !resource || codeChallengeMethod !== 'S256') {
     return new NextResponse('Invalid OAuth authorization request', { status: 400 });
   }
 
