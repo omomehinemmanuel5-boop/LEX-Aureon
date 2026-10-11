@@ -40,6 +40,32 @@ describe('central tool governance gateway', () => {
     expect(classifyDatabaseOperation('SELECT 1; DELETE FROM users')).toBe('invalid');
   });
 
+  it('classifies direct and CTE SQL operations by their effect', () => {
+    expect(classifyDatabaseOperation('SELECT * FROM t')).toBe('read');
+    expect(classifyDatabaseOperation('UPDATE t SET a = 1')).toBe('write');
+    expect(classifyDatabaseOperation('WITH x AS (SELECT 1) DELETE FROM t')).toBe('write');
+  });
+
+  it('requires approval for write SQL passed through query_database', () => {
+    const write = evaluateToolGovernance({
+      toolName: 'query_database',
+      args: { sql: 'UPDATE t SET a = 1' },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+    });
+    expect(write.decision).toBe('approval_required');
+
+    const read = evaluateToolGovernance({
+      toolName: 'query_database',
+      args: { sql: 'SELECT 1' },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+    });
+    expect(read.decision).toBe('allow');
+  });
+
   it('allows non-effectful governance analysis without weakening normal write approval', () => {
     const result = evaluateToolGovernance({
       toolName: 'run_governance',
