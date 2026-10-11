@@ -39,19 +39,20 @@ The design rule that follows from it:
 **Session continuity.** As of 2026-07-26 the governed route injects two distinct
 retrievals before generation:
 
-- **Session transcript** — `retrieveSessionHistory(session_id, 6)`, the actual
-  turn sequence for this conversation, chronological. This is an ordering
-  question, resolved by an indexed lookup on `session_id`.
-- **Semantic recall** — `retrieveSimilar(embedding, 5)`, loosely related past
-  episodes across sessions. This is a similarity question.
+- **Session transcript** — `retrieveSessionHistory(session_id, owner_id, 6)`, the
+  actual turn sequence for this owner's conversation, chronological. This is an
+  ordering question, resolved by an indexed lookup on `(owner_id, session_id)`.
+- **Semantic recall** — `retrieveSimilar(embedding, owner_id, 5)`, loosely related
+  past episodes across sessions belonging to the same owner. Memory is never
+  recalled across owners.
 
 Both are fenced in an `<untrusted_recall>` block with excerpts capped at 280
 characters, because recalled text is user-authored and therefore a
 prompt-injection surface.
 
 Known limits, stated plainly:
-- Semantic recall scans only the **300 most recent rows globally** — roughly 1%
-  of stored history. Cross-session recall beyond that window does not happen.
+- Semantic recall scans only the **300 most recent rows for the owner**. Older
+  owner-scoped recall beyond that window does not happen.
 - `governed_response` text has only been stored since 2026-07-26. Rows written
   before that carry a hash only, and a hash is one-way, so those responses are
   permanently unrecoverable. The injected context marks this explicitly: where an

@@ -49,6 +49,7 @@ export interface GovernRequest {
   turn:           number;
   identity_mode:  IdentityMode;
   governance_mode?: GovernanceMode;
+  owner_id?: string;
 }
 
 export interface GovernResponse {
@@ -146,6 +147,7 @@ export async function executeGovern(
   req: GovernRequest,
 ): Promise<GovernResponse> {
   const { prompt, session_id, turn, identity_mode: identityMode } = req;
+  const ownerId = req.owner_id ?? '';
   const governanceMode: GovernanceMode = req.governance_mode ?? 'execute';
   const simulation = governanceMode === 'simulate';
   const evalSession = isEvalSession(session_id);
@@ -160,8 +162,8 @@ export async function executeGovern(
       promptEmbedding      = resolved.vector;
       promptEmbedProvider  = resolved.provider;
       const [sessionTurns, memories] = await Promise.all([
-        retrieveSessionHistory(session_id, 6),
-        retrieveSimilar(promptEmbedding, 5),
+        retrieveSessionHistory(session_id, ownerId, 6),
+        retrieveSimilar(promptEmbedding, ownerId, 5),
       ]);
       memoryContext = [buildSessionContext(sessionTurns), buildMemoryContext(memories)]
         .filter(Boolean)
@@ -257,7 +259,7 @@ export async function executeGovern(
       const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
         embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
         getConstitutionalCentroid(promptEmbedProvider),
-        getSessionCentroid(session_id),
+        getSessionCentroid(session_id, ownerId),
       ]);
       if (outputEmb.length && constCentroid) {
         const sr = kernel.applySelfReferentialMeasurement(
@@ -419,7 +421,7 @@ export async function executeGovern(
     simulation ? Promise.resolve('') : writeKernelReceipt(session_id, turn, result),
     simulation ? Promise.resolve() : incrementRuns(),
     promptEmbedding.length && !simulation ? storeMemory({
-      session_id, prompt,
+      owner_id: ownerId, session_id, prompt,
       prompt_hash:            result.receipt.input_hash,
       embedding:              promptEmbedding,
       embedding_provider:     promptEmbedProvider ?? undefined,

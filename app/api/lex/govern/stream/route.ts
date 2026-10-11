@@ -178,8 +178,8 @@ export async function POST(req: Request) {
         let memoryContext = '';
         if (promptEmbedding.length) {
           const [sessionTurns, memories] = await Promise.all([
-            retrieveSessionHistory(session_id, 6),
-            retrieveSimilar(promptEmbedding, 5),
+            retrieveSessionHistory(session_id, '', 6),
+            retrieveSimilar(promptEmbedding, '', 5),
           ]);
           memoryContext = [buildSessionContext(sessionTurns), buildMemoryContext(memories)]
             .filter(Boolean)
@@ -227,7 +227,7 @@ export async function POST(req: Request) {
             const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
               embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
               getConstitutionalCentroid(promptEmbedProvider),
-              getSessionCentroid(session_id),
+              getSessionCentroid(session_id, ''),
             ]);
             if (outputEmb.length) {
               const sr = kernel.applySelfReferentialMeasurement(outputEmb, promptEmbedding, constCentroid, sessCentroid);
@@ -402,7 +402,7 @@ export async function POST(req: Request) {
 
         const [receiptId] = await Promise.all([
           writeKernelReceipt(session_id, turn, { ...result, governed_output: governedOutput }),
-          promptEmbedding.length ? storeMemory({ session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined, governed_response: governedOutput }) : Promise.resolve(),
+          promptEmbedding.length ? storeMemory({ owner_id: '', session_id, prompt, prompt_hash: result.receipt.input_hash, embedding: promptEmbedding, M: finalM, C: kernel.state.C, R: kernel.state.R, S: kernel.state.S, health_band: result.health_band, state_label: classifyStateLabel(result.receipt.safety_projection_triggered || sovereigntyDriftDetected, governedOutput), intervention: needsIntervention, governed_response_hash: (auditorResult?.meta?.receipt_id as string) ?? undefined, governed_response: governedOutput }) : Promise.resolve(),
         ]);
 
         // fix (2026-07-11): canonical, persisted id wins — see file header.

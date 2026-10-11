@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     const resolved       = await embedTextResolved(prompt);
     promptEmbedding      = resolved.vector;
     promptEmbedProvider  = resolved.provider;
-    const memories  = await retrieveSimilar(promptEmbedding, 5);
+    const memories  = await retrieveSimilar(promptEmbedding, '', 5);
     memoryContext   = buildMemoryContext(memories);
   } catch { /* non-fatal */ }
 
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
       const [outputEmb, constCentroid, sessCentroid] = await Promise.all([
         embedTextWithProvider(result.governed_output, promptEmbedProvider).catch(() => [] as number[]),
         getConstitutionalCentroid(promptEmbedProvider),
-        getSessionCentroid(session_id),
+        getSessionCentroid(session_id, ''),
       ]);
       if (outputEmb.length && constCentroid) {
         const sr = kernel.applySelfReferentialMeasurement(
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
   const [receiptId] = await Promise.all([
     writeKernelReceipt(session_id, turn, result),
     promptEmbedding.length ? storeMemory({
-      session_id, prompt,
+      owner_id: '', session_id, prompt,
       prompt_hash:           result.receipt.input_hash,
       embedding:             promptEmbedding,
       embedding_provider:    promptEmbedProvider ?? undefined,

@@ -119,6 +119,7 @@ export async function POST(req: Request) {
 
   const providedApiKey = getProvidedApiKey(req);
   let authenticated = false;
+  let ownerId = '';
   if (providedApiKey) {
     const keyResult = await validateApiKey(providedApiKey);
     if (!keyResult.valid) {
@@ -126,6 +127,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid or exhausted API key' }, { status: 401 });
     }
     authenticated = true;
+    ownerId = keyResult.key?.id ? String(keyResult.key.id) : '';
   }
 
   const ip = getClientIp(req);
@@ -172,7 +174,7 @@ export async function POST(req: Request) {
 
   try {
     const response: GovernResponse = await executeGovern({
-      prompt, session_id, turn, identity_mode: identityMode, governance_mode: governanceMode,
+      prompt, session_id, turn, identity_mode: identityMode, governance_mode: governanceMode, owner_id: ownerId,
     });
     return NextResponse.json(response, {
       headers: {

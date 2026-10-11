@@ -166,6 +166,7 @@ import { isOnCooldown, markCooldown } from './provider_cooldown';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface LexMemoryEvent {
+  owner_id:              string;
   session_id:            string;
   prompt:                string;
   prompt_hash:           string;
@@ -636,16 +637,21 @@ function adjustedScore(
 
 // ── Store memory event ────────────────────────────────────────────────────────
 export async function storeMemory(event: LexMemoryEvent): Promise<void> {
+  if (!event.owner_id?.trim()) {
+    console.error('lex_memory storeMemory error: owner_id is required');
+    return;
+  }
   try {
     const db = getClient();
     await db.execute({
       sql: `INSERT INTO lex_memory
-              (session_id, prompt, prompt_hash, embedding,
+              (owner_id, session_id, prompt, prompt_hash, embedding,
                embedding_provider, embedding_model,
                M, C, R, S, health_band, state_label,
                intervention, governed_response_hash, governed_response, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
+        event.owner_id,
         event.session_id,
         event.prompt.slice(0, 2000),
         event.prompt_hash,
@@ -669,15 +675,17 @@ export async function storeMemory(event: LexMemoryEvent): Promise<void> {
 // ── Retrieve similar memories ─────────────────────────────────────────────────
 export async function retrieveSimilar(
   promptEmbedding: number[],
+  ownerId: string,
   topK = 5,
   limit = 300,
 ): Promise<MemoryContext[]> {
+  if (!ownerId?.trim()) return [];
   try {
     const db  = getClient();
     const res = await db.execute({
       sql:  `SELECT prompt, governed_response_hash, governed_response, state_label, M, embedding, intervention
-             FROM lex_memory ORDER BY created_at DESC LIMIT ?`,
-      args: [limit],
+             FROM lex_memory WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?`,
+      args: [ownerId, limit],
     });
     const scored = res.rows.map(row => {
       let embedding: number[] = [];
@@ -725,18 +733,19 @@ export async function retrieveSimilar(
  */
 export async function retrieveSessionHistory(
   sessionId: string,
+  ownerId: string,
   maxTurns = 6,
 ): Promise<MemoryContext[]> {
-  if (!sessionId) return [];
+  if (!sessionId || !ownerId?.trim()) return [];
   try {
     const db  = getClient();
     const res = await db.execute({
       sql:  `SELECT prompt, governed_response, state_label, M
              FROM lex_memory
-             WHERE session_id = ?
+             WHERE session_id = ? AND owner_id = ?
              ORDER BY created_at DESC
              LIMIT ?`,
-      args: [sessionId, maxTurns],
+      args: [sessionId, ownerId, maxTurns],
     });
     // DESC for "most recent N", then reversed so the transcript reads forwards.
     return res.rows
@@ -901,6 +910,16 @@ export async function ensureLexMemoryTable(): Promise<void> {
       }
     }
 
+    // Additive nullable owner migration: legacy rows remain unowned and are never backfilled.
+    try {
+      await db.execute(`ALTER TABLE lex_memory ADD COLUMN owner_id TEXT`);
+      console.log('lex_memory: added owner_id column');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/duplicate column|already exists/i.test(msg)) {
+        console.error('lex_memory: owner_id migration failed:', msg);
+      }
+    }
     // fix (2026-08-03): additive migration for embedding_provider + embedding_model.
     // Enables provider-aware getSessionCentroid() to avoid cross-provider
     // embedding-space pollution in the Continuity (C) signal.
@@ -921,6 +940,9 @@ export async function ensureLexMemoryTable(): Promise<void> {
     );
     await db.execute(
       `CREATE INDEX IF NOT EXISTS idx_lex_memory_created ON lex_memory(created_at DESC)`
+    );
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_lex_memory_owner_session ON lex_memory(owner_id, session_id)`
     );
     await ensureCacheTable();
   } catch (e) {
@@ -1036,15 +1058,16 @@ export async function getConstitutionalCentroid(forceProvider?: EmbedProvider): 
  * treated as a single "legacy" provider group, preserving backward compatibility
  * with databases created before this migration.
  */
-export async function getSessionCentroid(sessionId: string): Promise<number[] | null> {
+export async function getSessionCentroid(sessionId: string, ownerId: string): Promise<number[] | null> {
+  if (!ownerId?.trim()) return null;
   try {
     const db  = getClient();
     // Step 1: find the most recent embedding_provider for this session
     const provRes = await db.execute({
       sql:  `SELECT embedding_provider FROM lex_memory
-             WHERE session_id = ? AND embedding IS NOT NULL
+             WHERE session_id = ? AND owner_id = ? AND embedding IS NOT NULL
              ORDER BY created_at DESC LIMIT 1`,
-      args: [sessionId],
+      args: [sessionId, ownerId],
     });
     const latestProvider = provRes.rows.length
       ? String(provRes.rows[0].embedding_provider ?? 'legacy')
@@ -1053,11 +1076,11 @@ export async function getSessionCentroid(sessionId: string): Promise<number[] | 
     // Step 2: average only that provider's embeddings
     const res = await db.execute({
       sql:  `SELECT embedding FROM lex_memory
-             WHERE session_id = ?
+             WHERE session_id = ? AND owner_id = ?
                AND embedding IS NOT NULL
                AND COALESCE(embedding_provider, 'legacy') = ?
              ORDER BY created_at DESC LIMIT 20`,
-      args: [sessionId, latestProvider],
+      args: [sessionId, ownerId, latestProvider],
     });
     const embeddings: number[][] = [];
     for (const row of res.rows) {
