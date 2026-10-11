@@ -31,7 +31,8 @@ export async function POST(req: Request) {
   if (!form) return NextResponse.json({ error: 'invalid_request' }, { status: 400, headers: corsHeaders(req) });
   const grantType = String(form.get('grant_type') ?? '');
   const clientId = String(form.get('client_id') ?? '');
-  const resource = String(form.get('resource') ?? '');
+  const suppliedResource = String(form.get('resource') ?? '');
+  const resource = normalizeMcpResource(suppliedResource || null);
   if (!clientId || !resource) return NextResponse.json({ error: 'invalid_request' }, { status: 400, headers: corsHeaders(req) });
 
   const result = grantType === 'authorization_code'
