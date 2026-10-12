@@ -312,7 +312,12 @@ export async function writeKernelReceipt(
   // double-step the trajectory.
   try {
     const currentCRS = { c: result.state.C, r: result.state.R, s: result.state.S };
-    const prevCRS    = { c: r.raw_state.C, r: r.raw_state.R, s: r.raw_state.S };
+    // Stability is turn-to-turn movement in the persisted trajectory, not the
+    // difference between this turn's raw measurement and governed state.
+    const previousTraj = await getZTraj(sessionId);
+    const prevCRS = previousTraj
+      ? { c: previousTraj.last_c, r: previousTraj.last_r, s: previousTraj.last_s }
+      : null;
     await updateZTraj(sessionId, currentCRS, prevCRS, result.attack_pressure, lawEvents);
   } catch (e) {
     logger.error('kernel_bridge.write', 'z_traj update failed', errorFields(e));
