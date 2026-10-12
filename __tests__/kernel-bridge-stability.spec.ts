@@ -12,6 +12,7 @@ vi.mock('../lib/db', () => ({
 vi.mock('../lib/env', () => ({ env: { AUDITOR_SECRET: 'test-signing-key' } }));
 
 import { writeKernelReceipt } from '../lib/kernel_bridge';
+import { STABILITY_VELOCITY } from '../lib/kv';
 import type { KernelCycleResult } from '../lib/sovereign_kernel';
 
 type CRS = { C: number; R: number; S: number };
@@ -97,11 +98,11 @@ describe('writeKernelReceipt turn-to-turn stability baseline', () => {
 
     await writeKernelReceipt('stability-session', 1, cycleResult(firstGoverned, deliberatelyDifferentRaw));
     expect(trajectory.current?.n_stable).toBe(1);
-    expect(trajectory.current?.velocity).toBeLessThan(0.02);
+    expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
 
     await writeKernelReceipt('stability-session', 2, cycleResult(secondGoverned, deliberatelyDifferentRaw));
     expect(trajectory.current?.n_stable).toBe(2);
-    expect(trajectory.current?.velocity).toBeLessThan(0.02);
+    expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
   });
 
   it('resets n_stable to zero after a large governed-state jump', async () => {
@@ -112,7 +113,7 @@ describe('writeKernelReceipt turn-to-turn stability baseline', () => {
       { C: 0.333, R: 0.333, S: 0.334 },
     ));
 
-    expect(trajectory.current?.velocity).toBeGreaterThanOrEqual(0.02);
+    expect(trajectory.current?.velocity).toBeGreaterThanOrEqual(STABILITY_VELOCITY);
     expect(trajectory.current?.n_stable).toBe(0);
   });
 
@@ -125,7 +126,7 @@ describe('writeKernelReceipt turn-to-turn stability baseline', () => {
     await writeKernelReceipt('stability-session', 4, cycleResult(governed, raw));
 
     // This is the distance from the persisted previous turn and is below the
-    // unchanged 0.02 limit; distance from raw_state would be far above it.
+    // configured stability limit; distance from raw_state would be far above it.
     const expectedVelocity = Math.sqrt(
       (governed.C - persisted.C) ** 2
       + (governed.R - persisted.R) ** 2
