@@ -273,6 +273,54 @@ export async function getZTraj(sessionId: string): Promise<ZTraj | null> {
   };
 }
 
+export type ExpectedZTrajSample = Pick<ZTraj, 'last_c' | 'last_r' | 'last_s' | 'updated_at'>;
+
+/**
+ * Record one already-executed governed-tool observation only if the trajectory
+ * is still the exact sample read before execution. Unlike updateZTraj(), this
+ * path never creates a missing row and never overwrites a newer observation.
+ */
+export async function recordZTrajObservation(
+  sessionId: string,
+  expectedPrevious: ExpectedZTrajSample | null,
+  measured: CRS,
+): Promise<boolean> {
+  if (!expectedPrevious) return false;
+  if (![measured.c, measured.r, measured.s].every(Number.isFinite)) return false;
+
+  const velocity = Math.sqrt(
+    (measured.c - expectedPrevious.last_c) ** 2
+    + (measured.r - expectedPrevious.last_r) ** 2
+    + (measured.s - expectedPrevious.last_s) ** 2,
+  );
+  const M = Math.min(measured.c, measured.r, measured.s);
+  const timestampNow = new Date();
+  const timestamp = timestampNow.toISOString();
+  // Ensure the version changes even if this observation occurs in the same
+  // millisecond as the previous write; this makes the CAS single-winner.
+  const updatedAt = timestamp === expectedPrevious.updated_at
+    ? new Date(timestampNow.getTime() + 1).toISOString()
+    : timestamp;
+
+  const result = await getClient().execute({
+    sql: `UPDATE z_traj
+          SET velocity = ?,
+              n_stable = CASE WHEN ? < ? AND ? >= ? THEN n_stable + 1 ELSE 0 END,
+              last_m = ?, last_c = ?, last_r = ?, last_s = ?, updated_at = ?
+          WHERE session_id = ? AND last_c = ? AND last_r = ? AND last_s = ? AND updated_at = ?`,
+    args: [
+      velocity,
+      velocity, STABILITY_VELOCITY, M, CONSTITUTION.TAU_RECOVERY,
+      M, measured.c, measured.r, measured.s, updatedAt,
+      sessionId,
+      expectedPrevious.last_c, expectedPrevious.last_r, expectedPrevious.last_s,
+      expectedPrevious.updated_at,
+    ],
+  });
+
+  return Number(result.rowsAffected ?? 0) > 0;
+}
+
 // updateZTraj — now accepts lawEvents to compute the proven attack signal A(t).
 // lawEvents: array of law_ids fired this turn (e.g. ['bypass_attempt', 'multi_attack']).
 // Backwards compatible: omitting lawEvents defaults to [] (no attack signal this turn).

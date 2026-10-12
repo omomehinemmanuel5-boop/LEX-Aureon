@@ -14,6 +14,7 @@ import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
+import { getZTraj, recordZTrajObservation } from '../kv';
 import { advanceRecoveryPlane } from './recovery_runtime';
 import { approvalArgsHash, consumeApprovalRequest } from '../approval_requests';
 import { withConsumedApproval } from './approval_execution_context';
@@ -532,6 +533,28 @@ export async function executeGovernedToolStructured(
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
+  if (!cached.cacheHit && toolName !== 'run_recovery_canary') {
+    try {
+      const previous = await getZTraj(sessionId);
+      await recordZTrajObservation(
+        sessionId,
+        previous ? {
+          last_c: previous.last_c,
+          last_r: previous.last_r,
+          last_s: previous.last_s,
+          updated_at: previous.updated_at,
+        } : null,
+        {
+          c: cached.decision.crs.C,
+          r: cached.decision.crs.R,
+          s: cached.decision.crs.S,
+        },
+      );
+    } catch {
+      // Observation is best-effort; never alter a verified tool result or
+      // authorize/revoke execution because this non-authoritative write failed.
+    }
+  }
   const postActionRead = await readCanonicalGovernanceState({
     sessionId,
     actorId,
