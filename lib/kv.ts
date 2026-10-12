@@ -116,6 +116,7 @@ export const N_MIN           = CONSTITUTION.N_MIN;
 export const RECOVERY_RATE   = CONSTITUTION.RECOVERY_RATE;
 export const SIGMA_WINDOW    = 10;
 export const SIGMA_THRESHOLD = CONSTITUTION.SIGMA_THRESHOLD;
+export const STABILITY_VELOCITY = 0.05;
 
 // ── Z-weight update constants (Theorem 3a/3b — Banach fixed-point proof) ──────
 // ρ = memory decay rate (contraction factor, proven convergent at 0.85)
@@ -291,7 +292,9 @@ export async function updateZTraj(
     : 0;
 
   // ── n_stable: consecutive low-velocity turns ──────────────────────────────
-  const n_stable = velocity < 0.02 ? (existing?.n_stable ?? 0) + 1 : 0;
+  const n_stable = velocity < STABILITY_VELOCITY && M >= CONSTITUTION.TAU_RECOVERY
+    ? (existing?.n_stable ?? 0) + 1
+    : 0;
 
   // ── drift_dir: dominant dimension of change ───────────────────────────────
   let drift_dir = 'none';

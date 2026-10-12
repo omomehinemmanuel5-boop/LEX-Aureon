@@ -1,7 +1,7 @@
 /**
  * Async Governor tests — IEC filter, G(x,z) correction, CBF guarantee.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   computeIEC, shannonEntropy, computeDelta, computeUncertainty,
   computeTension, applyGovernorCorrection, RHO_MIN,
@@ -160,5 +160,112 @@ describe('CBF hard floor invariant', () => {
   it('RHO_MIN is in (0,1)', () => {
     expect(RHO_MIN).toBeGreaterThan(0);
     expect(RHO_MIN).toBeLessThan(1);
+  });
+});
+
+async function loadKvWithMemoryZTraj() {
+  const rows = new Map<string, Record<string, unknown>>();
+  const execute = vi.fn(async (statement: string | { sql: string; args?: unknown[] }) => {
+    const sql = typeof statement === 'string' ? statement : statement.sql;
+    const args = typeof statement === 'string' ? [] : (statement.args ?? []);
+    if (sql.startsWith('SELECT * FROM z_traj WHERE session_id = ?')) {
+      const row = rows.get(String(args[0]));
+      return { rows: row ? [row] : [] };
+    }
+    if (sql.includes('INSERT INTO z_traj')) {
+      const [sessionId, velocity, nStable, driftDir, sigmaViol, lastM, lastC, lastR, lastS,
+        zC, zR, zS, attackPressure, updatedAt] = args;
+      rows.set(String(sessionId), {
+        session_id: sessionId, velocity, n_stable: nStable, drift_dir: driftDir,
+        sigma_viol: sigmaViol, last_m: lastM, last_c: lastC, last_r: lastR, last_s: lastS,
+        z_c: zC, z_r: zR, z_s: zS, attack_pressure: attackPressure, updated_at: updatedAt,
+      });
+      return { rows: [], rowsAffected: 1 };
+    }
+    return { rows: [] };
+  });
+
+  vi.doMock('../lib/db', () => ({ getClient: () => ({ execute }) }));
+  vi.resetModules();
+  const kv = await import('../lib/kv');
+  return { kv, rows };
+}
+
+function zTrajRow(lastC: number, lastR: number, lastS: number, nStable: number) {
+  return {
+    session_id: 'stable-session', velocity: 0, n_stable: nStable, drift_dir: 'stable',
+    sigma_viol: 0, last_m: Math.min(lastC, lastR, lastS),
+    last_c: lastC, last_r: lastR, last_s: lastS,
+    z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3, attack_pressure: 0,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+describe('z_traj stability threshold', () => {
+  it('counts three consecutive 0.04 turns at M=0.30 and leaves canary N_MIN at 3', async () => {
+    const { kv, rows } = await loadKvWithMemoryZTraj();
+    rows.set('stable-session', zTrajRow(0.30, 0.35, 0.35, 0));
+    expect(kv.STABILITY_VELOCITY).toBe(0.05);
+
+    const delta = 0.04 / Math.sqrt(2);
+    const turns = [
+      { c: 0.30, r: 0.35 - delta, s: 0.35 + delta },
+      { c: 0.30, r: 0.35, s: 0.35 },
+      { c: 0.30, r: 0.35 - delta, s: 0.35 + delta },
+    ];
+    for (const [index, current] of turns.entries()) {
+      const previous = rows.get('stable-session')!;
+      const updated = await kv.updateZTraj('stable-session', current, {
+        c: Number(previous.last_c), r: Number(previous.last_r), s: Number(previous.last_s),
+      });
+      expect(updated.velocity).toBeCloseTo(0.04, 10);
+      expect(updated.n_stable).toBe(index + 1);
+      expect(updated.last_m).toBeGreaterThanOrEqual(0.30);
+    }
+    expect(kv.N_MIN).toBe(3);
+  });
+
+  it('resets the streak at velocity 0.06', async () => {
+    const { kv, rows } = await loadKvWithMemoryZTraj();
+    rows.set('stable-session', zTrajRow(0.30, 0.35, 0.35, 2));
+    const delta = 0.06 / Math.sqrt(2);
+    const updated = await kv.updateZTraj('stable-session', {
+      c: 0.30, r: 0.35 - delta, s: 0.35 + delta,
+    }, { c: 0.30, r: 0.35, s: 0.35 });
+
+    expect(updated.velocity).toBeCloseTo(0.06, 10);
+    expect(updated.n_stable).toBe(0);
+  });
+
+  it('does not count a low-velocity turn when M is below TAU_RECOVERY', async () => {
+    const { kv, rows } = await loadKvWithMemoryZTraj();
+    rows.set('stable-session', zTrajRow(0.10, 0.45, 0.45, 2));
+    const delta = 0.01 / Math.sqrt(2);
+    const updated = await kv.updateZTraj('stable-session', {
+      c: 0.10, r: 0.45 - delta, s: 0.45 + delta,
+    }, { c: 0.10, r: 0.45, s: 0.45 });
+
+    expect(updated.velocity).toBeCloseTo(0.01, 10);
+    expect(updated.last_m).toBe(0.10);
+    expect(updated.n_stable).toBe(0);
+  });
+
+  it('preserves getGovernorMode outputs across CRS/streak boundary combinations', async () => {
+    const { kv } = await loadKvWithMemoryZTraj();
+    const expected = new Map<number, Array<'correction' | 'nudge' | 'recovery' | 'suppress'>>([
+      [0.04, ['correction', 'correction', 'correction', 'correction']],
+      [0.05, ['correction', 'correction', 'correction', 'correction']],
+      [0.10, ['nudge', 'nudge', 'nudge', 'recovery']],
+      [0.15, ['nudge', 'nudge', 'nudge', 'recovery']],
+      [0.150001, ['nudge', 'nudge', 'nudge', 'suppress']],
+      [0.30, ['nudge', 'nudge', 'nudge', 'suppress']],
+    ]);
+
+    for (const [M, modes] of expected) {
+      for (const [nStable, mode] of modes.entries()) {
+        const trajectory = zTrajRow(M, (1 - M) / 2, (1 - M) / 2, nStable);
+        expect(kv.getGovernorMode(trajectory as never)).toBe(mode);
+      }
+    }
   });
 });
