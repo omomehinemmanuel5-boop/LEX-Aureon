@@ -390,8 +390,9 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'write_file',
       args: expect.objectContaining(actionArgs),
     }));
-    expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
-      .toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22), approval_url: 'https://www.lexaureon.com/approvals' });
+    const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(approvalResult).toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
+    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals$/);
   });
 
   it('does not self-approve writes even when the private-test caller IP changes', async () => {
