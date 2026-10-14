@@ -60,9 +60,10 @@ For a trajectory-controlled sequence, first call `declare_trajectory_plan` with 
 The operator profile is broad, but it is not a bypass around Lex governance:
 
 - Every tool call still passes through the constitutional tool executor.
-- Admin-issued `private_test` API-key calls automatically receive a short-lived, single-use approval bound to the authenticated key actor, resolved MCP session, tool, and exact arguments for registered consequential capabilities. This removes the second authorization round-trip without bypassing the constitutional executor or trajectory gates.
-- `authorize_tool_action` remains available for clients that want explicit pre-authorization; its default session ID now matches ordinary MCP calls.
-- `authorize_external_action` remains operator-only and does not itself execute an external action.
+- Consequential API-key actions are not auto-approved. Use `request_approval` or `authorize_tool_action` to create a pending request bound to the actor, session, tool, and exact arguments. The human approver signs in once at `/approvals`, reviews the displayed request, and taps **Approve this exact action**.
+- After approval, the agent retries the same tool with `approval_request_id` and unchanged arguments. Lex rechecks current governance and consumes the approval exactly once immediately before execution. Approval does not bypass CRS, trajectory, capability, or recovery-state checks.
+- For client-side external actions, first discover and govern the manifest/action. Call `request_approval` with `tool_name: "consume_external_action"` and the exact `environment_id`, `manifest`, and `action_args`; after the human tap, call `consume_external_action` with the same values and `approval_request_id`. The client adapter must execute only if Lex returns `granted: true`.
+- `authorize_tool_action` creates a human approval request; it does not mint a self-approval token. `authorize_external_action` also creates a pending human approval request for the exact action and requires the target actor to be the authenticated caller.
 - Unknown, unregistered, out-of-scope, or constitutionally denied tools remain blocked.
 - An uncertain trajectory outcome is locked fail-closed; verify the receipt/state before retrying.
 
@@ -79,4 +80,4 @@ Prefer a dedicated service account/agent deployment, a separate operator secret 
 
 ## Private test keys versus operator access
 
-A `private_test` API key receives the complete internal and authorization-control surface, including repository writes, CI dispatch, database reads, receipt operations, `authorize_tool_action`, and `authorize_external_action`. Calls remain authenticated, quota checked, and subject to the constitutional execution gateway; approval tokens are bound to the API-key actor and exact action. Use the optional operator header only when a distinct operator principal is needed.
+A `private_test` API key receives the internal tool surface and may request human approval for consequential actions. It cannot approve its own requests. The separate operator web session grants approval authority; do not put the operator secret in ChatGPT or other model-visible context.

@@ -1319,7 +1319,7 @@ const REPO_PARAM = {
 export const TOOL_DEFINITIONS = [
   {
     name: 'request_approval',
-    description: 'Create a pending, exact-action approval request for an approval-gated tool. This never grants approval; an operator must decide at the /approvals page.',
+    description: 'Create a pending request for a consequential action. Lex binds it to the authenticated caller, session, tool, and exact arguments. It does not authorize execution. Tell the user to open the returned approval_url and tap Approve this exact action; after approval, resume the same tool with the returned request_id as approval_request_id and unchanged arguments.',
     parameters: {
       type: 'object',
       properties: {
@@ -1346,7 +1346,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'write_file',
-    description: 'Create or update a file and commit it to GitHub. ALL writes are now governed by the Lex Aureon constitutional proxy (C/R/S measurement, injection detection, slow-drip protection). Returns the governance decision alongside the commit result.',
+    description: 'Create or update a file and commit it to GitHub. Every write is governed by Lex. If human approval is required, call request_approval with this exact tool name and the exact write arguments, show the approval_url to the user, and resume with approval_request_id after the user approves. Do not alter any arguments after approval.',
     parameters: {
       type: 'object',
       properties: {
@@ -1355,8 +1355,7 @@ export const TOOL_DEFINITIONS = [
         message: { type: 'string', description: 'Commit message' },
         session_id: { type: 'string', description: 'Optional. Governance session ID.' },
         task_context: { type: 'string', description: 'Optional. Context for risk measurement.' },
-        approval_token: { type: 'string', description: 'Action-bound Lex approval token. Never log or persist it.' },
-        approval_request_id: { type: 'string', description: 'Single-use operator-approved exact-action request ID, as an alternative to approval_token.' },
+        approval_request_id: { type: 'string', description: 'One-time human-approved exact-action request ID returned by request_approval.' },
         ...REPO_PARAM,
       },
       required: ['path', 'content', 'message'],
@@ -1394,15 +1393,14 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'dispatch_workflow',
-    description: 'Trigger a GitHub Actions workflow_dispatch run — e.g. LexBench Production, LexBench Recovery. Spends real provider quota and wall-clock time for benchmark workflows; confirm intent with the user before calling this rather than treating its existence as standing authorization. Returns the new run\'s ID and URL when found (GitHub does not return a run ID synchronously, so this does one short bounded poll after dispatching).',
+    description: 'Trigger a GitHub Actions workflow_dispatch run — e.g. LexBench Production, LexBench Recovery. This is consequential and may spend provider quota. On approval_required, show the returned Lex approval_url; after the user approves, retry unchanged with approval_request_id. Returns the new run\'s ID and URL when found.',
     parameters: {
       type: 'object',
       properties: {
         workflow: { type: 'string', description: 'Workflow filename, e.g. "lexbench-prod.yml", "lexbench-recovery.yml".' },
         ref: { type: 'string', description: 'Branch to run on. Defaults to "main".' },
         inputs: { type: 'object', description: 'Key-value inputs matching the workflow\'s own workflow_dispatch.inputs schema, e.g. { "run_id": "29626879866" } for lexbench-recovery.yml, or { "limit": "5" } for a quick-test dispatch of lexbench-prod.yml.' },
-        approval_token: { type: 'string', description: 'Action-bound Lex approval token. Never log or persist it.' },
-        approval_request_id: { type: 'string', description: 'Single-use operator-approved exact-action request ID, as an alternative to approval_token.' },
+        approval_request_id: { type: 'string', description: 'One-time human-approved exact-action request ID returned by Lex.' },
         ...REPO_PARAM,
       },
       required: ['workflow'],
@@ -1580,14 +1578,14 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'authorize_tool_action',
-    description: 'Operator-only authority boundary. Issues a short-lived, single-use, action-bound Lex approval token for one explicitly registered consequential tool action. The token is bound to the exact tool and arguments and is never a general credential.',
+    description: 'Create a pending human approval request for one exact consequential tool action. This does not authorize execution. Open the returned approval_url and tap Approve this exact action; then retry the target tool with the returned request_id as approval_request_id and unchanged arguments.',
     parameters: {
       type: 'object',
       properties: {
         tool_name: { type: 'string', description: 'Registered tool to authorize.' },
         arguments: { type: 'object', description: 'Exact arguments that will be used for the authorized action. Do not include approval_token.' },
         session_id: { type: 'string', description: 'Governance session binding.' },
-        task_context: { type: 'string', description: 'Why the operator is authorizing this action.' },
+        task_context: { type: 'string', description: 'Context for Lex governance review.' },
       },
       required: ['tool_name', 'arguments'],
     },

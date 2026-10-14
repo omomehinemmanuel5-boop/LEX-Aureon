@@ -369,7 +369,7 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
-  it('does not automatically issue approvals for private-test consequential calls', async () => {
+  it('returns a one-tap human approval request for a first private-test write call', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -384,11 +384,18 @@ describe('MCP constitutional dispatch boundary', () => {
 
     expect(response.status).toBe(200);
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
-    const executedArgs = executeGovernedTool.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(executedArgs.approval_token).toBeUndefined();
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'private-test-1',
+      toolName: 'write_file',
+      args: expect.objectContaining(actionArgs),
+    }));
+    const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(approvalResult).toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
+    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals$/);
   });
 
-  it('does not mint approval tokens for private-test keys when the proxy IP changes', async () => {
+  it('does not self-approve writes even when the private-test caller IP changes', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -405,9 +412,11 @@ describe('MCP constitutional dispatch boundary', () => {
     }
 
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
+    expect(createApprovalRequest).toHaveBeenCalledTimes(2);
+    expect(executeGovernedTool).not.toHaveBeenCalled();
   });
 
-  it('denies authorization from a private-test key without the operator secret', async () => {
+  it('lets a private-test key request human approval without granting the write itself', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -427,11 +436,23 @@ describe('MCP constitutional dispatch boundary', () => {
       id: 32,
     }));
 
-    expect(response.status).toBe(401);
-    expect(validateAndConsumeKey).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(validateAndConsumeKey).toHaveBeenCalledWith('test-key');
     expect(isOperatorSecret).toHaveBeenCalled();
-    expect(interceptToolCall).not.toHaveBeenCalled();
+    expect(interceptToolCall).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'write_file',
+      session_id: 'private-test-session',
+      actor_id: 'api_key:private-test-1',
+    }));
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'private-test-1',
+      sessionId: 'private-test-session',
+      toolName: 'write_file',
+      args: { ...actionArgs, session_id: 'private-test-session' },
+    }));
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
+    expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
+      .toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
   });
   it('returns MCP content for a denied authorization decision without minting a token', async () => {
     isOperatorSecret.mockReturnValue(true);

@@ -23,10 +23,9 @@ import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
-import { createGovernanceApprovalToken } from '@/lib/agents/tool_governance_gateway';
 import { ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
 import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
-import { discoverExternalTool, governExternalAction, authorizeExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
+import { discoverExternalTool, governExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
@@ -167,7 +166,7 @@ const EXTERNAL_CAPABILITY_DEFINITIONS = [
   },
   {
     name: 'govern_external_action',
-    description: 'Run Lex governance over a discovered external tool action. Read-only actions may be auto-authorized; consequential actions require an exact action-bound approval token.',
+    description: 'Run Lex governance over a discovered external tool action. Read-only actions may be auto-authorized; for consequential actions, call authorize_external_action to create a pending human approval request, then consume the approved request ID immediately before the client adapter executes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -183,7 +182,7 @@ const EXTERNAL_CAPABILITY_DEFINITIONS = [
   },
   {
     name: 'consume_external_action',
-    description: 'Final execution gate for a client-side external tool adapter. Consumes the exact single-use Lex approval immediately before the adapter executes.',
+    description: 'Final execution gate for a client-side external tool adapter. After a human approves the exact action in Lex, provide approval_request_id here; Lex consumes it once immediately before the adapter executes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -192,13 +191,14 @@ const EXTERNAL_CAPABILITY_DEFINITIONS = [
         action_args: { type: 'object' },
         session_id: { type: 'string' },
         approval_token: { type: 'string' },
+        approval_request_id: { type: 'string', description: 'One-time human-approved exact-action request ID from Lex /approvals.' },
       },
-      required: ['environment_id', 'manifest', 'action_args', 'approval_token'],
+      required: ['environment_id', 'manifest', 'action_args'],
     },
   },
   {
     name: 'authorize_external_action',
-    description: 'Operator-only control-plane operation. Reviews an exact discovered external action and issues a short-lived action-bound approval permit.',
+    description: 'Create a pending human approval request for an exact discovered external action. The target actor must be the authenticated caller. Open approval_url for the one-tap review, then use the request ID with consume_external_action; this operation never executes the external action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -511,12 +511,9 @@ export async function POST(req: Request) {
       }
     }
 
-    // The authorization endpoint is an operator-only control-plane action.
-    // It issues a short-lived token bound to one exact consequential action.
-    // It is intentionally handled before ordinary tool execution so an
-    // approval token cannot be self-issued by the governed tool it authorizes.
+    // The authorization endpoint creates a pending, exact-action request for
+    // separate human approval. Tool visibility is not approval authority.
     if (toolName === 'authorize_tool_action') {
-      if (!operator) return unauthorized(id);
       if (!operator && profile !== 'operator') return unauthorized(id);
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
@@ -549,10 +546,8 @@ export async function POST(req: Request) {
       if (!capability.approvalRequired) {
         return invalidParams(id ?? null, 'Approval tokens are only issued for consequential capabilities');
       }
-      // Private-test callers may use the authorization control plane, but
-      // retain normal API-key accounting and re-read the plan atomically before
-      // issuing a token. Bind the token to this authenticated key, not to the
-      // shared operator principal.
+      // Private-test callers may request approval, but cannot grant it. Re-read
+      // their identity and plan atomically before creating the pending request.
       if (!operator) {
         const consumption = apiKey
           ? await validateAndConsumeKey(apiKey)
@@ -597,40 +592,35 @@ export async function POST(req: Request) {
           receipt_id: review.receipt_id ?? null,
         });
       }
-      const approvalId = crypto.randomUUID();
-      let approvalToken: string;
       try {
-        approvalToken = createGovernanceApprovalToken({
-          actorId,
+        const pending = await createApprovalRequest({
+          ownerId,
           sessionId: requestedSession,
           toolName: requestedTool,
-          args: requestedArgs,
-          approvalId,
+          args: { ...requestedArgs, session_id: requestedSession },
+        });
+        return mcpToolResult(id, {
+          status: 'approval_required',
+          request_id: pending.requestId,
+          tool_name: requestedTool,
+          expires_at: new Date(pending.expiresAt).toISOString(),
+          approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+          receipt_id: review.receipt_id ?? null,
+          next_step: 'A human approver must review and approve this exact action. Then call the same tool with approval_request_id and unchanged arguments.',
         });
       } catch {
         return NextResponse.json({
           jsonrpc: '2.0',
-          error: { code: -32003, message: 'Approval signing is not configured; authorization denied' },
+          error: { code: -32003, message: 'Could not create a pending approval request; no action was authorized' },
           id,
         }, { status: 503 });
       }
-      return mcpToolResult(id, {
-        approved: true,
-        decision: 'approval_issued',
-        tool_name: requestedTool,
-        approval_id: approvalId,
-        expires_in_seconds: 15 * 60,
-        approval_token: approvalToken,
-        receipt_id: review.receipt_id ?? null,
-        warning: 'Treat this token as sensitive. It is single-use and bound to the exact tool and arguments.',
-      });
     }
 
     // External capability control-plane operations deliberately sit outside the
     // static internal tool registry. They govern client-side adapters rather than
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
-      if (toolName === 'authorize_external_action' && !operator) return unauthorized(id);
       if (toolName === 'authorize_external_action' && !operator && profile !== 'operator') return unauthorized(id);
       if (!operator && (apiKey || sessionKeyId)) {
         const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
@@ -671,15 +661,44 @@ export async function POST(req: Request) {
         if (toolName === 'authorize_external_action') {
           const targetActorId = typeof args.target_actor_id === 'string' ? args.target_actor_id.trim() : '';
           if (!targetActorId) return invalidParams(id ?? null, 'target_actor_id is required for operator authorization');
-          const result = await authorizeExternalAction({
-            environmentId, manifest, actionArgs, sessionId, actorId: targetActorId, authorizedByActorId: actorId,
+          if (targetActorId !== actorId) return invalidParams(id ?? null, 'target_actor_id must match the authenticated caller for a resumable approval request');
+          const review = await governExternalAction({
+            environmentId, manifest, actionArgs, sessionId, actorId,
             taskContext: typeof args.task_context === 'string' ? args.task_context.slice(0, 4096) : undefined,
           });
-          return mcpToolResult(id, result);
+          if (!review.approved && review.decision !== 'approval_required') {
+            return mcpToolResult(id, {
+              status: 'denied', decision: review.decision, reason: review.reason,
+              risk: review.risk, receipt_id: review.receiptId ?? null,
+            });
+          }
+          if (!review.approvalRequired) return mcpToolResult(id, review);
+          const pending = await createApprovalRequest({
+            ownerId,
+            sessionId,
+            toolName: 'consume_external_action',
+            args: { environment_id: environmentId, manifest, action_args: actionArgs, session_id: sessionId },
+          });
+          return mcpToolResult(id, {
+            status: 'approval_required',
+            request_id: pending.requestId,
+            tool_name: manifest.name,
+            risk: review.risk,
+            expires_at: new Date(pending.expiresAt).toISOString(),
+            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            receipt_id: review.receiptId ?? null,
+            next_step: 'A human approver must review this exact external action. After approval, call consume_external_action with the same manifest and arguments plus approval_request_id. The client adapter must act only if granted is true.',
+          });
         }
-        const approvalToken = typeof args.approval_token === 'string' ? args.approval_token : '';
-        if (!approvalToken) return invalidParams(id ?? null, 'approval_token is required');
-        const result = await consumeExternalAction({ environmentId, manifest, actionArgs, sessionId, actorId, approvalToken });
+        const approvalToken = typeof args.approval_token === 'string' ? args.approval_token : undefined;
+        const approvalRequestId = typeof args.approval_request_id === 'string' ? args.approval_request_id : undefined;
+        if (!approvalToken && !approvalRequestId) {
+          return invalidParams(id ?? null, 'approval_request_id is required after human approval; request it with request_approval for consume_external_action');
+        }
+        const result = await consumeExternalAction({
+          environmentId, manifest, actionArgs, sessionId, actorId, ownerId,
+          approvalToken, approvalRequestId,
+        });
         return mcpToolResult(id, {
           ...result,
           execution_may_begin: result.granted,
@@ -828,6 +847,33 @@ export async function POST(req: Request) {
         ? Object.fromEntries(Object.entries(baseToolArgs).filter(([key]) => key !== 'approval_token'))
         : baseToolArgs;
       const toolArgs = bindGovernanceToolSession(dispatchToolName, executionArgs, sessionId);
+      const requestedCapability = getToolCapability(dispatchToolName);
+      if (requestedCapability?.approvalRequired
+        && args.approval_token === undefined
+        && args.approval_request_id === undefined) {
+        try {
+          const pending = await createApprovalRequest({
+            ownerId,
+            sessionId,
+            toolName: dispatchToolName,
+            args: toolArgs,
+          });
+          return mcpToolResult(id, {
+            status: 'approval_required',
+            request_id: pending.requestId,
+            tool_name: dispatchToolName,
+            expires_at: new Date(pending.expiresAt).toISOString(),
+            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            next_step: 'A human approver must review this exact action. After approval, retry the same tool with approval_request_id and unchanged arguments.',
+          });
+        } catch {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32003, message: 'Could not create a pending approval request; no action was started' },
+            id,
+          }, { status: 503 });
+        }
+      }
       let runContext: AutonomousRunContext | undefined;
       if (runId && leaseToken && idempotencyKey) {
         const run = await getAutonomousRun(runId);

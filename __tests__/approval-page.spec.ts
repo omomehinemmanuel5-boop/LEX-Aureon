@@ -61,6 +61,9 @@ describe('operator approval page and POST boundary', () => {
     const html = await response.text();
     expect(response.status).toBe(200);
     expect(html).toContain('write_file');
+    expect(html).toContain('Approve this exact action');
+    expect(html).toContain('approval_request_id');
+    expect(html).toContain('@media(max-width:520px)');
     expect(html).toContain('[REDACTED]');
     expect(html).not.toContain('must-not-render');
     expect(html).not.toContain(values.secret);

@@ -12,6 +12,7 @@ import {
   verifyGovernanceApprovalToken,
   consumeGovernanceApprovalToken,
 } from './tool_governance_gateway';
+import { consumeApprovalRequest } from '../approval_requests';
 
 export type ExternalActionDecision =
   | 'allow'
@@ -246,7 +247,9 @@ export async function consumeExternalAction(input: {
   actionArgs: Record<string, unknown>;
   sessionId: string;
   actorId: string;
-  approvalToken: string;
+  approvalToken?: string;
+  approvalRequestId?: string;
+  ownerId?: string;
 }): Promise<{ granted: boolean; approvalId?: string; reason: string }> {
   const capability = await getDiscoveredToolCapability(input.environmentId, input.manifest.name);
   if (!capability) return { granted: false, reason: 'Discovered capability is missing or expired; rediscover before execution.' };
@@ -267,13 +270,26 @@ export async function consumeExternalAction(input: {
     actionArgs: input.actionArgs,
   });
   const toolName = stableToolName(input.environmentId, capability.name);
-  const consumed = await consumeGovernanceApprovalToken({
-    token: input.approvalToken,
-    actorId: input.actorId,
-    sessionId: input.sessionId,
-    toolName,
-    args: tokenArgs(envelope),
-  });
+  const consumed = input.approvalRequestId
+    ? await consumeApprovalRequest({
+      requestId: input.approvalRequestId,
+      ownerId: input.ownerId ?? input.actorId,
+      sessionId: input.sessionId,
+      toolName: 'consume_external_action',
+      args: {
+        environment_id: input.environmentId,
+        manifest: input.manifest as unknown as Record<string, unknown>,
+        action_args: input.actionArgs,
+        session_id: input.sessionId,
+      },
+    }).then(result => ({ consumed: result.consumed, approvalId: input.approvalRequestId, reason: result.reason }))
+    : await consumeGovernanceApprovalToken({
+      token: input.approvalToken,
+      actorId: input.actorId,
+      sessionId: input.sessionId,
+      toolName,
+      args: tokenArgs(envelope),
+    });
   return {
     granted: consumed.consumed,
     approvalId: consumed.approvalId,
