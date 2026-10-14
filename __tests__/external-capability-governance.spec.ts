@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createGovernanceApprovalToken: vi.fn(() => 'permit-token'),
   verifyGovernanceApprovalToken: vi.fn(() => ({ valid: false, reason: 'approval_token_missing' })),
   consumeGovernanceApprovalToken: vi.fn(async () => ({ consumed: false, reason: 'not consumed' })),
+  consumeApprovalRequest: vi.fn(async () => ({ consumed: true, reason: 'human request consumed once' })),
 }));
 
 vi.mock('../lib/agents/tool_capability_discovery', async (importOriginal) => {
@@ -19,6 +20,7 @@ vi.mock('../lib/agents/tool_capability_discovery', async (importOriginal) => {
 });
 
 vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall: mocks.interceptToolCall }));
+vi.mock('../lib/approval_requests', () => ({ consumeApprovalRequest: mocks.consumeApprovalRequest }));
 
 vi.mock('../lib/agents/tool_governance_gateway', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/agents/tool_governance_gateway')>();
@@ -44,6 +46,7 @@ describe('external capability governance boundary', () => {
     });
     mocks.createGovernanceApprovalToken.mockReturnValue('permit-token');
     mocks.verifyGovernanceApprovalToken.mockReturnValue({ valid: false, reason: 'approval_token_missing' });
+    mocks.consumeApprovalRequest.mockResolvedValue({ consumed: true, reason: 'human request consumed once' });
   });
 
   it('discovers a write tool conservatively without granting execution authority', () => {
@@ -194,5 +197,39 @@ describe('external capability governance boundary', () => {
 
     expect(exact).toMatchObject({ granted: true, reason: 'consumed' });
     expect(mocks.consumeGovernanceApprovalToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('consumes the human-approved request ID for the exact external action', async () => {
+    const manifest = {
+      name: 'edit_customer_record',
+      description: 'Update a customer record',
+      inputSchema: { type: 'object', properties: { record: { type: 'object' } } },
+    };
+    const discovered = resolveToolManifest('test-env', manifest);
+    mocks.getDiscoveredToolCapability.mockResolvedValue(discovered as never);
+
+    const result = await consumeExternalAction({
+      environmentId: 'test-env',
+      manifest,
+      actionArgs: { record: { id: 'synthetic-only' } },
+      sessionId: 'external-human-approval',
+      actorId: 'api_key:private-test-1',
+      ownerId: 'private-test-1',
+      approvalRequestId: 'request-once',
+    });
+
+    expect(mocks.consumeApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'request-once',
+      ownerId: 'private-test-1',
+      sessionId: 'external-human-approval',
+      toolName: 'consume_external_action',
+      args: expect.objectContaining({
+        environment_id: 'test-env',
+        manifest,
+        action_args: { record: { id: 'synthetic-only' } },
+      }),
+    }));
+    expect(result).toMatchObject({ granted: true, approvalId: 'request-once' });
+    expect(mocks.consumeGovernanceApprovalToken).not.toHaveBeenCalled();
   });
 });
