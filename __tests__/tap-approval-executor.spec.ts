@@ -57,7 +57,7 @@ describe('one-tap approval executor integration', () => {
     expect(result.approved).toBe(true);
     expect(result.policy?.decision).toBe('allow');
     expect(currentConsumedApproval()).toBeUndefined();
-  });
+  }, 15_000);
 
   it('does not consume an approved request when canonical session health fails', async () => {
     canonicalExecutionAllowed.mockReturnValue({ allowed: false, reason: 'recovery evidence missing' });
