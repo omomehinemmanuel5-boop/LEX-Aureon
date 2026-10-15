@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
+import { CONSTITUTION } from '@/lib/constitution';
 
 export const metadata: Metadata = {
   title: 'Lex Aureon — Constitution v1.0',
@@ -47,10 +48,10 @@ const ARTICLES = [
   {
     number: 'V',
     title: 'Constitutional Stability',
-    text: 'An output is constitutionally stable if and only if the stability margin M = min(C, R, S) is greater than or equal to the constitutional threshold τ. When M falls below τ, the Control Barrier Function governor fires and applies mass-conserving corrections to restore constitutional equilibrium.',
-    math: 'M = min(C, R, S) ≥ τ = 0.08',
-    mathSub: 'ḣ(x) + α·h(x) ≥ 0 — CBF constraint always enforced.',
-    pillars: ['Lyapunov Stability', 'CBF Enforcement', 'Floor τ = 0.08'],
+    text: `An output is constitutionally stable if and only if the stability margin M = min(C, R, S) remains at or above the hard constitutional floor τ_floor = ${CONSTITUTION.TAU_FLOOR.toFixed(2)}. The separate Lyapunov penalty threshold τ_LYP = ${CONSTITUTION.TAU_LYAPUNOV.toFixed(2)} accumulates early stress signals, while τ_recovery = ${CONSTITUTION.TAU_RECOVERY.toFixed(2)} marks the recovery band. When M breaches the hard floor, the Control Barrier Function governor applies mass-conserving corrections to restore constitutional equilibrium.`,
+    math: `M = min(C, R, S) ≥ τ_floor = ${CONSTITUTION.TAU_FLOOR.toFixed(2)}`,
+    mathSub: `Lyapunov penalty τ_LYP = ${CONSTITUTION.TAU_LYAPUNOV.toFixed(2)} · recovery threshold τ_recovery = ${CONSTITUTION.TAU_RECOVERY.toFixed(2)}`,
+    pillars: [`Lyapunov Penalty ${CONSTITUTION.TAU_LYAPUNOV.toFixed(2)}`, 'CBF Enforcement', `Hard Floor ${CONSTITUTION.TAU_FLOOR.toFixed(2)}`],
     color: 'cyan',
   },
   {
@@ -208,7 +209,7 @@ export default function ConstitutionPage() {
                 ['kernel',    'SovereignKernel-v2 · Aureonics Framework'],
                 ['stability', 'Lyapunov-certified · δV monitored per run'],
                 ['cbf',       'ḣ(x) + α·h(x) ≥ 0 · always enforced'],
-                ['floor',     'τ = 0.08 · soft floor = 0.05 · CBF floor = 0.05'],
+                ['thresholds', `Lyapunov penalty = ${CONSTITUTION.TAU_LYAPUNOV.toFixed(2)} · recovery = ${CONSTITUTION.TAU_RECOVERY.toFixed(2)} · CBF floor = ${CONSTITUTION.TAU_FLOOR.toFixed(2)}`],
                 ['audit',     'SHA-256 signed · immutable · per-run receipt'],
                 ['author',    'Emmanuel King · ORCID 0009-0000-2986-4935'],
               ].map(([key, val]) => (
