@@ -1,13 +1,10 @@
 import { env } from '@/lib/env';
 import { decideApprovalRequest } from '@/lib/approval_requests';
 import { hasOperatorSession } from '@/app/approvals/route';
+import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function isOwnOrigin(req: Request): boolean {
-  try { return req.headers.get('origin') === new URL(env.NEXT_PUBLIC_SITE_URL).origin; } catch { return false; }
-}
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, character => ({
@@ -36,7 +33,7 @@ export async function POST(
 ): Promise<Response> {
   const secret = env.MCP_OPERATOR_SECRET;
   if (!secret) return page('The operator approval page is disabled.', 404);
-  if (!isOwnOrigin(req)) return page('Request origin was not accepted.', 403);
+  if (!isTrustedApprovalOrigin(req)) return page('Request origin was not accepted.', 403);
   if (!hasOperatorSession(req.headers.get('cookie'), secret)) return page('Operator sign-in is required.', 401);
   const { requestId, decision } = await context.params;
   if (decision !== 'approved' && decision !== 'denied') return page('Invalid decision.', 400);

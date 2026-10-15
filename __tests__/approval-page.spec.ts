@@ -89,6 +89,25 @@ describe('operator approval page and POST boundary', () => {
     expect(checkRateLimit).not.toHaveBeenCalled();
   });
 
+  it('accepts only the official apex/www aliases for login and approval decisions', async () => {
+    const apexOrigin = 'https://lexaureon.com';
+    const login = await signInPost(loginRequest(values.secret, apexOrigin));
+    expect(login.status).toBe(303);
+
+    const requestId = 'e'.repeat(22);
+    const cookie = createOperatorSessionCookie(values.secret).split(';')[0];
+    const approved = await decisionPost(new Request(`${ownOrigin}/approvals/${requestId}/approved`, {
+      method: 'POST', headers: { origin: apexOrigin, cookie },
+    }), { params: Promise.resolve({ requestId, decision: 'approved' }) });
+    expect(approved.status).toBe(200);
+    expect(decideApprovalRequest).toHaveBeenCalledWith({ requestId, decision: 'approved', decidedBy: 'operator' });
+
+    const missingOrigin = await signInPost(loginRequest(values.secret, ''));
+    expect(missingOrigin.status).toBe(403);
+    const attackerOrigin = await signInPost(loginRequest(values.secret, 'https://attacker.example'));
+    expect(attackerOrigin.status).toBe(403);
+  });
+
   it('rate-limits failed sign-ins by IP and hour', async () => {
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 0, retryAfter: 0 });
     for (let i = 0; i < 5; i += 1) {

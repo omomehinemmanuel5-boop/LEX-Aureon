@@ -3,6 +3,7 @@ import { headers as requestHeaders } from 'next/headers';
 import { env } from '@/lib/env';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { listPendingApprovalRequests } from '@/lib/approval_requests';
+import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -94,14 +95,10 @@ export async function GET(): Promise<Response> {
   return response(signInPage());
 }
 
-function isOwnOrigin(req: Request): boolean {
-  try { return req.headers.get('origin') === new URL(env.NEXT_PUBLIC_SITE_URL).origin; } catch { return false; }
-}
-
 export async function POST(req: Request): Promise<Response> {
   const secret = env.MCP_OPERATOR_SECRET;
   if (!secret) return response('<!doctype html><p>The operator approval page is disabled.</p>', 404);
-  if (!isOwnOrigin(req)) return response(signInPage('Request origin was not accepted.'), 403);
+  if (!isTrustedApprovalOrigin(req)) return response(signInPage('Request origin was not accepted.'), 403);
   let form: FormData;
   try { form = await req.formData(); } catch { return response(signInPage('Invalid sign-in request.'), 400); }
   const submitted = String(form.get('secret') ?? '');
