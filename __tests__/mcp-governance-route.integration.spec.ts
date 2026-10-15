@@ -557,6 +557,34 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'consume_external_action',
       args: expect.objectContaining({ session_id: 'private-test-1:external-session' }),
     }));
+
+    externalBrokerMocks.consumeExternalAction.mockResolvedValueOnce({ granted: true, reason: 'consumed once' });
+    const consumeResponse = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'consume_external_action',
+        arguments: {
+          environment_id: 'test-env',
+          manifest,
+          action_args: { record_id: 'synthetic-only' },
+          session_id: 'external-session',
+          approval_request_id: 'a'.repeat(22),
+        },
+      },
+      id: 'external-session-consume',
+    }));
+    expect(consumeResponse.status).toBe(200);
+    expect(externalBrokerMocks.consumeExternalAction).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'private-test-1:external-session',
+      actorId: 'api_key:private-test-1',
+      ownerId: 'private-test-1',
+      approvalRequestId: 'a'.repeat(22),
+    }));
+    const consumePayload = (consumeResponse.body as unknown as {
+      result: { structuredContent: Record<string, unknown> };
+    }).result.structuredContent;
+    expect(consumePayload).toMatchObject({ granted: true, execution_may_begin: true });
   });
 
   it('returns MCP content for a denied authorization decision without minting a token', async () => {
