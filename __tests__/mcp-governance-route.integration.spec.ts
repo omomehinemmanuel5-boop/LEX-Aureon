@@ -499,7 +499,8 @@ describe('MCP constitutional dispatch boundary', () => {
       id: 36,
     }));
 
-    const reviewedSession = interceptToolCall.mock.calls[0]?.[0]?.session_id;
+    const reviewedCall = interceptToolCall.mock.calls[0] as unknown as [{ session_id?: string }] | undefined;
+    const reviewedSession = reviewedCall?.[0]?.session_id;
     expect(reviewedSession).toMatch(/^private-test-1:mcp-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/);
     expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: reviewedSession,
