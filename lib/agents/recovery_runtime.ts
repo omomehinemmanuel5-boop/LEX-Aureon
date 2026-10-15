@@ -50,14 +50,33 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
 
   const M = Math.min(current.last_c, current.last_r, current.last_s);
   if (M >= CONSTITUTION.TAU_RECOVERY) {
+    // A denied consequential action must not be the only way to make
+    // recovery progress. Persist the unchanged state as an explicit,
+    // auditable stability observation. This never grants execution authority;
+    // it only lets n_stable reach N_MIN before the operator canary.
+    const kernel = getCachedKernel(sessionId, { C: current.last_c, R: current.last_r, S: current.last_s });
+    kernel.state = { C: current.last_c, R: current.last_r, S: current.last_s };
+    const updated = await updateZTraj(
+      sessionId,
+      { c: current.last_c, r: current.last_r, s: current.last_s },
+      { c: current.last_c, r: current.last_r, s: current.last_s },
+      current.attack_pressure,
+    );
+    const canonical = await readCanonicalGovernanceState({
+      sessionId,
+      actorId: 'recovery-plane',
+      capability: 'read',
+    });
     return {
-      advanced: false,
-      stabilized: false,
-      state: 'RESTORING',
-      M,
-      nStable: current.n_stable,
-      velocity: current.velocity,
-      reason: 'No-op observations do not advance stability; only real state changes count.',
+      advanced: true,
+      stabilized: updated.n_stable >= CONSTITUTION.N_MIN,
+      state: canonical.available ? canonical.state.recoveryState : 'RESTORING',
+      M: Math.min(updated.last_c, updated.last_r, updated.last_s),
+      nStable: canonical.available ? canonical.state.nStable : updated.n_stable,
+      velocity: updated.velocity,
+      reason: canonical.available && canonical.state.canaryPassed
+        ? 'Stable recovery observation recorded; exact-snapshot canary evidence is current.'
+        : `Stable recovery observation recorded (${updated.n_stable}/${CONSTITUTION.N_MIN}); an operator canary is still required before consequential execution.`,
     };
   }
   if (M < TAU) {

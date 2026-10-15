@@ -132,6 +132,50 @@ export async function listPendingApprovalRequests(nowMs = Date.now()): Promise<A
   }));
 }
 
+export type ApprovalRequestStatus = 'pending' | 'approved' | 'denied' | 'used' | 'expired';
+export interface ApprovalRequestRecord {
+  request_id: string;
+  owner_id: string;
+  session_id: string;
+  tool_name: string;
+  args_json: string;
+  status: ApprovalRequestStatus;
+  created_at: number;
+  expires_at: number;
+  decided_at: number | null;
+  decided_by: string | null;
+}
+
+/** Return a bounded, append-only view of approval history. */
+export async function listApprovalRequests(nowMs = Date.now(), limit = 100): Promise<ApprovalRequestRecord[]> {
+  await ensureApprovalRequestSchema();
+  const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+  const result = await getClient().execute({
+    sql: `SELECT request_id, owner_id, session_id, tool_name, args_json, status,
+                 created_at, expires_at, decided_at, decided_by
+          FROM approval_requests ORDER BY created_at DESC LIMIT ?`,
+    args: [boundedLimit],
+  });
+  return result.rows.map(row => {
+    const storedStatus = String(row.status) as Exclude<ApprovalRequestStatus, 'expired'>;
+    const status: ApprovalRequestStatus = storedStatus === 'pending' && nowMs >= Number(row.expires_at)
+      ? 'expired'
+      : storedStatus;
+    return {
+      request_id: String(row.request_id),
+      owner_id: String(row.owner_id),
+      session_id: String(row.session_id),
+      tool_name: String(row.tool_name),
+      args_json: String(row.args_json),
+      status,
+      created_at: Number(row.created_at),
+      expires_at: Number(row.expires_at),
+      decided_at: row.decided_at == null ? null : Number(row.decided_at),
+      decided_by: row.decided_by == null ? null : String(row.decided_by),
+    };
+  });
+}
+
 export async function decideApprovalRequest(input: {
   requestId: string; decision: 'approved' | 'denied'; decidedBy: string; nowMs?: number;
 }): Promise<boolean> {

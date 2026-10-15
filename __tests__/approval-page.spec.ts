@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { values, sessionCookie, checkRateLimit, getClientIp, listPendingApprovalRequests, decideApprovalRequest } = vi.hoisted(() => ({
+const { values, sessionCookie, checkRateLimit, getClientIp, listApprovalRequests, decideApprovalRequest } = vi.hoisted(() => ({
   values: { secret: 'test-only-placeholder', site: 'https://www.lexaureon.com', cookie: '' },
   sessionCookie: vi.fn(() => ''),
   checkRateLimit: vi.fn(),
   getClientIp: vi.fn(() => '192.0.2.10'),
-  listPendingApprovalRequests: vi.fn(),
+  listApprovalRequests: vi.fn(),
   decideApprovalRequest: vi.fn(),
 }));
 vi.mock('../lib/env', () => ({ env: {
@@ -14,7 +14,7 @@ vi.mock('../lib/env', () => ({ env: {
 } }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers({ cookie: values.cookie }) }));
 vi.mock('../lib/rate_limit', () => ({ checkRateLimit, getClientIp }));
-vi.mock('../lib/approval_requests', () => ({ listPendingApprovalRequests, decideApprovalRequest }));
+vi.mock('../lib/approval_requests', () => ({ listApprovalRequests, decideApprovalRequest }));
 
 import { GET as approvalsGet, POST as signInPost } from '../app/approvals/route';
 import { createOperatorSessionCookie, hasOperatorSession } from '../app/approvals/route';
@@ -36,10 +36,11 @@ describe('operator approval page and POST boundary', () => {
     values.site = ownOrigin;
     values.cookie = '';
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 4, retryAfter: 0 });
-    listPendingApprovalRequests.mockResolvedValue([{
+    listApprovalRequests.mockResolvedValue([{
       request_id: 'a'.repeat(22), owner_id: 'owner-a', session_id: 'owner-a:s1',
       tool_name: 'write_file', args_json: '{"path":"README.md","api_key":"must-not-render"}',
-      created_at: 1_800_000_000_000, expires_at: 1_800_000_900_000,
+      status: 'pending', created_at: 1_800_000_000_000, expires_at: 1_800_000_900_000,
+      decided_at: null, decided_by: null,
     }]);
     decideApprovalRequest.mockResolvedValue(true);
   });
@@ -64,6 +65,7 @@ describe('operator approval page and POST boundary', () => {
     expect(html).toContain('Approve this exact action');
     expect(html).toContain('approval_request_id');
     expect(html).toContain('@media(max-width:520px)');
+    expect(html).toContain('Approval history');
     expect(html).toContain('[REDACTED]');
     expect(html).not.toContain('must-not-render');
     expect(html).not.toContain(values.secret);

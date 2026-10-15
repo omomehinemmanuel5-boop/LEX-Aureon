@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
   readCanonicalGovernanceState: vi.fn(),
+  canonicalExecutionAllowed: vi.fn(() => ({ allowed: true })),
+  advanceRecoveryPlane: vi.fn(async () => {}),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
@@ -74,7 +76,10 @@ vi.mock('@/lib/approval_requests', () => ({ createApprovalRequest }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
   readCanonicalGovernanceState,
+  canonicalExecutionAllowed,
 }));
+
+vi.mock('../lib/agents/recovery_runtime', () => ({ advanceRecoveryPlane }));
 
 vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryEvidence }));
 
@@ -148,7 +153,16 @@ describe('MCP constitutional dispatch boundary', () => {
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
     isOperatorSecret.mockReturnValue(false);
     toolFn.mockResolvedValue('TOOL_RESULT');
-    readCanonicalGovernanceState.mockResolvedValue({ available: false, state: {} });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'owner-a:session', actorId: 'api_key:owner-a', C: 1, R: 1, S: 1, M: 1,
+        healthBand: 'OPTIMAL', recoveryState: 'NORMAL', sigmaViol: 0, toolCalls: 0,
+        trajectoryAvailable: true, nStable: 3, canaryPassed: true,
+        stateFingerprint: 'a'.repeat(64), trajectoryUpdatedAt: '2026-10-15T00:00:00.000Z',
+        authorization: 'approval_required', policyRisk: 'write', version: 'test', observedAt: '2026-10-15T00:00:00.000Z',
+      },
+    });
     recordRecoveryCanaryEvidence.mockResolvedValue(undefined);
     executeGovernedTool.mockResolvedValue('approved:    true\\ncache_hit:   false\\nTOOL_RESULT');
     executeGovernedToolStructured.mockImplementation(async (_name, args, handler) => {

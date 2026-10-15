@@ -23,7 +23,8 @@ import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
-import { ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
+import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
+import { advanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
 import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
 import { discoverExternalTool, governExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
@@ -590,6 +591,40 @@ export async function POST(req: Request) {
           id,
         }, { status: 503 });
       }
+      let authorizationCanonical = await readCanonicalGovernanceState({
+        sessionId: requestedSession,
+        actorId,
+        capability: capability.capability,
+        authorization: 'approval_required',
+      });
+      if (authorizationCanonical.available && authorizationCanonical.state.trajectoryAvailable
+        && authorizationCanonical.state.M >= 0.05
+        && (authorizationCanonical.state.M < 0.25 || authorizationCanonical.state.nStable < 3)) {
+        await advanceRecoveryPlane(requestedSession);
+        authorizationCanonical = await readCanonicalGovernanceState({
+          sessionId: requestedSession,
+          actorId,
+          capability: capability.capability,
+          authorization: 'approval_required',
+        });
+      }
+      if (!authorizationCanonical.available) {
+        return mcpToolResult(id, {
+          approved: false,
+          decision: 'DENIED_LOCKED',
+          reason: authorizationCanonical.reason ?? 'Canonical governance state unavailable; no approval was created.',
+          approval_created: false,
+        });
+      }
+      const authorizationGate = canonicalExecutionAllowed(authorizationCanonical.state);
+      if (!authorizationGate.allowed) {
+        return mcpToolResult(id, {
+          approved: false,
+          decision: 'DENIED_BLOCKED',
+          reason: authorizationGate.reason ?? 'Canonical governance state denied execution; no approval was created.',
+          approval_created: false,
+        });
+      }
       const review = await interceptToolCall({
         id: crypto.randomUUID(),
         name: requestedTool,
@@ -862,6 +897,55 @@ export async function POST(req: Request) {
       if (requestedCapability?.approvalRequired
         && args.approval_token === undefined
         && args.approval_request_id === undefined) {
+        // Do the non-human governance work first. A human approval is useful
+        // only after Lex establishes that this session is healthy enough to
+        // reach the execution gate; otherwise we create an approval that can
+        // never be consumed and force the user through avoidable friction.
+        let canonical = await readCanonicalGovernanceState({
+          sessionId,
+          actorId,
+          capability: requestedCapability.capability,
+          authorization: 'approval_required',
+        });
+        if (canonical.available && canonical.state.trajectoryAvailable
+          && canonical.state.M >= 0.05
+          && (canonical.state.M < 0.25 || canonical.state.nStable < 3)) {
+          try {
+            await advanceRecoveryPlane(sessionId);
+            canonical = await readCanonicalGovernanceState({
+              sessionId,
+              actorId,
+              capability: requestedCapability.capability,
+              authorization: 'approval_required',
+            });
+          } catch {
+            // The canonical read remains authoritative and fail-closed.
+          }
+        }
+        if (!canonical.available) {
+          return mcpToolResult(id, {
+            status: 'denied',
+            decision: 'DENIED_LOCKED',
+            reason: canonical.reason ?? 'Canonical governance state unavailable; no approval was created.',
+            approval_created: false,
+          });
+        }
+        const preflight = canonicalExecutionAllowed(canonical.state);
+        if (!preflight.allowed) {
+          return mcpToolResult(id, {
+            status: 'denied',
+            decision: 'DENIED_BLOCKED',
+            reason: preflight.reason ?? 'Canonical governance state denied execution; no approval was created.',
+            recovery_state: canonical.state.recoveryState,
+            M: canonical.state.M,
+            n_stable: canonical.state.nStable,
+            canary_passed: canonical.state.canaryPassed === true,
+            approval_created: false,
+            next_step: canonical.state.M >= 0.15 && canonical.state.nStable >= 3 && !canonical.state.canaryPassed
+              ? 'Run the operator-only recovery canary for this exact session, then retry the action.'
+              : 'Continue safe governed observations and retry after Lex reports a restorable state.',
+          });
+        }
         try {
           const pending = await createApprovalRequest({
             ownerId,
