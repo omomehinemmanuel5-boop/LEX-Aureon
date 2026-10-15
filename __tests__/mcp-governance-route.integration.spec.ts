@@ -154,11 +154,13 @@ describe('MCP constitutional dispatch boundary', () => {
       id: 'approval-schema-catalog',
     }));
     expect(response.status).toBe(200);
-    const body = response.body as { result: { tools: Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }> } };
+    const body = response.body as unknown as { result: { tools: Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }> } };
     const writeTool = body.result.tools.find(tool => tool.name === 'write_file');
     const readTool = body.result.tools.find(tool => tool.name === 'read_file');
+    expect(writeTool).toBeDefined();
     expect(writeTool?.inputSchema.properties).toHaveProperty('approval_request_id');
-    expect(readTool?.inputSchema.properties).not.toHaveProperty('approval_request_id');
+    expect(readTool).toBeDefined();
+    expect(readTool?.inputSchema.properties?.approval_request_id).toBeUndefined();
   });
 
   beforeEach(() => {
