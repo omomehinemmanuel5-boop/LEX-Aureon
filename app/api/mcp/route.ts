@@ -528,10 +528,9 @@ export async function POST(req: Request) {
       if (!operator && profile !== 'operator') return unauthorized(id);
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
-      // Match the exact default used by ordinary MCP tool calls. Previously
-      // this control plane minted approvals for `operator-...` while the target
-      // write ran in `mcp-...`, so valid approvals failed session binding unless
-      // every client manually supplied the same session_id twice.
+      // Resolve the requested label through the same owner-scoped session
+      // canonicalizer used by ordinary and external MCP actions. Private-test
+      // keys have operator capabilities but remain API-key identities.
       const requestedClientSession = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
         : defaultMcpSessionId(actorId);
