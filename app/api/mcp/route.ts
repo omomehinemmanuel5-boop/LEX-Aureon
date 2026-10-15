@@ -242,7 +242,7 @@ const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
   preview_patch_file: (args, signal) => preview_patch_file(args, signal),
 };
 
-function withApprovalRequestSchema<T extends { name: string; inputSchema: Record<string, unknown> }>(tool: T): T {
+function withApprovalRequestSchema(tool: { name: string; description: string; inputSchema: Record<string, unknown> }): { name: string; description: string; inputSchema: Record<string, unknown> } {
   const capability = getToolCapability(tool.name);
   if (!capability?.approvalRequired) return tool;
   const schema = tool.inputSchema;
