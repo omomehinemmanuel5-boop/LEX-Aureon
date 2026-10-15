@@ -146,6 +146,23 @@ function request(body: Record<string, unknown>, extraHeaders: Record<string, str
 }
 
 describe('MCP constitutional dispatch boundary', () => {
+  it('publishes approval_request_id for approval-gated tools without adding it to read-only tools', async () => {
+    validateApiKey.mockResolvedValue({ valid: true, key: { id: 'private-test-1', plan: 'private_test' } });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/list',
+      id: 'approval-schema-catalog',
+    }));
+    expect(response.status).toBe(200);
+    const body = response.body as unknown as { result: { tools: Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }> } };
+    const writeTool = body.result.tools.find(tool => tool.name === 'write_file');
+    const readTool = body.result.tools.find(tool => tool.name === 'read_file');
+    expect(writeTool).toBeDefined();
+    expect(writeTool?.inputSchema.properties).toHaveProperty('approval_request_id');
+    expect(readTool).toBeDefined();
+    expect(readTool?.inputSchema.properties?.approval_request_id).toBeUndefined();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     validateApiKey.mockResolvedValue({ valid: true, key: {} });
