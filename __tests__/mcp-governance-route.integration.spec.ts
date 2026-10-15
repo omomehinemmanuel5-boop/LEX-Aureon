@@ -630,6 +630,35 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(payload).toMatchObject({ status: 'denied', approval_created: false });
   });
 
+  it('does not grant an external permit when canonical governance blocks final consumption', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: { trajectoryAvailable: true, M: 0.04, nStable: 0, canaryPassed: false },
+    });
+    canonicalExecutionAllowed.mockReturnValueOnce({ allowed: false });
+    const before = externalBrokerMocks.consumeExternalAction.mock.calls.length;
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: {
+        name: 'consume_external_action',
+        arguments: {
+          environment_id: 'test-env',
+          manifest: { name: 'edit_record', description: 'Update a record', inputSchema: { type: 'object' } },
+          action_args: { record_id: 'blocked' },
+          approval_request_id: 'a'.repeat(22),
+        },
+      },
+      id: 'blocked-external-consume',
+    }));
+    expect(response.status).toBe(200);
+    expect(externalBrokerMocks.consumeExternalAction.mock.calls.length).toBe(before);
+    const payload = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(payload).toMatchObject({ status: 'denied', approval_created: false });
+  });
+
   it('returns MCP content for a denied authorization decision without minting a token', async () => {
     isOperatorSecret.mockReturnValue(true);
     interceptToolCall.mockResolvedValueOnce({

@@ -689,12 +689,13 @@ export async function POST(req: Request) {
       if (!environmentId || !manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) {
         return invalidParams(id ?? null, 'environment_id and manifest.name are required');
       }
-      if (toolName === 'authorize_external_action') {
+      if (toolName === 'authorize_external_action' || toolName === 'consume_external_action') {
+        const externalCapability = toolName === 'consume_external_action' ? 'external' : 'identity';
         let canonical = await readCanonicalGovernanceState({
           sessionId,
           actorId,
-          capability: 'identity',
-          authorization: 'approval_required',
+          capability: externalCapability,
+          authorization: toolName === 'consume_external_action' ? 'authorized' : 'approval_required',
         });
         if (canonical.available && canonical.state.trajectoryAvailable
           && canonical.state.M >= 0.05
@@ -703,8 +704,8 @@ export async function POST(req: Request) {
           canonical = await readCanonicalGovernanceState({
             sessionId,
             actorId,
-            capability: 'identity',
-            authorization: 'approval_required',
+            capability: externalCapability,
+            authorization: toolName === 'consume_external_action' ? 'authorized' : 'approval_required',
           });
         }
         if (!canonical.available) {
