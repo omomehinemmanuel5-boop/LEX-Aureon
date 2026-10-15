@@ -521,7 +521,7 @@ export async function POST(req: Request) {
       // this control plane minted approvals for `operator-...` while the target
       // write ran in `mcp-...`, so valid approvals failed session binding unless
       // every client manually supplied the same session_id twice.
-      const requestedSession = typeof args.session_id === 'string' && args.session_id.trim()
+      const requestedClientSession = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
         : defaultMcpSessionId(actorId);
       const taskContext = typeof args.task_context === 'string'
@@ -560,6 +560,15 @@ export async function POST(req: Request) {
         profile = profileForApiKey(consumption.key?.plan);
         if (profile !== 'operator') return unauthorized(id);
       }
+      // Match the canonical session used by ordinary tools/call dispatch.
+      // Private-test credentials have operator capabilities, but they are not
+      // operator-secret sessions and must retain owner-scoped session binding.
+      const ownerSessionPrefix = `${ownerId}:`;
+      const requestedSession = operator
+        ? requestedClientSession
+        : requestedClientSession.startsWith(ownerSessionPrefix)
+          ? requestedClientSession
+          : `${ownerSessionPrefix}${requestedClientSession}`;
       try {
         await runZTrajMigrations();
         if (!(await ensureCanonicalTrajectoryState(requestedSession))) {
