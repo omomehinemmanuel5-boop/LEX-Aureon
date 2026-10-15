@@ -242,10 +242,39 @@ const EXTENSION_REGISTRY: Record<string, ToolHandler> = {
   preview_patch_file: (args, signal) => preview_patch_file(args, signal),
 };
 
+function withApprovalRequestSchema<T extends { name: string; inputSchema: Record<string, unknown> }>(tool: T): T {
+  const capability = getToolCapability(tool.name);
+  if (!capability?.approvalRequired) return tool;
+  const schema = tool.inputSchema;
+  const properties = schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)
+    ? schema.properties as Record<string, unknown>
+    : {};
+  // The executor already supports one-time approval_request_id consumption.
+  // Publish that supported field to MCP clients; otherwise strict clients
+  // cannot resume the exact action after human approval.
+  return {
+    ...tool,
+    inputSchema: {
+      ...schema,
+      properties: {
+        ...properties,
+        approval_request_id: {
+          type: 'string',
+          description: 'One-time human-approved exact-action request ID from Lex /approvals. Supply this with the unchanged original arguments after approval.',
+        },
+      },
+    },
+  };
+}
+
 function servedTools() {
   return [
-    ...TOOL_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
-    ...EXTENSION_DEFINITIONS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    ...TOOL_DEFINITIONS.map(t => withApprovalRequestSchema({
+      name: t.name, description: t.description, inputSchema: t.parameters as Record<string, unknown>,
+    })),
+    ...EXTENSION_DEFINITIONS.map(t => withApprovalRequestSchema({
+      name: t.name, description: t.description, inputSchema: t.inputSchema as Record<string, unknown>,
+    })),
     ...EXTERNAL_CAPABILITY_DEFINITIONS,
   ];
 }
