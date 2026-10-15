@@ -116,8 +116,18 @@ describe('operator approval page and POST boundary', () => {
     const approved = await decisionPost(new Request(`${ownOrigin}/approvals/${requestId}/approved`, {
       method: 'POST', headers: { origin: ownOrigin, cookie },
     }), { params: Promise.resolve({ requestId, decision: 'approved' }) });
-    expect(approved.status).toBe(303);
+    expect(approved.status).toBe(200);
+    const approvalResult = await approved.text();
+    expect(approvalResult).toContain('Decision recorded');
+    expect(approvalResult).toContain('This does not execute the action');
+    expect(approvalResult).toContain('Return to approvals');
     expect(decideApprovalRequest).toHaveBeenCalledWith({ requestId, decision: 'approved', decidedBy: 'operator' });
+
+    const denied = await decisionPost(new Request(`${ownOrigin}/approvals/${requestId}/denied`, {
+      method: 'POST', headers: { origin: ownOrigin, cookie },
+    }), { params: Promise.resolve({ requestId, decision: 'denied' }) });
+    expect(denied.status).toBe(200);
+    expect(await denied.text()).toContain('Denial recorded');
   });
 
   it('rejects attempts to alter a request more than once or use an invalid decision', async () => {

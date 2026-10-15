@@ -54,6 +54,17 @@ function defaultMcpSessionId(actorId: string): string {
   return `mcp-${day}-${actorHash}`;
 }
 
+// Canonicalize all non-operator MCP sessions identically, including the
+// explicit approval and external-action control planes. Private-test keys have
+// operator capabilities but remain API-key identities and must be owner-scoped.
+function canonicalMcpSessionId(ownerId: string, clientSessionId: string, operator: boolean): string {
+  if (operator) return clientSessionId;
+  const ownerSessionPrefix = `${ownerId}:`;
+  return clientSessionId.startsWith(ownerSessionPrefix)
+    ? clientSessionId
+    : `${ownerSessionPrefix}${clientSessionId}`;
+}
+
 // fix (2026-09-01): reuses the exact header convention already documented
 // in /api-docs for /api/lex/govern (x-lex-api-key, or Authorization:
 // Bearer) rather than inventing a new one — same key system, same
@@ -517,11 +528,10 @@ export async function POST(req: Request) {
       if (!operator && profile !== 'operator') return unauthorized(id);
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
-      // Match the exact default used by ordinary MCP tool calls. Previously
-      // this control plane minted approvals for `operator-...` while the target
-      // write ran in `mcp-...`, so valid approvals failed session binding unless
-      // every client manually supplied the same session_id twice.
-      const requestedSession = typeof args.session_id === 'string' && args.session_id.trim()
+      // Resolve the requested label through the same owner-scoped session
+      // canonicalizer used by ordinary and external MCP actions. Private-test
+      // keys have operator capabilities but remain API-key identities.
+      const requestedClientSession = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
         : defaultMcpSessionId(actorId);
       const taskContext = typeof args.task_context === 'string'
@@ -560,6 +570,10 @@ export async function POST(req: Request) {
         profile = profileForApiKey(consumption.key?.plan);
         if (profile !== 'operator') return unauthorized(id);
       }
+      // Match the canonical session used by ordinary tools/call dispatch.
+      // Private-test credentials have operator capabilities, but they are not
+      // operator-secret sessions and must retain owner-scoped session binding.
+      const requestedSession = canonicalMcpSessionId(ownerId, requestedClientSession, operator);
       try {
         await runZTrajMigrations();
         if (!(await ensureCanonicalTrajectoryState(requestedSession))) {
@@ -633,9 +647,10 @@ export async function POST(req: Request) {
       const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
       const manifest = isRecord(args.manifest) ? args.manifest as unknown as ToolManifest : null;
       const actionArgs = isRecord(args.action_args) ? args.action_args : {};
-      const sessionId = typeof args.session_id === 'string' && args.session_id.trim()
+      const clientSessionId = typeof args.session_id === 'string' && args.session_id.trim()
         ? args.session_id.trim()
         : defaultMcpSessionId(actorId);
+      const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
       if (!environmentId || !manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) {
         return invalidParams(id ?? null, 'environment_id and manifest.name are required');
       }
@@ -779,11 +794,7 @@ export async function POST(req: Request) {
       && !clientSessionId.startsWith(ownerSessionPrefix)) {
       return invalidParams(id ?? null, 'session_id must belong to the authenticated caller');
     }
-    const sessionId = operator
-      ? clientSessionId
-      : clientSessionId.startsWith(ownerSessionPrefix)
-        ? clientSessionId
-        : `${ownerSessionPrefix}${clientSessionId}`;
+    const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
     try {
       await runZTrajMigrations();
       if (!(await ensureCanonicalTrajectoryState(sessionId))) {

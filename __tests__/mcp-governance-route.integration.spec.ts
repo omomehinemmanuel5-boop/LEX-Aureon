@@ -26,6 +26,18 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   ],
 }));
 
+const externalBrokerMocks = vi.hoisted(() => ({
+  discoverExternalTool: vi.fn(async () => ({ name: 'edit_record', capability: 'write', approvalRequired: true })),
+  governExternalAction: vi.fn(async () => ({
+    approved: false, decision: 'approval_required', risk: 'write',
+    capability: { name: 'edit_record' }, receiptId: 'external-review',
+    approvalRequired: true, reason: 'Human approval required.',
+  })),
+  consumeExternalAction: vi.fn(async () => ({ granted: false, reason: 'not consumed' })),
+}));
+
+vi.mock('../lib/agents/external_capability_broker', () => externalBrokerMocks);
+
 vi.mock('next/server', () => ({
   NextResponse: class MockNextResponse {
     status = 200;
@@ -441,19 +453,140 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(isOperatorSecret).toHaveBeenCalled();
     expect(interceptToolCall).toHaveBeenCalledWith(expect.objectContaining({
       name: 'write_file',
-      session_id: 'private-test-session',
+      session_id: 'private-test-1:private-test-session',
       actor_id: 'api_key:private-test-1',
     }));
     expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
       ownerId: 'private-test-1',
-      sessionId: 'private-test-session',
+      sessionId: 'private-test-1:private-test-session',
       toolName: 'write_file',
-      args: { ...actionArgs, session_id: 'private-test-session' },
+      args: { ...actionArgs, session_id: 'private-test-1:private-test-session' },
     }));
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
     expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
       .toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
   });
+  it('does not double-prefix an already owner-scoped approval session', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const actionArgs = { path: 'README.md', content: 'test', message: 'test' };
+
+    await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'authorize_tool_action',
+        arguments: {
+          tool_name: 'write_file',
+          arguments: actionArgs,
+          session_id: 'private-test-1:already-scoped',
+        },
+      },
+      id: 35,
+    }));
+
+    expect(interceptToolCall).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: 'private-test-1:already-scoped',
+    }));
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'private-test-1:already-scoped',
+      args: expect.objectContaining({ session_id: 'private-test-1:already-scoped' }),
+    }));
+  });
+
+  it('uses the same owner-scoped default session for approval creation and governance review', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const actionArgs = { path: 'README.md', content: 'test', message: 'test' };
+
+    await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'authorize_tool_action',
+        arguments: { tool_name: 'write_file', arguments: actionArgs },
+      },
+      id: 36,
+    }));
+
+    const reviewedCall = interceptToolCall.mock.calls[0] as unknown as [{ session_id?: string }] | undefined;
+    const reviewedSession = reviewedCall?.[0]?.session_id;
+    expect(reviewedSession).toMatch(/^private-test-1:mcp-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/);
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: reviewedSession,
+      args: expect.objectContaining({ session_id: reviewedSession }),
+    }));
+  });
+
+  it('owner-scopes external-action approval sessions the same way as internal actions', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const manifest = {
+      name: 'edit_record',
+      description: 'Update a record',
+      inputSchema: { type: 'object', properties: { record_id: { type: 'string' } } },
+    };
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'authorize_external_action',
+        arguments: {
+          environment_id: 'test-env',
+          manifest,
+          action_args: { record_id: 'synthetic-only' },
+          target_actor_id: 'api_key:private-test-1',
+          session_id: 'external-session',
+        },
+      },
+      id: 'external-session-scope',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(externalBrokerMocks.governExternalAction).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'private-test-1:external-session',
+      actorId: 'api_key:private-test-1',
+    }));
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'private-test-1',
+      sessionId: 'private-test-1:external-session',
+      toolName: 'consume_external_action',
+      args: expect.objectContaining({ session_id: 'private-test-1:external-session' }),
+    }));
+
+    externalBrokerMocks.consumeExternalAction.mockResolvedValueOnce({ granted: true, reason: 'consumed once' });
+    const consumeResponse = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'consume_external_action',
+        arguments: {
+          environment_id: 'test-env',
+          manifest,
+          action_args: { record_id: 'synthetic-only' },
+          session_id: 'external-session',
+          approval_request_id: 'a'.repeat(22),
+        },
+      },
+      id: 'external-session-consume',
+    }));
+    expect(consumeResponse.status).toBe(200);
+    expect(externalBrokerMocks.consumeExternalAction).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'private-test-1:external-session',
+      actorId: 'api_key:private-test-1',
+      ownerId: 'private-test-1',
+      approvalRequestId: 'a'.repeat(22),
+    }));
+    const consumePayload = (consumeResponse.body as unknown as {
+      result: { structuredContent: Record<string, unknown> };
+    }).result.structuredContent;
+    expect(consumePayload).toMatchObject({ granted: true, execution_may_begin: true });
+  });
+
   it('returns MCP content for a denied authorization decision without minting a token', async () => {
     isOperatorSecret.mockReturnValue(true);
     interceptToolCall.mockResolvedValueOnce({
