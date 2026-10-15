@@ -689,6 +689,38 @@ export async function POST(req: Request) {
       if (!environmentId || !manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) {
         return invalidParams(id ?? null, 'environment_id and manifest.name are required');
       }
+      if (toolName === 'authorize_external_action') {
+        let canonical = await readCanonicalGovernanceState({
+          sessionId,
+          actorId,
+          capability: 'identity',
+          authorization: 'approval_required',
+        });
+        if (canonical.available && canonical.state.trajectoryAvailable
+          && canonical.state.M >= 0.05
+          && (canonical.state.M < 0.25 || canonical.state.nStable < 3)) {
+          await advanceRecoveryPlane(sessionId);
+          canonical = await readCanonicalGovernanceState({
+            sessionId,
+            actorId,
+            capability: 'identity',
+            authorization: 'approval_required',
+          });
+        }
+        if (!canonical.available) {
+          return mcpToolResult(id, {
+            status: 'denied', decision: 'DENIED_LOCKED', approval_created: false,
+            reason: canonical.reason ?? 'Canonical governance state unavailable; no approval was created.',
+          });
+        }
+        const preflight = canonicalExecutionAllowed(canonical.state);
+        if (!preflight.allowed) {
+          return mcpToolResult(id, {
+            status: 'denied', decision: 'DENIED_BLOCKED', approval_created: false,
+            reason: preflight.reason ?? 'Canonical governance state denied execution; no approval was created.',
+          });
+        }
+      }
       try {
         if (toolName === 'discover_external_tool') {
           const capability = await discoverExternalTool(environmentId, manifest);
