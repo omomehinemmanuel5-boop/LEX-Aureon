@@ -46,7 +46,9 @@ const KERNEL_CRITICAL = 0.05;
 
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
   ttlMs: 60_000,
-  isCacheable: (toolName) => READ_TOOLS.has(toolName) && toolName !== 'run_recovery_canary',
+  // State snapshots and canary probes must always be fresh; caching them could display a stale gate decision.
+  isCacheable: (toolName) => READ_TOOLS.has(toolName)
+    && !['run_recovery_canary', 'get_constitutional_state', 'get_trajectory_status'].includes(toolName),
   authorize: async () => {
     throw new Error('Authorization must be supplied by executeGovernedTool.');
   },
