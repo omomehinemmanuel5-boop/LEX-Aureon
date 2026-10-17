@@ -35,6 +35,11 @@ const READ_TOOLS = new Set([
   'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file',
   'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob', 'run_recovery_canary',
   'read_json', 'parse_csv',
+  // Governed diagnostics are receipted but must not mutate the recovery trajectory.
+  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+  'search_code', 'get_build_status', 'get_workflow_run', 'get_workflow_log',
+  'get_vercel_logs', 'preview_patch_file', 'check_github_token_scope',
+  'get_trajectory_status',
 ]);
 
 const KERNEL_CRITICAL = 0.05;
@@ -253,7 +258,8 @@ export async function executeGovernedToolStructured(
   // Recovery must not depend on a caller repeatedly attempting a denied write.
   // Safe reads and ordinary MCP traffic are valid stabilization observations;
   // advance the bounded recovery plane first, then evaluate fresh state.
-  if (canonicalRead.available && canonicalRead.state.trajectoryAvailable
+  if (!READ_TOOLS.has(toolName)
+    && canonicalRead.available && canonicalRead.state.trajectoryAvailable
     && canonicalRead.state.M >= KERNEL_CRITICAL
     && (canonicalRead.state.M < 0.25 || canonicalRead.state.nStable < 3)) {
     try {
@@ -402,6 +408,20 @@ export async function executeGovernedToolStructured(
     };
   }
 
+  // Cancellation before consumption must not burn a single-use approval.
+  if (signal?.aborted) {
+    const verification = verifyToolResult(toolName, undefined, policy.risk);
+    return {
+      result: report(toolName, decision, 'EXECUTION_STATUS=not_started_after_cancellation; the authorization decision was recorded, but the tool function was not invoked.', false, policy, verification, canonicalRead.state),
+      approved: false,
+      decision: 'EXECUTION_CANCELLED_BEFORE_START',
+      receiptId: decision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification,
+    };
+  }
+
   if (policy.requiresApproval) {
     const consumed = approvalRequestId
       ? await consumeApprovalRequest({
@@ -533,7 +553,7 @@ export async function executeGovernedToolStructured(
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
-  if (!cached.cacheHit && toolName !== 'run_recovery_canary') {
+  if (!cached.cacheHit && !READ_TOOLS.has(toolName)) {
     try {
       const previous = await getZTraj(sessionId);
       await recordZTrajObservation(
