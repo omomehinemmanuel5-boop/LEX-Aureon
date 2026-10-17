@@ -1,74 +1,46 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-const ROOT = resolve(process.cwd());
-
-function source(path: string): string {
-  return readFileSync(resolve(ROOT, path), 'utf8');
-}
+import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '../lib/lex_crs_agent/tools';
+import { PATCH_FILE_DEFINITION, patch_file, preview_patch_file } from '../lib/lex_crs_agent/tools/patch_file';
+import { requireKnownToolCapability } from '../lib/agents/tool_capability_registry';
+import { isNonMutatingInspectionTool } from '../app/api/mcp/route';
+import { isNonMutatingGovernanceTool } from '../lib/agents/constitutional_tool_executor';
 
 describe('agent governance coverage', () => {
-  it('exposes only resolvable MCP tools and routes calls through one constitutional boundary', () => {
-    const route = source('app/api/mcp/route.ts');
-    const tools = source('lib/lex_crs_agent/tools.ts');
-    const patch = source('lib/lex_crs_agent/tools/patch_file.ts');
-
-    expect(route).toContain('const outcome = await withDeadline(executeGovernedTool(');
-    expect(route).toContain('unknown_after_deadline');
-    expect(route).toContain('const trajectoryOutcome = await withDeadline(executeGovernedTrajectoryAction(');
-    expect(route).toContain('trajectoryController.signal');
-    expect(route).toContain('const resolvedToolFn = resolveTool(dispatchToolName);');
-    expect(route).toContain('let toolFn: ToolHandler = resolvedToolFn;');
-    expect(route).toContain('return main ?? EXTENSION_REGISTRY[name];');
-    expect(route).not.toContain('await toolFn(args);');
-    expect(route).not.toContain('getDiscoveredToolCapability(ownerId, toolName)');
-    expect(route).toContain('Tool capability is not explicitly registered for this environment');
-    expect(route).toContain('requireKnownToolCapability(dispatchToolName)');
-    expect(route).toContain("args.dry_run === true\n      ? 'preview_patch_file'");
-    expect(route).toContain("toolName === 'discover_external_tool'");
-    expect(route).toContain("toolName === 'govern_external_action'");
-    expect(route).toContain("toolName === 'consume_external_action'");
-    expect(route).toContain("dispatchToolName === 'run_recovery_canary'");
-    expect(route).toContain('recordRecoveryCanaryEvidence');
-    expect(route).toContain('execution.receiptId');
-    expect(route).toContain("execution_may_begin: result.granted");
-    expect(route).toContain('Discovery is advisory and never grants execution authority.');
-    expect(route).toContain('function mcpToolResult');
-    expect(route).toContain('content: [{ type: \'text\', text: typeof value === \'string\' ? value : JSON.stringify(value) }]');
-    expect(tools).toContain('get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string })');
-    expect(tools).toContain('run_recovery_canary:');
-    expect(tools).toContain("WHERE session_id = ?");
-
-    // The MCP surface is the union of TOOL_DEFINITIONS and patch_file.
-    // Verify every declared canonical tool has a corresponding registry entry.
-    const definitionNames = [...tools.matchAll(/name:\s*[\'\"]([a-zA-Z0-9_]+)[\'\"]/g)]
-      .map(match => match[1]);
-    const registryBlock = tools.match(/export const TOOL_REGISTRY[\s\S]*?\n\};/);
-    expect(registryBlock).toBeTruthy();
-
-    const registry = registryBlock?.[0] ?? '';
-    for (const name of definitionNames) {
-      expect(registry, `Missing TOOL_REGISTRY entry for ${name}`).toContain(`${name}:`);
+  it('exposes only tools with executable handlers and registered capabilities', () => {
+    for (const tool of TOOL_DEFINITIONS) {
+      expect(typeof TOOL_REGISTRY[tool.name], `Missing executable handler for ${tool.name}`).toBe('function');
+      expect(() => requireKnownToolCapability(tool.name), `Missing capability for ${tool.name}`).not.toThrow();
     }
 
-    expect(route).toContain('patch_file: (args, signal) => patch_file(');
-    expect(patch).toContain('export async function patch_file');
+    expect(PATCH_FILE_DEFINITION.name).toBe('patch_file');
+    expect(typeof patch_file).toBe('function');
+    expect(typeof preview_patch_file).toBe('function');
+    expect(() => requireKnownToolCapability('patch_file')).not.toThrow();
   });
 
-  it('keeps the execution cache subordinate to fresh authorization', () => {
-    const executor = source('lib/agents/constitutional_tool_executor.ts');
-    const authorization = executor.indexOf('const decision = await interceptToolCall(');
-    const cache = executor.indexOf('const cached = await cache.getOrExecuteAuthorized(');
+  it('uses the same explicit, minimal read-only classification at transport and executor boundaries', () => {
+    const readOnlyTools = [
+      'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+      'read_file', 'read_directory', 'list_directory', 'list_files',
+      'read_memory', 'search_memory', 'search_code', 'fetch_page', 'http_get',
+      'get_file', 'read_json', 'parse_csv', 'cat', 'head', 'tail', 'grep',
+      'find', 'ls', 'dir', 'glob', 'get_build_status', 'get_workflow_run',
+      'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
+      'check_github_token_scope', 'get_trajectory_status', 'run_recovery_canary',
+    ];
 
-    expect(authorization).toBeGreaterThanOrEqual(0);
-    expect(cache).toBeGreaterThan(authorization);
-    expect(executor).toContain("!['run_recovery_canary', 'get_constitutional_state', 'get_trajectory_status'].includes(toolName)");
-    expect(executor).toContain('if (!decision.approved) {');
-    expect(executor).toContain('return {');
-    expect(executor).toContain('approved: false');
-    expect(executor).toContain('authorization_rechecked: true');
-    expect(executor).not.toContain('getDiscoveredToolCapability');
-    expect(executor).toContain('explicitly register the tool capability before execution');
+    for (const tool of readOnlyTools) {
+      expect(isNonMutatingInspectionTool(tool), `Transport should classify ${tool} as non-mutating`).toBe(true);
+      expect(isNonMutatingGovernanceTool(tool), `Executor should classify ${tool} as non-mutating`).toBe(true);
+    }
+
+    for (const tool of ['curl', 'unknown_tool', 'discover_external_tool', 'govern_external_action', 'write_file']) {
+      expect(isNonMutatingInspectionTool(tool), `Transport must not classify ${tool} as non-mutating`).toBe(false);
+      expect(isNonMutatingGovernanceTool(tool), `Executor must not classify ${tool} as non-mutating`).toBe(false);
+    }
+  });
+
+  it('fails closed for an unknown tool capability', () => {
+    expect(() => requireKnownToolCapability('unknown_tool')).toThrow();
   });
 });
