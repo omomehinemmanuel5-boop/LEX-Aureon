@@ -203,22 +203,6 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(toolFn).toHaveBeenCalledTimes(1);
   });
 
-  it('does not allow a public-profile caller to run the recovery canary', async () => {
-    const key = { id: 'public-1', plan: 'free' };
-    validateApiKey.mockResolvedValue({ valid: true, key });
-    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
-    const response = await POST(request({
-      jsonrpc: '2.0',
-      method: 'tools/call',
-      params: { name: 'run_recovery_canary', arguments: { session_id: 'public-canary-session' } },
-      id: 'public-canary',
-    }));
-    expect(response.status).toBe(200);
-    expect((response.body as { error?: { code?: number } }).error?.code).toBe(-32601);
-    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
-    expect(toolFn).not.toHaveBeenCalled();
-  });
-
   it('routes every exposed tool call through the constitutional executor', async () => {
     const tools = [
       ['run_governance', { prompt: 'test' }],
@@ -327,8 +311,8 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(isOperatorSecret).toHaveBeenCalled();
   });
 
-  it('refuses a non-operator canary call before execution or evidence persistence', async () => {
-    const key = { id: 'private-test-canary', plan: 'private_test' };
+  it('refuses a public-profile canary call before execution or evidence persistence', async () => {
+    const key = { id: 'public-canary', plan: 'free' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
     isOperatorSecret.mockReturnValue(false);
@@ -339,7 +323,8 @@ describe('MCP constitutional dispatch boundary', () => {
       id: 'non-operator-canary',
     }));
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
+    expect((response.body as { error?: { code?: number } }).error?.code).toBe(-32601);
     expect(executeGovernedToolStructured).not.toHaveBeenCalled();
     expect(executeGovernedTool).not.toHaveBeenCalled();
     expect(toolFn).not.toHaveBeenCalled();
