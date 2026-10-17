@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
+import { approvalArgsHash } from '../lib/approval_requests';
 import { recoverySnapshotFingerprint } from '../lib/agents/recovery_canary_evidence';
 import { readCanonicalGovernanceState } from '../lib/agents/canonical_governance_state';
 
@@ -145,6 +146,113 @@ describe('governed tool execution integration boundary', () => {
       return /UPDATE\s+approval_requests/i.test(sql);
     });
     expect(approvalConsumption).toHaveLength(0);
+  });
+
+  it('restores an approval request when cancellation arrives during consumption', async () => {
+    const sessionId = 'cancel-during-consume-session';
+    const requestId = 'b'.repeat(22);
+    const snapshot = { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT };
+    addPassingCanary(sessionId, snapshot);
+    const controller = new AbortController();
+    const actionArgs = { path: 'README.md', content: 'cancel-safe' };
+    let restored = false;
+
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const evidence = evidenceResult(query);
+      if (evidence) return evidence;
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      if (sql.includes('FROM z_traj')) {
+        return { rows: [{
+          last_c: snapshot.C, last_r: snapshot.R, last_s: snapshot.S,
+          velocity: 0, sigma_viol: snapshot.sigmaViol, n_stable: snapshot.nStable,
+          updated_at: snapshot.updatedAt,
+        }] };
+      }
+      if (sql.includes('FROM approval_requests')) {
+        return { rows: [{
+          request_id: requestId, owner_id: 'operator', session_id: sessionId,
+          tool_name: 'write_file', args_hash: approvalArgsHash(actionArgs),
+          status: 'approved', expires_at: Date.now() + 60_000,
+        }] };
+      }
+      if (/UPDATE\\s+approval_requests SET status = 'used'/i.test(sql)) {
+        controller.abort();
+        return { rowsAffected: 1 };
+      }
+      if (/UPDATE\\s+approval_requests SET status = 'approved'/i.test(sql)) {
+        restored = true;
+        return { rowsAffected: 1 };
+      }
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
+      return { rows: [], rowsAffected: 1 };
+    });
+
+    const write = vi.fn(async () => 'SHOULD_NOT_WRITE');
+    const result = await executeGovernedToolStructured(
+      'write_file',
+      { ...actionArgs, approval_request_id: requestId },
+      write,
+      sessionId,
+      undefined,
+      'internal-agent',
+      controller.signal,
+      'internal',
+      'operator',
+    );
+
+    expect(result.decision).toBe('EXECUTION_CANCELLED_BEFORE_START');
+    expect(restored).toBe(true);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('releases a signed approval token when cancellation arrives during consumption', async () => {
+    const sessionId = 'cancel-token-consume-session';
+    const snapshot = { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT };
+    addPassingCanary(sessionId, snapshot);
+    const controller = new AbortController();
+    const actionArgs = { path: 'README.md', content: 'cancel-safe-token' };
+    const token = createGovernanceApprovalToken({
+      actorId: 'internal-agent', sessionId, toolName: 'write_file', args: actionArgs,
+    });
+    let released = false;
+
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const evidence = evidenceResult(query);
+      if (evidence) return evidence;
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      if (sql.includes('FROM z_traj')) {
+        return { rows: [{
+          last_c: snapshot.C, last_r: snapshot.R, last_s: snapshot.S,
+          velocity: 0, sigma_viol: snapshot.sigmaViol, n_stable: snapshot.nStable,
+          updated_at: snapshot.updatedAt,
+        }] };
+      }
+      if (sql.includes('INSERT OR IGNORE INTO governance_approval_consumptions')) {
+        controller.abort();
+        return { rowsAffected: 1 };
+      }
+      if (sql.includes('DELETE FROM governance_approval_consumptions')) {
+        released = true;
+        return { rowsAffected: 1 };
+      }
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
+      return { rows: [], rowsAffected: 1 };
+    });
+
+    const write = vi.fn(async () => 'SHOULD_NOT_WRITE');
+    const result = await executeGovernedToolStructured(
+      'write_file',
+      { ...actionArgs, approval_token: token },
+      write,
+      sessionId,
+      undefined,
+      'internal-agent',
+      controller.signal,
+    );
+
+    expect(result.decision).toBe('EXECUTION_CANCELLED_BEFORE_START');
+    expect(released).toBe(true);
+    expect(write).not.toHaveBeenCalled();
   });
 
   it('authorizes before reusing a cached read result', async () => {
