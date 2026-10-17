@@ -323,6 +323,15 @@ const MAX_SESSION_ID_LENGTH = 128;
 const MAX_MCP_BODY_BYTES = 128 * 1024;
 const MCP_REQUESTS_PER_MINUTE = 60;
 
+// These inspection tools must not bootstrap or otherwise mutate the trajectory they inspect.
+const NON_MUTATING_INSPECTION_TOOLS = new Set([
+  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+  'read_file', 'list_directory', 'search_code', 'get_build_status',
+  'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
+  'preview_patch_file', 'check_github_token_scope', 'get_trajectory_status',
+  'run_recovery_canary',
+]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -940,7 +949,8 @@ export async function POST(req: Request) {
     const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
     try {
       await runZTrajMigrations();
-      if (!(await ensureCanonicalTrajectoryState(sessionId))) {
+      if (!NON_MUTATING_INSPECTION_TOOLS.has(dispatchToolName)
+        && !(await ensureCanonicalTrajectoryState(sessionId))) {
         return NextResponse.json({
           jsonrpc: '2.0',
           error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
