@@ -455,7 +455,12 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
         state_fingerprint: state.stateFingerprint ?? null,
         gate_snapshot: {
           C: state.C, R: state.R, S: state.S, M: state.M,
+          health_band: state.healthBand,
           recovery_state: state.recoveryState,
+          state_version: state.version,
+          authorization: state.authorization,
+          policy_risk: state.policyRisk,
+          trajectory_available: state.trajectoryAvailable,
           n_stable: state.nStable,
           n_stable_required: CONSTITUTION.N_MIN,
           velocity: state.velocity,
