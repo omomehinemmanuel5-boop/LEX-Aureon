@@ -17,7 +17,7 @@ export interface CanonicalGovernanceState {
   healthBand: CanonicalGovernanceBand;
   recoveryState: RecoveryState;
   sigmaViol: number;
-  velocity: number;
+  velocity?: number;
   toolCalls: number;
   trajectoryAvailable: boolean;
   nStable: number;
