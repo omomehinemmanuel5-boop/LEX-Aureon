@@ -130,11 +130,8 @@ describe('governed tool execution integration boundary', () => {
     controller.abort();
     const write = vi.fn(async () => 'WRITE_SHOULD_NOT_RUN');
     const actionArgs = { path: 'README.md', content: 'test' };
-    const token = createGovernanceApprovalToken({
-      actorId: 'internal-agent', sessionId, toolName: 'write_file', args: actionArgs,
-    });
     const result = await executeGovernedToolStructured(
-      'write_file', { ...actionArgs, approval_token: token }, write, sessionId,
+      'write_file', { ...actionArgs, approval_request_id: 'a'.repeat(22) }, write, sessionId,
       undefined, 'internal-agent', controller.signal,
     );
     expect(result.decision).toBe('EXECUTION_CANCELLED_BEFORE_START');
