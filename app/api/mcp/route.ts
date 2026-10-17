@@ -90,6 +90,32 @@ function isOperator(req: Request): boolean {
   return isOperatorSecret(req.headers.get('x-lex-operator-secret'));
 }
 
+/** Operator authority may come from the operator secret or an authenticated operator-profile identity. */
+function hasOperatorAuthority(operatorSecretValid: boolean, profile: McpAccessProfile): boolean {
+  return operatorSecretValid || profile === 'operator';
+}
+
+type McpCredentialPath = 'operator_secret' | 'session_token' | 'oauth_bearer' | 'api_key' | 'missing';
+
+function credentialPathFor(req: Request): McpCredentialPath {
+  if (isOperator(req)) return 'operator_secret';
+  if (extractSessionToken(req)) return 'session_token';
+  const key = extractApiKey(req);
+  if (!key) return 'missing';
+  return key.startsWith('lex_at_') ? 'oauth_bearer' : 'api_key';
+}
+
+function logMcpAuth(toolName: string, credentialPath: McpCredentialPath, outcome: string, profile?: McpAccessProfile): void {
+  // Never include credential values, tokens, headers, or request arguments in auth diagnostics.
+  console.info('[mcp-auth]', JSON.stringify({
+    method: 'tools/call',
+    tool_name: toolName,
+    credential_path: credentialPath,
+    outcome,
+    ...(profile ? { profile } : {}),
+  }));
+}
+
 function unauthorized(id: number | string | null | undefined) {
   return NextResponse.json({
     jsonrpc: '2.0',
@@ -111,6 +137,8 @@ function unauthorized(id: number | string | null | undefined) {
  * surfacing a generic authentication failure.
  */
 function oauthToolChallenge(id: number | string | null | undefined) {
+  // Used by tools/call when a session token is invalid or no API/OAuth credential is supplied.
+  // tools/list uses the HTTP 401 resource-metadata challenge instead.
   return NextResponse.json({
     jsonrpc: '2.0',
     result: {
@@ -507,6 +535,7 @@ export async function POST(req: Request) {
     if (args.session_id !== undefined && !validSessionId(args.session_id)) {
       return invalidParams(id ?? null, `session_id must be a non-empty string of at most ${MAX_SESSION_ID_LENGTH} characters`);
     }
+    const credentialPath = credentialPathFor(req);
     const operator = isOperator(req);
     let profile: McpAccessProfile = operator ? 'operator' : 'public';
     let ownerId = 'operator';
@@ -517,23 +546,35 @@ export async function POST(req: Request) {
       const sessionToken = extractSessionToken(req);
       if (sessionToken) {
         const session = await validateMcpSession(sessionToken);
-        if (!session.valid) return oauthToolChallenge(id);
+        if (!session.valid) {
+          logMcpAuth(toolName, credentialPath, 'rejected_invalid_session');
+          return oauthToolChallenge(id);
+        }
         sessionKeyId = session.key.id;
         ownerId = session.key.id;
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(session.key.plan);
       } else {
         apiKey = extractApiKey(req);
-        if (!apiKey) return oauthToolChallenge(id);
+        if (!apiKey) {
+          logMcpAuth(toolName, credentialPath, 'rejected_missing_credential');
+          return oauthToolChallenge(id);
+        }
 
         // OAuth access tokens are distinct credentials from raw API keys.
         // Resolve the token to its backing key, then retain the existing atomic
         // per-key quota consumption and plan-based capability checks below.
         if (apiKey.startsWith('lex_at_')) {
           const oauth = await resolveAccessToken(apiKey);
-          if (!oauth.valid) return unauthorized(id);
+          if (!oauth.valid) {
+            logMcpAuth(toolName, credentialPath, 'rejected_invalid_oauth');
+            return unauthorized(id);
+          }
           const oauthKey = await getApiKeyById(oauth.keyId);
-          if (!oauthKey) return unauthorized(id);
+          if (!oauthKey) {
+            logMcpAuth(toolName, credentialPath, 'rejected_missing_oauth_owner');
+            return unauthorized(id);
+          }
           sessionKeyId = oauth.keyId;
           apiKey = null;
           ownerId = String(oauthKey.id);
@@ -544,7 +585,10 @@ export async function POST(req: Request) {
           // not debit a caller's quota. Consumption remains atomic below, after
           // all local admission checks have passed and before execution begins.
           const keyCheck = await validateApiKey(apiKey);
-          if (!keyCheck.valid) return unauthorized(id);
+          if (!keyCheck.valid) {
+            logMcpAuth(toolName, credentialPath, 'rejected_invalid_api_key');
+            return unauthorized(id);
+          }
           ownerId = String(keyCheck.key?.id ?? 'anonymous');
           actorId = `api_key:${ownerId}`;
           profile = profileForApiKey(keyCheck.key?.plan);
@@ -552,10 +596,12 @@ export async function POST(req: Request) {
       }
     }
 
+    logMcpAuth(toolName, credentialPath, 'authenticated', profile);
+
     // The authorization endpoint creates a pending, exact-action request for
     // separate human approval. Tool visibility is not approval authority.
     if (toolName === 'authorize_tool_action') {
-      if (!operator && profile !== 'operator') return unauthorized(id);
+      if (!hasOperatorAuthority(operator, profile)) return unauthorized(id);
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
       // Resolve the requested label through the same owner-scoped session
@@ -699,7 +745,7 @@ export async function POST(req: Request) {
     // static internal tool registry. They govern client-side adapters rather than
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
-      if (toolName === 'authorize_external_action' && !operator && profile !== 'operator') return unauthorized(id);
+      if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) return unauthorized(id);
       if (!operator && (apiKey || sessionKeyId)) {
         const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
         if (!consumption.valid) return unauthorized(id);
@@ -1183,7 +1229,10 @@ export async function POST(req: Request) {
         });
       }
 
-      if (dispatchToolName === 'run_recovery_canary' && !operator) return unauthorized(id);
+      if (dispatchToolName === 'run_recovery_canary' && !hasOperatorAuthority(operator, profile)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       if (dispatchToolName === 'run_recovery_canary') {
         let rawProbeResult: string | undefined;
         const trackedCanaryHandler: ToolHandler = async (handlerArgs, signal) => {
