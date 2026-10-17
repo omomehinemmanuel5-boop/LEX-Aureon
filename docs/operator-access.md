@@ -13,6 +13,12 @@ Do not commit the value, put it in an agent prompt, or send it through a model-v
 
 The secret remains separate from `ADMIN_PASSWORD` and API keys. It is an optional alternative for a distinct operator principal; a `private_test` key does not need this header. Private-test calls remain bound to the API-key actor and consume that key's normal quota.
 
+## Recovery-canary authority
+
+`run_recovery_canary` is more restricted than the ordinary operator-profile tool surface because persisted canary evidence affects write eligibility. It is permitted only when the request carries a valid `x-lex-operator-secret` matching `MCP_OPERATOR_SECRET`, or when the authenticated API-key owner ID is explicitly listed in the comma-separated `LEX_CANARY_OWNER_IDS` deployment environment variable. Owner IDs must be exact API-key owner IDs (the `id` returned by key validation), not profile names or caller-supplied session labels. An empty or unset allowlist authorizes no API-key owner; a `private_test` profile alone is not enough. The operator secret remains an independent permitted path. Keep the allowlist limited to trusted operator owners and configure it in Vercel Project → Settings → Environment Variables; never put secrets in this allowlist.
+
+The implicit approval-creation limiter defaults to 20 requests per owner per hour. `LEX_APPROVAL_IMPLICIT_LIMIT` may override the positive integer limit (values above 1000 are capped; invalid values fall back to 20). Rate-limit storage errors fail closed and do not create an approval request.
+
 ## MCP endpoint
 
 Use:
