@@ -95,18 +95,25 @@ describe('recovery canary write-count expiry against real SQLite', () => {
       ['write-c', isoTime],
       ['write-d', sqliteTime],
     ];
-    for (const [toolName, createdAt] of writeRows.slice(0, 3)) {
+    for (const [toolName, createdAt] of writeRows.slice(0, 2)) {
       await client.execute({
         sql: 'INSERT INTO tool_receipts (session_id, created_at, tool_name) VALUES (?, ?, ?)',
         args: [sessionId, createdAt, toolName],
       });
     }
-    for (const toolName of ['read_file', 'run_governance', 'simulate_agent_plan', 'get_constitutional_state']) {
+    for (const toolName of ['read_file', 'simulate_agent_plan', 'get_constitutional_state']) {
       await client.execute({
         sql: 'INSERT INTO tool_receipts (session_id, created_at, tool_name) VALUES (?, ?, ?)',
         args: [sessionId, sqliteTime, toolName],
       });
     }
+
+    // A live run_governance call and a simulate-mode run_governance call
+    // are both conservatively counted until the receipt schema distinguishes them.
+    await client.execute({
+      sql: 'INSERT INTO tool_receipts (session_id, created_at, tool_name) VALUES (?, ?, ?)',
+      args: [sessionId, sqliteTime, 'run_governance'],
+    });
 
     const current = { stateVersion: evidence.state_version, M: 0.2, sigmaViol: 0, nStable: 3 };
     await expect(readRecoveryCanaryEvidence(sessionId, 'fingerprint-not-used', current))
@@ -122,7 +129,7 @@ describe('recovery canary write-count expiry against real SQLite', () => {
     const normalizedCount = await client.execute({
       sql: `SELECT COUNT(*) AS writes FROM tool_receipts
         WHERE session_id = ? AND datetime(created_at) > datetime(?)
-          AND tool_name IN ('write-a', 'write-b', 'write-c', 'write-d')`,
+          AND tool_name IN ('write-a', 'write-b', 'write-c', 'write-d', 'run_governance')`,
       args: [sessionId, issuedAt],
     });
     expect(Number(normalizedCount.rows[0].writes)).toBe(4);
