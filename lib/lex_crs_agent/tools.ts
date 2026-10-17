@@ -68,7 +68,7 @@ import { THETA_0 } from '../aureonics_core';
 import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
 import { CONSTITUTION } from '../constitution';
 import { readCanonicalGovernanceState } from '../agents/canonical_governance_state';
-import { deriveRecoveryState, recoveryCapabilityAllowed } from '../agents/recovery_state';
+import { deriveRecoveryState, recoveryCapabilityAllowed, RECOVERY_STABILITY_THRESHOLD } from '../agents/recovery_state';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const BENCHMARK_REPO = 'omomehinemmanuel5-boop/Lexaureon-Benchmark';
@@ -445,11 +445,26 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
         health_band: state.healthBand,
         recovery_state: state.recoveryState,
         n_stable: state.nStable,
+        n_stable_required: CONSTITUTION.N_MIN,
+        velocity: state.velocity,
+        stability_threshold: RECOVERY_STABILITY_THRESHOLD,
         sigma_viol: state.sigmaViol,
         canary_passed: state.canaryPassed === true,
         canary_receipt_id: state.canaryReceiptId ?? null,
         state_version: state.version,
         state_fingerprint: state.stateFingerprint ?? null,
+        gate_snapshot: {
+          C: state.C, R: state.R, S: state.S, M: state.M,
+          recovery_state: state.recoveryState,
+          n_stable: state.nStable,
+          n_stable_required: CONSTITUTION.N_MIN,
+          velocity: state.velocity,
+          stability_threshold: RECOVERY_STABILITY_THRESHOLD,
+          sigma_viol: state.sigmaViol,
+          canary_passed: state.canaryPassed === true,
+          state_fingerprint: state.stateFingerprint ?? null,
+        },
+        diagnostic: { observed_at: state.observedAt, trajectory_updated_at: state.trajectoryUpdatedAt ?? null },
         authorization: state.authorization,
         policy_risk: state.policyRisk,
         trajectory_available: state.trajectoryAvailable,
