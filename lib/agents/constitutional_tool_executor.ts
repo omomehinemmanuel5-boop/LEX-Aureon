@@ -420,22 +420,6 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  // Cancellation before consumption must not burn a single-use approval.
-  if (signal?.aborted) {
-    const released = await releaseConsumedApproval();
-    const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
-    const verification = verifyToolResult(toolName, undefined, policy.risk);
-    return {
-      result: report(toolName, decision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
-      approved: false,
-      decision: 'EXECUTION_CANCELLED_BEFORE_START',
-      receiptId: decision.receipt_id ?? null,
-      risk: policy.risk,
-      policy,
-      verification,
-    };
-  }
-
   let consumedApprovalRequestId: string | undefined;
   let consumedApprovalTokenId: string | undefined;
   const releaseConsumedApproval = async (): Promise<boolean | undefined> => {
@@ -458,6 +442,22 @@ export async function executeGovernedToolStructured(
     }
     return undefined;
   };
+
+  // Cancellation before consumption must not burn a single-use approval.
+  if (signal?.aborted) {
+    const released = await releaseConsumedApproval();
+    const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
+    const verification = verifyToolResult(toolName, undefined, policy.risk);
+    return {
+      result: report(toolName, decision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
+      approved: false,
+      decision: 'EXECUTION_CANCELLED_BEFORE_START',
+      receiptId: decision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification,
+    };
+  }
 
   if (policy.requiresApproval) {
     const consumed = approvalRequestId
@@ -502,7 +502,7 @@ export async function executeGovernedToolStructured(
         approvalId: approvalRequestId,
         reasons: [...policy.reasons, 'Operator approval request was consumed exactly once for this exact action.'],
       };
-    } else if ('approvalId' in consumed && consumed.approvalId) {
+    } else if ('approvalId' in consumed && typeof consumed.approvalId === 'string') {
       consumedApprovalTokenId = consumed.approvalId;
     }
 
@@ -514,7 +514,7 @@ export async function executeGovernedToolStructured(
       const cancelledDecision: ToolCallDecision = {
         ...decision,
         approved: false,
-        decision: 'EXECUTION_CANCELLED_BEFORE_START',
+        decision: 'DENIED_BLOCKED',
         reason: 'Cancellation was observed after approval consumption but before action dispatch.',
         warning: released === false
           ? 'The action was not invoked, but approval restoration failed; request a new approval if the original cannot be reused.'
@@ -524,7 +524,7 @@ export async function executeGovernedToolStructured(
       return {
         result: report(toolName, cancelledDecision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}.`, false, policy, verification, canonicalRead.state),
         approved: false,
-        decision: cancelledDecision.decision,
+        decision: 'EXECUTION_CANCELLED_BEFORE_START',
         receiptId: cancelledDecision.receipt_id ?? null,
         risk: policy.risk,
         policy,
