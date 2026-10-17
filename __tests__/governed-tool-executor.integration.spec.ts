@@ -224,6 +224,48 @@ describe('governed tool execution integration boundary', () => {
     )).toBe(false);
   });
 
+  it('does not invalidate a passing canary as a side effect of an approved write in VERIFIED state', async () => {
+    const sessionId = 'verified-write-session';
+    const snapshot = { C: 0.2, R: 0.4, S: 0.4, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT };
+    addPassingCanary(sessionId, snapshot);
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const evidence = evidenceResult(query);
+      if (evidence) return evidence;
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      if (sql.includes('FROM z_traj')) {
+        return { rows: [{
+          last_c: snapshot.C, last_r: snapshot.R, last_s: snapshot.S,
+          velocity: 0, sigma_viol: 0, n_stable: snapshot.nStable,
+          updated_at: snapshot.updatedAt,
+        }] };
+      }
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
+      return { rows: [], rowsAffected: 1 };
+    });
+
+    const actionArgs = { path: 'verified-safe.ts', content: 'export {};' };
+    const token = createGovernanceApprovalToken({
+      actorId: 'internal-agent', sessionId, toolName: 'write_file', args: actionArgs,
+    });
+    const write = vi.fn(async () => 'WRITE_COMPLETED');
+    const result = await executeGovernedToolStructured(
+      'write_file', { ...actionArgs, approval_token: token }, write, sessionId,
+      undefined, 'internal-agent',
+    );
+
+    expect(result.approved).toBe(true);
+    expect(result.result).toContain('WRITE_COMPLETED');
+    expect(write).toHaveBeenCalledTimes(1);
+    // The successful write records its own post-action observation once. A
+    // preflight recovery mutation would produce an extra z_traj update and
+    // invalidate the canary before the approved action could execute.
+    const trajectoryUpdates = dbExecute.mock.calls.filter(([query]) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      return /^\s*UPDATE\s+z_traj\b/i.test(sql);
+    });
+    expect(trajectoryUpdates).toHaveLength(1);
+  });
+
   it('does not grant write authority from a passing canary without action approval', async () => {
     const sessionId = 'canary-is-not-write-authority';
     const args = { path: 'still-protected.ts', content: 'change' };
