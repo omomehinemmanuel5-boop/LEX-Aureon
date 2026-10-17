@@ -23,9 +23,10 @@ import { createOperatorSessionCookie, hasOperatorSession } from '../app/approval
 import { POST as decisionPost } from '../app/approvals/[requestId]/[decision]/route';
 
 const ownOrigin = 'https://www.lexaureon.com';
-function loginRequest(secret: string, origin = ownOrigin) {
+function loginRequest(secret: string, origin = ownOrigin, next?: string) {
   const body = new FormData();
   body.set('secret', secret);
+  if (next !== undefined) body.set('next', next);
   return new Request(`${ownOrigin}/approvals`, {
     method: 'POST', headers: { origin }, body,
   });
@@ -77,6 +78,9 @@ describe('operator approval page and POST boundary', () => {
     expect(html).toContain('0.310');
     expect(html).toContain('n_stable');
     expect(html).toContain('canary_passed');
+    expect(html).toContain('id="aaaaaaaaaaaaaaaaaaaaaa"');
+    expect(html).toContain('.request:target');
+    expect(html).toContain('scroll-margin-top');
     expect(html).toContain('[REDACTED]');
     expect(html).not.toContain('must-not-render');
     expect(html).not.toContain(values.secret);
@@ -94,6 +98,53 @@ describe('operator approval page and POST boundary', () => {
     expect(cookie).not.toContain(values.secret);
     expect(hasOperatorSession(cookie, values.secret)).toBe(true);
     expect(hasOperatorSession(cookie, values.secret, Date.now() + 8 * 60 * 60 * 1000 + 1)).toBe(false);
+  });
+
+  it('preserves an approval fragment through sign-in and rejects malicious return targets', async () => {
+    const requestId = 'a'.repeat(22);
+    const page = await approvalsGet(new Request(`${ownOrigin}/approvals#${requestId}`));
+    const html = await page.text();
+    expect(page.status).toBe(200);
+    expect(html).toContain('window.location.hash');
+    expect(html).toContain('name="next"');
+
+    const valid = await signInPost(loginRequest(values.secret, ownOrigin, `/approvals#${requestId}`));
+    expect(valid.status).toBe(303);
+    expect(valid.headers.get('location')).toBe(`/approvals#${requestId}`);
+
+    const malicious = await signInPost(loginRequest(values.secret, ownOrigin, '//attacker.example'));
+    expect(malicious.status).toBe(400);
+    expect(malicious.headers.get('location')).toBeNull();
+  });
+
+  it('escapes patch_file old/new text and keeps raw JSON collapsed', async () => {
+    values.cookie = createOperatorSessionCookie(values.secret).split(';')[0];
+    listApprovalRequests.mockResolvedValue([{
+      request_id: 'patch_123-safe', owner_id: 'owner-a', session_id: 'owner-a:s1',
+      tool_name: 'patch_file',
+      args_json: JSON.stringify({ path: 'src/example.ts', old_str: '<script>alert("x")</script>', new_str: 'const safe = "&";' }),
+      status: 'pending', created_at: 1_800_000_000_000, expires_at: 1_800_000_900_000,
+      decided_at: null, decided_by: null,
+    }]);
+    const html = await (await approvalsGet()).text();
+    expect(html).toContain('Old text');
+    expect(html).toContain('New text');
+    expect(html).toContain('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;');
+    expect(html).toContain('<details><summary>Raw JSON</summary>');
+    expect(html).not.toContain('<script>alert("x")</script>');
+  });
+
+  it('escapes request IDs used as article anchors', async () => {
+    values.cookie = createOperatorSessionCookie(values.secret).split(';')[0];
+    listApprovalRequests.mockResolvedValue([{
+      request_id: 'bad"><script>', owner_id: 'owner-a', session_id: 'owner-a:s1',
+      tool_name: 'write_file', args_json: '{"path":"README.md"}',
+      status: 'pending', created_at: 1_800_000_000_000, expires_at: 1_800_000_900_000,
+      decided_at: null, decided_by: null,
+    }]);
+    const html = await (await approvalsGet()).text();
+    expect(html).toContain('id="bad&quot;&gt;&lt;script&gt;"');
+    expect(html).not.toContain('<article id="bad"><script>');
   });
 
   it('rejects sign-in from an origin other than the configured site', async () => {
