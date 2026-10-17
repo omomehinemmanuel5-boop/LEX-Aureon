@@ -520,7 +520,27 @@ describe('MCP constitutional dispatch boundary', () => {
       n_stable: 3,
       canary_passed: true,
     });
-    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals$/);
+    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals#a{22}$/);
+    expect(checkRateLimit).toHaveBeenCalledWith('approval-implicit:private-test-1', 20, 3600);
+  });
+
+  it('fails closed when implicit approval rate-limit storage is unavailable', async () => {
+    const key = { id: 'private-test-rate-limit', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    checkRateLimit
+      .mockResolvedValueOnce({ allowed: true, remaining: 59, retryAfter: 0, storageError: false })
+      .mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfter: 60, storageError: true });
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'write_file', arguments: { path: 'README.md', content: 'test' } },
+      id: 'implicit-approval-storage-error',
+    }));
+
+    expect(response.status).toBe(503);
+    expect(createApprovalRequest).not.toHaveBeenCalled();
+    expect(executeGovernedTool).not.toHaveBeenCalled();
   });
 
   it('does not mutate a passing VERIFIED snapshot while creating a one-tap write approval', async () => {
