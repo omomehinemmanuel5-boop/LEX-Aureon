@@ -143,9 +143,9 @@ export async function POST(req: Request): Promise<Response> {
   const submitted = String(form.get('secret') ?? '');
   if (!safeEqual(submitted, secret)) {
     const limit = await checkRateLimit(`approval-login:${getClientIp(req)}`, 5, 60 * 60);
-    if (limit.storageError) return response(signInPage('Sign-in is temporarily unavailable.'), 503);
-    if (!limit.allowed) return response(signInPage('Too many failed sign-in attempts. Try again later.'), 429);
-    return response(signInPage('The operator secret was not accepted.'), 401);
+    if (limit.storageError) return response(signInPage('Sign-in is temporarily unavailable.', next), 503);
+    if (!limit.allowed) return response(signInPage('Too many failed sign-in attempts. Try again later.', next), 429);
+    return response(signInPage('The operator secret was not accepted.', next), 401);
   }
   const headers = new Headers({ location: next, 'cache-control': 'no-store' });
   headers.append('set-cookie', createOperatorSessionCookie(secret));
