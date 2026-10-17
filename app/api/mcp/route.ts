@@ -326,10 +326,13 @@ const MCP_REQUESTS_PER_MINUTE = 60;
 // These inspection tools must not bootstrap or otherwise mutate the trajectory they inspect.
 const NON_MUTATING_INSPECTION_TOOLS = new Set([
   'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
-  'read_file', 'list_directory', 'search_code', 'get_build_status',
-  'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
+  'read_file', 'read_directory', 'list_directory', 'list_files',
+  'read_memory', 'search_memory', 'search_code', 'fetch_page', 'curl',
+  'http_get', 'get_file', 'read_json', 'parse_csv', 'cat', 'head',
+  'tail', 'grep', 'find', 'ls', 'dir', 'glob',
+  'get_build_status', 'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
   'preview_patch_file', 'check_github_token_scope', 'get_trajectory_status',
-  'run_recovery_canary',
+  'run_recovery_canary', 'discover_external_tool', 'govern_external_action',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
