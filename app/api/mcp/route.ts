@@ -345,8 +345,11 @@ const NON_MUTATING_INSPECTION_TOOLS = new Set([
   'find', 'ls', 'dir', 'glob', 'get_build_status', 'get_workflow_run',
   'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
   'check_github_token_scope', 'get_trajectory_status', 'run_recovery_canary',
-  'discover_external_tool', 'govern_external_action',
 ]);
+
+export function isNonMutatingInspectionTool(toolName: string): boolean {
+  return NON_MUTATING_INSPECTION_TOOLS.has(toolName);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
