@@ -761,7 +761,7 @@ export async function POST(req: Request) {
           request_id: pending.requestId,
           tool_name: requestedTool,
           expires_at: new Date(pending.expiresAt).toISOString(),
-          approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+          approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           receipt_id: review.receipt_id ?? null,
           next_step: 'A human approver must review and approve this exact action. Then call the same tool with approval_request_id and unchanged arguments.',
         });
@@ -883,7 +883,7 @@ export async function POST(req: Request) {
             tool_name: manifest.name,
             risk: review.risk,
             expires_at: new Date(pending.expiresAt).toISOString(),
-            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             receipt_id: review.receiptId ?? null,
             next_step: 'A human approver must review this exact external action. After approval, call consume_external_action with the same manifest and arguments plus approval_request_id. The client adapter must act only if granted is true.',
           });
@@ -1023,7 +1023,7 @@ export async function POST(req: Request) {
           return JSON.stringify({
             request_id: created.requestId,
             expires_at: new Date(created.expiresAt).toISOString(),
-            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals#${created.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           });
         };
       }
@@ -1096,6 +1096,25 @@ export async function POST(req: Request) {
               : 'Continue safe governed observations and retry after Lex reports a restorable state.',
           });
         }
+        const configuredApprovalLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
+        const approvalLimit = Number.isSafeInteger(configuredApprovalLimit) && configuredApprovalLimit > 0
+          ? Math.min(configuredApprovalLimit, 1000)
+          : 20;
+        const approvalRate = await checkRateLimit(`approval-implicit:${ownerId}`, approvalLimit, 3600);
+        if (approvalRate.storageError) {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32003, message: 'Approval admission temporarily unavailable; no request was created' },
+            id,
+          }, { status: 503 });
+        }
+        if (!approvalRate.allowed) {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32029, message: 'Implicit approval request rate limit reached; no request was created' },
+            id,
+          }, { status: 429, headers: { 'Retry-After': String(approvalRate.retryAfter) } });
+        }
         try {
           const pending = await createApprovalRequest({
             ownerId,
@@ -1108,7 +1127,7 @@ export async function POST(req: Request) {
             request_id: pending.requestId,
             tool_name: dispatchToolName,
             expires_at: new Date(pending.expiresAt).toISOString(),
-            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             recovery_state: canonical.state.recoveryState,
             M: canonical.state.M,
             n_stable: canonical.state.nStable,
