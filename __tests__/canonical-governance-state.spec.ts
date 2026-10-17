@@ -80,6 +80,31 @@ describe('canonical governance state', () => {
     expect(result.state.stateFingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('keeps the same gate snapshot and fingerprint across five read-only observations', async () => {
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      if (sql.includes('FROM z_traj')) return { rows: [{ last_c: 0.31, last_r: 0.32, last_s: 0.37, velocity: 0.001, sigma_viol: 0, n_stable: 4, updated_at: '2026-10-10T00:00:00.000Z' }] };
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 5 }] };
+      if (sql.includes('FROM recovery_canary_evidence')) return { rows: [] };
+      return { rows: [] };
+    });
+    const snapshots = [];
+    for (let i = 0; i < 5; i += 1) {
+      const result = await readCanonicalGovernanceState({
+        sessionId: 'repeat-read-session', actorId: 'agent-a', capability: 'read',
+      });
+      expect(result.available).toBe(true);
+      snapshots.push(result.state);
+    }
+    expect(new Set(snapshots.map(state => state.stateFingerprint)).size).toBe(1);
+    expect(snapshots.map(state => state.nStable)).toEqual([4, 4, 4, 4, 4]);
+    for (const state of snapshots) {
+      const gate = canonicalExecutionAllowed(state);
+      expect({ C: state.C, R: state.R, S: state.S, M: state.M }).toEqual({ C: 0.31, R: 0.32, S: 0.37, M: 0.31 });
+      expect(gate.allowed).toBe(true);
+    }
+  });
+
   it('does not infer a successful canary from M=0.333 and stable observations alone', async () => {
     dbExecute
       .mockResolvedValueOnce({ rows: [{ last_c: 1 / 3, last_r: 1 / 3, last_s: 1 / 3, sigma_viol: 0, n_stable: 3, updated_at: '2026-10-10T00:00:00.000Z' }] })
