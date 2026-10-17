@@ -112,9 +112,12 @@ describe('governed tool execution integration boundary', () => {
   it('does not mutate z_traj during repeated governed diagnostic reads', async () => {
     const read = vi.fn(async () => JSON.stringify({ C: 1, R: 1, S: 1, M: 1 }));
     const sessionId = 'read-only-stability-session';
+    const results = [];
     for (let i = 0; i < 5; i += 1) {
-      await executeGovernedTool('get_constitutional_state', { session_id: sessionId }, read, sessionId);
+      results.push(await executeGovernedTool('get_constitutional_state', { session_id: sessionId }, read, sessionId));
     }
+    expect(results[0]).toContain('diagnostic_crs: diagnostic only;');
+    expect(results[0]).toContain('canonical_crs:');
     const trajectoryMutations = dbExecute.mock.calls.filter(([query]) => {
       const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
       return /\b(UPDATE|INSERT INTO|DELETE FROM)\s+z_traj\b/i.test(sql);
