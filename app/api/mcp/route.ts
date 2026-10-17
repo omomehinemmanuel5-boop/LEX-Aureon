@@ -947,7 +947,10 @@ export async function POST(req: Request) {
 
     if (!operator && (apiKey || sessionKeyId)) {
       const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
-      if (!consumption.valid) return unauthorized(id);
+      if (!consumption.valid) {
+        logMcpAuth(toolName, credentialPath, 'rejected_key_consumption', profile);
+        return unauthorized(id);
+      }
       // Use the atomically re-read key after consumption for ownership and
       // profile selection, so a concurrent revoke/plan change cannot retain
       // stale privileges from the preflight validation above.
