@@ -59,7 +59,7 @@ function response(body: string, status = 200, headers: HeadersInit = {}) {
   });
 }
 
-const APPROVAL_NEXT_PATTERN = /^\\/approvals(#[A-Za-z0-9_-]{1,64})?$/;
+const APPROVAL_NEXT_PATTERN = /^\/approvals(#[A-Za-z0-9_-]{1,64})?$/;
 
 function validApprovalNext(value: string): boolean {
   return APPROVAL_NEXT_PATTERN.test(value);
