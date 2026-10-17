@@ -303,6 +303,8 @@ describe('governed tool execution integration boundary', () => {
     expect(result.approved).toBe(true);
     expect(result.result).toContain('WRITE_COMPLETED');
     expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(actionArgs, undefined);
+    // Approval metadata must never reach the underlying tool adapter.
     // The successful write records its own post-action observation once. A
     // preflight recovery mutation would produce an extra z_traj update and
     // invalidate the canary before the approved action could execute.
