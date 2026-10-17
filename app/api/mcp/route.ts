@@ -109,7 +109,7 @@ function logMcpAuth(toolName: string, credentialPath: McpCredentialPath, outcome
   // Never include credential values, tokens, headers, or request arguments in auth diagnostics.
   console.info('[mcp-auth]', JSON.stringify({
     method: 'tools/call',
-    tool_name: toolName,
+    tool_name: toolName.slice(0, 128),
     credential_path: credentialPath,
     outcome,
     ...(profile ? { profile } : {}),
@@ -644,7 +644,7 @@ export async function POST(req: Request) {
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
-        if (profile !== 'operator') return unauthorized(id);
+        if (!hasOperatorAuthority(operator, profile)) return unauthorized(id);
       }
       // Match the canonical session used by ordinary tools/call dispatch.
       // Private-test credentials have operator capabilities, but they are not
@@ -752,7 +752,7 @@ export async function POST(req: Request) {
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
-        if (toolName === 'authorize_external_action' && profile !== 'operator') return unauthorized(id);
+        if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) return unauthorized(id);
       }
       const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
       const manifest = isRecord(args.manifest) ? args.manifest as unknown as ToolManifest : null;
