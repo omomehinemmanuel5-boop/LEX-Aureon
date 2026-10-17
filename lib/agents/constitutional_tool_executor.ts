@@ -447,12 +447,21 @@ export async function executeGovernedToolStructured(
   if (signal?.aborted) {
     const released = await releaseConsumedApproval();
     const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
+    const cancellationDecision: ToolCallDecision = {
+      ...decision,
+      approved: false,
+      decision: 'DENIED_BLOCKED',
+      reason: 'Cancellation was observed before action dispatch.',
+      warning: released === false
+        ? 'The tool function was not invoked, but approval restoration failed.'
+        : 'The tool function was not invoked; consumed approval was restored when applicable.',
+    };
     const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, decision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
+      result: report(toolName, cancellationDecision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
       approved: false,
       decision: 'EXECUTION_CANCELLED_BEFORE_START',
-      receiptId: decision.receipt_id ?? null,
+      receiptId: cancellationDecision.receipt_id ?? null,
       risk: policy.risk,
       policy,
       verification,
@@ -590,12 +599,21 @@ export async function executeGovernedToolStructured(
   if (signal?.aborted) {
     const released = await releaseConsumedApproval();
     const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
+    const cancellationDecision: ToolCallDecision = {
+      ...decision,
+      approved: false,
+      decision: 'DENIED_BLOCKED',
+      reason: 'Cancellation was observed before action dispatch.',
+      warning: released === false
+        ? 'The tool function was not invoked, but approval restoration failed.'
+        : 'The tool function was not invoked; consumed approval was restored when applicable.',
+    };
     const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, decision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
+      result: report(toolName, cancellationDecision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
       approved: false,
       decision: 'EXECUTION_CANCELLED_BEFORE_START',
-      receiptId: decision.receipt_id ?? null,
+      receiptId: cancellationDecision.receipt_id ?? null,
       risk: policy.risk,
       policy,
       verification,
