@@ -60,6 +60,12 @@ describe('operator recovery canary probe', () => {
         canary_passed: false,
         gate_snapshot: {
           C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+          health_band: 'OPTIMAL',
+          recovery_state: 'RESTORING',
+          state_version: 'canonical-governance-2026-10-10.1',
+          authorization: 'authorized',
+          policy_risk: 'read',
+          trajectory_available: true,
           n_stable: 3,
           n_stable_required: 3,
           velocity: 0.001,
