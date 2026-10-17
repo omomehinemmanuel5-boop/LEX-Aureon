@@ -620,14 +620,19 @@ export async function executeGovernedToolStructured(
     };
   }
 
+  // Approval metadata is for the reference monitor only. Never forward a
+  // bearer approval token or request identifier to the underlying tool adapter.
+  const handlerArgs = { ...args };
+  for (const key of ['approval_token', 'approval_id', 'approval_request_id', 'approval', 'approval_request']) {
+    delete handlerArgs[key];
+  }
+
   const cached = await cache.getOrExecuteAuthorized({
     key: keyFor(sessionId, toolName, args),
     toolName,
     decision,
     execute: () => {
-      if (!approvalRequestId) return toolFn(args, signal);
-      const handlerArgs = { ...args };
-      delete handlerArgs.approval_request_id;
+      if (!approvalRequestId) return toolFn(handlerArgs, signal);
       return withConsumedApproval({
         requestId: approvalRequestId,
         ownerId,
