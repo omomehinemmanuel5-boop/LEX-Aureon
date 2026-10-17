@@ -189,6 +189,33 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
+  it('logs only the MCP credential path and identifies the Connect Lex challenge path', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const authenticated = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: { session_id: 'public-inspector:session' } },
+      id: 'credential-path-api-key',
+    }));
+    expect(authenticated.status).toBe(200);
+    expect(log).toHaveBeenCalledWith('[mcp-auth]', expect.stringContaining('"credential_path":"api_key"'));
+    expect(log.mock.calls.map(call => String(call[1])).join('\n')).not.toContain('test-key');
+
+    log.mockClear();
+    const missingCredential = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: {} },
+      id: 'credential-path-missing',
+    }, { 'x-lex-api-key': '' }));
+    expect(missingCredential.status).toBe(200);
+    expect((missingCredential.body as { result?: { content?: Array<{ text?: string }>; _meta?: Record<string, unknown> } }).result?.content?.[0]?.text)
+      .toContain('Connect Lex Aureon');
+    expect(log).toHaveBeenCalledWith('[mcp-auth]', expect.stringContaining('"credential_path":"missing"'));
+    expect(log).toHaveBeenCalledWith('[mcp-auth]', expect.stringContaining('"outcome":"rejected_missing_credential"'));
+    log.mockRestore();
+  });
+
   it('does not bootstrap z_traj for read-only constitutional inspection', async () => {
     const key = { id: 'public-inspector', plan: 'free' };
     validateApiKey.mockResolvedValue({ valid: true, key });
