@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
@@ -8,6 +8,9 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   readCanonicalGovernanceState: vi.fn(),
   canonicalExecutionAllowed: vi.fn(() => ({ allowed: true })),
   advanceRecoveryPlane: vi.fn(async () => {}),
+  shouldAdvanceRecoveryPlane: vi.fn((state: { trajectoryAvailable?: boolean; M?: number; nStable?: number; canaryPassed?: boolean }) =>
+    state.trajectoryAvailable === true && (state.M ?? 0) >= 0.05 && state.canaryPassed !== true
+      && ((state.M ?? 0) < 0.15 || (state.nStable ?? 0) < 3)),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
@@ -80,7 +83,7 @@ vi.mock('../lib/agents/canonical_governance_state', () => ({
   canonicalExecutionAllowed,
 }));
 
-vi.mock('../lib/agents/recovery_runtime', () => ({ advanceRecoveryPlane }));
+vi.mock('../lib/agents/recovery_runtime', () => ({ advanceRecoveryPlane, shouldAdvanceRecoveryPlane }));
 
 vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryEvidence }));
 
@@ -502,6 +505,40 @@ describe('MCP constitutional dispatch boundary', () => {
       canary_passed: true,
     });
     expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals$/);
+  });
+
+  it('does not mutate a passing VERIFIED snapshot while creating a one-tap write approval', async () => {
+    const key = { id: 'private-test-verified', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-verified:session', actorId: 'api_key:private-test-verified',
+        C: 0.2, R: 0.4, S: 0.4, M: 0.2,
+        healthBand: 'STRESSED', recoveryState: 'VERIFIED', sigmaViol: 0,
+        toolCalls: 0, trajectoryAvailable: true, nStable: 3, canaryPassed: true,
+        stateFingerprint: 'b'.repeat(64), trajectoryUpdatedAt: '2026-10-17T00:00:00.000Z',
+        authorization: 'authorized', policyRisk: 'write', version: 'test', observedAt: '2026-10-17T00:00:00.000Z',
+      },
+    });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'write_file', arguments: { path: 'verified.ts', content: 'export {}' } },
+      id: 'verified-one-tap',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(approvalResult).toMatchObject({
+      status: 'approval_required',
+      recovery_state: 'VERIFIED',
+      M: 0.2,
+      n_stable: 3,
+      canary_passed: true,
+    });
   });
 
   it('does not self-approve writes even when the private-test caller IP changes', async () => {
