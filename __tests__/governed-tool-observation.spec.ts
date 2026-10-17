@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   readCanonicalGovernanceState: vi.fn(),
   canonicalExecutionAllowed: vi.fn(),
   advanceRecoveryPlane: vi.fn(),
+  shouldAdvanceRecoveryPlane: vi.fn(() => false),
   rows: new Map<string, Record<string, unknown>>(),
 }));
 
@@ -15,7 +16,10 @@ vi.mock('../lib/agents/canonical_governance_state', () => ({
   readCanonicalGovernanceState: mocks.readCanonicalGovernanceState,
   canonicalExecutionAllowed: mocks.canonicalExecutionAllowed,
 }));
-vi.mock('../lib/agents/recovery_runtime', () => ({ advanceRecoveryPlane: mocks.advanceRecoveryPlane }));
+vi.mock('../lib/agents/recovery_runtime', () => ({
+  advanceRecoveryPlane: mocks.advanceRecoveryPlane,
+  shouldAdvanceRecoveryPlane: mocks.shouldAdvanceRecoveryPlane,
+}));
 
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
 import { recordZTrajObservation, type ExpectedZTrajSample } from '../lib/kv';
