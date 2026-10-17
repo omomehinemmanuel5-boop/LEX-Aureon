@@ -19,6 +19,10 @@ The secret remains separate from `ADMIN_PASSWORD` and API keys. It is an optiona
 
 The implicit approval-creation limiter defaults to 20 requests per owner per hour. `LEX_APPROVAL_IMPLICIT_LIMIT` may override the positive integer limit (values above 1000 are capped; invalid values fall back to 20). Rate-limit storage errors fail closed and do not create an approval request.
 
+## Cancellation boundary for single-use approvals
+
+The executor checks `signal?.aborted` immediately before beginning approval consumption in `lib/agents/constitutional_tool_executor.ts`, inside `executeGovernedToolStructured`. A cancellation that arrives **after that check while `consumeApprovalRequest(...)` or `consumeGovernanceApprovalToken(...)` is awaiting its storage round-trip** can still consume the one-time approval before execution is dispatched. The executor fails closed if consumption fails, and it does not invoke the tool when cancellation is observed before the check; however, cancellation is not atomic with the database consume operation and execution start. In that narrow race the approval may be burned without the action starting, so the caller must create a new approval request rather than replaying the consumed one. This is a known availability limitation, not an authorization bypass: consumption remains owner/session/tool/argument-hash bound and single-use. Do not claim cancellation is atomic until execution-start coordination is implemented and tested.
+
 ## MCP endpoint
 
 Use:
