@@ -11,6 +11,23 @@ import { readCanonicalGovernanceState } from './canonical_governance_state';
 
 const MAX_RECOVERY_STEP = 0.08;
 
+/**
+ * Advance recovery only while its measurable prerequisites are genuinely unmet.
+ * Once an exact-snapshot canary has passed, never mutate the measured state as
+ * a side effect of requesting approval or retrying a governed action.
+ */
+export function shouldAdvanceRecoveryPlane(state: {
+  trajectoryAvailable: boolean;
+  M: number;
+  nStable: number;
+  canaryPassed?: boolean;
+}): boolean {
+  return state.trajectoryAvailable
+    && state.M >= CONSTITUTION.TAU_FLOOR
+    && state.canaryPassed !== true
+    && (state.M < CONSTITUTION.TAU_RECOVERY || state.nStable < CONSTITUTION.N_MIN);
+}
+
 export interface RecoveryPulseResult {
   advanced: boolean;
   stabilized: boolean;
