@@ -231,7 +231,7 @@ describe('governed tool execution integration boundary', () => {
         controller.abort();
         return { rowsAffected: 1 };
       }
-      if (sql.includes('DELETE FROM governance_approval_consumptions')) {
+      if (sql.includes('DELETE FROM governance_approval_consumptions WHERE approval_id = ?')) {
         released = true;
         return { rowsAffected: 1 };
       }
