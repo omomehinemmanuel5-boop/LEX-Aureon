@@ -327,6 +327,9 @@ describe('MCP constitutional dispatch boundary', () => {
         session_id: expect.stringMatching(/^owner-a:/),
       },
     });
+    const requestApprovalBody = response.body as { result?: { content?: Array<{ text?: string }> } };
+    const requestApprovalText = requestApprovalBody.result?.content?.[0]?.text ?? '';
+    expect(requestApprovalText).toContain(`https://www.lexaureon.com/approvals#${'a'.repeat(22)}`);
   });
 
   it('does not expose or execute infrastructure tools for public API keys', async () => {
@@ -667,6 +670,8 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'write_file',
       args: { ...actionArgs, session_id: 'private-test-1:private-test-session' },
     }));
+    const authorizationResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(authorizationResult.approval_url).toBe(`https://www.lexaureon.com/approvals#${'a'.repeat(22)}`);
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
     expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
       .toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
@@ -762,6 +767,8 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'consume_external_action',
       args: expect.objectContaining({ session_id: 'private-test-1:external-session' }),
     }));
+    const externalApprovalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(externalApprovalResult.approval_url).toBe(`https://www.lexaureon.com/approvals#${'a'.repeat(22)}`);
 
     externalBrokerMocks.consumeExternalAction.mockResolvedValueOnce({ granted: true, reason: 'consumed once' });
     const consumeResponse = await POST(request({
