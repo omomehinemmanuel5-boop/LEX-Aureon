@@ -541,6 +541,41 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
+  it('preserves a passing canary while issuing a one-tap approval in VERIFIED state', async () => {
+    const key = { id: 'private-test-verified', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-verified:session', actorId: 'api_key:private-test-verified',
+        C: 0.2, R: 0.4, S: 0.4, M: 0.2,
+        healthBand: 'STRESSED', recoveryState: 'VERIFIED', sigmaViol: 0,
+        toolCalls: 0, trajectoryAvailable: true, nStable: 3, canaryPassed: true,
+        stateFingerprint: 'b'.repeat(64), trajectoryUpdatedAt: '2026-10-17T00:00:00.000Z',
+        authorization: 'authorized', policyRisk: 'write', version: 'test', observedAt: '2026-10-17T00:00:00.000Z',
+      },
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'write_file', arguments: { path: 'verified.ts', content: 'export {}' } },
+      id: 'verified-one-tap',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(approvalResult).toMatchObject({
+      status: 'approval_required',
+      recovery_state: 'VERIFIED',
+      M: 0.2,
+      n_stable: 3,
+      canary_passed: true,
+    });
+  });
+
   it('does not self-approve writes even when the private-test caller IP changes', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
