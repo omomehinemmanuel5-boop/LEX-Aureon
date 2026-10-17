@@ -271,23 +271,25 @@ export async function executeGovernedToolStructured(
     authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
   });
 
-  // Advance recovery only when thresholds are unmet and no passing canary
-  // is bound to this state. Never invalidate verified evidence as a side effect
-  // of an approval attempt or a retry.
+  // Advance recovery at most once per request, only when thresholds are
+  // unmet and no passing canary is bound to this state. Never invalidate
+  // verified evidence as a side effect of an approval attempt or a retry.
+  let recoveryNote = '';
   if (!NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)
     && canonicalRead.available
     && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
     try {
-      await advanceRecoveryPlane(sessionId);
+      const recovery = await advanceRecoveryPlane(sessionId);
+      recoveryNote = ` Recovery plane: ${recovery.state}; M=${recovery.M.toFixed(3)}; n_stable=${recovery.nStable}; velocity=${recovery.velocity.toFixed(4)}.`;
       canonicalRead = await readCanonicalGovernanceState({
         sessionId,
         actorId,
         capability: capability.capability,
         authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
       });
-    } catch {
-      // Recovery is fail-closed and non-fatal to the authorization boundary;
-      // the fresh canonical read above remains authoritative.
+    } catch (error) {
+      recoveryNote = ` Recovery plane unavailable (non-fatal): ${String(error).slice(0, 120)}.`;
+      // The last successfully read canonical state remains authoritative.
     }
   }
 
@@ -315,18 +317,8 @@ export async function executeGovernedToolStructured(
 
   const canonicalGate = canonicalExecutionAllowed(canonicalRead.state, capability.bootstrapAllowed === true);
   if (!canonicalGate.allowed) {
-    let recoveryNote = '';
-    // A fail-closed write must never become a recovery mechanism by executing
-    // the requested action. Instead, use the dedicated non-destructive
-    // recovery plane to move the canonical trajectory toward stability.
-    if (capability.capability !== 'read' && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
-      try {
-        const recovery = await advanceRecoveryPlane(sessionId);
-        recoveryNote = ` Recovery plane: ${recovery.state}; M=${recovery.M.toFixed(3)}; n_stable=${recovery.nStable}; velocity=${recovery.velocity.toFixed(4)}.`;
-      } catch (error) {
-        recoveryNote = ` Recovery plane unavailable (non-fatal): ${String(error).slice(0, 120)}.`;
-      }
-    }
+    // The preflight recovery pulse above is the only mutation allowed for this
+    // request. A second pulse here would double-count stability observations.
 
     const canonicalDecision: ToolCallDecision = {
       approved: false,
