@@ -9,6 +9,7 @@ vi.mock('../lib/db', () => ({
 import {
   consumeGovernanceApprovalToken,
   createGovernanceApprovalToken,
+  releaseConsumedGovernanceApprovalToken,
 } from '../lib/agents/tool_governance_gateway';
 
 describe('governance approval consumption', () => {
@@ -47,6 +48,29 @@ describe('governance approval consumption', () => {
     const replay = await consumeGovernanceApprovalToken({ ...action, token, nowMs: nowMs + 1000 });
     expect(replay.consumed).toBe(false);
     expect(replay.reason).toContain('already been consumed');
+  });
+
+  it('releases a consumed signed approval when cancellation wins before action dispatch', async () => {
+    const token = createGovernanceApprovalToken({ ...action, nowMs, approvalId: 'cancel-before-start-1' });
+    dbExecute
+      .mockResolvedValueOnce({ rowsAffected: 0 }) // CREATE TABLE
+      .mockResolvedValueOnce({ rowsAffected: 0 }) // cleanup
+      .mockResolvedValueOnce({ rowsAffected: 1 }); // consume
+    const consumed = await consumeGovernanceApprovalToken({ ...action, token, nowMs });
+    expect(consumed.consumed).toBe(true);
+
+    dbExecute.mockResolvedValueOnce({ rowsAffected: 1 }); // release exact consumption
+    const released = await releaseConsumedGovernanceApprovalToken({
+      approvalId: 'cancel-before-start-1',
+      actorId: action.actorId,
+      sessionId: action.sessionId,
+      toolName: action.toolName,
+    });
+    expect(released).toBe(true);
+    expect(dbExecute).toHaveBeenLastCalledWith({
+      sql: expect.stringContaining('DELETE FROM governance_approval_consumptions'),
+      args: ['cancel-before-start-1', action.actorId, action.sessionId, action.toolName],
+    });
   });
 
   it('fails closed when the consumption store is unavailable', async () => {
