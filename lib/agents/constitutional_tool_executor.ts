@@ -56,6 +56,10 @@ const NON_MUTATING_GOVERNANCE_TOOLS = new Set([
   'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
 ]);
 
+export function isNonMutatingGovernanceTool(toolName: string): boolean {
+  return NON_MUTATING_GOVERNANCE_TOOLS.has(toolName);
+}
+
 const KERNEL_CRITICAL = 0.05;
 
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
@@ -275,7 +279,7 @@ export async function executeGovernedToolStructured(
   // unmet and no passing canary is bound to this state. Never invalidate
   // verified evidence as a side effect of an approval attempt or a retry.
   let recoveryNote = '';
-  if (!NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)
+  if (!isNonMutatingGovernanceTool(toolName)
     && canonicalRead.available
     && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
     try {
