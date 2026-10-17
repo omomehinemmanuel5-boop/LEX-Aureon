@@ -502,7 +502,7 @@ export async function executeGovernedToolStructured(
         approvalId: approvalRequestId,
         reasons: [...policy.reasons, 'Operator approval request was consumed exactly once for this exact action.'],
       };
-    } else if (consumed.approvalId) {
+    } else if ('approvalId' in consumed && consumed.approvalId) {
       consumedApprovalTokenId = consumed.approvalId;
     }
 
