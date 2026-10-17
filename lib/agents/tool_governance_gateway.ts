@@ -239,6 +239,41 @@ export async function consumeGovernanceApprovalToken(input: {
   }
 }
 
+/**
+ * Releases a consumed approval only when the same signed action is cancelled
+ * before its tool callback starts. The caller must never use this after an
+ * external side effect may have begun.
+ */
+export async function releaseGovernanceApprovalToken(input: {
+  token: unknown;
+  actorId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  nowMs?: number;
+}): Promise<{ restored: boolean; reason: string }> {
+  const verified = verifyGovernanceApprovalToken(input);
+  if (!verified.valid || !verified.approvalId) {
+    return { restored: false, reason: verified.reason };
+  }
+  try {
+    const result = await getClient().execute({
+      sql: `DELETE FROM governance_approval_consumptions
+            WHERE approval_id = ? AND actor_id = ? AND session_id = ? AND tool_name = ? AND expires_at > ?`,
+      args: [
+        verified.approvalId, input.actorId, input.sessionId, input.toolName,
+        input.nowMs ?? Date.now(),
+      ],
+    });
+    if ((result.rowsAffected ?? 0) !== 1) {
+      return { restored: false, reason: 'Consumed approval token was not present or had expired.' };
+    }
+    return { restored: true, reason: 'Approval token restored because execution had not started.' };
+  } catch {
+    return { restored: false, reason: 'Approval consumption store unavailable; token restoration could not be confirmed.' };
+  }
+}
+
 export function classifyGovernanceRisk(toolName: string, args: Record<string, unknown> = {}): GovernanceRisk {
   if (toolName === 'query_database') {
     const operation = classifyDatabaseOperation(String(args.sql ?? ''));
