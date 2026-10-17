@@ -27,6 +27,13 @@ export interface RecoveryCanaryEvidenceInput extends RecoverySnapshotFingerprint
   expiresAt?: string;
 }
 
+export interface RecoveryCanaryCurrentState {
+  stateVersion: string;
+  M: number;
+  sigmaViol: number;
+  nStable: number;
+}
+
 function exactNumber(value: number): string {
   return Number.isFinite(value) ? value.toPrecision(17) : 'invalid';
 }
@@ -95,36 +102,51 @@ export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
   });
 }
 
+/**
+ * Apply the invariant-mode validity rules to the latest session canary.
+ * Shared by governed-state reads and audit-receipt attribution.
+ */
+export async function readInvariantRecoveryCanaryEvidence(
+  sessionId: string,
+  current: RecoveryCanaryCurrentState,
+): Promise<{ passed: boolean; receiptId: string | null; status: RecoveryCanaryStatus | null }> {
+  try {
+    const result = await getClient().execute({
+      sql: `SELECT e.*, (SELECT COUNT(*) FROM tool_receipts w WHERE w.session_id = e.session_id
+            AND datetime(w.created_at) > datetime(e.issued_at) AND w.tool_name NOT IN
+            ('read_file','read_directory','list_directory','list_files','read_memory','search_memory','fetch_page','http_get','get_file','cat','head','tail','grep','find','ls','dir','glob','run_recovery_canary','get_constitutional_state','get_recent_receipts','explain_denial','search_code','get_build_status','get_workflow_run','get_workflow_log','get_workflow_artifact','get_vercel_logs','preview_patch_file','check_github_token_scope','get_trajectory_status','read_json','parse_csv','query_database','simulate_agent_plan','review_agent_action','run_self_test','self_reflect')) AS writes
+            FROM recovery_canary_evidence e WHERE e.session_id = ?
+            ORDER BY e.id DESC LIMIT 1`,
+      args: [sessionId],
+    });
+    if (!result.rows.length) return { passed: false, receiptId: null, status: null };
+    const row = result.rows[0];
+    const status = String(row.canary_status);
+    const expiryMs = Date.parse(String(row.expires_at ?? ''));
+    const maxWrites = Number(process.env.CANARY_MAX_GOVERNED_WRITES ?? 50);
+    const maxAgeMs = Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
+    const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
+    const valid = status === 'passed' && String(row.state_version) === current.stateVersion
+      && current.M >= CONSTITUTION.TAU_RECOVERY && current.sigmaViol === 0
+      && current.nStable >= CONSTITUTION.N_MIN
+      && Number(row.writes ?? 0) < maxWrites && Number.isFinite(expiryMs)
+      && Number.isFinite(issuedMs) && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
+    return { passed: valid, receiptId: valid ? String(row.receipt_id ?? '') || null : null, status: valid ? 'passed' : (status === 'failed' ? 'failed' : null) };
+  } catch {
+    return { passed: false, receiptId: null, status: null };
+  }
+}
+
 /** Return the latest proof for this exact snapshot; storage errors fail closed. */
 export async function readRecoveryCanaryEvidence(
   sessionId: string,
   stateFingerprint: string,
-  current?: { stateVersion: string; M: number; sigmaViol: number; nStable: number },
+  current?: RecoveryCanaryCurrentState,
 ): Promise<{ passed: boolean; receiptId: string | null; status: RecoveryCanaryStatus | null }> {
+  if (process.env.CANARY_MODE === 'invariant' && current) {
+    return readInvariantRecoveryCanaryEvidence(sessionId, current);
+  }
   try {
-    if (process.env.CANARY_MODE === 'invariant' && current) {
-      const result = await getClient().execute({
-        sql: `SELECT e.*, (SELECT COUNT(*) FROM tool_receipts w WHERE w.session_id = e.session_id
-              AND datetime(w.created_at) > datetime(e.issued_at) AND w.tool_name NOT IN
-              ('read_file','read_directory','list_directory','list_files','read_memory','search_memory','fetch_page','http_get','get_file','cat','head','tail','grep','find','ls','dir','glob','run_recovery_canary','get_constitutional_state','get_recent_receipts','explain_denial','search_code','get_build_status','get_workflow_run','get_workflow_log','get_workflow_artifact','get_vercel_logs','preview_patch_file','check_github_token_scope','get_trajectory_status','read_json','parse_csv','query_database','simulate_agent_plan','review_agent_action','run_self_test','self_reflect')) AS writes
-              FROM recovery_canary_evidence e WHERE e.session_id = ?
-              ORDER BY e.id DESC LIMIT 1`,
-        args: [sessionId],
-      });
-      if (!result.rows.length) return { passed: false, receiptId: null, status: null };
-      const row = result.rows[0];
-      const status = String(row.canary_status);
-      const expiryMs = Date.parse(String(row.expires_at ?? ''));
-      const maxWrites = Number(process.env.CANARY_MAX_GOVERNED_WRITES ?? 50);
-      const maxAgeMs = Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
-      const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
-      const valid = status === 'passed' && String(row.state_version) === current.stateVersion
-        && current.M >= CONSTITUTION.TAU_RECOVERY && current.sigmaViol === 0
-        && current.nStable >= CONSTITUTION.N_MIN
-        && Number(row.writes ?? 0) < maxWrites && Number.isFinite(expiryMs)
-        && Number.isFinite(issuedMs) && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
-      return { passed: valid, receiptId: valid ? String(row.receipt_id ?? '') || null : null, status: valid ? 'passed' : (status === 'failed' ? 'failed' : null) };
-    }
     const result = await getClient().execute({
       sql: `SELECT canary_status, receipt_id
             FROM recovery_canary_evidence

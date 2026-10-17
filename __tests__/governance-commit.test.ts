@@ -1,12 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { transaction, execute } = vi.hoisted(() => ({
+const { transaction, execute, canonicalRead } = vi.hoisted(() => ({
   transaction: vi.fn(),
   execute: vi.fn(),
+  canonicalRead: vi.fn(),
 }));
 
 vi.mock('../lib/db', () => ({
   getClient: () => ({ transaction, execute }),
+}));
+
+vi.mock('../lib/agents/canonical_governance_state', () => ({
+  readCanonicalGovernanceState: canonicalRead,
 }));
 
 import {
@@ -38,6 +43,31 @@ const receipt = {
   state_snapshot: JSON.stringify({ C: 0.2, R: 0.3, S: 0.4, M: 0.2 }),
 };
 
+const currentStateVersion = 'canonical-governance-2026-10-10.1';
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv('CANARY_MODE', 'invariant');
+  canonicalRead.mockResolvedValue({
+    available: true,
+    state: {
+      trajectoryAvailable: true,
+      version: currentStateVersion,
+      M: 0.2,
+      sigmaViol: 0,
+      nStable: 3,
+    },
+  });
+  execute.mockResolvedValue({ rows: [{
+    canary_status: 'passed',
+    receipt_id: 'canary-audit-id',
+    state_version: currentStateVersion,
+    issued_at: new Date(Date.now() - 1_000).toISOString(),
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    writes: 0,
+  }] });
+});
+
 describe('transactional governance commit', () => {
   it('commits state and receipt together', async () => {
     const tx = {
@@ -62,6 +92,44 @@ describe('transactional governance commit', () => {
     expect(tx.commit).toHaveBeenCalledOnce();
     expect(tx.rollback).not.toHaveBeenCalled();
     expect(committed.state_version).toBe(5);
+  });
+
+  it('records a valid canary ID but stores NULL for an expired canary', async () => {
+    const makeTransaction = () => ({
+      execute: vi.fn()
+        .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rowsAffected: 1 })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rowsAffected: 1 }),
+      commit: vi.fn().mockResolvedValue(undefined),
+      rollback: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const expiredTx = makeTransaction();
+    execute.mockResolvedValueOnce({ rows: [{
+      canary_status: 'passed',
+      receipt_id: 'canary-audit-id',
+      state_version: currentStateVersion,
+      issued_at: new Date(Date.now() - 120_000).toISOString(),
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+      writes: 0,
+    }] });
+    transaction.mockResolvedValueOnce(expiredTx);
+    await commitGovernanceDecision(state, 4, receipt);
+    expect(expiredTx.execute.mock.calls[3][0].args[17]).toBeNull();
+
+    const validTx = makeTransaction();
+    execute.mockResolvedValueOnce({ rows: [{
+      canary_status: 'passed',
+      receipt_id: 'canary-audit-id',
+      state_version: currentStateVersion,
+      issued_at: new Date(Date.now() - 1_000).toISOString(),
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      writes: 0,
+    }] });
+    transaction.mockResolvedValueOnce(validTx);
+    await commitGovernanceDecision(state, 4, receipt);
+    expect(validTx.execute.mock.calls[3][0].args[17]).toBe('canary-audit-id');
   });
 
   it('rolls back and rejects a stale concurrent state version', async () => {

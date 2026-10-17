@@ -2,6 +2,8 @@ import { getClient } from '../db';
 import type { ToolCRSState, ToolSessionState } from './types';
 import { appendProvenanceEvent, hashProvenanceEvent } from './governance_provenance';
 import { TOOL_GOVERNANCE_POLICY_VERSION } from './tool_governance_gateway';
+import { readCanonicalGovernanceState } from './canonical_governance_state';
+import { readInvariantRecoveryCanaryEvidence } from './recovery_canary_evidence';
 
 export interface GovernanceReceipt {
   receipt_id: string;
@@ -25,13 +27,26 @@ export class GovernanceCommitConflict extends Error {
 }
 
 async function receiptAuditValues(receipt: GovernanceReceipt): Promise<(string | null)[]> {
-  let canaryId = receipt.canary_receipt_id ?? null;
+  let canaryId: string | null = null;
   let snapshot = receipt.state_snapshot ?? null;
   try {
     const client = getClient();
-    if (!canaryId) {
-      const canary = await client.execute({ sql: 'SELECT receipt_id FROM recovery_canary_evidence WHERE session_id = ? AND canary_status = ? ORDER BY id DESC LIMIT 1', args: [receipt.session_id, 'passed'] });
-      canaryId = String(canary.rows?.[0]?.receipt_id ?? '') || null;
+    const canonical = await readCanonicalGovernanceState({
+      sessionId: receipt.session_id,
+      actorId: receipt.actor_id ?? 'internal-agent',
+      capability: 'read',
+    });
+    if (canonical.available && canonical.state.trajectoryAvailable) {
+      const canary = await readInvariantRecoveryCanaryEvidence(receipt.session_id, {
+        stateVersion: canonical.state.version,
+        M: canonical.state.M,
+        sigmaViol: canonical.state.sigmaViol,
+        nStable: canonical.state.nStable,
+      });
+      if (canary.passed && canary.receiptId
+        && (!receipt.canary_receipt_id || receipt.canary_receipt_id === canary.receiptId)) {
+        canaryId = canary.receiptId;
+      }
     }
     if (!snapshot) {
       const traj = await client.execute({ sql: 'SELECT last_c, last_r, last_s, last_m, sigma_viol, n_stable, updated_at FROM z_traj WHERE session_id = ? LIMIT 1', args: [receipt.session_id] });

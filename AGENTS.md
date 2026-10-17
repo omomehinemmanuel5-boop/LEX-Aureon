@@ -529,6 +529,7 @@ npm run build          verify TypeScript
 
 [2026-09-29] FIX: MCP governance bootstrap is present in the main code path — `run_governance` is registered as the explicit new-session bootstrapper, missing `z_traj` is represented as `UNINITIALIZED`, and other consequential tools remain fail-closed until state exists; normal writes remain approval-bound. The former branch-specific deployment note was stale; live bootstrap behavior still requires end-to-end verification.
 [2026-10-15] DOC: Corrected the Constitution page's threshold explanation to distinguish the hard CBF floor, Lyapunov penalty threshold, and recovery threshold using canonical constants; replaced obsolete branch-specific bootstrap status with the verified main deployment revision and an explicit live-E2E verification task.
+[2026-10-17] FIX: Bounded invariant canary binding added behind `CANARY_MODE=invariant`; the default remains unchanged. Write-count expiry validated against real SQLite, and `run_governance` receipts count toward the write limit. Status: validated in CI, flag off in production, not yet exercised on preview.
 
 ---
 
@@ -544,6 +545,8 @@ Tool Gov:   MCP routes authenticate callers, fail closed on unavailable
             governance state, write actor-attributed receipts, and report
             remote outcomes as unknown when completion cannot be established;
             independent integrations remain outside these route guarantees
+            Bounded invariant canary mode is behind a flag; off in production,
+            validated in CI, and not yet exercised on preview.
 MCP bootstrap: run_governance is the explicit new-session bootstrapper;
             missing z_traj is reported UNINITIALIZED; other consequential tools
             remain fail-closed until state exists. Production deploy tracks main
@@ -565,6 +568,7 @@ Benchmarks: 920+ adversarial prompts total. JailbreakBench n=150 (run 3147939830
 - [ ] Multi-pillar global Lyapunov proof (Open Problem 1 residual)
 - [ ] Multi-turn CRS computation (turn_history table — identified, not yet implemented)
 - [ ] Verify the live MCP session-bootstrap lifecycle with an authenticated, harmless end-to-end test
+- [ ] Exercise bounded invariant canary mode on preview with `CANARY_MODE=invariant`
 - [x] Open Problem 3 closed and deployed (2026-06-28/29)
 - [x] Naming collision resolved — computeZWeightsHeuristic (2026-06-29)
 - [x] slow_drip receipt wired from sigma_viol accumulator (2026-06-29)
