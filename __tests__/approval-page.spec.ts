@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { values, sessionCookie, checkRateLimit, getClientIp, listApprovalRequests, decideApprovalRequest } = vi.hoisted(() => ({
+const { values, sessionCookie, checkRateLimit, getClientIp, listApprovalRequests, decideApprovalRequest, readCanonicalGovernanceState } = vi.hoisted(() => ({
   values: { secret: 'test-only-placeholder', site: 'https://www.lexaureon.com', cookie: '' },
   sessionCookie: vi.fn(() => ''),
   checkRateLimit: vi.fn(),
   getClientIp: vi.fn(() => '192.0.2.10'),
   listApprovalRequests: vi.fn(),
   decideApprovalRequest: vi.fn(),
+  readCanonicalGovernanceState: vi.fn(),
 }));
 vi.mock('../lib/env', () => ({ env: {
   get MCP_OPERATOR_SECRET() { return values.secret || undefined; },
@@ -15,6 +16,7 @@ vi.mock('../lib/env', () => ({ env: {
 vi.mock('next/headers', () => ({ headers: async () => new Headers({ cookie: values.cookie }) }));
 vi.mock('../lib/rate_limit', () => ({ checkRateLimit, getClientIp }));
 vi.mock('../lib/approval_requests', () => ({ listApprovalRequests, decideApprovalRequest }));
+vi.mock('../lib/agents/canonical_governance_state', () => ({ readCanonicalGovernanceState }));
 
 import { GET as approvalsGet, POST as signInPost } from '../app/approvals/route';
 import { createOperatorSessionCookie, hasOperatorSession } from '../app/approvals/route';
@@ -42,6 +44,10 @@ describe('operator approval page and POST boundary', () => {
       status: 'pending', created_at: 1_800_000_000_000, expires_at: 1_800_000_900_000,
       decided_at: null, decided_by: null,
     }]);
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: { recoveryState: 'RESTORING', M: 0.31, nStable: 27, canaryPassed: false },
+    });
     decideApprovalRequest.mockResolvedValue(true);
   });
 
@@ -66,6 +72,11 @@ describe('operator approval page and POST boundary', () => {
     expect(html).toContain('approval_request_id');
     expect(html).toContain('@media(max-width:520px)');
     expect(html).toContain('Approval history');
+    expect(html).toContain('Current recovery gate snapshot');
+    expect(html).toContain('RESTORING');
+    expect(html).toContain('0.310');
+    expect(html).toContain('n_stable');
+    expect(html).toContain('canary_passed');
     expect(html).toContain('[REDACTED]');
     expect(html).not.toContain('must-not-render');
     expect(html).not.toContain(values.secret);
