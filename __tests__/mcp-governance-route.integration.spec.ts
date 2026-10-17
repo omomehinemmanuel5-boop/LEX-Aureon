@@ -188,6 +188,37 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
+  it('allows the canary for an authenticated operator-profile key without the operator-secret header', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'private-test-1:canary-session' } },
+      id: 'operator-profile-canary',
+    }));
+    expect(response.status).toBe(200);
+    expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    expect(toolFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not allow a public-profile caller to run the recovery canary', async () => {
+    const key = { id: 'public-1', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'public-canary-session' } },
+      id: 'public-canary',
+    }));
+    expect(response.status).toBe(200);
+    expect((response.body as { error?: { code?: number } }).error?.code).toBe(-32601);
+    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
+  });
+
   it('routes every exposed tool call through the constitutional executor', async () => {
     const tools = [
       ['run_governance', { prompt: 'test' }],
