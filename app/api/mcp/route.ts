@@ -95,6 +95,15 @@ function hasOperatorAuthority(operatorSecretValid: boolean, profile: McpAccessPr
   return operatorSecretValid || profile === 'operator';
 }
 
+/** Canary evidence can affect write eligibility, so profile capabilities alone are insufficient. */
+function isCanaryOwnerAllowed(ownerId: string): boolean {
+  const allowedOwners = (env.LEX_CANARY_OWNER_IDS ?? '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  return ownerId !== '' && ownerId !== 'anonymous' && allowedOwners.includes(ownerId);
+}
+
 type McpCredentialPath = 'operator_secret' | 'session_token' | 'oauth_bearer' | 'api_key' | 'missing';
 
 function credentialPathFor(req: Request): McpCredentialPath {
@@ -1266,7 +1275,7 @@ export async function POST(req: Request) {
         });
       }
 
-      if (dispatchToolName === 'run_recovery_canary' && !hasOperatorAuthority(operator, profile)) {
+      if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
         logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
         return unauthorized(id);
       }
