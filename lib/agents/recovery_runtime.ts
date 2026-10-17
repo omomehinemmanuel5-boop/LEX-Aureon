@@ -5,6 +5,7 @@ import {
   calculateZAwareGovernorG,
 } from '../aureonics_core';
 import { CONSTITUTION } from '../constitution';
+import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
 import { getCachedKernel } from '../kernel_cache';
 import { readCanonicalGovernanceState } from './canonical_governance_state';
 
@@ -140,7 +141,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
   );
 
   const updatedM = Math.min(updated.last_c, updated.last_r, updated.last_s);
-  const stabilized = updated.velocity < 0.02;
+  const stabilized = updated.velocity < RECOVERY_STABILITY_THRESHOLD;
   const canonical = await readCanonicalGovernanceState({
     sessionId,
     actorId: 'recovery-plane',
