@@ -107,9 +107,13 @@ function credentialPathFor(req: Request): McpCredentialPath {
 
 function logMcpAuth(toolName: string, credentialPath: McpCredentialPath, outcome: string, profile?: McpAccessProfile): void {
   // Never include credential values, tokens, headers, or request arguments in auth diagnostics.
+  // Unknown caller-controlled names are not copied to logs: a malformed name must not become a credential exfiltration channel.
+  const knownToolName = TOOL_DEFINITIONS.some(tool => tool.name === toolName)
+    || EXTENSION_DEFINITIONS.some(tool => tool.name === toolName)
+    || EXTERNAL_CAPABILITY_DEFINITIONS.some(tool => tool.name === toolName);
   console.info('[mcp-auth]', JSON.stringify({
     method: 'tools/call',
-    tool_name: toolName.slice(0, 128),
+    tool_name: knownToolName ? toolName : '<unknown-tool>',
     credential_path: credentialPath,
     outcome,
     ...(profile ? { profile } : {}),
