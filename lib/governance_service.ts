@@ -161,13 +161,15 @@ export async function executeGovern(
       const resolved = await embedTextResolved(prompt);
       promptEmbedding      = resolved.vector;
       promptEmbedProvider  = resolved.provider;
-      const [sessionTurns, memories] = await Promise.all([
-        retrieveSessionHistory(session_id, ownerId, 6),
-        retrieveSimilar(promptEmbedding, ownerId, 5),
-      ]);
-      memoryContext = [buildSessionContext(sessionTurns), buildMemoryContext(memories)]
-        .filter(Boolean)
-        .join('\n\n');
+      if (ownerId.trim()) {
+        const [sessionTurns, memories] = await Promise.all([
+          retrieveSessionHistory(session_id, ownerId, 6),
+          retrieveSimilar(promptEmbedding, ownerId, 5),
+        ]);
+        memoryContext = [buildSessionContext(sessionTurns), buildMemoryContext(memories)]
+          .filter(Boolean)
+          .join('\n\n');
+      }
     } catch (e) {
       logger.warn('govern.memory', 'embed/retrieve failed', errorFields(e));
     }
@@ -420,7 +422,7 @@ export async function executeGovern(
   const [receiptId] = await Promise.all([
     simulation ? Promise.resolve('') : writeKernelReceipt(session_id, turn, result),
     simulation ? Promise.resolve() : incrementRuns(),
-    promptEmbedding.length && !simulation ? storeMemory({
+    promptEmbedding.length && !simulation && ownerId.trim() ? storeMemory({
       owner_id: ownerId, session_id, prompt,
       prompt_hash:            result.receipt.input_hash,
       embedding:              promptEmbedding,

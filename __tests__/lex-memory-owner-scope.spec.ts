@@ -62,9 +62,15 @@ describe('lex_memory owner isolation', () => {
     execute.mockClear();
   });
 
-  it('does not write a memory event without an owner_id', async () => {
-    await storeMemory(memory('', 'shared-session', 'no owner'));
-    expect(execute).not.toHaveBeenCalled();
+  it('does not write or emit an error for a memory event without an owner_id', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await storeMemory(memory('', 'shared-session', 'no owner'));
+      expect(execute).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('never returns owner B semantic memories to owner A', async () => {
