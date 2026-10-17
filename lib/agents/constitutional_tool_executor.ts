@@ -15,7 +15,7 @@ import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
 import { getZTraj, recordZTrajObservation } from '../kv';
-import { advanceRecoveryPlane } from './recovery_runtime';
+import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
 import { approvalArgsHash, consumeApprovalRequest } from '../approval_requests';
 import { withConsumedApproval } from './approval_execution_context';
 import type { ToolCallDecision } from './types';
@@ -271,13 +271,12 @@ export async function executeGovernedToolStructured(
     authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
   });
 
-  // Recovery must not depend on a caller repeatedly attempting a denied write.
-  // Safe reads and ordinary MCP traffic are valid stabilization observations;
-  // advance the bounded recovery plane first, then evaluate fresh state.
+  // Advance recovery only when thresholds are unmet and no passing canary
+  // is bound to this state. Never invalidate verified evidence as a side effect
+  // of an approval attempt or a retry.
   if (!NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)
-    && canonicalRead.available && canonicalRead.state.trajectoryAvailable
-    && canonicalRead.state.M >= KERNEL_CRITICAL
-    && (canonicalRead.state.M < 0.25 || canonicalRead.state.nStable < 3)) {
+    && canonicalRead.available
+    && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
     try {
       await advanceRecoveryPlane(sessionId);
       canonicalRead = await readCanonicalGovernanceState({
@@ -320,7 +319,7 @@ export async function executeGovernedToolStructured(
     // A fail-closed write must never become a recovery mechanism by executing
     // the requested action. Instead, use the dedicated non-destructive
     // recovery plane to move the canonical trajectory toward stability.
-    if (capability.capability !== 'read' && canonicalRead.state.trajectoryAvailable && canonicalRead.state.M >= KERNEL_CRITICAL) {
+    if (capability.capability !== 'read' && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
       try {
         const recovery = await advanceRecoveryPlane(sessionId);
         recoveryNote = ` Recovery plane: ${recovery.state}; M=${recovery.M.toFixed(3)}; n_stable=${recovery.nStable}; velocity=${recovery.velocity.toFixed(4)}.`;
