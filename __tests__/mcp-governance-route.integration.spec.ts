@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
+  ensureCanonicalTrajectoryState: vi.fn(async () => true),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
   readCanonicalGovernanceState: vi.fn(),
   canonicalExecutionAllowed: vi.fn(() => ({ allowed: true })),
@@ -74,7 +75,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/approval_requests', () => ({ createApprovalRequest }));
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
-  ensureCanonicalTrajectoryState: vi.fn(async () => true),
+  ensureCanonicalTrajectoryState,
   readCanonicalGovernanceState,
   canonicalExecutionAllowed,
 }));
@@ -186,6 +187,21 @@ describe('MCP constitutional dispatch boundary', () => {
       const raw = await handler(args);
       return { result: raw, approved: true, receiptId: 'canary-test-receipt' };
     });
+  });
+
+  it('does not bootstrap z_traj for read-only constitutional inspection', async () => {
+    const key = { id: 'public-inspector', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: { session_id: 'public-inspector:session' } },
+      id: 'read-only-no-bootstrap',
+    }));
+    expect(response.status).toBe(200);
+    expect(ensureCanonicalTrajectoryState).not.toHaveBeenCalled();
+    expect(executeGovernedTool).toHaveBeenCalledTimes(1);
   });
 
   it('allows the canary for an authenticated operator-profile key without the operator-secret header', async () => {
