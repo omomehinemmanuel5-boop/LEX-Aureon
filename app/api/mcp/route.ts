@@ -1067,6 +1067,10 @@ export async function POST(req: Request) {
             tool_name: dispatchToolName,
             expires_at: new Date(pending.expiresAt).toISOString(),
             approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            recovery_state: canonical.state.recoveryState,
+            M: canonical.state.M,
+            n_stable: canonical.state.nStable,
+            canary_passed: canonical.state.canaryPassed === true,
             next_step: 'A human approver must review this exact action. After approval, retry the same tool with approval_request_id and unchanged arguments.',
           });
         } catch {
