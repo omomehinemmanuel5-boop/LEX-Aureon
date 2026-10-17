@@ -118,7 +118,7 @@ describe('flagged bounded invariant canary validity', () => {
     }
   });
 
-  it('expires after the governed-write window', async () => {
+  it('rejects the mocked write-count limit result (SQL integration coverage is separate)', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow({ writes: 50 })] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'ignored', current))
       .resolves.toMatchObject({ passed: false, receiptId: null });

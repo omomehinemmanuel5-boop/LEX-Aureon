@@ -105,8 +105,8 @@ export async function readRecoveryCanaryEvidence(
     if (process.env.CANARY_MODE === 'invariant' && current) {
       const result = await getClient().execute({
         sql: `SELECT e.*, (SELECT COUNT(*) FROM tool_receipts w WHERE w.session_id = e.session_id
-              AND w.created_at > e.issued_at AND w.tool_name NOT IN
-              ('read_file','read_directory','list_directory','list_files','read_memory','search_memory','fetch_page','http_get','get_file','cat','head','tail','grep','find','ls','dir','glob','run_recovery_canary','get_constitutional_state','get_recent_receipts','explain_denial','search_code','get_build_status','get_workflow_run','get_workflow_log','get_workflow_artifact','get_vercel_logs','preview_patch_file','check_github_token_scope','get_trajectory_status','read_json','parse_csv','query_database','simulate_agent_plan','review_agent_action','get_build_status','run_self_test','self_reflect')) AS writes
+              AND datetime(w.created_at) > datetime(e.issued_at) AND w.tool_name NOT IN
+              ('read_file','read_directory','list_directory','list_files','read_memory','search_memory','fetch_page','http_get','get_file','cat','head','tail','grep','find','ls','dir','glob','run_recovery_canary','run_governance','get_constitutional_state','get_recent_receipts','explain_denial','search_code','get_build_status','get_workflow_run','get_workflow_log','get_workflow_artifact','get_vercel_logs','preview_patch_file','check_github_token_scope','get_trajectory_status','read_json','parse_csv','query_database','simulate_agent_plan','review_agent_action','run_self_test','self_reflect')) AS writes
               FROM recovery_canary_evidence e WHERE e.session_id = ?
               ORDER BY e.id DESC LIMIT 1`,
         args: [sessionId],
