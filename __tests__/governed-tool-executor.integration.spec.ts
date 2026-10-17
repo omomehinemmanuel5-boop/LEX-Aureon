@@ -175,11 +175,11 @@ describe('governed tool execution integration boundary', () => {
           status: 'approved', expires_at: Date.now() + 60_000,
         }] };
       }
-      if (/UPDATE\\s+approval_requests SET status = 'used'/i.test(sql)) {
+      if (/UPDATE\s+approval_requests SET status = 'used'/i.test(sql)) {
         controller.abort();
         return { rowsAffected: 1 };
       }
-      if (/UPDATE\\s+approval_requests SET status = 'approved'/i.test(sql)) {
+      if (/UPDATE\s+approval_requests SET status = 'approved'/i.test(sql)) {
         restored = true;
         return { rowsAffected: 1 };
       }
