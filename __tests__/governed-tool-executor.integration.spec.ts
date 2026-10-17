@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
+import { approvalArgsHash } from '../lib/approval_requests';
 import { recoverySnapshotFingerprint } from '../lib/agents/recovery_canary_evidence';
 import { readCanonicalGovernanceState } from '../lib/agents/canonical_governance_state';
 
@@ -109,6 +110,90 @@ describe('governed tool execution integration boundary', () => {
     );
   });
 
+  it('does not mutate z_traj during repeated governed diagnostic reads', async () => {
+    const read = vi.fn(async () => JSON.stringify({ C: 1, R: 1, S: 1, M: 1 }));
+    const sessionId = 'read-only-stability-session';
+    const results = [];
+    for (let i = 0; i < 5; i += 1) {
+      results.push(await executeGovernedTool('get_constitutional_state', { session_id: sessionId }, read, sessionId));
+    }
+    expect(results[0]).toContain('diagnostic_crs: diagnostic only;');
+    expect(results[0]).toContain('canonical_crs:');
+    const trajectoryMutations = dbExecute.mock.calls.filter(([query]) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      return /\b(UPDATE|INSERT INTO|DELETE FROM)\s+z_traj\b/i.test(sql);
+    });
+    expect(trajectoryMutations).toHaveLength(0);
+    expect(read).toHaveBeenCalledTimes(5);
+  });
+
+  it('does not consume an action approval when cancellation happens before execution starts', async () => {
+    const sessionId = 'cancel-before-consume-session';
+    addPassingCanary(sessionId, { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
+    const controller = new AbortController();
+    controller.abort();
+    const write = vi.fn(async () => 'WRITE_SHOULD_NOT_RUN');
+    const actionArgs = { path: 'README.md', content: 'test' };
+    const result = await executeGovernedToolStructured(
+      'write_file', { ...actionArgs, approval_request_id: 'a'.repeat(22) }, write, sessionId,
+      undefined, 'internal-agent', controller.signal,
+    );
+    expect(result.decision).toBe('EXECUTION_CANCELLED_BEFORE_START');
+    expect(result.result).toContain('not_started_after_cancellation');
+    expect(write).not.toHaveBeenCalled();
+    const approvalConsumption = dbExecute.mock.calls.filter(([query]) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      return /UPDATE\s+approval_requests/i.test(sql);
+    });
+    expect(approvalConsumption).toHaveLength(0);
+  });
+
+  it('restores a consumed approval when cancellation arrives during the approval-store round trip', async () => {
+    const sessionId = 'cancel-during-consume-session';
+    const requestId = 'cancel-during-consume-request';
+    const actionArgs = { path: 'README.md', content: 'test', approval_request_id: requestId };
+    addPassingCanary(sessionId, { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
+    const controller = new AbortController();
+    const write = vi.fn(async () => 'WRITE_SHOULD_NOT_RUN');
+    let status = 'approved';
+    const expiresAt = Date.now() + 60_000;
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const evidence = evidenceResult(query);
+      if (evidence) return evidence;
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      const args = typeof query === 'string' ? [] : ((query as { args?: unknown[] }).args ?? []);
+      if (sql.includes('FROM z_traj')) {
+        return { rows: [{ last_c: 1, last_r: 1, last_s: 1, sigma_viol: 0, n_stable: 3, updated_at: DEFAULT_UPDATED_AT }] };
+      }
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
+      if (sql.includes('FROM approval_requests WHERE request_id = ?')) {
+        return { rows: [{
+          request_id: requestId, owner_id: 'operator', session_id: sessionId, tool_name: 'write_file',
+          args_hash: approvalArgsHash(actionArgs), status, expires_at: expiresAt,
+        }] };
+      }
+      if (sql.startsWith("UPDATE approval_requests SET status = 'used'")) {
+        status = 'used';
+        controller.abort();
+        return { rowsAffected: 1, rows: [] };
+      }
+      if (sql.startsWith("UPDATE approval_requests SET status = 'approved'")) {
+        status = 'approved';
+        return { rowsAffected: 1, rows: [] };
+      }
+      return { rows: [], rowsAffected: 1 };
+    });
+
+    const result = await executeGovernedToolStructured(
+      'write_file', actionArgs, write, sessionId, undefined, 'internal-agent', controller.signal,
+    );
+
+    expect(result.decision).toBe('EXECUTION_CANCELLED_BEFORE_START');
+    expect(result.result).toContain('approval_release=restored');
+    expect(write).not.toHaveBeenCalled();
+    expect(status).toBe('approved');
+  });
+
   it('authorizes before reusing a cached read result', async () => {
     let executions = 0;
     const read = async () => {
@@ -184,6 +269,50 @@ describe('governed tool execution integration boundary', () => {
       && 'sql' in query
       && String((query as { sql: unknown }).sql).includes('governance_approval_consumptions'),
     )).toBe(false);
+  });
+
+  it('does not invalidate a passing canary as a side effect of an approved write in VERIFIED state', async () => {
+    const sessionId = 'verified-write-session';
+    const snapshot = { C: 0.2, R: 0.4, S: 0.4, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT };
+    addPassingCanary(sessionId, snapshot);
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const evidence = evidenceResult(query);
+      if (evidence) return evidence;
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      if (sql.includes('FROM z_traj')) {
+        return { rows: [{
+          last_c: snapshot.C, last_r: snapshot.R, last_s: snapshot.S,
+          velocity: 0, sigma_viol: 0, n_stable: snapshot.nStable,
+          updated_at: snapshot.updatedAt,
+        }] };
+      }
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
+      return { rows: [], rowsAffected: 1 };
+    });
+
+    const actionArgs = { path: 'verified-safe.ts', content: 'export {};' };
+    const token = createGovernanceApprovalToken({
+      actorId: 'internal-agent', sessionId, toolName: 'write_file', args: actionArgs,
+    });
+    const write = vi.fn(async () => 'WRITE_COMPLETED');
+    const result = await executeGovernedToolStructured(
+      'write_file', { ...actionArgs, approval_token: token }, write, sessionId,
+      undefined, 'internal-agent',
+    );
+
+    expect(result.approved).toBe(true);
+    expect(result.result).toContain('WRITE_COMPLETED');
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(actionArgs, undefined);
+    // Approval metadata must never reach the underlying tool adapter.
+    // The successful write records its own post-action observation once. A
+    // preflight recovery mutation would produce an extra z_traj update and
+    // invalidate the canary before the approved action could execute.
+    const trajectoryUpdates = dbExecute.mock.calls.filter(([query]) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      return /^\s*UPDATE\s+z_traj\b/i.test(sql);
+    });
+    expect(trajectoryUpdates).toHaveLength(1);
   });
 
   it('does not grant write authority from a passing canary without action approval', async () => {

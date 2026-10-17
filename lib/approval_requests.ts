@@ -115,6 +115,35 @@ export async function consumeApprovalRequest(input: {
   }
 }
 
+/**
+ * Return an approval to the approved state only when cancellation is observed
+ * before the executor dispatches the action. The conditional update prevents
+ * a release from overwriting a later state transition.
+ */
+export async function releaseConsumedApprovalRequest(input: {
+  requestId: string;
+  ownerId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    await ensureApprovalRequestSchema();
+    const result = await getClient().execute({
+      sql: `UPDATE approval_requests SET status = 'approved'
+            WHERE request_id = ? AND owner_id = ? AND session_id = ? AND tool_name = ?
+              AND args_hash = ? AND status = 'used' AND expires_at > ?`,
+      args: [
+        input.requestId, input.ownerId, input.sessionId, input.toolName,
+        approvalArgsHash(input.args), Date.now(),
+      ],
+    });
+    return (result.rowsAffected ?? 0) === 1;
+  } catch {
+    return false;
+  }
+}
+
 export async function listPendingApprovalRequests(nowMs = Date.now()): Promise<Array<{
   request_id: string; owner_id: string; session_id: string; tool_name: string;
   args_json: string; created_at: number; expires_at: number;

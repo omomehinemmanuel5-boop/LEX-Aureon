@@ -45,6 +45,8 @@ type EnvShape = {
   LOG_DRAIN_TOKEN:              string | undefined;
   BENCH_SECRET:                 string | undefined;
   MCP_OPERATOR_SECRET:          string | undefined;
+  LEX_CANARY_OWNER_IDS:          string | undefined;
+  LEX_APPROVAL_IMPLICIT_LIMIT:   string | undefined;
   TOOL_PROXY_ALLOWED_HOSTS:     string | undefined;
 };
 

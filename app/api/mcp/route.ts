@@ -24,7 +24,7 @@ import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type 
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
 import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
-import { advanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
+import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
 import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
 import { discoverExternalTool, governExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
@@ -90,6 +90,45 @@ function isOperator(req: Request): boolean {
   return isOperatorSecret(req.headers.get('x-lex-operator-secret'));
 }
 
+/** Operator authority may come from the operator secret or an authenticated operator-profile identity. */
+function hasOperatorAuthority(operatorSecretValid: boolean, profile: McpAccessProfile): boolean {
+  return operatorSecretValid || profile === 'operator';
+}
+
+/** Canary evidence can affect write eligibility, so profile capabilities alone are insufficient. */
+function isCanaryOwnerAllowed(ownerId: string): boolean {
+  const allowedOwners = (env.LEX_CANARY_OWNER_IDS ?? '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  return ownerId !== '' && ownerId !== 'anonymous' && allowedOwners.includes(ownerId);
+}
+
+type McpCredentialPath = 'operator_secret' | 'session_token' | 'oauth_bearer' | 'api_key' | 'missing';
+
+function credentialPathFor(req: Request): McpCredentialPath {
+  if (isOperator(req)) return 'operator_secret';
+  if (extractSessionToken(req)) return 'session_token';
+  const key = extractApiKey(req);
+  if (!key) return req.headers.has('x-lex-operator-secret') ? 'operator_secret' : 'missing';
+  return key.startsWith('lex_at_') ? 'oauth_bearer' : 'api_key';
+}
+
+function logMcpAuth(toolName: string, credentialPath: McpCredentialPath, outcome: string, profile?: McpAccessProfile): void {
+  // Never include credential values, tokens, headers, or request arguments in auth diagnostics.
+  // Unknown caller-controlled names are not copied to logs: a malformed name must not become a credential exfiltration channel.
+  const knownToolName = TOOL_DEFINITIONS.some(tool => tool.name === toolName)
+    || EXTENSION_DEFINITIONS.some(tool => tool.name === toolName)
+    || EXTERNAL_CAPABILITY_DEFINITIONS.some(tool => tool.name === toolName);
+  console.info('[mcp-auth]', JSON.stringify({
+    method: 'tools/call',
+    tool_name: knownToolName ? toolName : '<unknown-tool>',
+    credential_path: credentialPath,
+    outcome,
+    ...(profile ? { profile } : {}),
+  }));
+}
+
 function unauthorized(id: number | string | null | undefined) {
   return NextResponse.json({
     jsonrpc: '2.0',
@@ -111,6 +150,8 @@ function unauthorized(id: number | string | null | undefined) {
  * surfacing a generic authentication failure.
  */
 function oauthToolChallenge(id: number | string | null | undefined) {
+  // Used by tools/call when a session token is invalid or no API/OAuth credential is supplied.
+  // tools/list uses the HTTP 401 resource-metadata challenge instead.
   return NextResponse.json({
     jsonrpc: '2.0',
     result: {
@@ -294,6 +335,21 @@ type JsonRpcRequest = {
 const MAX_SESSION_ID_LENGTH = 128;
 const MAX_MCP_BODY_BYTES = 128 * 1024;
 const MCP_REQUESTS_PER_MINUTE = 60;
+
+// These inspection tools must not bootstrap or otherwise mutate the trajectory they inspect.
+const NON_MUTATING_INSPECTION_TOOLS = new Set([
+  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+  'read_file', 'read_directory', 'list_directory', 'list_files',
+  'read_memory', 'search_memory', 'search_code', 'fetch_page', 'http_get',
+  'get_file', 'read_json', 'parse_csv', 'cat', 'head', 'tail', 'grep',
+  'find', 'ls', 'dir', 'glob', 'get_build_status', 'get_workflow_run',
+  'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
+  'check_github_token_scope', 'get_trajectory_status', 'run_recovery_canary',
+]);
+
+export function isNonMutatingInspectionTool(toolName: string): boolean {
+  return NON_MUTATING_INSPECTION_TOOLS.has(toolName);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -507,6 +563,7 @@ export async function POST(req: Request) {
     if (args.session_id !== undefined && !validSessionId(args.session_id)) {
       return invalidParams(id ?? null, `session_id must be a non-empty string of at most ${MAX_SESSION_ID_LENGTH} characters`);
     }
+    const credentialPath = credentialPathFor(req);
     const operator = isOperator(req);
     let profile: McpAccessProfile = operator ? 'operator' : 'public';
     let ownerId = 'operator';
@@ -517,23 +574,39 @@ export async function POST(req: Request) {
       const sessionToken = extractSessionToken(req);
       if (sessionToken) {
         const session = await validateMcpSession(sessionToken);
-        if (!session.valid) return oauthToolChallenge(id);
+        if (!session.valid) {
+          logMcpAuth(toolName, credentialPath, 'rejected_invalid_session');
+          return oauthToolChallenge(id);
+        }
         sessionKeyId = session.key.id;
         ownerId = session.key.id;
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(session.key.plan);
       } else {
         apiKey = extractApiKey(req);
-        if (!apiKey) return oauthToolChallenge(id);
+        if (!apiKey) {
+          logMcpAuth(
+            toolName,
+            credentialPath,
+            credentialPath === 'operator_secret' ? 'rejected_invalid_operator_secret' : 'rejected_missing_credential',
+          );
+          return oauthToolChallenge(id);
+        }
 
         // OAuth access tokens are distinct credentials from raw API keys.
         // Resolve the token to its backing key, then retain the existing atomic
         // per-key quota consumption and plan-based capability checks below.
         if (apiKey.startsWith('lex_at_')) {
           const oauth = await resolveAccessToken(apiKey);
-          if (!oauth.valid) return unauthorized(id);
+          if (!oauth.valid) {
+            logMcpAuth(toolName, credentialPath, 'rejected_invalid_oauth');
+            return unauthorized(id);
+          }
           const oauthKey = await getApiKeyById(oauth.keyId);
-          if (!oauthKey) return unauthorized(id);
+          if (!oauthKey) {
+            logMcpAuth(toolName, credentialPath, 'rejected_missing_oauth_owner');
+            return unauthorized(id);
+          }
           sessionKeyId = oauth.keyId;
           apiKey = null;
           ownerId = String(oauthKey.id);
@@ -544,7 +617,10 @@ export async function POST(req: Request) {
           // not debit a caller's quota. Consumption remains atomic below, after
           // all local admission checks have passed and before execution begins.
           const keyCheck = await validateApiKey(apiKey);
-          if (!keyCheck.valid) return unauthorized(id);
+          if (!keyCheck.valid) {
+            logMcpAuth(toolName, credentialPath, 'rejected_invalid_api_key');
+            return unauthorized(id);
+          }
           ownerId = String(keyCheck.key?.id ?? 'anonymous');
           actorId = `api_key:${ownerId}`;
           profile = profileForApiKey(keyCheck.key?.plan);
@@ -552,10 +628,15 @@ export async function POST(req: Request) {
       }
     }
 
+    logMcpAuth(toolName, credentialPath, 'authenticated', profile);
+
     // The authorization endpoint creates a pending, exact-action request for
     // separate human approval. Tool visibility is not approval authority.
     if (toolName === 'authorize_tool_action') {
-      if (!operator && profile !== 'operator') return unauthorized(id);
+      if (!hasOperatorAuthority(operator, profile)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
       // Resolve the requested label through the same owner-scoped session
@@ -594,11 +675,14 @@ export async function POST(req: Request) {
           : sessionKeyId
             ? await consumeApiKeyById(sessionKeyId)
             : null;
-        if (!consumption?.valid) return unauthorized(id);
+        if (!consumption?.valid) {
+          logMcpAuth(toolName, credentialPath, 'rejected_key_consumption', profile);
+          return unauthorized(id);
+        }
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
-        if (profile !== 'operator') return unauthorized(id);
+        if (!hasOperatorAuthority(operator, profile)) return unauthorized(id);
       }
       // Match the canonical session used by ordinary tools/call dispatch.
       // Private-test credentials have operator capabilities, but they are not
@@ -626,9 +710,7 @@ export async function POST(req: Request) {
         capability: capability.capability,
         authorization: 'approval_required',
       });
-      if (authorizationCanonical.available && authorizationCanonical.state.trajectoryAvailable
-        && authorizationCanonical.state.M >= 0.05
-        && (authorizationCanonical.state.M < 0.25 || authorizationCanonical.state.nStable < 3)) {
+      if (authorizationCanonical.available && shouldAdvanceRecoveryPlane(authorizationCanonical.state)) {
         await advanceRecoveryPlane(requestedSession);
         authorizationCanonical = await readCanonicalGovernanceState({
           sessionId: requestedSession,
@@ -682,7 +764,7 @@ export async function POST(req: Request) {
           request_id: pending.requestId,
           tool_name: requestedTool,
           expires_at: new Date(pending.expiresAt).toISOString(),
-          approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+          approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           receipt_id: review.receipt_id ?? null,
           next_step: 'A human approver must review and approve this exact action. Then call the same tool with approval_request_id and unchanged arguments.',
         });
@@ -699,14 +781,23 @@ export async function POST(req: Request) {
     // static internal tool registry. They govern client-side adapters rather than
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
-      if (toolName === 'authorize_external_action' && !operator && profile !== 'operator') return unauthorized(id);
+      if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       if (!operator && (apiKey || sessionKeyId)) {
         const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
-        if (!consumption.valid) return unauthorized(id);
+        if (!consumption.valid) {
+          logMcpAuth(toolName, credentialPath, 'rejected_key_consumption', profile);
+          return unauthorized(id);
+        }
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
-        if (toolName === 'authorize_external_action' && profile !== 'operator') return unauthorized(id);
+        if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) {
+          logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+          return unauthorized(id);
+        }
       }
       const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
       const manifest = isRecord(args.manifest) ? args.manifest as unknown as ToolManifest : null;
@@ -726,9 +817,7 @@ export async function POST(req: Request) {
           capability: externalCapability,
           authorization: toolName === 'consume_external_action' ? 'authorized' : 'approval_required',
         });
-        if (canonical.available && canonical.state.trajectoryAvailable
-          && canonical.state.M >= 0.05
-          && (canonical.state.M < 0.25 || canonical.state.nStable < 3)) {
+        if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           await advanceRecoveryPlane(sessionId);
           canonical = await readCanonicalGovernanceState({
             sessionId,
@@ -797,7 +886,7 @@ export async function POST(req: Request) {
             tool_name: manifest.name,
             risk: review.risk,
             expires_at: new Date(pending.expiresAt).toISOString(),
-            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             receipt_id: review.receiptId ?? null,
             next_step: 'A human approver must review this exact external action. After approval, call consume_external_action with the same manifest and arguments plus approval_request_id. The client adapter must act only if granted is true.',
           });
@@ -870,7 +959,10 @@ export async function POST(req: Request) {
 
     if (!operator && (apiKey || sessionKeyId)) {
       const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
-      if (!consumption.valid) return unauthorized(id);
+      if (!consumption.valid) {
+        logMcpAuth(toolName, credentialPath, 'rejected_key_consumption', profile);
+        return unauthorized(id);
+      }
       // Use the atomically re-read key after consumption for ownership and
       // profile selection, so a concurrent revoke/plan change cannot retain
       // stale privileges from the preflight validation above.
@@ -894,7 +986,8 @@ export async function POST(req: Request) {
     const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
     try {
       await runZTrajMigrations();
-      if (!(await ensureCanonicalTrajectoryState(sessionId))) {
+      if (!NON_MUTATING_INSPECTION_TOOLS.has(dispatchToolName)
+        && !(await ensureCanonicalTrajectoryState(sessionId))) {
         return NextResponse.json({
           jsonrpc: '2.0',
           error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
@@ -933,7 +1026,7 @@ export async function POST(req: Request) {
           return JSON.stringify({
             request_id: created.requestId,
             expires_at: new Date(created.expiresAt).toISOString(),
-            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals#${created.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           });
         };
       }
@@ -969,9 +1062,7 @@ export async function POST(req: Request) {
           capability: requestedCapability.capability,
           authorization: 'approval_required',
         });
-        if (canonical.available && canonical.state.trajectoryAvailable
-          && canonical.state.M >= 0.05
-          && (canonical.state.M < 0.25 || canonical.state.nStable < 3)) {
+        if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           try {
             await advanceRecoveryPlane(sessionId);
             canonical = await readCanonicalGovernanceState({
@@ -1008,6 +1099,25 @@ export async function POST(req: Request) {
               : 'Continue safe governed observations and retry after Lex reports a restorable state.',
           });
         }
+        const configuredApprovalLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
+        const approvalLimit = Number.isSafeInteger(configuredApprovalLimit) && configuredApprovalLimit > 0
+          ? Math.min(configuredApprovalLimit, 1000)
+          : 20;
+        const approvalRate = await checkRateLimit(`approval-implicit:${ownerId}`, approvalLimit, 3600);
+        if (approvalRate.storageError) {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32003, message: 'Approval admission temporarily unavailable; no request was created' },
+            id,
+          }, { status: 503 });
+        }
+        if (!approvalRate.allowed) {
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32029, message: 'Implicit approval request rate limit reached; no request was created' },
+            id,
+          }, { status: 429, headers: { 'Retry-After': String(approvalRate.retryAfter) } });
+        }
         try {
           const pending = await createApprovalRequest({
             ownerId,
@@ -1020,7 +1130,11 @@ export async function POST(req: Request) {
             request_id: pending.requestId,
             tool_name: dispatchToolName,
             expires_at: new Date(pending.expiresAt).toISOString(),
-            approval_url: new URL('/approvals', env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+            recovery_state: canonical.state.recoveryState,
+            M: canonical.state.M,
+            n_stable: canonical.state.nStable,
+            canary_passed: canonical.state.canaryPassed === true,
             next_step: 'A human approver must review this exact action. After approval, retry the same tool with approval_request_id and unchanged arguments.',
           });
         } catch {
@@ -1183,7 +1297,10 @@ export async function POST(req: Request) {
         });
       }
 
-      if (dispatchToolName === 'run_recovery_canary' && !operator) return unauthorized(id);
+      if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       if (dispatchToolName === 'run_recovery_canary') {
         let rawProbeResult: string | undefined;
         const trackedCanaryHandler: ToolHandler = async (handlerArgs, signal) => {

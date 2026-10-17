@@ -8,6 +8,9 @@ export type RecoveryState =
   | 'VERIFIED'
   | 'NORMAL';
 
+/** Existing recovery stability criterion; exposed for diagnostics without changing it. */
+export const RECOVERY_STABILITY_THRESHOLD = 0.02;
+
 export interface RecoveryEvidence {
   nStable: number;
   sigmaViol: number;

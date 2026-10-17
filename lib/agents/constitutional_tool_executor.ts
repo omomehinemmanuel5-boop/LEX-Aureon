@@ -15,12 +15,13 @@ import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
 import { getZTraj, recordZTrajObservation } from '../kv';
-import { advanceRecoveryPlane } from './recovery_runtime';
-import { approvalArgsHash, consumeApprovalRequest } from '../approval_requests';
+import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
+import { approvalArgsHash, consumeApprovalRequest, releaseConsumedApprovalRequest } from '../approval_requests';
 import { withConsumedApproval } from './approval_execution_context';
 import type { ToolCallDecision } from './types';
 import {
   consumeGovernanceApprovalToken,
+  releaseConsumedGovernanceApprovalToken,
   evaluateToolGovernance,
   hashGovernanceArguments,
   redactGovernanceText,
@@ -35,13 +36,38 @@ const READ_TOOLS = new Set([
   'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file',
   'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob', 'run_recovery_canary',
   'read_json', 'parse_csv',
+  // Governed diagnostics are receipted but must not mutate the recovery trajectory.
+  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+  'search_code', 'get_build_status', 'get_workflow_run', 'get_workflow_log',
+  'get_vercel_logs', 'preview_patch_file', 'check_github_token_scope',
+  'get_trajectory_status',
 ]);
+
+// Tools in this set are read-only inspections of the governed system state.
+// Keep it separate from READ_TOOLS: e.g. generic curl may perform an external
+// mutation and must not inherit non-mutating trajectory semantics by name alone.
+const NON_MUTATING_GOVERNANCE_TOOLS = new Set([
+  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+  'read_file', 'list_directory', 'search_code', 'get_build_status',
+  'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
+  'preview_patch_file', 'check_github_token_scope', 'get_trajectory_status',
+  'run_recovery_canary',
+  'read_directory', 'list_files', 'read_memory', 'search_memory',
+  'fetch_page', 'http_get', 'get_file', 'read_json', 'parse_csv',
+  'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
+]);
+
+export function isNonMutatingGovernanceTool(toolName: string): boolean {
+  return NON_MUTATING_GOVERNANCE_TOOLS.has(toolName);
+}
 
 const KERNEL_CRITICAL = 0.05;
 
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
   ttlMs: 60_000,
-  isCacheable: (toolName) => READ_TOOLS.has(toolName) && toolName !== 'run_recovery_canary',
+  // State snapshots and canary probes must always be fresh; caching them could display a stale gate decision.
+  isCacheable: (toolName) => READ_TOOLS.has(toolName)
+    && !['run_recovery_canary', 'get_constitutional_state', 'get_trajectory_status'].includes(toolName),
   authorize: async () => {
     throw new Error('Authorization must be supplied by executeGovernedTool.');
   },
@@ -95,7 +121,7 @@ function report(
     `── Constitutional tool-call decision [${toolName}]${cacheHit ? ' — CACHED EXECUTION' : ''} ──`,
     `decision:    ${decision.decision}`,
     `approved:    ${decision.approved}`,
-    `crs:         C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
+    `${toolName === 'get_constitutional_state' ? 'diagnostic_crs' : 'crs'}: ${toolName === 'get_constitutional_state' ? 'diagnostic only; ' : '        '}C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
     `risk_level:  ${decision.crs.risk_level}`,
     `health_band: ${decision.health_band}`,
     `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
@@ -250,23 +276,25 @@ export async function executeGovernedToolStructured(
     authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
   });
 
-  // Recovery must not depend on a caller repeatedly attempting a denied write.
-  // Safe reads and ordinary MCP traffic are valid stabilization observations;
-  // advance the bounded recovery plane first, then evaluate fresh state.
-  if (canonicalRead.available && canonicalRead.state.trajectoryAvailable
-    && canonicalRead.state.M >= KERNEL_CRITICAL
-    && (canonicalRead.state.M < 0.25 || canonicalRead.state.nStable < 3)) {
+  // Advance recovery at most once per request, only when thresholds are
+  // unmet and no passing canary is bound to this state. Never invalidate
+  // verified evidence as a side effect of an approval attempt or a retry.
+  let recoveryNote = '';
+  if (!isNonMutatingGovernanceTool(toolName)
+    && canonicalRead.available
+    && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
     try {
-      await advanceRecoveryPlane(sessionId);
+      const recovery = await advanceRecoveryPlane(sessionId);
+      recoveryNote = ` Recovery plane: ${recovery.state}; M=${recovery.M.toFixed(3)}; n_stable=${recovery.nStable}; velocity=${recovery.velocity.toFixed(4)}.`;
       canonicalRead = await readCanonicalGovernanceState({
         sessionId,
         actorId,
         capability: capability.capability,
         authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
       });
-    } catch {
-      // Recovery is fail-closed and non-fatal to the authorization boundary;
-      // the fresh canonical read above remains authoritative.
+    } catch (error) {
+      recoveryNote = ` Recovery plane unavailable (non-fatal): ${String(error).slice(0, 120)}.`;
+      // The last successfully read canonical state remains authoritative.
     }
   }
 
@@ -294,18 +322,8 @@ export async function executeGovernedToolStructured(
 
   const canonicalGate = canonicalExecutionAllowed(canonicalRead.state, capability.bootstrapAllowed === true);
   if (!canonicalGate.allowed) {
-    let recoveryNote = '';
-    // A fail-closed write must never become a recovery mechanism by executing
-    // the requested action. Instead, use the dedicated non-destructive
-    // recovery plane to move the canonical trajectory toward stability.
-    if (capability.capability !== 'read' && canonicalRead.state.trajectoryAvailable && canonicalRead.state.M >= KERNEL_CRITICAL) {
-      try {
-        const recovery = await advanceRecoveryPlane(sessionId);
-        recoveryNote = ` Recovery plane: ${recovery.state}; M=${recovery.M.toFixed(3)}; n_stable=${recovery.nStable}; velocity=${recovery.velocity.toFixed(4)}.`;
-      } catch (error) {
-        recoveryNote = ` Recovery plane unavailable (non-fatal): ${String(error).slice(0, 120)}.`;
-      }
-    }
+    // The preflight recovery pulse above is the only mutation allowed for this
+    // request. A second pulse here would double-count stability observations.
 
     const canonicalDecision: ToolCallDecision = {
       approved: false,
@@ -402,6 +420,54 @@ export async function executeGovernedToolStructured(
     };
   }
 
+  let consumedApprovalRequestId: string | undefined;
+  let consumedApprovalTokenId: string | undefined;
+  const releaseConsumedApproval = async (): Promise<boolean | undefined> => {
+    if (consumedApprovalRequestId) {
+      return releaseConsumedApprovalRequest({
+        requestId: consumedApprovalRequestId,
+        ownerId,
+        sessionId,
+        toolName,
+        args,
+      });
+    }
+    if (consumedApprovalTokenId) {
+      return releaseConsumedGovernanceApprovalToken({
+        approvalId: consumedApprovalTokenId,
+        actorId,
+        sessionId,
+        toolName,
+      });
+    }
+    return undefined;
+  };
+
+  // Cancellation before consumption must not burn a single-use approval.
+  if (signal?.aborted) {
+    const released = await releaseConsumedApproval();
+    const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
+    const cancellationDecision: ToolCallDecision = {
+      ...decision,
+      approved: false,
+      decision: 'DENIED_BLOCKED',
+      reason: 'Cancellation was observed before action dispatch.',
+      warning: released === false
+        ? 'The tool function was not invoked, but approval restoration failed.'
+        : 'The tool function was not invoked; consumed approval was restored when applicable.',
+    };
+    const verification = verifyToolResult(toolName, undefined, policy.risk);
+    return {
+      result: report(toolName, cancellationDecision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
+      approved: false,
+      decision: 'EXECUTION_CANCELLED_BEFORE_START',
+      receiptId: cancellationDecision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification,
+    };
+  }
+
   if (policy.requiresApproval) {
     const consumed = approvalRequestId
       ? await consumeApprovalRequest({
@@ -438,11 +504,40 @@ export async function executeGovernedToolStructured(
       };
     }
     if (approvalRequestId) {
+      consumedApprovalRequestId = approvalRequestId;
       policy = {
         ...policy,
         decision: 'allow',
         approvalId: approvalRequestId,
         reasons: [...policy.reasons, 'Operator approval request was consumed exactly once for this exact action.'],
+      };
+    } else if ('approvalId' in consumed && typeof consumed.approvalId === 'string') {
+      consumedApprovalTokenId = consumed.approvalId;
+    }
+
+    // Cancellation may arrive while the durable single-use consumption is in
+    // flight. Restore the approval only if the action has not been dispatched.
+    if (signal?.aborted) {
+      const released = await releaseConsumedApproval();
+      const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
+      const cancelledDecision: ToolCallDecision = {
+        ...decision,
+        approved: false,
+        decision: 'DENIED_BLOCKED',
+        reason: 'Cancellation was observed after approval consumption but before action dispatch.',
+        warning: released === false
+          ? 'The action was not invoked, but approval restoration failed; request a new approval if the original cannot be reused.'
+          : 'The action was not invoked; any consumed approval was restored when safe.',
+      };
+      const verification = verifyToolResult(toolName, undefined, policy.risk);
+      return {
+        result: report(toolName, cancelledDecision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}.`, false, policy, verification, canonicalRead.state),
+        approved: false,
+        decision: 'EXECUTION_CANCELLED_BEFORE_START',
+        receiptId: cancelledDecision.receipt_id ?? null,
+        risk: policy.risk,
+        policy,
+        verification,
       };
     }
   }
@@ -502,16 +597,34 @@ export async function executeGovernedToolStructured(
   }
 
   if (signal?.aborted) {
+    const released = await releaseConsumedApproval();
+    const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
+    const cancellationDecision: ToolCallDecision = {
+      ...decision,
+      approved: false,
+      decision: 'DENIED_BLOCKED',
+      reason: 'Cancellation was observed before action dispatch.',
+      warning: released === false
+        ? 'The tool function was not invoked, but approval restoration failed.'
+        : 'The tool function was not invoked; consumed approval was restored when applicable.',
+    };
     const verification = verifyToolResult(toolName, undefined, policy.risk);
     return {
-      result: report(toolName, decision, 'EXECUTION_STATUS=not_started_after_cancellation; the authorization decision was recorded, but the tool function was not invoked.', false, policy, verification, canonicalRead.state),
+      result: report(toolName, cancellationDecision, `EXECUTION_STATUS=not_started_after_cancellation; approval_release=${releaseStatus}; the tool function was not invoked.`, false, policy, verification, canonicalRead.state),
       approved: false,
       decision: 'EXECUTION_CANCELLED_BEFORE_START',
-      receiptId: decision.receipt_id ?? null,
+      receiptId: cancellationDecision.receipt_id ?? null,
       risk: policy.risk,
       policy,
       verification,
     };
+  }
+
+  // Approval metadata is for the reference monitor only. Never forward a
+  // bearer approval token or request identifier to the underlying tool adapter.
+  const handlerArgs = { ...args };
+  for (const key of ['approval_token', 'approval_id', 'approval_request_id', 'approval', 'approval_request']) {
+    delete handlerArgs[key];
   }
 
   const cached = await cache.getOrExecuteAuthorized({
@@ -519,9 +632,7 @@ export async function executeGovernedToolStructured(
     toolName,
     decision,
     execute: () => {
-      if (!approvalRequestId) return toolFn(args, signal);
-      const handlerArgs = { ...args };
-      delete handlerArgs.approval_request_id;
+      if (!approvalRequestId) return toolFn(handlerArgs, signal);
       return withConsumedApproval({
         requestId: approvalRequestId,
         ownerId,
@@ -533,7 +644,7 @@ export async function executeGovernedToolStructured(
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
-  if (!cached.cacheHit && toolName !== 'run_recovery_canary') {
+  if (!cached.cacheHit && !NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)) {
     try {
       const previous = await getZTraj(sessionId);
       await recordZTrajObservation(

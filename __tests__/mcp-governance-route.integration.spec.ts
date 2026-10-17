@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
+  ensureCanonicalTrajectoryState: vi.fn(async () => true),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
   readCanonicalGovernanceState: vi.fn(),
   canonicalExecutionAllowed: vi.fn(() => ({ allowed: true })),
   advanceRecoveryPlane: vi.fn(async () => {}),
+  shouldAdvanceRecoveryPlane: vi.fn((state: { trajectoryAvailable?: boolean; M?: number; nStable?: number; canaryPassed?: boolean }) =>
+    state.trajectoryAvailable === true && (state.M ?? 0) >= 0.05 && state.canaryPassed !== true
+      && ((state.M ?? 0) < 0.15 || (state.nStable ?? 0) < 3)),
   toolFn: vi.fn(async () => 'TOOL_RESULT'),
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
@@ -74,12 +78,12 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/approval_requests', () => ({ createApprovalRequest }));
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
-  ensureCanonicalTrajectoryState: vi.fn(async () => true),
+  ensureCanonicalTrajectoryState,
   readCanonicalGovernanceState,
   canonicalExecutionAllowed,
 }));
 
-vi.mock('../lib/agents/recovery_runtime', () => ({ advanceRecoveryPlane }));
+vi.mock('../lib/agents/recovery_runtime', () => ({ advanceRecoveryPlane, shouldAdvanceRecoveryPlane }));
 
 vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryEvidence }));
 
@@ -165,6 +169,7 @@ describe('MCP constitutional dispatch boundary', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.LEX_CANARY_OWNER_IDS;
     validateApiKey.mockResolvedValue({ valid: true, key: {} });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
@@ -186,6 +191,78 @@ describe('MCP constitutional dispatch boundary', () => {
       const raw = await handler(args);
       return { result: raw, approved: true, receiptId: 'canary-test-receipt' };
     });
+  });
+
+  it('logs only the MCP credential path and identifies the Connect Lex challenge path', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const authenticated = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: { session_id: 'public-inspector:session' } },
+      id: 'credential-path-api-key',
+    }));
+    expect(authenticated.status).toBe(200);
+    expect(log).toHaveBeenCalledWith('[mcp-auth]', expect.stringContaining('"credential_path":"api_key"'));
+    expect(log.mock.calls.map(call => String(call[1])).join('\n')).not.toContain('test-key');
+
+    log.mockClear();
+    const missingCredential = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: {} },
+      id: 'credential-path-missing',
+    }, { 'x-lex-api-key': '' }));
+    expect(missingCredential.status).toBe(200);
+    expect((missingCredential.body as { result?: { content?: Array<{ text?: string }>; _meta?: Record<string, unknown> } }).result?.content?.[0]?.text)
+      .toContain('Connect Lex Aureon');
+    expect(log).toHaveBeenCalledWith('[mcp-auth]', expect.stringContaining('"credential_path":"missing"'));
+    expect(log).toHaveBeenCalledWith('[mcp-auth]', expect.stringContaining('"outcome":"rejected_missing_credential"'));
+    log.mockRestore();
+  });
+
+  it('does not bootstrap z_traj for read-only constitutional inspection', async () => {
+    const key = { id: 'public-inspector', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: { session_id: 'public-inspector:session' } },
+      id: 'read-only-no-bootstrap',
+    }));
+    expect(response.status).toBe(200);
+    expect(ensureCanonicalTrajectoryState).not.toHaveBeenCalled();
+    expect(executeGovernedTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies a private_test key from running the canary when its owner is not allowlisted', async () => {
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'private-test-1:canary-session' } },
+      id: 'private-test-not-allowlisted',
+    }));
+    expect(response.status).toBe(401);
+    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
+    expect(recordRecoveryCanaryEvidence).not.toHaveBeenCalled();
+  });
+
+  it('allows only an explicitly allowlisted API-key owner to run the canary', async () => {
+    process.env.LEX_CANARY_OWNER_IDS = 'trusted-owner, another-owner';
+    const key = { id: 'trusted-owner', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'trusted-owner:canary-session' } },
+      id: 'allowlisted-owner-canary',
+    }));
+    expect(response.status).toBe(200);
+    expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    expect(toolFn).toHaveBeenCalledTimes(1);
   });
 
   it('routes every exposed tool call through the constitutional executor', async () => {
@@ -250,6 +327,9 @@ describe('MCP constitutional dispatch boundary', () => {
         session_id: expect.stringMatching(/^owner-a:/),
       },
     });
+    const requestApprovalBody = response.body as { result?: { content?: Array<{ text?: string }> } };
+    const requestApprovalText = requestApprovalBody.result?.content?.[0]?.text ?? '';
+    expect(requestApprovalText).toMatch(/^\{"request_id":"a{22}","expires_at":"[^"]+","approval_url":"https:\/\/[^/]+\/approvals#a{22}"\}$/);
   });
 
   it('does not expose or execute infrastructure tools for public API keys', async () => {
@@ -296,8 +376,8 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(isOperatorSecret).toHaveBeenCalled();
   });
 
-  it('refuses a non-operator canary call before execution or evidence persistence', async () => {
-    const key = { id: 'private-test-canary', plan: 'private_test' };
+  it('refuses a public-profile canary call before execution or evidence persistence', async () => {
+    const key = { id: 'public-canary', plan: 'free' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
     isOperatorSecret.mockReturnValue(false);
@@ -308,7 +388,8 @@ describe('MCP constitutional dispatch boundary', () => {
       id: 'non-operator-canary',
     }));
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
+    expect((response.body as { error?: { code?: number } }).error?.code).toBe(-32601);
     expect(executeGovernedToolStructured).not.toHaveBeenCalled();
     expect(executeGovernedTool).not.toHaveBeenCalled();
     expect(toolFn).not.toHaveBeenCalled();
@@ -434,8 +515,104 @@ describe('MCP constitutional dispatch boundary', () => {
       args: expect.objectContaining(actionArgs),
     }));
     const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
-    expect(approvalResult).toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
-    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals$/);
+    expect(approvalResult).toMatchObject({
+      status: 'approval_required',
+      request_id: 'a'.repeat(22),
+      recovery_state: 'NORMAL',
+      M: 1,
+      n_stable: 3,
+      canary_passed: true,
+    });
+    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals#a{22}$/);
+    expect(checkRateLimit).toHaveBeenCalledWith('approval-implicit:private-test-1', 20, 3600);
+  });
+
+  it('fails closed when implicit approval rate-limit storage is unavailable', async () => {
+    const key = { id: 'private-test-rate-limit', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    checkRateLimit
+      .mockResolvedValueOnce({ allowed: true, remaining: 59, retryAfter: 0, storageError: false })
+      .mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfter: 60, storageError: true });
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'write_file', arguments: { path: 'README.md', content: 'test' } },
+      id: 'implicit-approval-storage-error',
+    }));
+
+    expect(response.status).toBe(503);
+    expect(createApprovalRequest).not.toHaveBeenCalled();
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+  });
+
+  it('does not mutate a passing VERIFIED snapshot while creating a one-tap write approval', async () => {
+    const key = { id: 'private-test-verified', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-verified:session', actorId: 'api_key:private-test-verified',
+        C: 0.2, R: 0.4, S: 0.4, M: 0.2,
+        healthBand: 'STRESSED', recoveryState: 'VERIFIED', sigmaViol: 0,
+        toolCalls: 0, trajectoryAvailable: true, nStable: 3, canaryPassed: true,
+        stateFingerprint: 'b'.repeat(64), trajectoryUpdatedAt: '2026-10-17T00:00:00.000Z',
+        authorization: 'authorized', policyRisk: 'write', version: 'test', observedAt: '2026-10-17T00:00:00.000Z',
+      },
+    });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'write_file', arguments: { path: 'verified.ts', content: 'export {}' } },
+      id: 'verified-one-tap',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(approvalResult).toMatchObject({
+      status: 'approval_required',
+      recovery_state: 'VERIFIED',
+      M: 0.2,
+      n_stable: 3,
+      canary_passed: true,
+    });
+  });
+
+  it('preserves a passing canary while issuing a one-tap approval in VERIFIED state', async () => {
+    const key = { id: 'private-test-verified', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-verified:session', actorId: 'api_key:private-test-verified',
+        C: 0.2, R: 0.4, S: 0.4, M: 0.2,
+        healthBand: 'STRESSED', recoveryState: 'VERIFIED', sigmaViol: 0,
+        toolCalls: 0, trajectoryAvailable: true, nStable: 3, canaryPassed: true,
+        stateFingerprint: 'b'.repeat(64), trajectoryUpdatedAt: '2026-10-17T00:00:00.000Z',
+        authorization: 'authorized', policyRisk: 'write', version: 'test', observedAt: '2026-10-17T00:00:00.000Z',
+      },
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'write_file', arguments: { path: 'verified.ts', content: 'export {}' } },
+      id: 'verified-one-tap',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(approvalResult).toMatchObject({
+      status: 'approval_required',
+      recovery_state: 'VERIFIED',
+      M: 0.2,
+      n_stable: 3,
+      canary_passed: true,
+    });
   });
 
   it('does not self-approve writes even when the private-test caller IP changes', async () => {
@@ -493,6 +670,8 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'write_file',
       args: { ...actionArgs, session_id: 'private-test-1:private-test-session' },
     }));
+    const authorizationResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(authorizationResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals#a{22}$/);
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
     expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
       .toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
@@ -588,6 +767,8 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'consume_external_action',
       args: expect.objectContaining({ session_id: 'private-test-1:external-session' }),
     }));
+    const externalApprovalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(externalApprovalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals#a{22}$/);
 
     externalBrokerMocks.consumeExternalAction.mockResolvedValueOnce({ granted: true, reason: 'consumed once' });
     const consumeResponse = await POST(request({
