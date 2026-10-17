@@ -1,7 +1,7 @@
 /**
- * Keep the inner governance cycle on the same session as its governed tool call.
- * Other tool arguments are left untouched because they may have their own
- * session semantics or approval-token hashes.
+ * Keep the inner governance cycle and canonical-state diagnostic on the same
+ * session as their governed tool call. Other tool arguments are left untouched
+ * because they may have their own session semantics or approval-token hashes.
  */
 export function bindGovernanceToolSession(
   toolName: string,
