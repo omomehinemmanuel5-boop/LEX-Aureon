@@ -26,14 +26,14 @@ const snapshot = {
 describe('exact-snapshot recovery canary evidence', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('changes fingerprint for session, metric, stability, sigma, timestamp, or policy changes', () => {
+  it('fingerprints only governance state, not observation timestamps or receipt metadata', () => {
     const original = recoverySnapshotFingerprint(snapshot);
     expect(original).toMatch(/^[a-f0-9]{64}$/);
     expect(recoverySnapshotFingerprint({ ...snapshot, sessionId: 'operator-session-b' })).not.toBe(original);
     expect(recoverySnapshotFingerprint({ ...snapshot, R: 0.32 })).not.toBe(original);
     expect(recoverySnapshotFingerprint({ ...snapshot, nStable: 4 })).not.toBe(original);
     expect(recoverySnapshotFingerprint({ ...snapshot, sigmaViol: 0.001 })).not.toBe(original);
-    expect(recoverySnapshotFingerprint({ ...snapshot, trajectoryUpdatedAt: '2026-10-10T00:00:01.000Z' })).not.toBe(original);
+    expect(recoverySnapshotFingerprint({ ...snapshot, trajectoryUpdatedAt: '2026-10-10T00:00:01.000Z' })).toBe(original);
     expect(recoverySnapshotFingerprint({ ...snapshot, policyVersion: 'canonical-governance-test.2' })).not.toBe(original);
   });
 
