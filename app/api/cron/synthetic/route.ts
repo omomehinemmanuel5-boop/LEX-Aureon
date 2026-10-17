@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { classifySyntheticGovernanceProbe } from '@/lib/synthetic_canary';
+import { logger, errorFields } from '@/lib/logger';
+import { env } from '@/lib/env';
+import { pruneEmbeddingCache } from '@/lib/lex_memory';
+import { sendOpsAlert } from '@/lib/notify';
 
 async function fetchGovern(args: { prompt: string; session_id: string }) {
   const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
@@ -9,10 +13,6 @@ async function fetchGovern(args: { prompt: string; session_id: string }) {
   if (!res.ok) throw new Error(`govern endpoint returned HTTP ${res.status}`);
   return res.json() as Promise<unknown>;
 }
-import { logger, errorFields } from '@/lib/logger';
-import { env } from '@/lib/env';
-import { pruneEmbeddingCache } from '@/lib/lex_memory';
-import { sendOpsAlert } from '@/lib/notify';
 
 interface Probe {
   id: string;
