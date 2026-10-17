@@ -115,6 +115,35 @@ export async function consumeApprovalRequest(input: {
   }
 }
 
+export async function restoreApprovalRequest(input: {
+  requestId: string;
+  ownerId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  nowMs?: number;
+}): Promise<{ restored: boolean; reason: string }> {
+  const now = input.nowMs ?? Date.now();
+  try {
+    await ensureApprovalRequestSchema();
+    const result = await getClient().execute({
+      sql: `UPDATE approval_requests SET status = 'approved'
+            WHERE request_id = ? AND owner_id = ? AND session_id = ? AND tool_name = ?
+              AND args_hash = ? AND status = 'used' AND expires_at > ?`,
+      args: [
+        input.requestId, input.ownerId, input.sessionId, input.toolName,
+        approvalArgsHash(input.args), now,
+      ],
+    });
+    if ((result.rowsAffected ?? 0) !== 1) {
+      return { restored: false, reason: 'Approval could not be restored; it may have expired or changed state.' };
+    }
+    return { restored: true, reason: 'Approval restored because execution had not started.' };
+  } catch {
+    return { restored: false, reason: 'Approval store unavailable; restoration could not be confirmed.' };
+  }
+}
+
 export async function listPendingApprovalRequests(nowMs = Date.now()): Promise<Array<{
   request_id: string; owner_id: string; session_id: string; tool_name: string;
   args_json: string; created_at: number; expires_at: number;
