@@ -144,21 +144,21 @@ beforeEach(() => {
 });
 
 describe('governed tool stability observations', () => {
-  it('counts three executed calls with near-identical measured CRS from zero to three', async () => {
+  it('does not count read-only inspections as recovery stability observations', async () => {
     const tool = vi.fn(async () => 'TOOL_OK');
-    for (let expectedCount = 1; expectedCount <= 3; expectedCount += 1) {
+    for (let count = 1; count <= 3; count += 1) {
       const result = await executeGovernedToolStructured(
-        'read_file', { path: `observation-${expectedCount}` }, tool, SESSION,
+        'read_file', { path: 'observation-' + count }, tool, SESSION,
       );
       expect(result.approved).toBe(true);
       expect(result.result).toContain('TOOL_OK');
-      expect(mocks.rows.get(SESSION)?.n_stable).toBe(expectedCount);
+      expect(mocks.rows.get(SESSION)?.n_stable).toBe(0);
     }
     expect(tool).toHaveBeenCalledTimes(3);
     expect(mocks.dbExecute.mock.calls.filter(([query]) =>
       typeof query === 'object' && query !== null && 'sql' in query
       && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
-    )).toHaveLength(3);
+    )).toHaveLength(0);
   });
 
   it('records nothing for a denied call', async () => {
@@ -187,13 +187,13 @@ describe('governed tool stability observations', () => {
 
     expect(first.result).toContain('cache_hit:   false');
     expect(second.result).toContain('cache_hit:   true');
-    expect(countAfterMiss).toBe(1);
-    expect(mocks.rows.get(SESSION)?.n_stable).toBe(1);
+    expect(countAfterMiss).toBe(0);
+    expect(mocks.rows.get(SESSION)?.n_stable).toBe(0);
     expect(tool).toHaveBeenCalledOnce();
     expect(mocks.dbExecute.mock.calls.filter(([query]) =>
       typeof query === 'object' && query !== null && 'sql' in query
       && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
-    )).toHaveLength(1);
+    )).toHaveLength(0);
   });
 
   it('does not record run_recovery_canary', async () => {
@@ -223,7 +223,11 @@ describe('governed tool stability observations', () => {
     expect(updated.last_c).toBe(MEASURED.C);
     expect(updated.last_r).toBe(MEASURED.R);
     expect(updated.last_s).toBe(MEASURED.S);
-    expect(updated.n_stable).toBe(1);
+    expect(updated.n_stable).toBe(0);
+    expect(mocks.dbExecute.mock.calls.some(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    )).toBe(false);
   });
 
   it('allows only one concurrent observation based on the same previous sample', async () => {
