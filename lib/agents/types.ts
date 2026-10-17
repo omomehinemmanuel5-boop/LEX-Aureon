@@ -130,7 +130,8 @@ export interface ToolCRSState {
 export interface ToolCallDecision {
   approved:     boolean;
   decision:     'APPROVED_ULTRA_LOW' | 'APPROVED' | 'APPROVED_HIGH' | 'APPROVED_MEDIUM' |
-                'DENIED_BLOCKED' | 'DENIED_LOCKED' | 'DENIED_INJECTION';
+                'DENIED_BLOCKED' | 'DENIED_LOCKED' | 'DENIED_INJECTION' |
+                'EXECUTION_CANCELLED_BEFORE_START';
   reason:       string;
   crs:          ToolCRSState;
   receipt_id:   string;
