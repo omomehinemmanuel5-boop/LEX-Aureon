@@ -17,6 +17,7 @@ export interface CanonicalGovernanceState {
   healthBand: CanonicalGovernanceBand;
   recoveryState: RecoveryState;
   sigmaViol: number;
+  velocity: number;
   toolCalls: number;
   trajectoryAvailable: boolean;
   nStable: number;
@@ -94,6 +95,7 @@ export async function readCanonicalGovernanceState(input: {
           healthBand: 'UNINITIALIZED',
           recoveryState: 'QUARANTINED',
           sigmaViol: 1,
+          velocity: 0,
           toolCalls: toolSession.toolCalls,
           trajectoryAvailable: false,
           nStable: 0,
@@ -116,6 +118,7 @@ export async function readCanonicalGovernanceState(input: {
     const M = Math.min(C, R, S);
     const sigmaViol = Math.max(trajectory.sigma_viol ?? 0, toolSession.sigmaViol);
     const nStable = Number(trajectory.n_stable ?? 0);
+    const velocity = Number(trajectory.velocity ?? 0);
     const trajectoryUpdatedAt = String(trajectory.updated_at ?? '');
     const stateFingerprint = recoverySnapshotFingerprint({
       sessionId: input.sessionId,
@@ -137,6 +140,7 @@ export async function readCanonicalGovernanceState(input: {
       healthBand: deriveHealthBand(M) as CanonicalGovernanceBand,
       recoveryState: recovery.state,
       sigmaViol,
+      velocity,
       toolCalls: toolSession.toolCalls,
       trajectoryAvailable: true,
       nStable,
@@ -161,6 +165,7 @@ export async function readCanonicalGovernanceState(input: {
         healthBand: 'CRITICAL',
         recoveryState: 'QUARANTINED',
         sigmaViol: 1,
+          velocity: 0,
         toolCalls: 0,
         trajectoryAvailable: false,
         nStable: 0,
