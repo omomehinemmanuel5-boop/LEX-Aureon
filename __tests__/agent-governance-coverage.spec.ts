@@ -63,7 +63,7 @@ describe('agent governance coverage', () => {
 
     expect(authorization).toBeGreaterThanOrEqual(0);
     expect(cache).toBeGreaterThan(authorization);
-    expect(executor).toContain("toolName !== 'run_recovery_canary'");
+    expect(executor).toContain("!['run_recovery_canary', 'get_constitutional_state', 'get_trajectory_status'].includes(toolName)");
     expect(executor).toContain('if (!decision.approved) {');
     expect(executor).toContain('return {');
     expect(executor).toContain('approved: false');
