@@ -109,6 +109,44 @@ describe('governed tool execution integration boundary', () => {
     );
   });
 
+  it('does not mutate z_traj during repeated governed diagnostic reads', async () => {
+    const read = vi.fn(async () => JSON.stringify({ C: 1, R: 1, S: 1, M: 1 }));
+    const sessionId = 'read-only-stability-session';
+    for (let i = 0; i < 5; i += 1) {
+      await executeGovernedTool('get_constitutional_state', { session_id: sessionId }, read, sessionId);
+    }
+    const trajectoryMutations = dbExecute.mock.calls.filter(([query]) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      return /\b(UPDATE|INSERT INTO|DELETE FROM)\s+z_traj\b/i.test(sql);
+    });
+    expect(trajectoryMutations).toHaveLength(0);
+    expect(read).toHaveBeenCalledTimes(5);
+  });
+
+  it('does not consume an action approval when cancellation happens before execution starts', async () => {
+    const sessionId = 'cancel-before-consume-session';
+    addPassingCanary(sessionId, { C: 1, R: 1, S: 1, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
+    const controller = new AbortController();
+    controller.abort();
+    const write = vi.fn(async () => 'WRITE_SHOULD_NOT_RUN');
+    const actionArgs = { path: 'README.md', content: 'test' };
+    const token = createGovernanceApprovalToken({
+      actorId: 'internal-agent', sessionId, toolName: 'write_file', args: actionArgs,
+    });
+    const result = await executeGovernedToolStructured(
+      'write_file', { ...actionArgs, approval_token: token }, write, sessionId,
+      undefined, 'internal-agent', controller.signal,
+    );
+    expect(result.decision).toBe('EXECUTION_CANCELLED_BEFORE_START');
+    expect(result.result).toContain('not_started_after_cancellation');
+    expect(write).not.toHaveBeenCalled();
+    const approvalConsumption = dbExecute.mock.calls.filter(([query]) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      return /UPDATE\s+approval_requests/i.test(sql);
+    });
+    expect(approvalConsumption).toHaveLength(0);
+  });
+
   it('authorizes before reusing a cached read result', async () => {
     let executions = 0;
     const read = async () => {
