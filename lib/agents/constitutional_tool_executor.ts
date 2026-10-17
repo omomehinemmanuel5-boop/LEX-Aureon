@@ -42,6 +42,20 @@ const READ_TOOLS = new Set([
   'get_trajectory_status',
 ]);
 
+// Tools in this set are read-only inspections of the governed system state.
+// Keep it separate from READ_TOOLS: e.g. generic curl may perform an external
+// mutation and must not inherit non-mutating trajectory semantics by name alone.
+const NON_MUTATING_GOVERNANCE_TOOLS = new Set([
+  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+  'read_file', 'list_directory', 'search_code', 'get_build_status',
+  'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
+  'preview_patch_file', 'check_github_token_scope', 'get_trajectory_status',
+  'run_recovery_canary',
+  'read_directory', 'list_files', 'read_memory', 'search_memory',
+  'fetch_page', 'http_get', 'get_file', 'read_json', 'parse_csv',
+  'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
+]);
+
 const KERNEL_CRITICAL = 0.05;
 
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
@@ -260,7 +274,7 @@ export async function executeGovernedToolStructured(
   // Recovery must not depend on a caller repeatedly attempting a denied write.
   // Safe reads and ordinary MCP traffic are valid stabilization observations;
   // advance the bounded recovery plane first, then evaluate fresh state.
-  if (!READ_TOOLS.has(toolName)
+  if (!NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)
     && canonicalRead.available && canonicalRead.state.trajectoryAvailable
     && canonicalRead.state.M >= KERNEL_CRITICAL
     && (canonicalRead.state.M < 0.25 || canonicalRead.state.nStable < 3)) {
@@ -555,7 +569,7 @@ export async function executeGovernedToolStructured(
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
-  if (!cached.cacheHit && !READ_TOOLS.has(toolName)) {
+  if (!cached.cacheHit && !NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)) {
     try {
       const previous = await getZTraj(sessionId);
       await recordZTrajObservation(
