@@ -34,6 +34,8 @@ const receipt = {
   crs: { C: 0.9, R: 0.9, S: 0.9, M: 0.9, risk_level: 'HIGH' as const },
   reason: 'approved',
   sigma_viol: state.sigma_viol,
+  canary_receipt_id: 'canary-audit-id',
+  state_snapshot: JSON.stringify({ C: 0.2, R: 0.3, S: 0.4, M: 0.2 }),
 };
 
 describe('transactional governance commit', () => {
@@ -55,6 +57,8 @@ describe('transactional governance commit', () => {
     expect(tx.execute.mock.calls[3][0].args[2]).toBe('api_key:caller-1');
     expect(tx.execute.mock.calls[3][0].args[14]).toBeNull();
     expect(typeof tx.execute.mock.calls[3][0].args[15]).toBe('string');
+    expect(tx.execute.mock.calls[3][0].args[17]).toBe('canary-audit-id');
+    expect(tx.execute.mock.calls[3][0].args[18]).toContain('M');
     expect(tx.commit).toHaveBeenCalledOnce();
     expect(tx.rollback).not.toHaveBeenCalled();
     expect(committed.state_version).toBe(5);

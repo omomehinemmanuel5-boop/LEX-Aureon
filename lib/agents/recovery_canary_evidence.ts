@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getClient } from '../db';
+import { CONSTITUTION } from '../constitution';
 
 export type RecoveryCanaryStatus = 'passed' | 'failed';
 
@@ -21,6 +22,9 @@ export interface RecoveryCanaryEvidenceInput extends RecoverySnapshotFingerprint
   status: RecoveryCanaryStatus;
   probeTool: string;
   reason?: string;
+  recoveryState?: string;
+  issuedAt?: string;
+  expiresAt?: string;
 }
 
 function exactNumber(value: number): string {
@@ -66,8 +70,8 @@ export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
     sql: `INSERT INTO recovery_canary_evidence
       (session_id, actor_id, canary_status, state_fingerprint, state_version,
        probe_tool, receipt_id, c_value, r_value, s_value, m_value,
-       n_stable, sigma_viol, trajectory_updated_at, reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       n_stable, sigma_viol, trajectory_updated_at, reason, recovery_state, issued_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       input.sessionId,
       input.actorId,
@@ -84,6 +88,9 @@ export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
       input.sigmaViol,
       input.trajectoryUpdatedAt,
       input.reason ?? null,
+      input.recoveryState ?? null,
+      input.issuedAt ?? new Date().toISOString(),
+      input.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     ],
   });
 }
@@ -92,8 +99,32 @@ export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
 export async function readRecoveryCanaryEvidence(
   sessionId: string,
   stateFingerprint: string,
+  current?: { stateVersion: string; M: number; sigmaViol: number; nStable: number },
 ): Promise<{ passed: boolean; receiptId: string | null; status: RecoveryCanaryStatus | null }> {
   try {
+    if (process.env.CANARY_MODE === 'invariant' && current) {
+      const result = await getClient().execute({
+        sql: `SELECT e.*, (SELECT COUNT(*) FROM tool_receipts w WHERE w.session_id = e.session_id
+              AND w.created_at > e.issued_at AND w.tool_name NOT IN
+              ('read_file','read_directory','list_directory','list_files','read_memory','search_memory','fetch_page','http_get','get_file','cat','head','tail','grep','find','ls','dir','glob','run_recovery_canary','get_constitutional_state','get_recent_receipts','explain_denial','search_code','get_build_status','get_workflow_run','get_workflow_log','get_workflow_artifact','get_vercel_logs','preview_patch_file','check_github_token_scope','get_trajectory_status','read_json','parse_csv','query_database','simulate_agent_plan','review_agent_action','get_build_status','run_self_test','self_reflect')) AS writes
+              FROM recovery_canary_evidence e WHERE e.session_id = ?
+              ORDER BY e.id DESC LIMIT 1`,
+        args: [sessionId],
+      });
+      if (!result.rows.length) return { passed: false, receiptId: null, status: null };
+      const row = result.rows[0];
+      const status = String(row.canary_status);
+      const expiryMs = Date.parse(String(row.expires_at ?? ''));
+      const maxWrites = Number(process.env.CANARY_MAX_GOVERNED_WRITES ?? 50);
+      const maxAgeMs = Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
+      const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
+      const valid = status === 'passed' && String(row.state_version) === current.stateVersion
+        && current.M >= CONSTITUTION.TAU_RECOVERY && current.sigmaViol === 0
+        && current.nStable >= CONSTITUTION.N_MIN
+        && Number(row.writes ?? 0) < maxWrites && Number.isFinite(expiryMs)
+        && Number.isFinite(issuedMs) && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
+      return { passed: valid, receiptId: valid ? String(row.receipt_id ?? '') || null : null, status: valid ? 'passed' : (status === 'failed' ? 'failed' : null) };
+    }
     const result = await getClient().execute({
       sql: `SELECT canary_status, receipt_id
             FROM recovery_canary_evidence

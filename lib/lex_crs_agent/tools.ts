@@ -516,8 +516,11 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
   if (!state.trajectoryUpdatedAt) {
     return response({ status: 'not_run', reason: 'Canonical trajectory timestamp is missing; exact-snapshot evidence cannot be bound safely.' });
   }
+  const issuedAt = new Date().toISOString();
+  const windowMs = Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
   const snapshot = {
     session_id,
+    ...(process.env.CANARY_MODE === 'invariant' ? { issued_at: issuedAt, expires_at: new Date(Date.now() + windowMs).toISOString(), recovery_state: state.recoveryState } : {}),
     state_fingerprint: state.stateFingerprint,
     state_version: state.version,
     trajectory_updated_at: state.trajectoryUpdatedAt,
@@ -551,7 +554,8 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
     diagnostic.session_id !== session_id ||
     diagnostic.available !== true ||
     diagnostic.trajectory_available !== true ||
-    diagnostic.state_fingerprint !== state.stateFingerprint
+    (process.env.CANARY_MODE !== 'invariant' && diagnostic.state_fingerprint !== state.stateFingerprint) ||
+    (process.env.CANARY_MODE === 'invariant' && (diagnostic.state_version !== state.version || Number(diagnostic.M) < CONSTITUTION.TAU_RECOVERY || Number(diagnostic.sigma_viol) !== 0 || Number(diagnostic.n_stable) < CONSTITUTION.N_MIN))
   ) {
     return response({ status: 'failed', reason: 'The diagnostic probe did not return the requested exact canonical snapshot.', ...snapshot });
   }
@@ -561,7 +565,7 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
     actorId: 'recovery-canary-probe',
     capability: 'read',
   });
-  if (!after.available || after.state.stateFingerprint !== state.stateFingerprint) {
+  if (!after.available || (process.env.CANARY_MODE !== 'invariant' && after.state.stateFingerprint !== state.stateFingerprint) || (process.env.CANARY_MODE === 'invariant' && (after.state.version !== state.version || after.state.M < CONSTITUTION.TAU_RECOVERY || after.state.sigmaViol !== 0 || after.state.nStable < CONSTITUTION.N_MIN))) {
     return response({ status: 'failed', reason: 'Canonical state changed during the probe; no evidence will be accepted.', ...snapshot });
   }
 

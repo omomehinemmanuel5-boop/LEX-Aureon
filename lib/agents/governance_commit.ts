@@ -13,6 +13,8 @@ export interface GovernanceReceipt {
   crs: ToolCRSState;
   reason: string;
   sigma_viol: number;
+  canary_receipt_id?: string | null;
+  state_snapshot?: string | null;
 }
 
 export class GovernanceCommitConflict extends Error {
@@ -20,6 +22,23 @@ export class GovernanceCommitConflict extends Error {
     super(`Governance state changed concurrently for session ${sessionId}`);
     this.name = 'GovernanceCommitConflict';
   }
+}
+
+async function receiptAuditValues(receipt: GovernanceReceipt): Promise<(string | null)[]> {
+  let canaryId = receipt.canary_receipt_id ?? null;
+  let snapshot = receipt.state_snapshot ?? null;
+  try {
+    const client = getClient();
+    if (!canaryId) {
+      const canary = await client.execute({ sql: 'SELECT receipt_id FROM recovery_canary_evidence WHERE session_id = ? AND canary_status = ? ORDER BY id DESC LIMIT 1', args: [receipt.session_id, 'passed'] });
+      canaryId = String(canary.rows?.[0]?.receipt_id ?? '') || null;
+    }
+    if (!snapshot) {
+      const traj = await client.execute({ sql: 'SELECT last_c, last_r, last_s, last_m, sigma_viol, n_stable, updated_at FROM z_traj WHERE session_id = ? LIMIT 1', args: [receipt.session_id] });
+      snapshot = JSON.stringify({ ...(traj.rows?.[0] ?? {}), session_id: receipt.session_id });
+    }
+  } catch { /* nullable audit enrichments cannot change policy or authorization */ }
+  return [canaryId, snapshot];
 }
 
 /**
@@ -46,6 +65,7 @@ export async function commitGovernanceDecision(
     }>;
   };
 
+  const auditValues = await receiptAuditValues(receipt);
   const updateSql = `UPDATE tool_sessions
     SET sigma_viol = ?, n_stable = ?, locked = ?, tool_calls = ?,
         last_high_at = ?, updated_at = ?, state_version = state_version + 1
@@ -85,14 +105,14 @@ export async function commitGovernanceDecision(
       const receiptSql = `INSERT INTO tool_receipts
         (receipt_id, session_id, actor_id, tool_name, args_hash, decision,
          c_score, r_score, s_score, m_score, risk_level, reason, sigma_viol,
-         policy_version, previous_provenance_hash, provenance_hash, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+         policy_version, previous_provenance_hash, provenance_hash, created_at, canary_receipt_id, state_snapshot)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
       const receiptArgs = [
         receipt.receipt_id, receipt.session_id, receipt.actor_id ?? 'internal-agent',
         receipt.tool_name, receipt.args_hash,
         receipt.decision, receipt.crs.C, receipt.crs.R, receipt.crs.S, receipt.crs.M,
         receipt.crs.risk_level, receipt.reason, receipt.sigma_viol,
-        TOOL_GOVERNANCE_POLICY_VERSION, previousHash ?? null, provenanceHash, new Date().toISOString(),
+        TOOL_GOVERNANCE_POLICY_VERSION, previousHash ?? null, provenanceHash, new Date().toISOString(), ...auditValues,
       ];
       await tx.execute({ sql: receiptSql, args: receiptArgs });
       await tx.commit();
@@ -130,14 +150,14 @@ export async function commitGovernanceDecision(
     sql: `INSERT INTO tool_receipts
       (receipt_id, session_id, actor_id, tool_name, args_hash, decision,
        c_score, r_score, s_score, m_score, risk_level, reason, sigma_viol,
-       policy_version, previous_provenance_hash, provenance_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       policy_version, previous_provenance_hash, provenance_hash, created_at, canary_receipt_id, state_snapshot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       receipt.receipt_id, receipt.session_id, receipt.actor_id ?? 'internal-agent',
       receipt.tool_name, receipt.args_hash,
       receipt.decision, receipt.crs.C, receipt.crs.R, receipt.crs.S, receipt.crs.M,
       receipt.crs.risk_level, receipt.reason, receipt.sigma_viol,
-      TOOL_GOVERNANCE_POLICY_VERSION, previousHash ?? null, provenanceHash, new Date().toISOString(),
+      TOOL_GOVERNANCE_POLICY_VERSION, previousHash ?? null, provenanceHash, new Date().toISOString(), ...auditValues,
     ],
   });
   return { ...state, state_version: expectedVersion + 1 };
@@ -145,6 +165,7 @@ export async function commitGovernanceDecision(
 
 export async function writeGovernanceReceipt(receipt: GovernanceReceipt): Promise<void> {
   const client = getClient();
+  const auditValues = await receiptAuditValues(receipt);
   const previous = await client.execute({
     sql: 'SELECT provenance_hash FROM tool_receipts WHERE provenance_hash IS NOT NULL ORDER BY id DESC LIMIT 1',
     args: [],
@@ -167,14 +188,14 @@ export async function writeGovernanceReceipt(receipt: GovernanceReceipt): Promis
     sql: `INSERT INTO tool_receipts
       (receipt_id, session_id, actor_id, tool_name, args_hash, decision,
        c_score, r_score, s_score, m_score, risk_level, reason, sigma_viol,
-       policy_version, previous_provenance_hash, provenance_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       policy_version, previous_provenance_hash, provenance_hash, created_at, canary_receipt_id, state_snapshot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       receipt.receipt_id, receipt.session_id, receipt.actor_id ?? 'internal-agent',
       receipt.tool_name, receipt.args_hash,
       receipt.decision, receipt.crs.C, receipt.crs.R, receipt.crs.S, receipt.crs.M,
       receipt.crs.risk_level, receipt.reason, receipt.sigma_viol,
-      TOOL_GOVERNANCE_POLICY_VERSION, previousHash ?? null, provenanceHash, new Date().toISOString(),
+      TOOL_GOVERNANCE_POLICY_VERSION, previousHash ?? null, provenanceHash, new Date().toISOString(), ...auditValues,
     ],
   });
 }

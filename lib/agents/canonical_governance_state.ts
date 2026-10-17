@@ -126,7 +126,7 @@ export async function readCanonicalGovernanceState(input: {
       C, R, S, nStable, sigmaViol,
       trajectoryUpdatedAt,
     });
-    const canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint);
+    const canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint, { stateVersion: STATE_VERSION, M, sigmaViol, nStable });
     const recovery = recoveryCapabilityAllowed(M, input.capability, {
       nStable,
       sigmaViol,

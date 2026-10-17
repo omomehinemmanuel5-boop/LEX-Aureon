@@ -69,6 +69,9 @@ describe('exact-snapshot recovery canary evidence', () => {
       snapshot.sigmaViol,
       snapshot.trajectoryUpdatedAt,
       null,
+      null,
+      expect.any(String),
+      expect.any(String),
     ]);
   });
 
@@ -94,4 +97,52 @@ describe('exact-snapshot recovery canary evidence', () => {
       passed: false, receiptId: null, status: null,
     });
   });
+
+describe('flagged bounded invariant canary validity', () => {
+  beforeEach(() => { vi.clearAllMocks(); vi.stubEnv('CANARY_MODE', 'invariant'); });
+
+  const liveRow = (overrides: Record<string, unknown> = {}) => ({
+    canary_status: 'passed', receipt_id: 'bounded-canary-receipt',
+    state_version: 'canonical-v1', m_value: 0.16, n_stable: 3, sigma_viol: 0,
+    recovery_state: 'VERIFIED', issued_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60_000).toISOString(), writes: 4,
+    ...overrides,
+  });
+  const current = { stateVersion: 'canonical-v1', M: 0.16, sigmaViol: 0, nStable: 3 };
+
+  it('remains valid across read-only calls when invariants hold and ignores fingerprints', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    for (let i = 0; i < 5; i += 1) {
+      await expect(readRecoveryCanaryEvidence(snapshot.sessionId, `fingerprint-${i}`, current))
+        .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
+    }
+  });
+
+  it('expires after the governed-write window', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow({ writes: 50 })] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'ignored', current))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('expires after the time window', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow({ issued_at: '2020-01-01T00:00:00.000Z', expires_at: '2020-01-01T01:00:00.000Z' })] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'ignored', current))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('refuses a write when M falls below the constitutional recovery threshold', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'ignored', { ...current, M: 0.149 }))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('refuses a canary when state version changes or sigma is nonzero', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'ignored', { ...current, stateVersion: 'canonical-v2' }))
+      .resolves.toMatchObject({ passed: false });
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'ignored', { ...current, sigmaViol: 0.01 }))
+      .resolves.toMatchObject({ passed: false });
+  });
+});
 });
