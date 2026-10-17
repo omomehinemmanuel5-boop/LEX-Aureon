@@ -16,11 +16,12 @@ import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
 import { getZTraj, recordZTrajObservation } from '../kv';
 import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
-import { approvalArgsHash, consumeApprovalRequest } from '../approval_requests';
+import { approvalArgsHash, consumeApprovalRequest, restoreApprovalRequest } from '../approval_requests';
 import { withConsumedApproval } from './approval_execution_context';
 import type { ToolCallDecision } from './types';
 import {
   consumeGovernanceApprovalToken,
+  releaseGovernanceApprovalToken,
   evaluateToolGovernance,
   hashGovernanceArguments,
   redactGovernanceText,
@@ -433,51 +434,6 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  if (policy.requiresApproval) {
-    const consumed = approvalRequestId
-      ? await consumeApprovalRequest({
-        requestId: approvalRequestId,
-        ownerId,
-        sessionId,
-        toolName,
-        args,
-      })
-      : await consumeGovernanceApprovalToken({
-        token: args.approval_token,
-        actorId,
-        sessionId,
-        toolName,
-        args,
-      });
-    if (!consumed.consumed) {
-      const replayDecision: ToolCallDecision = {
-        ...decision,
-        approved: false,
-        decision: 'DENIED_BLOCKED',
-        reason: consumed.reason,
-        warning: 'The action-bound approval could not be consumed exactly once; the tool function was not invoked.',
-      };
-      const verification = verifyToolResult(toolName, undefined, policy.risk);
-      return {
-        result: report(toolName, replayDecision, undefined, false, policy, verification, canonicalRead.state),
-        approved: false,
-        decision: replayDecision.decision,
-        receiptId: replayDecision.receipt_id ?? null,
-        risk: policy.risk,
-        policy,
-        verification,
-      };
-    }
-    if (approvalRequestId) {
-      policy = {
-        ...policy,
-        decision: 'allow',
-        approvalId: approvalRequestId,
-        reasons: [...policy.reasons, 'Operator approval request was consumed exactly once for this exact action.'],
-      };
-    }
-  }
-
   // The cached value itself is never an authorization artifact. Recheck the
   // kernel immediately before serving it; if that state read fails, emit a
   // separate actor-attributed denial receipt where storage is available.
@@ -545,11 +501,89 @@ export async function executeGovernedToolStructured(
     };
   }
 
+  // Consume only after all governance/kernel preflights. If cancellation
+  // arrives during the storage round-trip or before the tool callback begins,
+  // restore the action-bound approval because no side effect has started.
+  const restoreApprovalForCancellation = async (): Promise<{ restored: boolean; reason: string }> => {
+    if (approvalRequestId) {
+      return restoreApprovalRequest({ requestId: approvalRequestId, ownerId, sessionId, toolName, args });
+    }
+    if (typeof args.approval_token === 'string') {
+      return releaseGovernanceApprovalToken({
+        token: args.approval_token, actorId, sessionId, toolName, args,
+      });
+    }
+    return { restored: false, reason: 'No restorable approval credential was available.' };
+  };
+
+  if (policy.requiresApproval) {
+    const consumed = approvalRequestId
+      ? await consumeApprovalRequest({ requestId: approvalRequestId, ownerId, sessionId, toolName, args })
+      : await consumeGovernanceApprovalToken({ token: args.approval_token, actorId, sessionId, toolName, args });
+    if (!consumed.consumed) {
+      const replayDecision: ToolCallDecision = {
+        ...decision,
+        approved: false,
+        decision: 'DENIED_BLOCKED',
+        reason: consumed.reason,
+        warning: 'The action-bound approval could not be consumed exactly once; the tool function was not invoked.',
+      };
+      const verification = verifyToolResult(toolName, undefined, policy.risk);
+      return {
+        result: report(toolName, replayDecision, undefined, false, policy, verification, canonicalRead.state),
+        approved: false,
+        decision: replayDecision.decision,
+        receiptId: replayDecision.receipt_id ?? null,
+        risk: policy.risk,
+        policy,
+        verification,
+      };
+    }
+    if (signal?.aborted) {
+      const restoration = await restoreApprovalForCancellation();
+      const cancellationDecision: ToolCallDecision = {
+        ...decision,
+        approved: false,
+        decision: 'EXECUTION_CANCELLED_BEFORE_START',
+        reason: restoration.restored
+          ? 'Cancellation arrived during approval consumption; approval was restored because execution had not started.'
+          : `Cancellation arrived during approval consumption; execution did not start, but restoration could not be confirmed. ${restoration.reason}`,
+      };
+      const verification = verifyToolResult(toolName, undefined, policy.risk);
+      return {
+        result: report(toolName, cancellationDecision, 'EXECUTION_STATUS=not_started_after_cancellation', false, policy, verification, canonicalRead.state),
+        approved: false,
+        decision: cancellationDecision.decision,
+        receiptId: decision.receipt_id ?? null,
+        risk: policy.risk,
+        policy,
+        verification,
+      };
+    }
+    if (approvalRequestId) {
+      policy = {
+        ...policy,
+        decision: 'allow',
+        approvalId: approvalRequestId,
+        reasons: [...policy.reasons, 'Operator approval request was consumed exactly once for this exact action.'],
+      };
+    }
+  }
+
+  let cancelledBeforeStart = false;
+  let cancellationRestoration: { restored: boolean; reason: string } | null = null;
   const cached = await cache.getOrExecuteAuthorized({
     key: keyFor(sessionId, toolName, args),
     toolName,
     decision,
-    execute: () => {
+    execute: async () => {
+      if (signal?.aborted) {
+        cancellationRestoration = policy.requiresApproval
+          ? await restoreApprovalForCancellation()
+          : { restored: true, reason: 'No approval was consumed.' };
+        cancelledBeforeStart = true;
+        return '';
+      }
       if (!approvalRequestId) return toolFn(args, signal);
       const handlerArgs = { ...args };
       delete handlerArgs.approval_request_id;
@@ -559,9 +593,38 @@ export async function executeGovernedToolStructured(
         sessionId,
         toolName,
         argsHash: approvalArgsHash(args),
-      }, () => toolFn(handlerArgs, signal));
+      }, async () => {
+        if (signal?.aborted) {
+          cancellationRestoration = await restoreApprovalForCancellation();
+          cancelledBeforeStart = true;
+          return '';
+        }
+        return toolFn(handlerArgs, signal);
+      });
     },
   });
+
+  if (cancelledBeforeStart) {
+    const restoration = cancellationRestoration ?? { restored: false, reason: 'Cancellation was observed before tool start.' };
+    const cancellationDecision: ToolCallDecision = {
+      ...decision,
+      approved: false,
+      decision: 'EXECUTION_CANCELLED_BEFORE_START',
+      reason: restoration.restored
+        ? 'Cancellation was observed before the tool callback started; approval was restored.'
+        : `Cancellation was observed before the tool callback started, but approval restoration could not be confirmed. ${restoration.reason}`,
+    };
+    const verification = verifyToolResult(toolName, undefined, policy.risk);
+    return {
+      result: report(toolName, cancellationDecision, 'EXECUTION_STATUS=not_started_after_cancellation', false, policy, verification, canonicalRead.state),
+      approved: false,
+      decision: cancellationDecision.decision,
+      receiptId: decision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification,
+    };
+  }
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
   if (!cached.cacheHit && !NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)) {
