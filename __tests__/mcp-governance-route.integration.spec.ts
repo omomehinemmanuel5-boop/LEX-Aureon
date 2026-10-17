@@ -169,6 +169,7 @@ describe('MCP constitutional dispatch boundary', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.LEX_CANARY_OWNER_IDS;
     validateApiKey.mockResolvedValue({ valid: true, key: {} });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
@@ -234,15 +235,30 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(executeGovernedTool).toHaveBeenCalledTimes(1);
   });
 
-  it('allows the canary for an authenticated operator-profile key without the operator-secret header', async () => {
+  it('denies a private_test key from running the canary when its owner is not allowlisted', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
     const response = await POST(request({
-      jsonrpc: '2.0',
-      method: 'tools/call',
+      jsonrpc: '2.0', method: 'tools/call',
       params: { name: 'run_recovery_canary', arguments: { session_id: 'private-test-1:canary-session' } },
-      id: 'operator-profile-canary',
+      id: 'private-test-not-allowlisted',
+    }));
+    expect(response.status).toBe(401);
+    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
+    expect(recordRecoveryCanaryEvidence).not.toHaveBeenCalled();
+  });
+
+  it('allows only an explicitly allowlisted API-key owner to run the canary', async () => {
+    process.env.LEX_CANARY_OWNER_IDS = 'trusted-owner, another-owner';
+    const key = { id: 'trusted-owner', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'trusted-owner:canary-session' } },
+      id: 'allowlisted-owner-canary',
     }));
     expect(response.status).toBe(200);
     expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
