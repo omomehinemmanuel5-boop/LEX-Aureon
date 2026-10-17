@@ -239,6 +239,28 @@ export async function consumeGovernanceApprovalToken(input: {
   }
 }
 
+/**
+ * Release a consumed signed token only when cancellation is observed before
+ * action dispatch. The approval ID is signed into the token and is unique.
+ */
+export async function releaseConsumedGovernanceApprovalToken(input: {
+  approvalId: string;
+  actorId: string;
+  sessionId: string;
+  toolName: string;
+}): Promise<boolean> {
+  try {
+    const result = await getClient().execute({
+      sql: `DELETE FROM governance_approval_consumptions
+            WHERE approval_id = ? AND actor_id = ? AND session_id = ? AND tool_name = ?`,
+      args: [input.approvalId, input.actorId, input.sessionId, input.toolName],
+    });
+    return (result.rowsAffected ?? 0) === 1;
+  } catch {
+    return false;
+  }
+}
+
 export function classifyGovernanceRisk(toolName: string, args: Record<string, unknown> = {}): GovernanceRisk {
   if (toolName === 'query_database') {
     const operation = classifyDatabaseOperation(String(args.sql ?? ''));
