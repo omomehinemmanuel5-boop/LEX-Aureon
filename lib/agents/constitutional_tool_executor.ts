@@ -102,7 +102,7 @@ function report(
     `── Constitutional tool-call decision [${toolName}]${cacheHit ? ' — CACHED EXECUTION' : ''} ──`,
     `decision:    ${decision.decision}`,
     `approved:    ${decision.approved}`,
-    `crs:         C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
+    `${toolName === 'get_constitutional_state' ? 'diagnostic_crs' : 'crs'}: ${toolName === 'get_constitutional_state' ? 'diagnostic only; ' : '        '}C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
     `risk_level:  ${decision.crs.risk_level}`,
     `health_band: ${decision.health_band}`,
     `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
