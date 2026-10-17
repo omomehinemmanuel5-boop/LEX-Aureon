@@ -24,7 +24,7 @@ import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type 
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
 import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
-import { advanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
+import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
 import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
 import { discoverExternalTool, governExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
@@ -698,9 +698,7 @@ export async function POST(req: Request) {
         capability: capability.capability,
         authorization: 'approval_required',
       });
-      if (authorizationCanonical.available && authorizationCanonical.state.trajectoryAvailable
-        && authorizationCanonical.state.M >= 0.05
-        && (authorizationCanonical.state.M < 0.25 || authorizationCanonical.state.nStable < 3)) {
+      if (authorizationCanonical.available && shouldAdvanceRecoveryPlane(authorizationCanonical.state)) {
         await advanceRecoveryPlane(requestedSession);
         authorizationCanonical = await readCanonicalGovernanceState({
           sessionId: requestedSession,
@@ -807,9 +805,7 @@ export async function POST(req: Request) {
           capability: externalCapability,
           authorization: toolName === 'consume_external_action' ? 'authorized' : 'approval_required',
         });
-        if (canonical.available && canonical.state.trajectoryAvailable
-          && canonical.state.M >= 0.05
-          && (canonical.state.M < 0.25 || canonical.state.nStable < 3)) {
+        if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           await advanceRecoveryPlane(sessionId);
           canonical = await readCanonicalGovernanceState({
             sessionId,
@@ -1054,9 +1050,7 @@ export async function POST(req: Request) {
           capability: requestedCapability.capability,
           authorization: 'approval_required',
         });
-        if (canonical.available && canonical.state.trajectoryAvailable
-          && canonical.state.M >= 0.05
-          && (canonical.state.M < 0.25 || canonical.state.nStable < 3)) {
+        if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           try {
             await advanceRecoveryPlane(sessionId);
             canonical = await readCanonicalGovernanceState({
