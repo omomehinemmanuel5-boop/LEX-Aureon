@@ -465,7 +465,14 @@ describe('MCP constitutional dispatch boundary', () => {
       args: expect.objectContaining(actionArgs),
     }));
     const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
-    expect(approvalResult).toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
+    expect(approvalResult).toMatchObject({
+      status: 'approval_required',
+      request_id: 'a'.repeat(22),
+      recovery_state: 'NORMAL',
+      M: 1,
+      n_stable: 3,
+      canary_passed: true,
+    });
     expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals$/);
   });
 
