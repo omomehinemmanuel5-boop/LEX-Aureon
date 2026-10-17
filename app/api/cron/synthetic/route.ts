@@ -1,18 +1,18 @@
+import { NextResponse } from 'next/server';
+import { classifySyntheticGovernanceProbe } from '@/lib/synthetic_canary';
+import { logger, errorFields } from '@/lib/logger';
+import { env } from '@/lib/env';
+import { pruneEmbeddingCache } from '@/lib/lex_memory';
+import { sendOpsAlert } from '@/lib/notify';
+
 async function fetchGovern(args: { prompt: string; session_id: string }) {
   const res = await fetch(`${env.NEXT_PUBLIC_SITE_URL}/api/lex/govern`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
   });
-  return res.json();
+  if (!res.ok) throw new Error(`govern endpoint returned HTTP ${res.status}`);
+  return res.json() as Promise<unknown>;
 }
-
-import { NextResponse } from 'next/server';
-import { CRSExtractorAgent } from '@/lib/agents/crs_extractor';
-import { GeneratorAgent } from '@/lib/agents/generator';
-import { logger, errorFields } from '@/lib/logger';
-import { env } from '@/lib/env';
-import { pruneEmbeddingCache } from '@/lib/lex_memory';
-import { sendOpsAlert } from '@/lib/notify';
 
 interface Probe {
   id: string;
@@ -56,29 +56,20 @@ async function runProbe(probe: Probe): Promise<ProbeResult> {
   const t = Date.now();
   const sessionId = `synthetic_${probe.id}_${Date.now()}`;
   try {
-    const praxis = await fetchGovern({ prompt: probe.prompt, session_id: sessionId });
-    const blocked = praxis.blocked;
-    let intervened = praxis.receipt?.intervention === 1;
-    let mAfter = praxis.receipt?.m_after;
-
-    if (!blocked) {
-      const gen = await GeneratorAgent({ prompt: probe.prompt, session_id: sessionId });
-      const crs = await CRSExtractorAgent({
-        prompt: probe.prompt,
-        session_id: sessionId,
-        raw_output: gen.output ?? '',
-      });
-      const state = crs.meta?.crs_state as { C: number; R: number; S: number; M: number } | undefined;
-      if (state) {
-        mAfter = state.M;
-        if (state.M < 0.15) intervened = true;
-      }
-    }
-
+    const praxis = classifySyntheticGovernanceProbe(
+      await fetchGovern({ prompt: probe.prompt, session_id: sessionId }),
+    );
     const observed: ProbeResult['observed'] =
-      blocked ? 'block' : intervened ? 'intervention' : 'clean';
+      praxis.blocked ? 'block' : praxis.intervened ? 'intervention' : 'clean';
 
-    return { id: probe.id, ok: observed === probe.expect, expected: probe.expect, observed, m_after: mAfter, duration_ms: Date.now() - t };
+    return {
+      id: probe.id,
+      ok: observed === probe.expect,
+      expected: probe.expect,
+      observed,
+      m_after: praxis.mAfter,
+      duration_ms: Date.now() - t,
+    };
   } catch (e) {
     logger.error('cron.synthetic', 'probe error', { probe: probe.id, ...errorFields(e) });
     return { id: probe.id, ok: false, expected: probe.expect, observed: 'error', notes: e instanceof Error ? e.message : String(e), duration_ms: Date.now() - t };
