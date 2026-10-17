@@ -28,9 +28,12 @@ function exactNumber(value: number): string {
 }
 
 /**
- * Binds a canary to the exact canonical recovery snapshot, including the row
- * timestamp and policy version. Any persisted trajectory update invalidates
- * the proof, even if rounded display values happen to look unchanged.
+ * Fingerprint fields: sessionId, policyVersion, C, R, S, nStable, sigmaViol.
+ * Numeric fields use 17-digit precision. Deliberately excluded: observed_at,
+ * trajectory_updated_at, receipt IDs, and other observation metadata. Those
+ * values describe when/how the snapshot was observed, not the governed state.
+ * Read-only inspections therefore cannot invalidate canary evidence merely by
+ * observing the same canonical state again.
  */
 export function recoverySnapshotFingerprint(input: RecoverySnapshotFingerprintInput): string {
   const material = JSON.stringify([
@@ -41,7 +44,6 @@ export function recoverySnapshotFingerprint(input: RecoverySnapshotFingerprintIn
     exactNumber(input.S),
     exactNumber(input.nStable),
     exactNumber(input.sigmaViol),
-    input.trajectoryUpdatedAt,
   ]);
   return crypto.createHash('sha256').update(material).digest('hex');
 }
