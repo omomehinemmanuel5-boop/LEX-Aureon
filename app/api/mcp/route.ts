@@ -101,7 +101,7 @@ function credentialPathFor(req: Request): McpCredentialPath {
   if (isOperator(req)) return 'operator_secret';
   if (extractSessionToken(req)) return 'session_token';
   const key = extractApiKey(req);
-  if (!key) return 'missing';
+  if (!key) return req.headers.has('x-lex-operator-secret') ? 'operator_secret' : 'missing';
   return key.startsWith('lex_at_') ? 'oauth_bearer' : 'api_key';
 }
 
@@ -569,7 +569,11 @@ export async function POST(req: Request) {
       } else {
         apiKey = extractApiKey(req);
         if (!apiKey) {
-          logMcpAuth(toolName, credentialPath, 'rejected_missing_credential');
+          logMcpAuth(
+            toolName,
+            credentialPath,
+            credentialPath === 'operator_secret' ? 'rejected_invalid_operator_secret' : 'rejected_missing_credential',
+          );
           return oauthToolChallenge(id);
         }
 
@@ -613,7 +617,10 @@ export async function POST(req: Request) {
     // The authorization endpoint creates a pending, exact-action request for
     // separate human approval. Tool visibility is not approval authority.
     if (toolName === 'authorize_tool_action') {
-      if (!hasOperatorAuthority(operator, profile)) return unauthorized(id);
+      if (!hasOperatorAuthority(operator, profile)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       const requestedTool = typeof args.tool_name === 'string' ? args.tool_name.trim() : '';
       const requestedArgs = isRecord(args.arguments) ? args.arguments : null;
       // Resolve the requested label through the same owner-scoped session
@@ -757,7 +764,10 @@ export async function POST(req: Request) {
     // static internal tool registry. They govern client-side adapters rather than
     // granting Lex server-side credentials or arbitrary remote execution.
     if (toolName === 'discover_external_tool' || toolName === 'govern_external_action' || toolName === 'consume_external_action' || toolName === 'authorize_external_action') {
-      if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) return unauthorized(id);
+      if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       if (!operator && (apiKey || sessionKeyId)) {
         const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
         if (!consumption.valid) return unauthorized(id);
