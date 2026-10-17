@@ -659,7 +659,10 @@ export async function POST(req: Request) {
           : sessionKeyId
             ? await consumeApiKeyById(sessionKeyId)
             : null;
-        if (!consumption?.valid) return unauthorized(id);
+        if (!consumption?.valid) {
+          logMcpAuth(toolName, credentialPath, 'rejected_key_consumption', profile);
+          return unauthorized(id);
+        }
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
@@ -770,11 +773,17 @@ export async function POST(req: Request) {
       }
       if (!operator && (apiKey || sessionKeyId)) {
         const consumption = apiKey ? await validateAndConsumeKey(apiKey) : await consumeApiKeyById(sessionKeyId!);
-        if (!consumption.valid) return unauthorized(id);
+        if (!consumption.valid) {
+          logMcpAuth(toolName, credentialPath, 'rejected_key_consumption', profile);
+          return unauthorized(id);
+        }
         ownerId = String(consumption.key?.id ?? 'anonymous');
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
-        if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) return unauthorized(id);
+        if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) {
+          logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+          return unauthorized(id);
+        }
       }
       const environmentId = typeof args.environment_id === 'string' ? args.environment_id.trim() : '';
       const manifest = isRecord(args.manifest) ? args.manifest as unknown as ToolManifest : null;
