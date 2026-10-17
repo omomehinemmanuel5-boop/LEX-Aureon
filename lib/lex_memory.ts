@@ -637,10 +637,10 @@ function adjustedScore(
 
 // ── Store memory event ────────────────────────────────────────────────────────
 export async function storeMemory(event: LexMemoryEvent): Promise<void> {
-  if (!event.owner_id?.trim()) {
-    console.error('lex_memory storeMemory error: owner_id is required');
-    return;
-  }
+  // Anonymous requests without a verified owner are intentionally not
+  // persisted to cross-request memory. This is an expected privacy boundary,
+  // not an operational error; callers must not create a shared anonymous namespace.
+  if (!event.owner_id?.trim()) return;
   try {
     const db = getClient();
     await db.execute({
