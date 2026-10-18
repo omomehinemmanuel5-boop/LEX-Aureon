@@ -62,6 +62,16 @@ export function isNonMutatingGovernanceTool(toolName: string): boolean {
   return NON_MUTATING_GOVERNANCE_TOOLS.has(toolName);
 }
 
+/**
+ * run_governance delegates to executeGovern(), which owns recovery advancement
+ * for direct API callers. Advancing here as well would count two recovery
+ * observations for one MCP request; executeGovern() also correctly skips
+ * recovery mutations for governance_mode="simulate".
+ */
+export function shouldAdvanceRecoveryBeforeTool(toolName: string): boolean {
+  return toolName !== 'run_governance' && !isNonMutatingGovernanceTool(toolName);
+}
+
 const KERNEL_CRITICAL = 0.05;
 
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
@@ -305,7 +315,7 @@ export async function executeGovernedToolStructured(
   // unmet and no passing canary is bound to this state. Never invalidate
   // verified evidence as a side effect of an approval attempt or a retry.
   let recoveryNote = '';
-  if (!isNonMutatingGovernanceTool(toolName)
+  if (shouldAdvanceRecoveryBeforeTool(toolName)
     && canonicalRead.available
     && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
     try {
