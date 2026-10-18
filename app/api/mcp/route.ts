@@ -1412,7 +1412,8 @@ export async function POST(req: Request) {
               capability: 'read',
             });
             evidencePersisted = confirmed.available
-              && (invariantMode ? confirmed.state.version === String(probe.state_version) : confirmed.state.stateFingerprint === fingerprint)
+              && confirmed.state.stateFingerprint === fingerprint
+              && confirmed.state.version === String(probe.state_version)
               && confirmed.state.canaryPassed === (status === 'passed')
               && confirmed.state.canaryReceiptId === execution.receiptId;
             evidenceStatus = evidencePersisted ? status : 'not_recorded';
