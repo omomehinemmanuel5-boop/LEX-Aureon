@@ -15,7 +15,8 @@
 
 import { getCachedKernel } from './kernel_cache';
 import { writeKernelReceipt, loadKernelState, loadKernelZ } from './kernel_bridge';
-import { advanceRecoveryPlane, type RecoveryPulseResult } from './agents/recovery_runtime';
+import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane, type RecoveryPulseResult } from './agents/recovery_runtime';
+import { readCanonicalGovernanceState } from './agents/canonical_governance_state';
 import { TAU, projectToSimplex } from './aureonics_core';
 import { getRecoveryBaselineState, getRecoveryMinimumM } from './recovery_margin';
 import { incrementRuns } from './db';
@@ -185,7 +186,21 @@ export async function executeGovern(
     try {
       const current = await loadKernelState(session_id);
       const margin = current ? Math.min(current.C, current.R, current.S) : 1;
-      if (margin < 0.25) recoveryPulse = await advanceRecoveryPlane(session_id);
+      if (margin < 0.25) {
+        const canonical = await readCanonicalGovernanceState({
+          sessionId: session_id,
+          actorId: ownerId ? `api_key:${ownerId}` : 'governance-service',
+          capability: 'read',
+        });
+        if (canonical.available && shouldAdvanceRecoveryPlane({
+          trajectoryAvailable: canonical.state.trajectoryAvailable,
+          M: canonical.state.M,
+          nStable: canonical.state.nStable,
+          canaryPassed: canonical.state.canaryPassed,
+        })) {
+          recoveryPulse = await advanceRecoveryPlane(session_id);
+        }
+      }
     } catch (e) {
       logger.warn('govern.recovery', 'recovery pulse unavailable; continuing with canonical state', errorFields(e));
     }
