@@ -450,6 +450,7 @@ describe('MCP constitutional dispatch boundary', () => {
   });
 
   it('does not activate a canary if the canonical snapshot changes before persistence', async () => {
+    vi.stubEnv('CANARY_MODE', 'invariant');
     isOperatorSecret.mockReturnValue(true);
     const probedFingerprint = 'a'.repeat(64);
     const currentFingerprint = 'b'.repeat(64);
