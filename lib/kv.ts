@@ -330,6 +330,7 @@ export async function updateZTraj(
   prevCRS: CRS | null,
   attackPressure?: number,
   lawEvents: string[] = [],
+  countStableObservation = true,
 ): Promise<ZTraj> {
   const M = Math.min(crs.c, crs.r, crs.s);
   const existing = await getZTraj(sessionId);
@@ -340,7 +341,7 @@ export async function updateZTraj(
     : 0;
 
   // ── n_stable: consecutive low-velocity turns ──────────────────────────────
-  const n_stable = velocity < STABILITY_VELOCITY && M >= CONSTITUTION.TAU_RECOVERY
+  const n_stable = countStableObservation && velocity < STABILITY_VELOCITY && M >= CONSTITUTION.TAU_RECOVERY
     ? (existing?.n_stable ?? 0) + 1
     : 0;
 
