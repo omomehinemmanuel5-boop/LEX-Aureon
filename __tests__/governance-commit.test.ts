@@ -126,6 +126,7 @@ describe('transactional governance commit', () => {
       canary_status: 'passed',
       receipt_id: 'canary-audit-id',
       state_version: currentStateVersion,
+      state_fingerprint: 'a'.repeat(64),
       issued_at: new Date(Date.now() - 1_000).toISOString(),
       expires_at: new Date(Date.now() + 60_000).toISOString(),
       writes: 0,
