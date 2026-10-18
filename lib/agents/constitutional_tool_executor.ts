@@ -41,7 +41,7 @@ const READ_TOOLS = new Set([
   'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
   'search_code', 'get_build_status', 'get_workflow_run', 'get_workflow_log',
   'get_vercel_logs', 'preview_patch_file', 'check_github_token_scope',
-  'get_trajectory_status',
+  'get_trajectory_status', 'advance_recovery_plane',
 ]);
 
 // Tools in this set are read-only inspections of the governed system state.
@@ -52,7 +52,7 @@ const NON_MUTATING_GOVERNANCE_TOOLS = new Set([
   'read_file', 'list_directory', 'search_code', 'get_build_status',
   'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
   'preview_patch_file', 'check_github_token_scope', 'get_trajectory_status',
-  'run_recovery_canary',
+  'run_recovery_canary', 'advance_recovery_plane',
   // Hypothetical agent plans must not advance recovery or append live observations.
   'simulate_agent_plan',
   'read_directory', 'list_files', 'read_memory', 'search_memory',
