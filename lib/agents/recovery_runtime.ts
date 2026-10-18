@@ -1,4 +1,4 @@
-import { getZTraj, updateZTraj, type ZTraj } from '../kv';
+import { getZTraj, updateZTraj, recordZTrajObservation, type ZTraj } from '../kv';
 import {
   TAU,
   TARGET_MARGIN,
@@ -88,33 +88,46 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
           : `Recovery observation interval has not elapsed; wait ${Math.ceil((RECOVERY_MIN_OBSERVATION_INTERVAL_MS - elapsedMs) / 1000)} more second(s).`,
       };
     }
-    const kernel = getCachedKernel(sessionId, { C: current.last_c, R: current.last_r, S: current.last_s });
-    kernel.state = { C: current.last_c, R: current.last_r, S: current.last_s };
-    const updated = await updateZTraj(
+    const observationCommitted = await recordZTrajObservation(
       sessionId,
+      {
+        last_c: current.last_c,
+        last_r: current.last_r,
+        last_s: current.last_s,
+        updated_at: current.updated_at,
+      },
       { c: current.last_c, r: current.last_r, s: current.last_s },
-      { c: current.last_c, r: current.last_r, s: current.last_s },
-      current.attack_pressure,
-      [],
       !wasMoving,
     );
+    if (!observationCommitted) {
+      return {
+        advanced: false,
+        stabilized: false,
+        state: 'RESTORING',
+        M,
+        nStable: current.n_stable,
+        velocity: current.velocity,
+        reason: 'Canonical trajectory changed during recovery observation; compare-and-set rejected the stale sample. Re-read state before retrying.',
+      };
+    }
     const canonical = await readCanonicalGovernanceState({
       sessionId,
       actorId: 'recovery-plane',
       capability: 'read',
     });
+    const nextStable = wasMoving ? 0 : current.n_stable + 1;
     const reason = wasMoving
       ? `A zero-velocity baseline was recorded, but the prior velocity ${current.velocity.toFixed(4)} exceeded the stability threshold ${RECOVERY_STABILITY_THRESHOLD}; wait at least ${RECOVERY_MIN_OBSERVATION_INTERVAL_MS / 1000}s before counting the next observation.`
       : canonical.available && canonical.state.canaryPassed
         ? 'Stable recovery observation recorded; exact-snapshot canary evidence is current.'
-        : `Stable recovery observation recorded (${updated.n_stable}/${CONSTITUTION.N_MIN}); an operator canary is still required before consequential execution.`;
+        : `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); an operator canary is still required before consequential execution.`;
     return {
       advanced: true,
-      stabilized: updated.n_stable >= CONSTITUTION.N_MIN,
+      stabilized: nextStable >= CONSTITUTION.N_MIN,
       state: canonical.available ? canonical.state.recoveryState : 'RESTORING',
-      M: Math.min(updated.last_c, updated.last_r, updated.last_s),
-      nStable: canonical.available ? canonical.state.nStable : updated.n_stable,
-      velocity: updated.velocity,
+      M,
+      nStable: canonical.available ? canonical.state.nStable : nextStable,
+      velocity: 0,
       reason,
     };
   }
