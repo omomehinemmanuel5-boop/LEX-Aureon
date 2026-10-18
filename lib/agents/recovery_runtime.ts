@@ -110,6 +110,10 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
         reason: 'Canonical trajectory changed during recovery observation; compare-and-set rejected the stale sample. Re-read state before retrying.',
       };
     }
+    // The CAS succeeded against this exact CRS sample, so align this
+    // instance's warm kernel cache with the persisted canonical trajectory.
+    const kernel = getCachedKernel(sessionId, { C: current.last_c, R: current.last_r, S: current.last_s });
+    kernel.state = { C: current.last_c, R: current.last_r, S: current.last_s };
     const canonical = await readCanonicalGovernanceState({
       sessionId,
       actorId: 'recovery-plane',
