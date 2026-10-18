@@ -15,9 +15,24 @@ vi.mock('../lib/agents/canonical_governance_state', () => ({
   readCanonicalGovernanceState: mocks.readCanonicalGovernanceState,
 }));
 
-import { advanceRecoveryPlane } from '../lib/agents/recovery_runtime';
+import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from '../lib/agents/recovery_runtime';
 
 describe('bounded recovery plane', () => {
+  it('continues recovery when M is healthy but stability observations are missing', () => {
+    expect(shouldAdvanceRecoveryPlane({
+      trajectoryAvailable: true,
+      M: 0.326,
+      nStable: 0,
+      canaryPassed: false,
+    })).toBe(true);
+    expect(shouldAdvanceRecoveryPlane({
+      trajectoryAvailable: true,
+      M: 0.326,
+      nStable: 3,
+      canaryPassed: true,
+    })).toBe(false);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.readCanonicalGovernanceState.mockResolvedValue({
