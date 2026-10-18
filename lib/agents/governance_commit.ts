@@ -39,6 +39,7 @@ async function receiptAuditValues(receipt: GovernanceReceipt): Promise<(string |
     if (canonical.available && canonical.state.trajectoryAvailable) {
       const canary = await readInvariantRecoveryCanaryEvidence(receipt.session_id, {
         stateVersion: canonical.state.version,
+        stateFingerprint: canonical.state.stateFingerprint ?? '',
         M: canonical.state.M,
         sigmaViol: canonical.state.sigmaViol,
         nStable: canonical.state.nStable,
