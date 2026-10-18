@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
@@ -150,6 +150,8 @@ function request(body: Record<string, unknown>, extraHeaders: Record<string, str
 }
 
 describe('MCP constitutional dispatch boundary', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it('publishes approval_request_id for approval-gated tools without adding it to read-only tools', async () => {
     validateApiKey.mockResolvedValue({ valid: true, key: { id: 'private-test-1', plan: 'private_test' } });
     const response = await POST(request({
