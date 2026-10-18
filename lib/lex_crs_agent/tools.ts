@@ -1354,7 +1354,10 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   check_github_token_scope: () => check_github_token_scope(),
   get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string }),
   run_recovery_canary:     (a) => run_recovery_canary(a as { session_id?: string }),
-  advance_recovery_plane:  (a) => advance_recovery_plane(a as { session_id?: string }),
+  // Recovery mutation is a control-plane operation; the authenticated MCP route
+  // dispatches it after operator authorization. Never expose the mutating handler
+  // to internal/general tool loops that only see this registry.
+  advance_recovery_plane: async () => 'Error: advance_recovery_plane requires authenticated operator control-plane context.',
   query_database:           (a) => query_database(a as { sql: string }),
   run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string; governance_mode?: 'execute' | 'simulate' }),
   get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
