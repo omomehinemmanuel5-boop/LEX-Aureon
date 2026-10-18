@@ -1140,6 +1140,7 @@ export async function review_agent_action(input: {
 
   const capabilityRisk: Record<ToolCapability, string> = {
     read: 'read',
+    recovery: 'write',
     write: 'write',
     external: 'external',
     destructive: 'destructive',
@@ -1174,7 +1175,7 @@ export async function simulate_agent_plan(input: {
   const actions = Array.isArray(input.actions) ? input.actions : [];
   const riskOrder = ['read', 'write', 'external', 'destructive'] as const;
   const capabilityRisk: Record<ToolCapability, typeof riskOrder[number]> = {
-    read: 'read', write: 'write', external: 'external', network: 'external', delegate: 'external',
+    read: 'read', recovery: 'write', write: 'write', external: 'external', network: 'external', delegate: 'external',
     destructive: 'destructive', identity: 'destructive', financial: 'destructive', execute: 'destructive',
   };
   const SIMULATION_MODEL_VERSION = 'production-transition-shadow-v2';
