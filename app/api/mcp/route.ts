@@ -7,7 +7,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
+import { TOOL_DEFINITIONS, TOOL_REGISTRY, advance_recovery_plane as runRecoveryPlaneTool } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file, preview_patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
 import { executeGovernedTool, executeGovernedToolStructured } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
@@ -1310,6 +1310,36 @@ export async function POST(req: Request) {
         logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
         return unauthorized(id);
       }
+      if (dispatchToolName === 'advance_recovery_plane') {
+        const controller = new AbortController();
+        const outcome = await withDeadline(executeGovernedToolStructured(
+          dispatchToolName,
+          toolArgs,
+          (handlerArgs) => runRecoveryPlaneTool(handlerArgs as { session_id?: string }),
+          sessionId,
+          args.task_context as string | undefined,
+          actorId,
+          controller.signal,
+          ownerId,
+          ownerId,
+        ), 30_000, controller);
+        if (outcome.timedOut) {
+          return mcpToolResult(id, {
+            execution_status: 'unknown_after_deadline',
+            recovery_state_mutated: 'unknown',
+            grants_write_authority: false,
+            message: 'Recovery pulse outcome is unknown. Re-read the canonical state before retrying.',
+          });
+        }
+        const execution = outcome.value;
+        return mcpToolResult(id, {
+          execution: execution.result,
+          receipt_id: execution.receiptId ?? null,
+          approved: execution.approved,
+          grants_write_authority: false,
+        });
+      }
+
       if (dispatchToolName === 'run_recovery_canary') {
         let rawProbeResult: string | undefined;
         const trackedCanaryHandler: ToolHandler = async (handlerArgs, signal) => {
