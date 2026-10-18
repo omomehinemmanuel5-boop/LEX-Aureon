@@ -363,6 +363,7 @@ describe('MCP constitutional dispatch boundary', () => {
       'request_approval',
       'run_governance',
       'get_constitutional_state',
+      'simulate_agent_plan',
       'discover_external_tool',
       'govern_external_action',
       'consume_external_action',
