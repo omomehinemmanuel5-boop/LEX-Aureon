@@ -184,22 +184,21 @@ export async function executeGovern(
     // A safe request is a stabilization observation; recovery must not wait
     // for a denied tool write before n_stable can advance.
     try {
-      const current = await loadKernelState(session_id);
-      const margin = current ? Math.min(current.C, current.R, current.S) : 1;
-      if (margin < 0.25) {
-        const canonical = await readCanonicalGovernanceState({
-          sessionId: session_id,
-          actorId: ownerId ? `api_key:${ownerId}` : 'governance-service',
-          capability: 'read',
-        });
-        if (canonical.available && shouldAdvanceRecoveryPlane({
-          trajectoryAvailable: canonical.state.trajectoryAvailable,
-          M: canonical.state.M,
-          nStable: canonical.state.nStable,
-          canaryPassed: canonical.state.canaryPassed,
-        })) {
-          recoveryPulse = await advanceRecoveryPlane(session_id);
-        }
+      // Recovery prerequisites include stability observations and exact-snapshot
+      // canary status, not only a low CRS margin. Always consult canonical state:
+      // otherwise M >= 0.25 with nStable < N_MIN can remain RESTORING forever.
+      const canonical = await readCanonicalGovernanceState({
+        sessionId: session_id,
+        actorId: ownerId ? `api_key:${ownerId}` : 'governance-service',
+        capability: 'read',
+      });
+      if (canonical.available && shouldAdvanceRecoveryPlane({
+        trajectoryAvailable: canonical.state.trajectoryAvailable,
+        M: canonical.state.M,
+        nStable: canonical.state.nStable,
+        canaryPassed: canonical.state.canaryPassed,
+      })) {
+        recoveryPulse = await advanceRecoveryPlane(session_id);
       }
     } catch (e) {
       logger.warn('govern.recovery', 'recovery pulse unavailable; continuing with canonical state', errorFields(e));
