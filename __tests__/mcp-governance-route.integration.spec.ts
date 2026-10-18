@@ -91,6 +91,7 @@ vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryE
 
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
+  advance_recovery_plane: toolFn,
   TOOL_REGISTRY: {
     request_approval: toolFn,
     run_governance: toolFn,
