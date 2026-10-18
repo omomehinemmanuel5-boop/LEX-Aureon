@@ -257,6 +257,17 @@ describe('governed tool stability observations', () => {
     )).toBe(false);
   });
 
+  it('records a zero-velocity baseline without incrementing stable observations', async () => {
+    mocks.rows.set(SESSION, row({ velocity: 0.08, n_stable: 2 }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS, false);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.velocity).toBe(0);
+    expect(mocks.rows.get(SESSION)?.n_stable).toBe(0);
+  });
+
   it('does not create an observation for a missing trajectory row', async () => {
     mocks.rows.delete(SESSION);
     const recorded = await recordZTrajObservation(SESSION, null, PREVIOUS);
