@@ -24,6 +24,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
     { name: 'run_recovery_canary', description: 'canary', parameters: { type: 'object' } },
+    { name: 'simulate_agent_plan', description: 'simulate', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
     { name: 'write_file', description: 'write', parameters: { type: 'object' } },
     { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
@@ -94,6 +95,7 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
     run_governance: toolFn,
     get_constitutional_state: toolFn,
     run_recovery_canary: toolFn,
+    simulate_agent_plan: toolFn,
     read_file: toolFn,
     write_file: toolFn,
   },
@@ -235,6 +237,24 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(executeGovernedTool).toHaveBeenCalledTimes(1);
   });
 
+  it('does not bootstrap canonical trajectory for a simulated agent plan', async () => {
+    const key = { id: 'simulation-owner', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'simulate_agent_plan', arguments: { actions: [] } },
+      id: 'simulation-no-bootstrap',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(ensureCanonicalTrajectoryState).not.toHaveBeenCalled();
+    expect(executeGovernedTool).toHaveBeenCalledTimes(1);
+    expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('simulate_agent_plan');
+  });
+
   it('denies a private_test key from running the canary when its owner is not allowlisted', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
@@ -343,6 +363,7 @@ describe('MCP constitutional dispatch boundary', () => {
       'request_approval',
       'run_governance',
       'get_constitutional_state',
+      'simulate_agent_plan',
       'discover_external_tool',
       'govern_external_action',
       'consume_external_action',

@@ -53,6 +53,8 @@ const NON_MUTATING_GOVERNANCE_TOOLS = new Set([
   'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
   'preview_patch_file', 'check_github_token_scope', 'get_trajectory_status',
   'run_recovery_canary',
+  // Hypothetical agent plans must not advance recovery or append live observations.
+  'simulate_agent_plan',
   'read_directory', 'list_files', 'read_memory', 'search_memory',
   'fetch_page', 'http_get', 'get_file', 'read_json', 'parse_csv',
   'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',

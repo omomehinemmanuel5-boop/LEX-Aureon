@@ -9,6 +9,10 @@ describe('simulation trajectory isolation', () => {
     expect(shouldRecordTrajectoryObservation('run_governance', { governance_mode: 'simulate' }, false)).toBe(false);
   });
 
+  it('does not record a trajectory observation for simulated agent plans', () => {
+    expect(shouldRecordTrajectoryObservation('simulate_agent_plan', { actions: [] }, false)).toBe(false);
+  });
+
   it('still records a trajectory observation for live run_governance', () => {
     expect(shouldRecordTrajectoryObservation('run_governance', { governance_mode: 'live' }, false)).toBe(true);
     expect(shouldRecordTrajectoryObservation('run_governance', {}, false)).toBe(true);
