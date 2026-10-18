@@ -43,6 +43,7 @@ export const INTERNAL_MCP_TOOLS = new Set([
   'get_vercel_logs',
   'run_self_test',
   'run_recovery_canary',
+  'advance_recovery_plane',
   'self_reflect',
   'log_decision',
   'narrate_origin',
