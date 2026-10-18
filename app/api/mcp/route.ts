@@ -1367,12 +1367,16 @@ export async function POST(req: Request) {
             capability: 'read',
           });
           const invariantMode = process.env.CANARY_MODE === 'invariant';
-          const snapshotStillCurrent = current.available && (invariantMode
-            ? current.state.version === String(probe.state_version)
+          // Every canary mode must bind evidence to the state that was actually probed.
+          // Invariant mode adds bounded validity checks; it must not waive snapshot identity.
+          const snapshotStillCurrent = current.available
+            && current.state.stateFingerprint === fingerprint
+            && (!invariantMode || (
+              current.state.version === String(probe.state_version)
               && current.state.M >= CONSTITUTION.TAU_RECOVERY
               && current.state.sigmaViol === 0
               && current.state.nStable >= CONSTITUTION.N_MIN
-            : current.state.stateFingerprint === fingerprint);
+            ));
           const status = probe.status === 'passed' && execution.approved && snapshotStillCurrent
             ? 'passed'
             : 'failed';
