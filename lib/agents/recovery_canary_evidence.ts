@@ -29,6 +29,7 @@ export interface RecoveryCanaryEvidenceInput extends RecoverySnapshotFingerprint
 
 export interface RecoveryCanaryCurrentState {
   stateVersion: string;
+  stateFingerprint: string;
   M: number;
   sigmaViol: number;
   nStable: number;
@@ -126,7 +127,9 @@ export async function readInvariantRecoveryCanaryEvidence(
     const maxWrites = Number(process.env.CANARY_MAX_GOVERNED_WRITES ?? 50);
     const maxAgeMs = Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
     const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
-    const valid = status === 'passed' && String(row.state_version) === current.stateVersion
+    const valid = status === 'passed'
+      && String(row.state_version) === current.stateVersion
+      && String(row.state_fingerprint) === current.stateFingerprint
       && current.M >= CONSTITUTION.TAU_RECOVERY && current.sigmaViol === 0
       && current.nStable >= CONSTITUTION.N_MIN
       && Number(row.writes ?? 0) < maxWrites && Number.isFinite(expiryMs)
@@ -144,7 +147,7 @@ export async function readRecoveryCanaryEvidence(
   current?: RecoveryCanaryCurrentState,
 ): Promise<{ passed: boolean; receiptId: string | null; status: RecoveryCanaryStatus | null }> {
   if (process.env.CANARY_MODE === 'invariant' && current) {
-    return readInvariantRecoveryCanaryEvidence(sessionId, current);
+    return readInvariantRecoveryCanaryEvidence(sessionId, { ...current, stateFingerprint });
   }
   try {
     const result = await getClient().execute({

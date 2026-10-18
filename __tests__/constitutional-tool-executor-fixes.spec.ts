@@ -2,9 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   displayHealthBand,
   shouldRecordTrajectoryObservation,
+  shouldAdvanceRecoveryBeforeTool,
 } from '../lib/agents/constitutional_tool_executor';
 
 describe('simulation trajectory isolation', () => {
+  it('lets the governance service own recovery advancement for run_governance', () => {
+    expect(shouldAdvanceRecoveryBeforeTool('run_governance')).toBe(false);
+    expect(shouldAdvanceRecoveryBeforeTool('write_file')).toBe(true);
+    expect(shouldAdvanceRecoveryBeforeTool('get_constitutional_state')).toBe(false);
+  });
+
   it('does not record a trajectory observation for simulate-mode run_governance', () => {
     expect(shouldRecordTrajectoryObservation('run_governance', { governance_mode: 'simulate' }, false)).toBe(false);
   });
