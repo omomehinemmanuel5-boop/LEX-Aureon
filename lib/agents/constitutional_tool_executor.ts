@@ -14,6 +14,7 @@ import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
 import { getClient } from '../db';
+import { healthBand } from '../health_band';
 import { getZTraj, recordZTrajObservation } from '../kv';
 import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
 import { approvalArgsHash, consumeApprovalRequest, releaseConsumedApprovalRequest } from '../approval_requests';
@@ -107,6 +108,30 @@ function keyFor(sessionId: string, toolName: string, args: Record<string, unknow
   return `${sessionId}:${toolName}:${argsHash}`;
 }
 
+/**
+ * Simulation calls are a hypothetical evaluation. They must never write a
+ * trajectory observation for the session they run in.
+ */
+export function shouldRecordTrajectoryObservation(
+  toolName: string,
+  args: Record<string, unknown>,
+  cacheHit: boolean,
+): boolean {
+  if (cacheHit) return false;
+  if (NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)) return false;
+  if (toolName === 'run_governance' && args.governance_mode === 'simulate') return false;
+  return true;
+}
+
+/**
+ * Health band printed next to the M it describes. The kernel band can disagree
+ * with the printed M, so derive it from M except for the explicit LOCKED state.
+ */
+export function displayHealthBand(decision: { health_band: string; crs: { M: number } }): string {
+  if (decision.health_band === 'LOCKED') return 'LOCKED';
+  return healthBand(decision.crs.M);
+}
+
 function report(
   toolName: string,
   decision: ToolCallDecision,
@@ -123,7 +148,7 @@ function report(
     `approved:    ${decision.approved}`,
     `${toolName === 'get_constitutional_state' ? 'diagnostic_crs' : 'crs'}: ${toolName === 'get_constitutional_state' ? 'diagnostic only; ' : '        '}C=${decision.crs.C.toFixed(3)} R=${decision.crs.R.toFixed(3)} S=${decision.crs.S.toFixed(3)} M=${decision.crs.M.toFixed(3)}`,
     `risk_level:  ${decision.crs.risk_level}`,
-    `health_band: ${decision.health_band}`,
+    `health_band: ${displayHealthBand(decision)}`,
     `sigma_viol:  ${decision.sigma_viol.toFixed(3)}`,
     `receipt_id:  ${decision.receipt_id}`,
     `reason:      ${decision.reason}`,
@@ -644,7 +669,7 @@ export async function executeGovernedToolStructured(
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
-  if (!cached.cacheHit && !NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)) {
+  if (shouldRecordTrajectoryObservation(toolName, args, cached.cacheHit)) {
     try {
       const previous = await getZTraj(sessionId);
       await recordZTrajObservation(
