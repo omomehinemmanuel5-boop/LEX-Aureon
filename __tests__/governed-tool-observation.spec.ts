@@ -121,7 +121,7 @@ beforeEach(() => {
       return { rows: found ? [found] : [] };
     }
     if (sql.startsWith('UPDATE z_traj')) {
-      const [velocity, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
+      const [velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
         updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt] = args;
       const current = mocks.rows.get(String(sessionId));
       if (!current
@@ -132,7 +132,8 @@ beforeEach(() => {
         return { rows: [], rowsAffected: 0 };
       }
       current.velocity = velocity;
-      current.n_stable = Number(testedVelocity) < Number(threshold)
+      current.n_stable = Number(countStableObservation) === 1
+        && Number(testedVelocity) < Number(threshold)
         && Number(M) >= Number(tauRecovery)
         ? Number(current.n_stable) + 1
         : 0;
