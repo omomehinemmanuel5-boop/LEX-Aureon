@@ -3,12 +3,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getZTraj: vi.fn(),
   updateZTraj: vi.fn(),
+  recordZTrajObservation: vi.fn(),
   readCanonicalGovernanceState: vi.fn(),
 }));
 
 vi.mock('../lib/kv', () => ({
   getZTraj: mocks.getZTraj,
   updateZTraj: mocks.updateZTraj,
+  recordZTrajObservation: mocks.recordZTrajObservation,
 }));
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
@@ -90,6 +92,7 @@ describe('bounded recovery plane', () => {
   });
 
   it('counts stable no-op observations toward recovery once M reaches 0.15', async () => {
+    mocks.recordZTrajObservation.mockResolvedValue(true);
     mocks.getZTraj.mockResolvedValue({
       session_id: 's',
       velocity: 0,
@@ -131,7 +134,8 @@ describe('bounded recovery plane', () => {
     expect(result.reason).toContain('Stable recovery observation recorded');
     expect(result.nStable).toBe(3);
     expect(result.velocity).toBe(0);
-    expect(mocks.updateZTraj).toHaveBeenCalledTimes(1);
+    expect(mocks.recordZTrajObservation).toHaveBeenCalledTimes(1);
+    expect(mocks.recordZTrajObservation.mock.calls[0][3]).toBe(true);
   });
 
   it('does not count a stationary sample as stable when the preceding velocity was high', async () => {
@@ -172,13 +176,14 @@ describe('bounded recovery plane', () => {
       updated_at: new Date().toISOString(),
     });
 
+    mocks.recordZTrajObservation.mockResolvedValue(true);
     const result = await advanceRecoveryPlane('s');
 
     expect(result.advanced).toBe(true);
     expect(result.nStable).toBe(0);
     expect(result.reason).toContain('prior velocity');
-    expect(mocks.updateZTraj).toHaveBeenCalledTimes(1);
-    expect(mocks.updateZTraj.mock.calls[0][5]).toBe(false);
+    expect(mocks.recordZTrajObservation).toHaveBeenCalledTimes(1);
+    expect(mocks.recordZTrajObservation.mock.calls[0][3]).toBe(false);
   });
 
   it('does not count repeated recovery pulses inside the observation interval', async () => {
@@ -203,7 +208,7 @@ describe('bounded recovery plane', () => {
 
     expect(result.advanced).toBe(false);
     expect(result.reason).toContain('interval has not elapsed');
-    expect(mocks.updateZTraj).not.toHaveBeenCalled();
+    expect(mocks.recordZTrajObservation).not.toHaveBeenCalled();
   });
 
   it('does not mutate quarantined states below the hard floor', async () => {
