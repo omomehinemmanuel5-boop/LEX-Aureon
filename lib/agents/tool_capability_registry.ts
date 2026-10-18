@@ -59,7 +59,7 @@ const DESTRUCTIVE_TOOLS = [
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
   { name:'request_approval', capability:'read', approvalRequired:false, reversible:true, source:'mcp' },
   { name:'run_recovery_canary', capability:'read', approvalRequired:false, reversible:false, source:'mcp' },
-  { name:'advance_recovery_plane', capability:'read', approvalRequired:false, reversible:false, source:'mcp' },
+  { name:'advance_recovery_plane', capability:'write', approvalRequired:false, reversible:false, source:'mcp' },
   { name:'declare_trajectory_plan', capability:'write', approvalRequired:true, reversible:false, source:'mcp' },
   { name:'clear_trajectory_plan', capability:'write', approvalRequired:true, reversible:false, source:'mcp' },
   // Governance analysis is non-effectful: it evaluates a requested/hypothetical
