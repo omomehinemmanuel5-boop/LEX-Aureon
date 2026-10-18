@@ -510,8 +510,14 @@
       sigma_viol            REAL    NOT NULL,
       trajectory_updated_at TEXT    NOT NULL,
       reason                TEXT,
+      recovery_state        TEXT,
+      issued_at             TEXT,
+      expires_at            TEXT,
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     )`);
+    await safeExec('ALTER TABLE recovery_canary_evidence ADD COLUMN recovery_state TEXT');
+    await safeExec('ALTER TABLE recovery_canary_evidence ADD COLUMN issued_at TEXT');
+    await safeExec('ALTER TABLE recovery_canary_evidence ADD COLUMN expires_at TEXT');
     await safeExec(`CREATE INDEX IF NOT EXISTS idx_recovery_canary_snapshot
       ON recovery_canary_evidence(session_id, state_fingerprint, id DESC)`);
 
@@ -530,8 +536,12 @@
       risk_level    TEXT    NOT NULL DEFAULT 'LOW',
       reason        TEXT    NOT NULL DEFAULT '',
       sigma_viol    REAL    NOT NULL DEFAULT 0.0,
-      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      canary_receipt_id TEXT,
+      state_snapshot TEXT
     )`);
+    await safeExec('ALTER TABLE tool_receipts ADD COLUMN canary_receipt_id TEXT');
+    await safeExec('ALTER TABLE tool_receipts ADD COLUMN state_snapshot TEXT');
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN actor_id TEXT NOT NULL DEFAULT 'unknown'`);
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN policy_version TEXT NOT NULL DEFAULT 'unknown'`);
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN previous_provenance_hash TEXT`);

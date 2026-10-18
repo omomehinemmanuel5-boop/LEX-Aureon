@@ -33,6 +33,7 @@ import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
 import { createApprovalRequest } from '@/lib/approval_requests';
 import { env } from '@/lib/env';
+import { CONSTITUTION } from '@/lib/constitution';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller.
 // Used for mcp_client_identity and rate limiting; it is deliberately NOT the
@@ -1365,7 +1366,13 @@ export async function POST(req: Request) {
             actorId,
             capability: 'read',
           });
-          const snapshotStillCurrent = current.available && current.state.stateFingerprint === fingerprint;
+          const invariantMode = process.env.CANARY_MODE === 'invariant';
+          const snapshotStillCurrent = current.available && (invariantMode
+            ? current.state.version === String(probe.state_version)
+              && current.state.M >= CONSTITUTION.TAU_RECOVERY
+              && current.state.sigmaViol === 0
+              && current.state.nStable >= CONSTITUTION.N_MIN
+            : current.state.stateFingerprint === fingerprint);
           const status = probe.status === 'passed' && execution.approved && snapshotStillCurrent
             ? 'passed'
             : 'failed';
@@ -1390,6 +1397,9 @@ export async function POST(req: Request) {
               nStable: Number(probe.n_stable),
               sigmaViol: Number(probe.sigma_viol),
               trajectoryUpdatedAt: String(probe.trajectory_updated_at),
+              recoveryState: String(probe.recovery_state ?? 'RESTORING'),
+              issuedAt: String(probe.issued_at ?? new Date().toISOString()),
+              expiresAt: String(probe.expires_at ?? new Date(Date.now() + 60 * 60 * 1000).toISOString()),
               reason: evidenceReason,
             });
             const confirmed = await readCanonicalGovernanceState({
@@ -1398,7 +1408,7 @@ export async function POST(req: Request) {
               capability: 'read',
             });
             evidencePersisted = confirmed.available
-              && confirmed.state.stateFingerprint === fingerprint
+              && (invariantMode ? confirmed.state.version === String(probe.state_version) : confirmed.state.stateFingerprint === fingerprint)
               && confirmed.state.canaryPassed === (status === 'passed')
               && confirmed.state.canaryReceiptId === execution.receiptId;
             evidenceStatus = evidencePersisted ? status : 'not_recorded';
