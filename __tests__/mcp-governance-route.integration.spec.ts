@@ -451,6 +451,52 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
+  it('does not confirm invariant-mode canary evidence after the canonical fingerprint changes', async () => {
+    vi.stubEnv('CANARY_MODE', 'invariant');
+    isOperatorSecret.mockReturnValue(true);
+    const probedFingerprint = 'a'.repeat(64);
+    const changedFingerprint = 'b'.repeat(64);
+    const currentState = {
+      sessionId: 'canary-confirmation-race', actorId: 'operator',
+      C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+      healthBand: 'OPTIMAL', recoveryState: 'RESTORING', sigmaViol: 0,
+      toolCalls: 3, trajectoryAvailable: true, nStable: 3,
+      canaryPassed: false, canaryReceiptId: null,
+      stateFingerprint: probedFingerprint, trajectoryUpdatedAt: '2026-10-10T00:00:01.000Z',
+      authorization: 'authorized', policyRisk: 'read',
+      version: 'canonical-governance-2026-10-10.1', observedAt: '2026-10-10T00:00:01.000Z',
+    };
+    readCanonicalGovernanceState
+      .mockResolvedValueOnce({ available: true, state: currentState })
+      .mockResolvedValueOnce({
+        available: true,
+        state: { ...currentState, stateFingerprint: changedFingerprint, canaryPassed: true, canaryReceiptId: 'canary-test-receipt' },
+      });
+    toolFn.mockResolvedValueOnce(JSON.stringify({
+      status: 'passed', probe_tool: 'get_constitutional_state',
+      session_id: 'canary-confirmation-race', state_fingerprint: probedFingerprint,
+      state_version: currentState.version, trajectory_updated_at: currentState.trajectoryUpdatedAt,
+      C: currentState.C, R: currentState.R, S: currentState.S, M: currentState.M,
+      n_stable: currentState.nStable, sigma_viol: currentState.sigmaViol,
+    }));
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'canary-confirmation-race' } },
+      id: 'canary-confirmation-race',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(recordRecoveryCanaryEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      stateFingerprint: probedFingerprint, status: 'passed',
+    }));
+    const result = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(result.recovery_canary).toMatchObject({
+      evidence_persisted: false,
+      grants_write_authority: false,
+    });
+  });
+
   it('does not activate a canary if the canonical snapshot changes before persistence', async () => {
     vi.stubEnv('CANARY_MODE', 'invariant');
     isOperatorSecret.mockReturnValue(true);
