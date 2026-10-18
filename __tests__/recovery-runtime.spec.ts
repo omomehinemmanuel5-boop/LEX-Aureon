@@ -20,6 +20,15 @@ vi.mock('../lib/agents/canonical_governance_state', () => ({
 import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from '../lib/agents/recovery_runtime';
 
 describe('bounded recovery plane', () => {
+  it('allows the dedicated recovery capability while ordinary writes remain gated', async () => {
+    const { recoveryCapabilityAllowed } = await import('../lib/agents/recovery_state');
+    const evidence = { nStable: 0, sigmaViol: 0, canaryPassed: false };
+    expect(recoveryCapabilityAllowed(0.22, 'recovery', evidence).allowed).toBe(true);
+    expect(recoveryCapabilityAllowed(0.22, 'write', evidence).allowed).toBe(false);
+    expect(recoveryCapabilityAllowed(0.04, 'recovery', evidence).allowed).toBe(false);
+  });
+
+
   it('continues recovery when M is healthy but stability observations are missing', () => {
     expect(shouldAdvanceRecoveryPlane({
       trajectoryAvailable: true,
