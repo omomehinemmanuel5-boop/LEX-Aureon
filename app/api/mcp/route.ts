@@ -1177,13 +1177,19 @@ export async function POST(req: Request) {
       // per-call constitutional authorization as before. Sessions that
       // never declare a plan are completely unaffected: falls straight
       // through to the original bare path.
+      // Recovery pulses mutate canonical trajectory state, so authorization must
+      // be checked before trajectory-plan dispatch can execute any handler.
+      if ((dispatchToolName === 'run_recovery_canary' || dispatchToolName === 'advance_recovery_plane') && !operator && !isCanaryOwnerAllowed(ownerId)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan', 'request_approval']);
       // Diagnostics must remain reachable when a plan is stale, locked, or
       // out of sequence. They still pass through executeGovernedTool below,
       // so authentication, capability, and constitutional checks are intact;
       // they simply do not consume or require a plan step.
       const TRAJECTORY_DIAGNOSTIC_TOOLS = new Set([
-        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary',
+        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary', 'advance_recovery_plane',
       ]);
       const trajectoryBypass = TRAJECTORY_META_TOOLS.has(toolName)
         || TRAJECTORY_DIAGNOSTIC_TOOLS.has(dispatchToolName);
