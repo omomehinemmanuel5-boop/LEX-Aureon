@@ -467,11 +467,12 @@ describe('MCP constitutional dispatch boundary', () => {
       version: 'canonical-governance-2026-10-10.1', observedAt: '2026-10-10T00:00:01.000Z',
     };
     readCanonicalGovernanceState
-      .mockResolvedValueOnce({ available: true, state: currentState })
+      .mockResolvedValueOnce({ available: true, state: currentState }) // dispatch authorization read
+      .mockResolvedValueOnce({ available: true, state: currentState }) // post-probe snapshot check
       .mockResolvedValueOnce({
         available: true,
         state: { ...currentState, stateFingerprint: changedFingerprint, canaryPassed: true, canaryReceiptId: 'canary-test-receipt' },
-      });
+      }); // post-persistence confirmation
     toolFn.mockResolvedValueOnce(JSON.stringify({
       status: 'passed', probe_tool: 'get_constitutional_state',
       session_id: 'canary-confirmation-race', state_fingerprint: probedFingerprint,
