@@ -104,7 +104,7 @@ describe('bounded recovery plane', () => {
       z_r: 1 / 3,
       z_s: 1 / 3,
       attack_pressure: 0,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(Date.now() - 10_000).toISOString(),
     });
     mocks.updateZTraj.mockResolvedValue({
       session_id: 's',
@@ -132,6 +132,78 @@ describe('bounded recovery plane', () => {
     expect(result.nStable).toBe(3);
     expect(result.velocity).toBe(0);
     expect(mocks.updateZTraj).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count a stationary sample as stable when the preceding velocity was high', async () => {
+    mocks.readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: { recoveryState: 'RESTORING', nStable: 0, sigmaViol: 0, canaryPassed: false },
+    });
+    mocks.getZTraj.mockResolvedValue({
+      session_id: 's',
+      velocity: 0.08,
+      n_stable: 0,
+      drift_dir: 'toward_R',
+      sigma_viol: 0,
+      last_m: 0.20,
+      last_c: 0.20,
+      last_r: 0.40,
+      last_s: 0.40,
+      z_c: 1 / 3,
+      z_r: 1 / 3,
+      z_s: 1 / 3,
+      attack_pressure: 0,
+      updated_at: new Date(Date.now() - 10_000).toISOString(),
+    });
+    mocks.updateZTraj.mockResolvedValue({
+      session_id: 's',
+      velocity: 0,
+      n_stable: 0,
+      drift_dir: 'stable',
+      sigma_viol: 0,
+      last_m: 0.20,
+      last_c: 0.20,
+      last_r: 0.40,
+      last_s: 0.40,
+      z_c: 1 / 3,
+      z_r: 1 / 3,
+      z_s: 1 / 3,
+      attack_pressure: 0,
+      updated_at: new Date().toISOString(),
+    });
+
+    const result = await advanceRecoveryPlane('s');
+
+    expect(result.advanced).toBe(true);
+    expect(result.nStable).toBe(0);
+    expect(result.reason).toContain('prior velocity');
+    expect(mocks.updateZTraj).toHaveBeenCalledTimes(1);
+    expect(mocks.updateZTraj.mock.calls[0][5]).toBe(false);
+  });
+
+  it('does not count repeated recovery pulses inside the observation interval', async () => {
+    mocks.getZTraj.mockResolvedValue({
+      session_id: 's',
+      velocity: 0,
+      n_stable: 1,
+      drift_dir: 'stable',
+      sigma_viol: 0,
+      last_m: 0.20,
+      last_c: 0.20,
+      last_r: 0.40,
+      last_s: 0.40,
+      z_c: 1 / 3,
+      z_r: 1 / 3,
+      z_s: 1 / 3,
+      attack_pressure: 0,
+      updated_at: new Date().toISOString(),
+    });
+
+    const result = await advanceRecoveryPlane('s');
+
+    expect(result.advanced).toBe(false);
+    expect(result.reason).toContain('interval has not elapsed');
+    expect(mocks.updateZTraj).not.toHaveBeenCalled();
   });
 
   it('does not mutate quarantined states below the hard floor', async () => {
