@@ -294,6 +294,24 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(toolFn).not.toHaveBeenCalled();
   });
 
+  it('does not let a canary-allowlisted owner mutate recovery without operator authority', async () => {
+    process.env.LEX_CANARY_OWNER_IDS = 'trusted-owner';
+    const key = { id: 'trusted-owner', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    isOperatorSecret.mockReturnValue(false);
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'advance_recovery_plane', arguments: { session_id: 'trusted-owner:recovery-session' } },
+      id: 'canary-owner-recovery-denied',
+    }));
+
+    expect(response.status).toBe(401);
+    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
+  });
+
   it('routes an authorized recovery pulse through the governed control-plane executor', async () => {
     isOperatorSecret.mockReturnValue(true);
     executeGovernedToolStructured.mockResolvedValueOnce({
