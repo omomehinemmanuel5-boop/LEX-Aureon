@@ -68,6 +68,7 @@ import { THETA_0 } from '../aureonics_core';
 import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
 import { CONSTITUTION } from '../constitution';
 import { readCanonicalGovernanceState } from '../agents/canonical_governance_state';
+import { advanceRecoveryPlane } from '../agents/recovery_runtime';
 import { deriveRecoveryState, recoveryCapabilityAllowed, RECOVERY_STABILITY_THRESHOLD } from '../agents/recovery_state';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
@@ -497,6 +498,48 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
 // This operator-only read probe is governed by the ordinary MCP executor. The
 // route persists a pass only after that invocation succeeds and binds the
 // result to its real receipt and exact canonical state fingerprint.
+// ── advance_recovery_plane ─────────────────────────────────────────────────
+/**
+ * Explicit operator-only recovery pulse. This is intentionally separate from
+ * run_governance: ordinary governance turns can move CRS and must not be used
+ * as synthetic stability samples. The MCP route enforces operator authority.
+ */
+export async function advance_recovery_plane({ session_id }: { session_id?: string } = {}): Promise<string> {
+  if (!session_id) return JSON.stringify({ advanced: false, reason: 'A session_id is required.' });
+  const before = await readCanonicalGovernanceState({
+    sessionId: session_id,
+    actorId: 'recovery-plane-operator',
+    capability: 'read',
+  });
+  if (!before.available || !before.state.trajectoryAvailable) {
+    return JSON.stringify({ advanced: false, reason: before.reason ?? 'Canonical trajectory is unavailable.' });
+  }
+  const pulse = await advanceRecoveryPlane(session_id);
+  const after = await readCanonicalGovernanceState({
+    sessionId: session_id,
+    actorId: 'recovery-plane-operator',
+    capability: 'read',
+  });
+  return JSON.stringify({
+    session_id,
+    before: {
+      C: before.state.C, R: before.state.R, S: before.state.S, M: before.state.M,
+      n_stable: before.state.nStable, velocity: before.state.velocity,
+      state_fingerprint: before.state.stateFingerprint,
+    },
+    pulse,
+    after: {
+      C: after.state.C, R: after.state.R, S: after.state.S, M: after.state.M,
+      n_stable: after.state.nStable, velocity: after.state.velocity,
+      sigma_viol: after.state.sigmaViol,
+      recovery_state: after.state.recoveryState,
+      canary_passed: after.state.canaryPassed === true,
+      state_fingerprint: after.state.stateFingerprint,
+    },
+    grants_write_authority: false,
+  });
+}
+
 export async function run_recovery_canary({ session_id }: { session_id?: string } = {}): Promise<string> {
   const response = (value: Record<string, unknown>) => JSON.stringify({
     probe_tool: 'get_constitutional_state',
@@ -1310,6 +1353,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   check_github_token_scope: () => check_github_token_scope(),
   get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string }),
   run_recovery_canary:     (a) => run_recovery_canary(a as { session_id?: string }),
+  advance_recovery_plane:  (a) => advance_recovery_plane(a as { session_id?: string }),
   query_database:           (a) => query_database(a as { sql: string }),
   run_governance:           (a) => run_governance(a as { prompt: string; session_id?: string; governance_mode?: 'execute' | 'simulate' }),
   get_recent_receipts:      (a) => get_recent_receipts(a as { limit?: number }),
@@ -1451,6 +1495,11 @@ export const TOOL_DEFINITIONS = [
     name: 'get_constitutional_state',
     description: 'Get this session’s live canonical CRS, recovery state, stability/sigma thresholds, exact state fingerprint, canary status, and the next recovery step.',
     parameters: { type: 'object', properties: { session_id: { type: 'string', description: 'Governance session to inspect.' } } },
+  },
+  {
+    name: 'advance_recovery_plane',
+    description: 'Operator-only recovery control-plane pulse for one exact session. Applies a bounded CRS correction below the recovery threshold or records a time-separated stability observation above it. It never authorizes consequential writes.',
+    parameters: { type: 'object', properties: { session_id: { type: 'string', description: 'Exact governance session to advance.' } }, required: ['session_id'] },
   },
   {
     name: 'run_recovery_canary',
