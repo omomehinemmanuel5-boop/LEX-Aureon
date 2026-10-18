@@ -1300,7 +1300,7 @@ export async function POST(req: Request) {
         });
       }
 
-      if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
+      if ((dispatchToolName === 'run_recovery_canary' || dispatchToolName === 'advance_recovery_plane') && !operator && !isCanaryOwnerAllowed(ownerId)) {
         logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
         return unauthorized(id);
       }
