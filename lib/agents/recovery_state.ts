@@ -56,7 +56,7 @@ export function recoveryCapabilityAllowed(
   }
 
   if (M < CONSTITUTION.TAU_RECOVERY) {
-    if (capability === 'read') return { allowed: true, state };
+    if (capability === 'read' || capability === 'recovery') return { allowed: true, state };
     return {
       allowed: false,
       state,
