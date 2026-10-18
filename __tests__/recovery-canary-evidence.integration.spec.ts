@@ -116,7 +116,7 @@ describe('recovery canary write-count expiry against real SQLite', () => {
     });
 
     const current = { stateVersion: evidence.state_version, M: 0.2, sigmaViol: 0, nStable: 3 };
-    await expect(readRecoveryCanaryEvidence(sessionId, 'fingerprint-not-used', current))
+    await expect(readRecoveryCanaryEvidence(sessionId, 'a'.repeat(64), current))
       .resolves.toMatchObject({ passed: true, receiptId: 'sqlite-canary-receipt' });
 
     await client.execute({
