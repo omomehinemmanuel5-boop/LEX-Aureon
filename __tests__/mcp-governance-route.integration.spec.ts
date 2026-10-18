@@ -313,7 +313,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(executeGovernedToolStructured.mock.calls[0]?.[0]).toBe('advance_recovery_plane');
     expect(typeof executeGovernedToolStructured.mock.calls[0]?.[2]).toBe('function');
     expect(toolFn).not.toHaveBeenCalled();
-    expect((response.body as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
+    expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
       .toMatchObject({ execution: 'RECOVERY_PULSE_RESULT', receipt_id: 'recovery-pulse-receipt', grants_write_authority: false });
   });
 
