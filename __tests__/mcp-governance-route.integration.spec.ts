@@ -294,6 +294,29 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(toolFn).not.toHaveBeenCalled();
   });
 
+  it('routes an authorized recovery pulse through the governed control-plane executor', async () => {
+    isOperatorSecret.mockReturnValue(true);
+    executeGovernedToolStructured.mockResolvedValueOnce({
+      approved: true,
+      result: 'RECOVERY_PULSE_RESULT',
+      receiptId: 'recovery-pulse-receipt',
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'advance_recovery_plane', arguments: { session_id: 'operator-recovery-session' } },
+      id: 'operator-recovery-pulse',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    expect(executeGovernedToolStructured.mock.calls[0]?.[0]).toBe('advance_recovery_plane');
+    expect(typeof executeGovernedToolStructured.mock.calls[0]?.[2]).toBe('function');
+    expect(toolFn).not.toHaveBeenCalled();
+    expect((response.body as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
+      .toMatchObject({ execution: 'RECOVERY_PULSE_RESULT', receipt_id: 'recovery-pulse-receipt', grants_write_authority: false });
+  });
+
   it('allows only an explicitly allowlisted API-key owner to run the canary', async () => {
     process.env.LEX_CANARY_OWNER_IDS = 'trusted-owner, another-owner';
     const key = { id: 'trusted-owner', plan: 'private_test' };
