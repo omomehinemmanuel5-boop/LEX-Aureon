@@ -467,7 +467,6 @@ describe('MCP constitutional dispatch boundary', () => {
       version: 'canonical-governance-2026-10-10.1', observedAt: '2026-10-10T00:00:01.000Z',
     };
     readCanonicalGovernanceState
-      .mockResolvedValueOnce({ available: true, state: currentState }) // dispatch authorization read
       .mockResolvedValueOnce({ available: true, state: currentState }) // post-probe snapshot check
       .mockResolvedValueOnce({
         available: true,
