@@ -1,7 +1,7 @@
 /**
  * Lex CRS Agent — Tool Implementations
  *
- * 20 canonical tools giving the agent live access to the Lexaureon system.
+ * 21 canonical tools giving the agent live access to the Lexaureon system.
  * Unified, coherent, no redundant logging.
  *
  * READ TOOLS:  read_file, list_directory, search_code, get_build_status,
@@ -11,6 +11,7 @@
  * WRITE TOOLS: write_file
  *
  * GOVERNANCE ANALYSIS: run_governance (execute or simulation mode)
+ * RECOVERY CONTROL: advance_recovery_plane (operator-only, bounded and receipted)
  *
  * TEST TOOLS:  write_file_governed
  *
