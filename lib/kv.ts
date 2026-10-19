@@ -284,6 +284,7 @@ export async function recordZTrajObservation(
   sessionId: string,
   expectedPrevious: ExpectedZTrajSample | null,
   measured: CRS,
+  countStableObservation = true,
 ): Promise<boolean> {
   if (!expectedPrevious) return false;
   if (![measured.c, measured.r, measured.s].every(Number.isFinite)) return false;
@@ -305,11 +306,12 @@ export async function recordZTrajObservation(
   const result = await getClient().execute({
     sql: `UPDATE z_traj
           SET velocity = ?,
-              n_stable = CASE WHEN ? < ? AND ? >= ? THEN n_stable + 1 ELSE 0 END,
+              n_stable = CASE WHEN ? = 1 AND ? < ? AND ? >= ? THEN n_stable + 1 ELSE 0 END,
               last_m = ?, last_c = ?, last_r = ?, last_s = ?, updated_at = ?
           WHERE session_id = ? AND last_c = ? AND last_r = ? AND last_s = ? AND updated_at = ?`,
     args: [
       velocity,
+      countStableObservation ? 1 : 0,
       velocity, STABILITY_VELOCITY, M, CONSTITUTION.TAU_RECOVERY,
       M, measured.c, measured.r, measured.s, updatedAt,
       sessionId,

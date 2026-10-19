@@ -24,6 +24,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
     { name: 'run_recovery_canary', description: 'canary', parameters: { type: 'object' } },
+    { name: 'advance_recovery_plane', description: 'recovery control', parameters: { type: 'object' } },
     { name: 'simulate_agent_plan', description: 'simulate', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
     { name: 'write_file', description: 'write', parameters: { type: 'object' } },
@@ -90,11 +91,13 @@ vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryE
 
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_DEFINITIONS: definitions,
+  advance_recovery_plane: toolFn,
   TOOL_REGISTRY: {
     request_approval: toolFn,
     run_governance: toolFn,
     get_constitutional_state: toolFn,
     run_recovery_canary: toolFn,
+    advance_recovery_plane: toolFn,
     simulate_agent_plan: toolFn,
     read_file: toolFn,
     write_file: toolFn,
@@ -272,6 +275,66 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(recordRecoveryCanaryEvidence).not.toHaveBeenCalled();
   });
 
+  it('denies a non-allowlisted private-test key from advancing recovery before trajectory dispatch', async () => {
+    process.env.LEX_CANARY_OWNER_IDS = '';
+    const key = { id: 'private-test-recovery', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    isOperatorSecret.mockReturnValue(false);
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'advance_recovery_plane', arguments: { session_id: 'private-test-recovery:recovery-session' } },
+      id: 'private-test-recovery-denied',
+    }));
+
+    expect(response.status).toBe(401);
+    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
+  });
+
+  it('does not let a canary-allowlisted owner mutate recovery without operator authority', async () => {
+    process.env.LEX_CANARY_OWNER_IDS = 'trusted-owner';
+    const key = { id: 'trusted-owner', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    isOperatorSecret.mockReturnValue(false);
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'advance_recovery_plane', arguments: { session_id: 'trusted-owner:recovery-session' } },
+      id: 'canary-owner-recovery-denied',
+    }));
+
+    expect(response.status).toBe(401);
+    expect(executeGovernedToolStructured).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
+  });
+
+  it('routes an authorized recovery pulse through the governed control-plane executor', async () => {
+    isOperatorSecret.mockReturnValue(true);
+    executeGovernedToolStructured.mockResolvedValueOnce({
+      approved: true,
+      result: 'RECOVERY_PULSE_RESULT',
+      receiptId: 'recovery-pulse-receipt',
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'advance_recovery_plane', arguments: { session_id: 'operator-recovery-session' } },
+      id: 'operator-recovery-pulse',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    expect(executeGovernedToolStructured.mock.calls[0]?.[0]).toBe('advance_recovery_plane');
+    expect(typeof executeGovernedToolStructured.mock.calls[0]?.[2]).toBe('function');
+    expect(toolFn).not.toHaveBeenCalled();
+    expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
+      .toMatchObject({ execution: 'RECOVERY_PULSE_RESULT', receipt_id: 'recovery-pulse-receipt', grants_write_authority: false });
+  });
+
   it('allows only an explicitly allowlisted API-key owner to run the canary', async () => {
     process.env.LEX_CANARY_OWNER_IDS = 'trusted-owner, another-owner';
     const key = { id: 'trusted-owner', plan: 'private_test' };
@@ -396,6 +459,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(names).toContain('dispatch_workflow');
     expect(names).toContain('query_database');
     expect(names).toContain('run_recovery_canary');
+    expect(names).toContain('advance_recovery_plane');
     expect(isOperatorSecret).toHaveBeenCalled();
   });
 

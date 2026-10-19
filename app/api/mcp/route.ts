@@ -7,7 +7,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '@/lib/lex_crs_agent/tools';
+import { TOOL_DEFINITIONS, TOOL_REGISTRY, advance_recovery_plane as runRecoveryPlaneTool } from '@/lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file, preview_patch_file } from '@/lib/lex_crs_agent/tools/patch_file';
 import { executeGovernedTool, executeGovernedToolStructured } from '@/lib/agents/constitutional_tool_executor';
 import { executeGovernedTrajectoryAction, trajectoryActionId } from '@/lib/agents/trajectory_executor';
@@ -1177,13 +1177,23 @@ export async function POST(req: Request) {
       // per-call constitutional authorization as before. Sessions that
       // never declare a plan are completely unaffected: falls straight
       // through to the original bare path.
+      // Recovery pulses mutate canonical trajectory state, so authorization must
+      // be checked before trajectory-plan dispatch can execute any handler.
+      if (dispatchToolName === 'advance_recovery_plane' && !operator) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
+      if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan', 'request_approval']);
       // Diagnostics must remain reachable when a plan is stale, locked, or
       // out of sequence. They still pass through executeGovernedTool below,
       // so authentication, capability, and constitutional checks are intact;
       // they simply do not consume or require a plan step.
       const TRAJECTORY_DIAGNOSTIC_TOOLS = new Set([
-        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary',
+        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary', 'advance_recovery_plane',
       ]);
       const trajectoryBypass = TRAJECTORY_META_TOOLS.has(toolName)
         || TRAJECTORY_DIAGNOSTIC_TOOLS.has(dispatchToolName);
@@ -1300,10 +1310,44 @@ export async function POST(req: Request) {
         });
       }
 
+      if (dispatchToolName === 'advance_recovery_plane' && !operator) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
       if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
         logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
         return unauthorized(id);
       }
+      if (dispatchToolName === 'advance_recovery_plane') {
+        const controller = new AbortController();
+        const outcome = await withDeadline(executeGovernedToolStructured(
+          dispatchToolName,
+          toolArgs,
+          (handlerArgs) => runRecoveryPlaneTool(handlerArgs as { session_id?: string }),
+          sessionId,
+          args.task_context as string | undefined,
+          actorId,
+          controller.signal,
+          ownerId,
+          ownerId,
+        ), 30_000, controller);
+        if (outcome.timedOut) {
+          return mcpToolResult(id, {
+            execution_status: 'unknown_after_deadline',
+            recovery_state_mutated: 'unknown',
+            grants_write_authority: false,
+            message: 'Recovery pulse outcome is unknown. Re-read the canonical state before retrying.',
+          });
+        }
+        const execution = outcome.value;
+        return mcpToolResult(id, {
+          execution: execution.result,
+          receipt_id: execution.receiptId ?? null,
+          approved: execution.approved,
+          grants_write_authority: false,
+        });
+      }
+
       if (dispatchToolName === 'run_recovery_canary') {
         let rawProbeResult: string | undefined;
         const trackedCanaryHandler: ToolHandler = async (handlerArgs, signal) => {

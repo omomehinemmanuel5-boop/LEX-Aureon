@@ -55,6 +55,7 @@ function tokenArgs(envelope: ExternalActionEnvelope): Record<string, unknown> {
 function riskFor(capability: ResolvedToolCapability): 'read' | 'write' | 'external' | 'destructive' {
   switch (capability.capability) {
     case 'read': return 'read';
+    case 'recovery': return 'write';
     case 'write': return 'write';
     case 'external':
     case 'network':

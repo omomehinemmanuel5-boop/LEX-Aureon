@@ -21,6 +21,18 @@ describe('simulate_agent_plan exact counts and recovery semantics', () => {
     expect(result.receipt_persisted).toBe(false);
   });
 
+  it('recognizes the bounded recovery control as a recovery capability, not an unknown destructive tool', async () => {
+    const result = JSON.parse(await simulate_agent_plan({
+      actions: [{ toolName: 'advance_recovery_plane', risk: 'recovery', target: 'canonical' }],
+    }));
+
+    expect(result.trajectory[0].capability).toBe('recovery');
+    expect(result.trajectory[0].capability_allowed).toBe(true);
+    expect(result.trajectory[0].warning ?? '').not.toContain('Unknown tool capability');
+    expect(result.canonical_state_committed).toBe(false);
+    expect(result.receipt_persisted).toBe(false);
+  });
+
   it('does not infer recovery canary success from optimal M and absent evidence', async () => {
     const result = JSON.parse(await simulate_agent_plan({
       actions: [{ toolName: 'write_file', risk: 'write', target: 'README.md' }],

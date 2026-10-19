@@ -64,6 +64,11 @@ export function isNonMutatingGovernanceTool(toolName: string): boolean {
   return NON_MUTATING_GOVERNANCE_TOOLS.has(toolName);
 }
 
+// This explicit control-plane action mutates only the recovery trajectory.
+// It must bypass automatic recovery advancement and post-tool trajectory
+// sampling, but it must never be cached as an ordinary read.
+const RECOVERY_CONTROL_TOOLS = new Set(['advance_recovery_plane']);
+
 /**
  * run_governance delegates to executeGovern(), which owns recovery advancement
  * for direct API callers. Advancing here as well would count two recovery
@@ -71,7 +76,9 @@ export function isNonMutatingGovernanceTool(toolName: string): boolean {
  * recovery mutations for governance_mode="simulate".
  */
 export function shouldAdvanceRecoveryBeforeTool(toolName: string): boolean {
-  return toolName !== 'run_governance' && !isNonMutatingGovernanceTool(toolName);
+  return toolName !== 'run_governance'
+    && !isNonMutatingGovernanceTool(toolName)
+    && !RECOVERY_CONTROL_TOOLS.has(toolName);
 }
 
 const KERNEL_CRITICAL = 0.05;
@@ -130,7 +137,7 @@ export function shouldRecordTrajectoryObservation(
   cacheHit: boolean,
 ): boolean {
   if (cacheHit) return false;
-  if (NON_MUTATING_GOVERNANCE_TOOLS.has(toolName)) return false;
+  if (NON_MUTATING_GOVERNANCE_TOOLS.has(toolName) || RECOVERY_CONTROL_TOOLS.has(toolName)) return false;
   if (toolName === 'run_governance' && args.governance_mode === 'simulate') return false;
   return true;
 }

@@ -121,7 +121,7 @@ beforeEach(() => {
       return { rows: found ? [found] : [] };
     }
     if (sql.startsWith('UPDATE z_traj')) {
-      const [velocity, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
+      const [velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
         updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt] = args;
       const current = mocks.rows.get(String(sessionId));
       if (!current
@@ -132,7 +132,8 @@ beforeEach(() => {
         return { rows: [], rowsAffected: 0 };
       }
       current.velocity = velocity;
-      current.n_stable = Number(testedVelocity) < Number(threshold)
+      current.n_stable = Number(countStableObservation) === 1
+        && Number(testedVelocity) < Number(threshold)
         && Number(M) >= Number(tauRecovery)
         ? Number(current.n_stable) + 1
         : 0;
@@ -254,6 +255,17 @@ describe('governed tool stability observations', () => {
       typeof query === 'object' && query !== null && 'sql' in query
       && /INSERT\s+INTO\s+z_traj/i.test(String((query as { sql: unknown }).sql)),
     )).toBe(false);
+  });
+
+  it('records a zero-velocity baseline without incrementing stable observations', async () => {
+    mocks.rows.set(SESSION, row({ velocity: 0.08, n_stable: 2 }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS, false);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.velocity).toBe(0);
+    expect(mocks.rows.get(SESSION)?.n_stable).toBe(0);
   });
 
   it('does not create an observation for a missing trajectory row', async () => {

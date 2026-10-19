@@ -55,6 +55,10 @@ export function recoveryCapabilityAllowed(
     };
   }
 
+  // The recovery capability may only invoke the bounded recovery controller;
+  // it never grants ordinary write authority and remains blocked below τ_floor.
+  if (capability === 'recovery') return { allowed: true, state };
+
   if (M < CONSTITUTION.TAU_RECOVERY) {
     if (capability === 'read') return { allowed: true, state };
     return {
