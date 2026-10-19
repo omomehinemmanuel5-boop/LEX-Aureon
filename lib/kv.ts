@@ -116,7 +116,7 @@ export const N_MIN           = CONSTITUTION.N_MIN;
 export const RECOVERY_RATE   = CONSTITUTION.RECOVERY_RATE;
 export const SIGMA_WINDOW    = 10;
 export const SIGMA_THRESHOLD = CONSTITUTION.SIGMA_THRESHOLD;
-export const STABILITY_VELOCITY = 0.05;
+export const STABILITY_VELOCITY = 0.02; // Must match RECOVERY_STABILITY_THRESHOLD for canonical stability evidence.
 
 // ── Z-weight update constants (Theorem 3a/3b — Banach fixed-point proof) ──────
 // ρ = memory decay rate (contraction factor, proven convergent at 0.85)
