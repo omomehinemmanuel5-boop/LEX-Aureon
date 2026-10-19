@@ -154,7 +154,7 @@ export async function readRecoveryCanaryEvidence(
   }
   try {
     const result = await getClient().execute({
-      sql: `SELECT canary_status, receipt_id
+      sql: `SELECT canary_status, receipt_id, issued_at, expires_at, created_at
             FROM recovery_canary_evidence
             WHERE session_id = ? AND state_fingerprint = ?
             ORDER BY id DESC LIMIT 1`,
