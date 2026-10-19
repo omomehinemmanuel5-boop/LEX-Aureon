@@ -71,7 +71,7 @@ function evidenceResult(query: unknown) {
   if (!record.sql?.includes('FROM recovery_canary_evidence')) return null;
   const [sessionId, fingerprint] = record.args ?? [];
   const receiptId = canaryEvidence.get(`${String(sessionId)}:${String(fingerprint)}`);
-  return { rows: receiptId ? [{ canary_status: 'passed', receipt_id: receiptId }] : [] };
+  return { rows: receiptId ? [{ canary_status: 'passed', receipt_id: receiptId, issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), created_at: new Date().toISOString() }] : [] };
 }
 
 describe('governed tool execution integration boundary', () => {
@@ -84,7 +84,7 @@ describe('governed tool execution integration boundary', () => {
       if (evidence) return evidence;
       const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
       if (sql.includes('FROM z_traj')) {
-        return { rows: [{ last_c: 1, last_r: 1, last_s: 1, sigma_viol: 0, n_stable: 3, updated_at: DEFAULT_UPDATED_AT }] };
+        return { rows: [{ last_c: 1, last_r: 1, last_s: 1, velocity: 0, sigma_viol: 0, n_stable: 3, updated_at: DEFAULT_UPDATED_AT }] };
       }
       if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
       return { rows: [], rowsAffected: 1 };
@@ -419,8 +419,8 @@ describe('governed tool execution integration boundary', () => {
       if (query.sql?.includes('FROM z_traj')) {
         trajectoryReads += 1;
         return trajectoryReads === 1
-          ? { rows: [{ last_c: 0.40, last_r: 0.40, last_s: 0.40, sigma_viol: 0, n_stable: 3, updated_at: DEFAULT_UPDATED_AT }] }
-          : { rows: [{ last_c: 0.04, last_r: 0.48, last_s: 0.48, sigma_viol: 1, n_stable: 0, updated_at: '2026-10-10T00:00:01.000Z' }] };
+          ? { rows: [{ last_c: 0.40, last_r: 0.40, last_s: 0.40, velocity: 0, sigma_viol: 0, n_stable: 3, updated_at: DEFAULT_UPDATED_AT }] }
+          : { rows: [{ last_c: 0.04, last_r: 0.48, last_s: 0.48, velocity: 0.5, sigma_viol: 1, n_stable: 0, updated_at: '2026-10-10T00:00:01.000Z' }] };
       }
       if (query.sql?.includes('FROM tool_sessions')) {
         return { rows: [{ sigma_viol: 0, tool_calls: 1 }] };
