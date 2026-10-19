@@ -60,9 +60,9 @@ describe('canonical governance state', () => {
 
   it('projects CRS and recovery state from z_traj rather than local tool scores', async () => {
     dbExecute
-      .mockResolvedValueOnce({ rows: [{ last_c: 0.42, last_r: 0.18, last_s: 0.31, sigma_viol: 0.04, n_stable: 3, updated_at: '2026-10-10T00:00:00.000Z' }] })
+      .mockResolvedValueOnce({ rows: [{ last_c: 0.42, last_r: 0.18, last_s: 0.31, velocity: 0.001, sigma_viol: 0.04, n_stable: 3, updated_at: '2026-10-10T00:00:00.000Z' }] })
       .mockResolvedValueOnce({ rows: [{ sigma_viol: 0.12, tool_calls: 7 }] })
-      .mockResolvedValueOnce({ rows: [{ canary_status: 'passed', receipt_id: 'canary-receipt' }] });
+      .mockResolvedValueOnce({ rows: [{ canary_status: 'passed', receipt_id: 'canary-receipt', issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), created_at: new Date().toISOString() }] });
 
     const result = await readCanonicalGovernanceState({
       sessionId: 'canonical-session', actorId: 'agent-a', capability: 'read',
@@ -73,9 +73,9 @@ describe('canonical governance state', () => {
       C: 0.42, R: 0.18, S: 0.31, M: 0.18,
       sigmaViol: 0.12, toolCalls: 7, healthBand: 'ALERT',
       trajectoryAvailable: true,
-      recoveryState: 'VERIFIED',
-      canaryPassed: true,
-      canaryReceiptId: 'canary-receipt',
+      recoveryState: 'RESTORING',
+      canaryPassed: false,
+      canaryReceiptId: null,
     });
     expect(result.state.stateFingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
