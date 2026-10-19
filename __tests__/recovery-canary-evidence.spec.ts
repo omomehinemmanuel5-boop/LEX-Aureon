@@ -82,18 +82,18 @@ describe('exact-snapshot recovery canary evidence', () => {
       passed: false, receiptId: null, status: null,
     });
 
-    dbExecute.mockResolvedValueOnce({ rows: [{ canary_status: 'passed', receipt_id: 'receipt-pass' }] });
-    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, stateFingerprint)).resolves.toEqual({
+    dbExecute.mockResolvedValueOnce({ rows: [{ canary_status: 'passed', receipt_id: 'receipt-pass', issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString() }] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, stateFingerprint, { stateVersion: snapshot.policyVersion, stateFingerprint, M: 1 / 3, sigmaViol: 0, nStable: 3, velocity: 0 })).resolves.toEqual({
       passed: true, receiptId: 'receipt-pass', status: 'passed',
     });
 
-    dbExecute.mockResolvedValueOnce({ rows: [{ canary_status: 'failed', receipt_id: 'receipt-fail' }] });
-    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, stateFingerprint)).resolves.toEqual({
-      passed: false, receiptId: 'receipt-fail', status: 'failed',
+    dbExecute.mockResolvedValueOnce({ rows: [{ canary_status: 'failed', receipt_id: 'receipt-fail', issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString() }] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, stateFingerprint, { stateVersion: snapshot.policyVersion, stateFingerprint, M: 1 / 3, sigmaViol: 0, nStable: 3, velocity: 0 })).resolves.toEqual({
+      passed: false, receiptId: null, status: 'failed',
     });
 
     dbExecute.mockRejectedValueOnce(new Error('evidence store unavailable'));
-    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, stateFingerprint)).resolves.toEqual({
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, stateFingerprint, { stateVersion: snapshot.policyVersion, stateFingerprint, M: 1 / 3, sigmaViol: 0, nStable: 3, velocity: 0 })).resolves.toEqual({
       passed: false, receiptId: null, status: null,
     });
   });
@@ -108,7 +108,7 @@ describe('flagged bounded invariant canary validity', () => {
     expires_at: new Date(Date.now() + 60_000).toISOString(), writes: 4,
     ...overrides,
   });
-  const current = { stateVersion: 'canonical-v1', stateFingerprint: 'a'.repeat(64), M: 0.16, sigmaViol: 0, nStable: 3 };
+  const current = { stateVersion: 'canonical-v1', stateFingerprint: 'a'.repeat(64), M: 0.16, sigmaViol: 0, nStable: 3, velocity: 0 };
 
   it('remains valid across read-only calls only for the exact current fingerprint', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
@@ -133,6 +133,12 @@ describe('flagged bounded invariant canary validity', () => {
   it('expires after the time window', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow({ issued_at: '2020-01-01T00:00:00.000Z', expires_at: '2020-01-01T01:00:00.000Z' })] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'ignored', current))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('refuses a canary when velocity is above the recovery stability threshold', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, velocity: 0.021 }))
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
