@@ -43,6 +43,7 @@ async function receiptAuditValues(receipt: GovernanceReceipt): Promise<(string |
         M: canonical.state.M,
         sigmaViol: canonical.state.sigmaViol,
         nStable: canonical.state.nStable,
+        velocity: canonical.state.velocity ?? 0,
       });
       if (canary.passed && canary.receiptId
         && (!receipt.canary_receipt_id || receipt.canary_receipt_id === canary.receiptId)) {
