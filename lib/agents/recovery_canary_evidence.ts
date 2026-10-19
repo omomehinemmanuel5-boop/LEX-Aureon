@@ -136,7 +136,7 @@ export async function readInvariantRecoveryCanaryEvidence(
       && current.nStable >= CONSTITUTION.N_MIN
       && Number.isFinite(current.velocity) && current.velocity < RECOVERY_STABILITY_THRESHOLD
       && Number(row.writes ?? 0) < maxWrites && Number.isFinite(expiryMs)
-      && Number.isFinite(issuedMs) && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
+      && Number.isFinite(issuedMs) && issuedMs <= Date.now() && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
     return { passed: valid, receiptId: valid ? String(row.receipt_id ?? '') || null : null, status: valid ? 'passed' : (status === 'failed' ? 'failed' : null) };
   } catch {
     return { passed: false, receiptId: null, status: null };
@@ -178,6 +178,7 @@ export async function readRecoveryCanaryEvidence(
       && current.nStable >= CONSTITUTION.N_MIN
       && Number.isFinite(current.velocity) && current.velocity < RECOVERY_STABILITY_THRESHOLD
       && Number.isFinite(expiryMs) && Number.isFinite(issuedMs)
+      && issuedMs <= Date.now()
       && Date.now() < expiryMs
       && Date.now() - issuedMs < Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
     return {
