@@ -89,6 +89,11 @@ describe('MCP patch_file write path', () => {
       'patch_file', input, (handlerArgs) => patch_file(handlerArgs as Parameters<typeof patch_file>[0]),
       session.sessionId, undefined, session.actorId, undefined, 'owner-write', 'owner-write',
     );
+    const changedBeforeCommit = await execute({ ...args, new_str: 'different', approval_request_id: pending.requestId });
+    expect(changedBeforeCommit.approved).toBe(false);
+    expect(String(changedBeforeCommit.result)).toContain('different arguments');
+    expect(commitCalls).toBe(0);
+
     const first = await execute({ ...args, approval_request_id: pending.requestId });
     expect(first.approved).toBe(true);
     expect(commitCalls).toBe(1);
