@@ -196,6 +196,7 @@ export async function executeGovern(
         trajectoryAvailable: canonical.state.trajectoryAvailable,
         M: canonical.state.M,
         nStable: canonical.state.nStable,
+        velocity: canonical.state.velocity,
         canaryPassed: canonical.state.canaryPassed,
       })) {
         recoveryPulse = await advanceRecoveryPlane(session_id);

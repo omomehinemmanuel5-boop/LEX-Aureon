@@ -57,6 +57,7 @@ beforeEach(() => {
       M: 0.2,
       sigmaViol: 0,
       nStable: 3,
+      velocity: 0,
     },
   });
   execute.mockResolvedValue({ rows: [{

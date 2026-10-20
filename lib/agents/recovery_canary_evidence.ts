@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getClient } from '../db';
 import { CONSTITUTION } from '../constitution';
+import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
 
 export type RecoveryCanaryStatus = 'passed' | 'failed';
 
@@ -33,6 +34,7 @@ export interface RecoveryCanaryCurrentState {
   M: number;
   sigmaViol: number;
   nStable: number;
+  velocity: number;
 }
 
 function exactNumber(value: number): string {
@@ -132,8 +134,9 @@ export async function readInvariantRecoveryCanaryEvidence(
       && String(row.state_fingerprint) === current.stateFingerprint
       && current.M >= CONSTITUTION.TAU_RECOVERY && current.sigmaViol === 0
       && current.nStable >= CONSTITUTION.N_MIN
+      && Number.isFinite(current.velocity) && current.velocity < RECOVERY_STABILITY_THRESHOLD
       && Number(row.writes ?? 0) < maxWrites && Number.isFinite(expiryMs)
-      && Number.isFinite(issuedMs) && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
+      && Number.isFinite(issuedMs) && issuedMs <= Date.now() && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
     return { passed: valid, receiptId: valid ? String(row.receipt_id ?? '') || null : null, status: valid ? 'passed' : (status === 'failed' ? 'failed' : null) };
   } catch {
     return { passed: false, receiptId: null, status: null };
@@ -151,7 +154,7 @@ export async function readRecoveryCanaryEvidence(
   }
   try {
     const result = await getClient().execute({
-      sql: `SELECT canary_status, receipt_id
+      sql: `SELECT canary_status, receipt_id, issued_at, expires_at, created_at
             FROM recovery_canary_evidence
             WHERE session_id = ? AND state_fingerprint = ?
             ORDER BY id DESC LIMIT 1`,
@@ -162,10 +165,26 @@ export async function readRecoveryCanaryEvidence(
     if (status !== 'passed' && status !== 'failed') {
       return { passed: false, receiptId: null, status: null };
     }
+    // The legacy mode must not accept unbounded or stale evidence. Enforce
+    // the same freshness window and canonical recovery prerequisites as the
+    // invariant mode; missing current-state context fails closed.
+    if (!current) return { passed: false, receiptId: null, status: status as RecoveryCanaryStatus };
+    const row = result.rows[0];
+    const expiryMs = Date.parse(String(row.expires_at ?? ''));
+    const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
+    const valid = status === 'passed'
+      && current.M >= CONSTITUTION.TAU_RECOVERY
+      && current.sigmaViol === 0
+      && current.nStable >= CONSTITUTION.N_MIN
+      && Number.isFinite(current.velocity) && current.velocity < RECOVERY_STABILITY_THRESHOLD
+      && Number.isFinite(expiryMs) && Number.isFinite(issuedMs)
+      && issuedMs <= Date.now()
+      && Date.now() < expiryMs
+      && Date.now() - issuedMs < Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
     return {
-      passed: status === 'passed',
-      receiptId: String(result.rows[0].receipt_id ?? '') || null,
-      status,
+      passed: valid,
+      receiptId: valid ? String(row.receipt_id ?? '') || null : null,
+      status: valid ? 'passed' : (status === 'failed' ? 'failed' : null),
     };
   } catch {
     // A missing/unavailable evidence table must never be treated as a pass.

@@ -21,12 +21,20 @@ export function shouldAdvanceRecoveryPlane(state: {
   trajectoryAvailable: boolean;
   M: number;
   nStable: number;
+  velocity?: number;
   canaryPassed?: boolean;
 }): boolean {
   return state.trajectoryAvailable
     && state.M >= CONSTITUTION.TAU_FLOOR
     && state.canaryPassed !== true
-    && (state.M < CONSTITUTION.TAU_RECOVERY || state.nStable < CONSTITUTION.N_MIN);
+    // A high-velocity snapshot cannot pass canary validation. Keep the safe
+    // recovery pulse active until a stationary baseline and dwell observations
+    // bring velocity below the same threshold used by the canary gate.
+    && (state.M < CONSTITUTION.TAU_RECOVERY
+      || state.nStable < CONSTITUTION.N_MIN
+      || typeof state.velocity !== 'number'
+      || !Number.isFinite(state.velocity)
+      || state.velocity >= RECOVERY_STABILITY_THRESHOLD);
 }
 
 export interface RecoveryPulseResult {
