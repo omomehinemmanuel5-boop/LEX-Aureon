@@ -1,13 +1,13 @@
 import crypto from 'crypto';
-import { env } from './env';
 import { getApiKeyById, type ApiKey } from './api_keys';
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
+const OPERATOR_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type Claims = { keyId: string; issuedAt: number; expiresAt: number };
 
 function secret(): string {
-  return env.TURSO_AUTH_TOKEN ?? env.MCP_OPERATOR_SECRET ?? '';
+  return process.env.MCP_SESSION_SECRET ?? '';
 }
 
 function sign(payload: string): string {
@@ -23,7 +23,9 @@ function safeEqual(a: string, b: string): boolean {
 export function issueMcpSession(key: ApiKey): { token: string; expiresAt: number } | null {
   if (!secret()) return null;
   const issuedAt = Date.now();
-  const expiresAt = issuedAt + SESSION_TTL_MS;
+  // Operator-profile sessions are used by connected MCP clients and must not
+  // drop during an ordinary workday; public sessions retain the short TTL.
+  const expiresAt = issuedAt + (key.plan === 'private_test' ? OPERATOR_SESSION_TTL_MS : SESSION_TTL_MS);
   const payload = Buffer.from(JSON.stringify({ keyId: key.id, issuedAt, expiresAt })).toString('base64url');
   return { token: `${payload}.${sign(payload)}`, expiresAt };
 }

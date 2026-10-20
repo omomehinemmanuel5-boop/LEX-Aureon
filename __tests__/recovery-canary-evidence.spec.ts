@@ -156,6 +156,12 @@ describe('flagged bounded invariant canary validity', () => {
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
+  it('accepts a canary when velocity is below the recovery stability threshold', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, velocity: 0.019 }))
+      .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
+  });
+
   it('refuses a write when M falls below the constitutional recovery threshold', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, M: 0.149 }))

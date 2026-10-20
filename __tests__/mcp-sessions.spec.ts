@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getApiKeyById } = vi.hoisted(() => ({ getApiKeyById: vi.fn() }));
 vi.mock('../lib/api_keys', () => ({ getApiKeyById }));
-vi.mock('../lib/env', () => ({ env: { TURSO_AUTH_TOKEN: 'session-test-secret', MCP_OPERATOR_SECRET: undefined } }));
 
 import { issueMcpSession, validateMcpSession } from '../lib/mcp_sessions';
 
@@ -14,13 +13,14 @@ const key = {
 describe('MCP sessions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('MCP_SESSION_SECRET', 'session-test-secret');
     getApiKeyById.mockResolvedValue(key);
   });
 
-  it('issues a short-lived signed session and revalidates the backing key', async () => {
+  it('issues a dedicated-secret signed operator session and revalidates the backing key', async () => {
     const session = issueMcpSession(key);
     expect(session?.token.split('.')).toHaveLength(2);
-    expect(session!.expiresAt).toBeGreaterThan(Date.now());
+    expect(session!.expiresAt - Date.now()).toBeGreaterThan(29 * 24 * 60 * 60 * 1000);
     const checked = await validateMcpSession(session!.token);
     expect(checked).toMatchObject({ valid: true, key: { id: 'key-1', plan: 'private_test' } });
   });
@@ -29,7 +29,14 @@ describe('MCP sessions', () => {
     const session = issueMcpSession(key)!;
     expect((await validateMcpSession(`${session.token}x`)).valid).toBe(false);
     const now = Date.now;
-    Date.now = () => now() + 16 * 60 * 1000;
+    Date.now = () => now() + 31 * 24 * 60 * 60 * 1000;
     try { expect((await validateMcpSession(session.token)).valid).toBe(false); } finally { Date.now = now; }
+  });
+
+  it('does not fall back to database or operator secrets', () => {
+    vi.stubEnv('MCP_SESSION_SECRET', undefined);
+    vi.stubEnv('TURSO_AUTH_TOKEN', 'database-secret');
+    vi.stubEnv('MCP_OPERATOR_SECRET', 'operator-secret');
+    expect(issueMcpSession(key)).toBeNull();
   });
 });
