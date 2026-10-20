@@ -34,13 +34,29 @@ describe('bounded recovery plane', () => {
       trajectoryAvailable: true,
       M: 0.326,
       nStable: 0,
+      velocity: 0,
       canaryPassed: false,
     })).toBe(true);
     expect(shouldAdvanceRecoveryPlane({
       trajectoryAvailable: true,
       M: 0.326,
       nStable: 3,
+      velocity: 0,
       canaryPassed: true,
+    })).toBe(false);
+    expect(shouldAdvanceRecoveryPlane({
+      trajectoryAvailable: true,
+      M: 0.326,
+      nStable: 3,
+      velocity: 0.041,
+      canaryPassed: false,
+    })).toBe(true);
+    expect(shouldAdvanceRecoveryPlane({
+      trajectoryAvailable: true,
+      M: 0.326,
+      nStable: 3,
+      velocity: 0.001,
+      canaryPassed: false,
     })).toBe(false);
   });
 
