@@ -43,7 +43,8 @@ async function receiptAuditValues(receipt: GovernanceReceipt): Promise<(string |
         M: canonical.state.M,
         sigmaViol: canonical.state.sigmaViol,
         nStable: canonical.state.nStable,
-        velocity: canonical.state.velocity ?? 0,
+        // Missing velocity must never be represented as a stable zero in audit evidence.
+        velocity: canonical.state.velocity ?? Number.NaN,
       });
       if (canary.passed && canary.receiptId
         && (!receipt.canary_receipt_id || receipt.canary_receipt_id === canary.receiptId)) {
