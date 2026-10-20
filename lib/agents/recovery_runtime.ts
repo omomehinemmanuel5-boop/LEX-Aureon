@@ -21,7 +21,7 @@ export function shouldAdvanceRecoveryPlane(state: {
   trajectoryAvailable: boolean;
   M: number;
   nStable: number;
-  velocity: number;
+  velocity?: number;
   canaryPassed?: boolean;
 }): boolean {
   return state.trajectoryAvailable
@@ -32,6 +32,7 @@ export function shouldAdvanceRecoveryPlane(state: {
     // bring velocity below the same threshold used by the canary gate.
     && (state.M < CONSTITUTION.TAU_RECOVERY
       || state.nStable < CONSTITUTION.N_MIN
+      || typeof state.velocity !== 'number'
       || !Number.isFinite(state.velocity)
       || state.velocity >= RECOVERY_STABILITY_THRESHOLD);
 }
