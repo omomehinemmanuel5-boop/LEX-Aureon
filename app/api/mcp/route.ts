@@ -31,6 +31,7 @@ import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
+import { isNonMutatingInspectionTool } from '@/lib/mcp_route_policy';
 import { createApprovalRequest } from '@/lib/approval_requests';
 import { env } from '@/lib/env';
 import { CONSTITUTION } from '@/lib/constitution';
@@ -357,23 +358,6 @@ type JsonRpcRequest = {
 const MAX_SESSION_ID_LENGTH = 128;
 const MAX_MCP_BODY_BYTES = 128 * 1024;
 const MCP_REQUESTS_PER_MINUTE = 60;
-
-// These inspection tools must not bootstrap or otherwise mutate the trajectory they inspect.
-const NON_MUTATING_INSPECTION_TOOLS = new Set([
-  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
-  'read_file', 'read_directory', 'list_directory', 'list_files',
-  'read_memory', 'search_memory', 'search_code', 'fetch_page', 'http_get',
-  'get_file', 'read_json', 'parse_csv', 'cat', 'head', 'tail', 'grep',
-  'find', 'ls', 'dir', 'glob', 'get_build_status', 'get_workflow_run',
-  'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
-  'check_github_token_scope', 'get_trajectory_status', 'run_recovery_canary',
-  // A simulated plan is read-only with respect to canonical trajectory state.
-  'simulate_agent_plan',
-]);
-
-export function isNonMutatingInspectionTool(toolName: string): boolean {
-  return NON_MUTATING_INSPECTION_TOOLS.has(toolName);
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1012,7 +996,7 @@ export async function POST(req: Request) {
     const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
     try {
       await runZTrajMigrations();
-      if (!NON_MUTATING_INSPECTION_TOOLS.has(dispatchToolName)
+      if (!isNonMutatingInspectionTool(dispatchToolName)
         && !(await ensureCanonicalTrajectoryState(sessionId))) {
         return NextResponse.json({
           jsonrpc: '2.0',
