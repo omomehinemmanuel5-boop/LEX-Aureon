@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, validateMcpSession } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
@@ -19,6 +19,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   interceptToolCall: vi.fn(async () => ({ approved: true, decision: 'approved', reason: 'allowed', receipt_id: 'approval-receipt' })),
   createGovernanceApprovalToken: vi.fn(() => 'approval-token'),
   createApprovalRequest: vi.fn(async () => ({ requestId: 'a'.repeat(22), expiresAt: Date.now() + 900_000 })),
+  getApprovalRequestStatus: vi.fn(async () => ({ status: 'approved' as const })),
   validateMcpSession: vi.fn(),
   definitions: [
     { name: 'request_approval', description: 'request', parameters: { type: 'object' } },
@@ -31,7 +32,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'get_workflow_artifact', description: 'artifact metadata', parameters: { type: 'object' } },
     { name: 'review_agent_action', description: 'review', parameters: { type: 'object' } },
     { name: 'narrate_origin', description: 'origin', parameters: { type: 'object' } },
-    { name: 'write_file', description: 'write', parameters: { type: 'object' } },
+    { name: 'write_file', description: 'write', parameters: { type: 'object', properties: { branch: { type: 'string' } } } },
     { name: 'create_branch', description: 'create branch', parameters: { type: 'object', properties: { branch: { type: 'string' } }, required: ['branch'] } },
     { name: 'open_pr', description: 'open PR', parameters: { type: 'object', properties: { head: { type: 'string' }, title: { type: 'string' } }, required: ['head', 'title'] } },
     { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
@@ -85,7 +86,7 @@ vi.mock('@/lib/db', () => ({
   runZTrajMigrations: vi.fn(async () => {}),
 }));
 
-vi.mock('@/lib/approval_requests', () => ({ createApprovalRequest }));
+vi.mock('@/lib/approval_requests', () => ({ createApprovalRequest, getApprovalRequestStatus }));
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState,
@@ -120,7 +121,7 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
 }));
 
 vi.mock('../lib/lex_crs_agent/tools/patch_file', () => ({
-  PATCH_FILE_DEFINITION: { name: 'patch_file', description: 'patch', inputSchema: { type: 'object' } },
+  PATCH_FILE_DEFINITION: { name: 'patch_file', description: 'patch', inputSchema: { type: 'object', properties: { branch: { type: 'string' } } } },
   patch_file: toolFn,
 }));
 
@@ -191,6 +192,35 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(readTool?.inputSchema.properties?.approval_request_id).toBeUndefined();
     expect(createBranchTool?.inputSchema.properties).toHaveProperty('approval_request_id');
     expect(openPrTool?.inputSchema.properties).toHaveProperty('approval_request_id');
+    expect(body.result.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+      'create_branch', 'open_pr', 'write_file', 'patch_file',
+    ]));
+    expect(createBranchTool).toBeDefined();
+    expect(openPrTool).toBeDefined();
+    expect(writeTool?.inputSchema.properties).toHaveProperty('branch');
+    const patchTool = body.result.tools.find(tool => tool.name === 'patch_file');
+    expect(patchTool?.inputSchema.properties).toHaveProperty('branch');
+  });
+
+  it('authorize_tool_action reports an existing approval status without creating or consuming a request', async () => {
+    isOperatorSecret.mockReturnValue(true);
+    getApprovalRequestStatus.mockResolvedValue({ status: 'approved' });
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'authorize_tool_action', arguments: {
+        tool_name: 'create_branch',
+        arguments: { branch: 'fix/approval-gate-test' },
+        approval_request_id: 'existing-approved-request',
+      } },
+      id: 'approval-status-only',
+    }));
+    expect(response.status).toBe(200);
+    expect((response.body as { result?: { structuredContent?: Record<string, unknown> } }).result?.structuredContent)
+      .toMatchObject({ status: 'approved', execution_granted: false, request_id: 'existing-approved-request' });
+    expect(getApprovalRequestStatus).toHaveBeenCalled();
+    expect(createApprovalRequest).not.toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -76,6 +76,40 @@ export async function createApprovalRequest(input: {
   return { requestId, expiresAt };
 }
 
+export async function getApprovalRequestStatus(input: {
+  requestId: string;
+  ownerId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  nowMs?: number;
+}): Promise<{ status: ApprovalRequestStatus | 'invalid'; reason?: string }> {
+  try {
+    await ensureApprovalRequestSchema();
+    const found = await getClient().execute({
+      sql: `SELECT request_id, owner_id, session_id, tool_name, args_hash, status, expires_at
+            FROM approval_requests WHERE request_id = ? LIMIT 1`,
+      args: [input.requestId],
+    });
+    if (!found.rows.length) return { status: 'invalid', reason: 'Approval request was not found.' };
+    const row = found.rows[0];
+    if (String(row.owner_id) !== input.ownerId
+      || String(row.session_id) !== input.sessionId
+      || String(row.tool_name) !== input.toolName
+      || String(row.args_hash) !== approvalArgsHash(input.args)) {
+      return { status: 'invalid', reason: 'Approval request does not match this owner, session, tool, and exact action.' };
+    }
+    const now = input.nowMs ?? Date.now();
+    const status = String(row.status) as ApprovalRequestStatus;
+    if (now >= Number(row.expires_at) && (status === 'pending' || status === 'approved')) {
+      return { status: 'expired', reason: 'Approval request has expired.' };
+    }
+    return { status };
+  } catch {
+    return { status: 'invalid', reason: 'Approval request store unavailable; status could not be verified.' };
+  }
+}
+
 export async function consumeApprovalRequest(input: {
   requestId: string;
   ownerId: string;

@@ -7,6 +7,7 @@ import {
   approvalArgsHash,
   consumeApprovalRequest,
   createApprovalRequest,
+  getApprovalRequestStatus,
   decideApprovalRequest,
 } from '../lib/approval_requests';
 
@@ -76,6 +77,27 @@ describe('one-tap approval request persistence', () => {
     expect(row?.status).toBe('pending');
     await expect(createApprovalRequest({ ...requestInput, toolName: 'read_file' })).rejects.toThrow('does not require operator approval');
     await expect(createApprovalRequest({ ...requestInput, toolName: 'request_approval' })).rejects.toThrow('does not require operator approval');
+  });
+
+  it('reports the existing exact-action status without consuming the approval', async () => {
+    const created = await createApprovalRequest(requestInput);
+    row!.status = 'approved';
+    expect(await getApprovalRequestStatus({ requestId: created.requestId, ...requestInput })).toEqual({ status: 'approved' });
+    expect(row?.status).toBe('approved');
+    expect((await getApprovalRequestStatus({
+      requestId: created.requestId, ...requestInput, args: { ...requestInput.args, content: 'changed' },
+    })).status).toBe('invalid');
+    expect((await getApprovalRequestStatus({
+      requestId: created.requestId, ...requestInput, nowMs: created.expiresAt,
+    })).status).toBe('expired');
+    expect(row?.status).toBe('approved');
+  });
+
+  it('rejects a pending approval without consuming it', async () => {
+    const created = await createApprovalRequest(requestInput);
+    const result = await consumeApprovalRequest({ requestId: created.requestId, ...requestInput });
+    expect(result.consumed).toBe(false);
+    expect(row?.status).toBe('pending');
   });
 
   it('consumes an approved exact action once and denies replay', async () => {
