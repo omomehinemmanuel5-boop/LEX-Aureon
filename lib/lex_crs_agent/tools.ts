@@ -71,6 +71,7 @@ import { CONSTITUTION } from '../constitution';
 import { readCanonicalGovernanceState } from '../agents/canonical_governance_state';
 import { advanceRecoveryPlane } from '../agents/recovery_runtime';
 import { deriveRecoveryState, recoveryCapabilityAllowed, RECOVERY_STABILITY_THRESHOLD } from '../agents/recovery_state';
+import { validateTargetBranch, validateBaseBranch } from './tools/github_branch_validation';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
 const BENCHMARK_REPO = 'omomehinemmanuel5-boop/Lexaureon-Benchmark';
@@ -139,11 +140,11 @@ export async function search_code({
 //    executor and action-bound authorization before invoking either registry
 //    alias; this function only performs the already-authorized GitHub write. ──
 async function commitToGitHub({
-  path, content, message, repo,
-}: { path: string; content: string; message: string; repo: string }, credential: string, signal?: AbortSignal): Promise<string> {
+  path, content, message, repo, branch,
+}: { path: string; content: string; message: string; repo: string; branch?: string }, credential: string, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
   let sha: string | undefined;
-  const existing = await ghFetch(`/repos/${repo}/contents/${path}`, { signal }, credential);
+  const existing = await ghFetch(`/repos/${repo}/contents/${path}${branch ? `?ref=${encodeURIComponent(branch)}` : ''}`, { signal }, credential);
   if (existing.ok) {
     const d = await existing.json() as { sha?: string };
     sha = d.sha;
@@ -153,6 +154,7 @@ async function commitToGitHub({
     content: Buffer.from(content).toString('base64'),
   };
   if (sha) body.sha = sha;
+  if (branch !== undefined) body.branch = branch;
   // The caller's deadline may have elapsed while the current file was read;
   // never begin the mutating PUT after cancellation.
   signal?.throwIfAborted();
@@ -170,9 +172,13 @@ async function commitToGitHub({
 // ── write_file (PURE) ─────────────────────────────────────────────────────────
 // Logic only. Governance is applied at the registry/dispatch level.
 export async function write_file(input: {
-  path: string; content: string; message: string; repo?: string; approval_token?: unknown;
+  path: string; content: string; message: string; repo?: string; branch?: string; approval_token?: unknown;
 }, signal?: AbortSignal): Promise<string> {
-  const { path, content, message, repo = FRONTEND_REPO, approval_token } = input;
+  const { path, content, message, repo = FRONTEND_REPO, branch, approval_token } = input;
+  if (branch !== undefined) {
+    const branchError = validateTargetBranch(branch);
+    if (branchError) return 'Error: invalid branch: ' + branchError;
+  }
   let credential: string;
   try {
     credential = await getGitHubCredentialForApprovedAction({
@@ -183,7 +189,81 @@ export async function write_file(input: {
   } catch (error) {
     return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
   }
-  return commitToGitHub({ path, content, message, repo }, credential, signal);
+  return commitToGitHub({ path, content, message, repo, ...(branch !== undefined ? { branch } : {}) }, credential, signal);
+}
+
+/** Create a branch from the current head of main or an explicitly selected base branch. */
+export async function create_branch(input: {
+  branch: string; from_branch?: string; approval_token?: unknown;
+}, signal?: AbortSignal): Promise<string> {
+  const { branch, from_branch = 'main', approval_token } = input;
+  const branchError = validateTargetBranch(branch);
+  if (branchError) return 'Error: invalid branch: ' + branchError;
+  const baseError = validateBaseBranch(from_branch, 'from_branch');
+  if (baseError) return 'Error: invalid from_branch: ' + baseError;
+  signal?.throwIfAborted();
+
+  let credential: string;
+  try {
+    credential = await getGitHubCredentialForApprovedAction({ token: approval_token, toolName: 'create_branch', args: input });
+  } catch (error) {
+    return 'Error: ' + (error instanceof Error ? error.message : 'Lex privileged credential check failed.');
+  }
+
+  const encodedBranch = branch.split('/').map(encodeURIComponent).join('/');
+  const existing = await ghFetch('/repos/' + FRONTEND_REPO + '/git/ref/heads/' + encodedBranch, { signal }, credential);
+  if (existing.ok) return 'Error: branch already exists: ' + branch;
+  if (existing.status !== 404) return 'Error checking branch existence: GitHub returned ' + existing.status + '.';
+
+  const baseRef = from_branch.split('/').map(encodeURIComponent).join('/');
+  const source = await ghFetch('/repos/' + FRONTEND_REPO + '/git/ref/heads/' + baseRef, { signal }, credential);
+  if (!source.ok) return 'Error: source branch "' + from_branch + '" was not found (GitHub ' + source.status + ').';
+  const sourceData = await source.json() as { object?: { sha?: string } };
+  const sha = sourceData.object?.sha;
+  if (!sha) return 'Error: GitHub returned no commit SHA for source branch "' + from_branch + '".';
+  signal?.throwIfAborted();
+  const created = await ghFetch('/repos/' + FRONTEND_REPO + '/git/refs', {
+    method: 'POST', signal,
+    body: JSON.stringify({ ref: 'refs/heads/' + branch, sha }),
+  }, credential);
+  if (!created.ok) {
+    const error = await created.json().catch(() => ({})) as { message?: string };
+    return 'Error creating branch: ' + (error.message ?? created.status);
+  }
+  return '✓ Created branch ' + branch + ' from ' + from_branch + ' at ' + sha.slice(0, 10) + '.';
+}
+
+/** Open a pull request only. This tool has no merge, close, or delete behavior. */
+export async function open_pr(input: {
+  head: string; base?: string; title: string; body?: string; approval_token?: unknown;
+}, signal?: AbortSignal): Promise<string> {
+  const { head, base = 'main', title, body = '', approval_token } = input;
+  const headError = validateTargetBranch(head);
+  if (headError) return 'Error: invalid head: ' + headError;
+  const baseError = validateBaseBranch(base, 'base');
+  if (baseError) return 'Error: invalid base: ' + baseError;
+  if (typeof title !== 'string' || title.trim().length === 0 || title.length > 256) {
+    return 'Error: title must be a non-empty string of at most 256 characters.';
+  }
+  if (typeof body !== 'string') return 'Error: body must be a string when provided.';
+  signal?.throwIfAborted();
+  let credential: string;
+  try {
+    credential = await getGitHubCredentialForApprovedAction({ token: approval_token, toolName: 'open_pr', args: input });
+  } catch (error) {
+    return 'Error: ' + (error instanceof Error ? error.message : 'Lex privileged credential check failed.');
+  }
+  const res = await ghFetch('/repos/' + FRONTEND_REPO + '/pulls', {
+    method: 'POST', signal,
+    body: JSON.stringify({ title, head, base, body }),
+  }, credential);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({})) as { message?: string };
+    return 'Error opening pull request: ' + (error.message ?? res.status);
+  }
+  const pr = await res.json() as { html_url?: string; number?: number; head?: { ref?: string; sha?: string }; base?: { ref?: string } };
+  return '✓ Opened PR #' + (pr.number ?? 'unknown') + ': ' + (pr.html_url ?? '(URL unavailable)')
+    + '\nhead=' + (pr.head?.ref ?? head) + ' base=' + (pr.base?.ref ?? base) + ' commit=' + (pr.head?.sha ?? 'unknown');
 }
 
 /** @deprecated Use write_file instead. */
@@ -1345,7 +1425,9 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   read_file:                (a) => read_file(a as { path: string; repo?: string }),
   list_directory:           (a) => list_directory(a as { path?: string; repo?: string }),
   search_code:              (a) => search_code(a as { query: string; repo?: string }),
-  write_file:               (a, signal) => write_file(a as { path: string; content: string; message: string; repo?: string }, signal),
+  write_file:               (a, signal) => write_file(a as { path: string; content: string; message: string; repo?: string; branch?: string }, signal),
+  create_branch:            (a, signal) => create_branch(a as { branch: string; from_branch?: string }, signal),
+  open_pr:                  (a, signal) => open_pr(a as { head: string; base?: string; title: string; body?: string }, signal),
   write_file_governed:      (a, signal) => write_file(a as { path: string; content: string; message: string; repo?: string }, signal),
   get_build_status:         () => get_build_status(),
   get_workflow_run:         (a) => get_workflow_run(a as { workflow?: string; run_id?: number; repo?: string }),
@@ -1429,10 +1511,21 @@ export const TOOL_DEFINITIONS = [
         session_id: { type: 'string', description: 'Optional. Governance session ID.' },
         task_context: { type: 'string', description: 'Optional. Context for risk measurement.' },
         approval_request_id: { type: 'string', description: 'One-time human-approved exact-action request ID returned by request_approval.' },
+        branch: { type: 'string', description: 'Optional target branch. Must start with govern/ or fix/. Invalid names are rejected before any GitHub request; omitted preserves default-branch behavior.' },
         ...REPO_PARAM,
       },
       required: ['path', 'content', 'message'],
     },
+  },
+  {
+    name: 'create_branch',
+    description: 'Create a new branch from the current head of main (or from_branch). Branch names must start with govern/ or fix/. Requires Lex approval; refuses existing branches.',
+    parameters: { type: 'object', properties: { branch: { type: 'string' }, from_branch: { type: 'string', description: 'Optional source branch; defaults to main.' } }, required: ['branch'] },
+  },
+  {
+    name: 'open_pr',
+    description: 'Open a pull request from an existing govern/ or fix/ branch. Defaults base to main. Requires Lex approval. This tool only opens PRs; it never merges, closes, or deletes anything.',
+    parameters: { type: 'object', properties: { head: { type: 'string' }, base: { type: 'string', description: 'Target branch; defaults to main.' }, title: { type: 'string' }, body: { type: 'string' } }, required: ['head', 'title'] },
   },
   {
     name: 'get_build_status',
