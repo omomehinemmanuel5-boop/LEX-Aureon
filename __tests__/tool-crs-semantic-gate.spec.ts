@@ -114,6 +114,23 @@ describe('injectionSimilarity — natural-language shape gate', () => {
     expect(result.blocked_pattern).toBeNull();
     expect(result.unclassified).toBe(false);
   });
+  it('classifies request_approval as a governed MEDIUM-risk tool', async () => {
+    const result = await measureToolCRS({
+      id: 'request-approval',
+      name: 'request_approval',
+      arguments: {
+        tool_name: 'write_file',
+        arguments: { path: 'README.md', content: 'safe edit', message: 'test' },
+      },
+      session_id: 'test-session',
+      task_context: 'Request human approval for a reviewed file edit',
+    });
+
+    expect(result.risk_level).toBe('MEDIUM');
+    expect(result.unclassified).toBeFalsy();
+    expect(result.blocked_pattern).toBeNull();
+  });
+
   it('classifies create_branch and open_pr as governed MEDIUM-risk tools', async () => {
     const cases = [
       {
