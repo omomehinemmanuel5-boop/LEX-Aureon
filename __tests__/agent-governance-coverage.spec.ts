@@ -27,12 +27,19 @@ describe('agent governance coverage', () => {
       'find', 'ls', 'dir', 'glob', 'get_build_status', 'get_workflow_run',
       'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
       'check_github_token_scope', 'get_trajectory_status', 'run_recovery_canary',
+      'get_workflow_artifact', 'review_agent_action', 'narrate_origin',
     ];
 
     for (const tool of readOnlyTools) {
       expect(isNonMutatingInspectionTool(tool), `Transport should classify ${tool} as non-mutating`).toBe(true);
       expect(isNonMutatingGovernanceTool(tool), `Executor should classify ${tool} as non-mutating`).toBe(true);
     }
+
+    expect(isNonMutatingInspectionTool('query_database', { sql: 'SELECT 1' })).toBe(true);
+    expect(isNonMutatingInspectionTool('query_database', { sql: 'UPDATE accounts SET active = 0' })).toBe(false);
+    expect(isNonMutatingInspectionTool('query_database', { sql: 'DELETE FROM accounts' })).toBe(false);
+    expect(isNonMutatingInspectionTool('query_database', { sql: 'DROP TABLE accounts' })).toBe(false);
+    expect(isNonMutatingInspectionTool('query_database', { sql: 'SELECT 1; DELETE FROM accounts' })).toBe(false);
 
     for (const tool of ['curl', 'unknown_tool', 'discover_external_tool', 'govern_external_action', 'write_file']) {
       expect(isNonMutatingInspectionTool(tool), `Transport must not classify ${tool} as non-mutating`).toBe(false);
