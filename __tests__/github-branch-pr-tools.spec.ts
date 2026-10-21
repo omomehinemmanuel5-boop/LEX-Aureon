@@ -6,8 +6,8 @@ const { getGitHubCredentialForApprovedAction } = vi.hoisted(() => ({
 
 vi.mock('../lib/agents/credential_broker', () => ({ getGitHubCredentialForApprovedAction }));
 
-import { write_file, create_branch, open_pr } from '../lib/lex_crs_agent/tools';
-import { patch_file } from '../lib/lex_crs_agent/tools/patch_file';
+import { write_file, create_branch, open_pr, TOOL_DEFINITIONS } from '../lib/lex_crs_agent/tools';
+import { patch_file, PATCH_FILE_DEFINITION } from '../lib/lex_crs_agent/tools/patch_file';
 import { validateTargetBranch } from '../lib/lex_crs_agent/tools/github_branch_validation';
 import { getToolCapability } from '../lib/agents/tool_capability_registry';
 
@@ -128,6 +128,20 @@ describe('validated GitHub branch and PR tools', () => {
     expect(fetchMock.mock.calls.some(call => /\/pulls\/[^/]+\/merge(?:\?|$)/.test(String(call[0])))).toBe(false);
     expect(fetchMock.mock.calls.some(call => /\/git\/refs\/heads\/[^/]+$/.test(String(call[0])) &&
       (call[1] as RequestInit | undefined)?.method === 'DELETE')).toBe(false);
+  });
+
+  it('publishes the branch field and new tool input schemas', () => {
+    const write = TOOL_DEFINITIONS.find(tool => tool.name === 'write_file') as { parameters: { properties: Record<string, unknown> } } | undefined;
+    const create = TOOL_DEFINITIONS.find(tool => tool.name === 'create_branch') as { parameters: { properties: Record<string, unknown> } } | undefined;
+    const open = TOOL_DEFINITIONS.find(tool => tool.name === 'open_pr') as { parameters: { properties: Record<string, unknown> } } | undefined;
+    expect(write?.parameters.properties).toHaveProperty('branch');
+    expect(PATCH_FILE_DEFINITION.inputSchema.properties).toHaveProperty('branch');
+    expect(create?.parameters.properties).toHaveProperty('branch');
+    expect(create?.parameters.properties).toHaveProperty('from_branch');
+    expect(open?.parameters.properties).toHaveProperty('head');
+    expect(open?.parameters.properties).toHaveProperty('base');
+    expect(open?.parameters.properties).toHaveProperty('title');
+    expect(open?.parameters.properties).toHaveProperty('body');
   });
 
   it('registers create_branch and open_pr as approval-required write capabilities', () => {
