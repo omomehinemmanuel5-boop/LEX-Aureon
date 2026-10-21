@@ -99,4 +99,12 @@ describe('MCP sessions', () => {
     vi.stubEnv('MCP_OPERATOR_SECRET', 'operator-secret');
     expect(await issueMcpSession(key)).toBeNull();
   });
+
+  it('keeps non-session imports bootable in production when the session secret is missing', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('MCP_SESSION_SECRET', undefined);
+    const { siteUrlForMetadata } = await import('../lib/env');
+    expect(siteUrlForMetadata()).toBeDefined();
+    expect(await issueMcpSession(key)).toBeNull();
+  });
 });
