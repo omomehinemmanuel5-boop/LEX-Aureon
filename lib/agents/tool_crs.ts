@@ -456,6 +456,8 @@ const MEDIUM_RISK_TOOLS = new Set([
   // PR #158 added these tools without classifying them, so governance denied
   // them as unclassified. Medium: reversible branch/PR creation, never a merge.
   'create_branch', 'open_pr',
+  // Creates a pending exact-action approval record; execution remains separate.
+  'request_approval',
 ]);
 
 // ── Argument scanner ───────────────────────────────────────────────────────
