@@ -32,6 +32,8 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'review_agent_action', description: 'review', parameters: { type: 'object' } },
     { name: 'narrate_origin', description: 'origin', parameters: { type: 'object' } },
     { name: 'write_file', description: 'write', parameters: { type: 'object' } },
+    { name: 'create_branch', description: 'create branch', parameters: { type: 'object', properties: { branch: { type: 'string' } }, required: ['branch'] } },
+    { name: 'open_pr', description: 'open PR', parameters: { type: 'object', properties: { head: { type: 'string' }, title: { type: 'string' } }, required: ['head', 'title'] } },
     { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
     { name: 'query_database', description: 'database', parameters: { type: 'object' } },
     { name: 'authorize_tool_action', description: 'authorize', parameters: { type: 'object' } },
@@ -110,6 +112,8 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
     review_agent_action: toolFn,
     narrate_origin: toolFn,
     write_file: toolFn,
+    create_branch: toolFn,
+    open_pr: toolFn,
     dispatch_workflow: toolFn,
     query_database: toolFn,
   },
@@ -179,10 +183,28 @@ describe('MCP constitutional dispatch boundary', () => {
     const body = response.body as unknown as { result: { tools: Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }> } };
     const writeTool = body.result.tools.find(tool => tool.name === 'write_file');
     const readTool = body.result.tools.find(tool => tool.name === 'read_file');
+    const createBranchTool = body.result.tools.find(tool => tool.name === 'create_branch');
+    const openPrTool = body.result.tools.find(tool => tool.name === 'open_pr');
     expect(writeTool).toBeDefined();
     expect(writeTool?.inputSchema.properties).toHaveProperty('approval_request_id');
     expect(readTool).toBeDefined();
     expect(readTool?.inputSchema.properties?.approval_request_id).toBeUndefined();
+    expect(createBranchTool?.inputSchema.properties).toHaveProperty('approval_request_id');
+    expect(openPrTool?.inputSchema.properties).toHaveProperty('approval_request_id');
+  });
+
+  it.each([
+    ['create_branch', { branch: 'fix/approval-gate-test' }],
+    ['open_pr', { head: 'fix/approval-gate-test', title: 'Approval gate test', body: 'Test body' }],
+  ])('%s creates an approval request before invoking the GitHub handler', async (name, args) => {
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call', params: { name, arguments: args }, id: 'approval-gate-' + name,
+    }));
+    expect(response.status).toBe(200);
+    const body = response.body as { result?: { structuredContent?: Record<string, unknown> } };
+    expect(body.result?.structuredContent).toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22), tool_name: name });
+    expect(createApprovalRequest).toHaveBeenCalled();
+    expect(toolFn).not.toHaveBeenCalled();
   });
 
   beforeEach(() => {
