@@ -32,7 +32,7 @@ import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
 import { isNonMutatingInspectionTool } from '@/lib/mcp_route_policy';
-import { createApprovalRequest } from '@/lib/approval_requests';
+import { createApprovalRequest, getApprovalRequestStatus } from '@/lib/approval_requests';
 import { env } from '@/lib/env';
 import { CONSTITUTION } from '@/lib/constitution';
 
@@ -710,6 +710,27 @@ export async function POST(req: Request) {
             from_branch: typeof requestedArgs.from_branch === 'string' ? requestedArgs.from_branch : 'main',
           }
           : requestedArgs;
+      // Status lookup is read-only: it neither creates a second request nor
+      // grants execution. Only the governed target-tool call can consume approval.
+      if (typeof args.approval_request_id === 'string' && args.approval_request_id.length > 0) {
+        const status = await getApprovalRequestStatus({
+          requestId: args.approval_request_id,
+          ownerId,
+          sessionId: requestedSession,
+          toolName: requestedTool,
+          args: { ...normalizedRequestedArgs, session_id: requestedSession },
+        });
+        return mcpToolResult(id, {
+          status: status.status,
+          tool_name: requestedTool,
+          request_id: args.approval_request_id,
+          ...(status.reason ? { reason: status.reason } : {}),
+          execution_granted: false,
+          next_step: status.status === 'approved'
+            ? 'Retry the target tool with this approval_request_id and unchanged arguments; only that target-tool call can consume the approval.'
+            : 'No action was executed. Resolve the approval status before retrying the target tool.',
+        });
+      }
       try {
         await runZTrajMigrations();
         if (!(await ensureCanonicalTrajectoryState(requestedSession))) {
