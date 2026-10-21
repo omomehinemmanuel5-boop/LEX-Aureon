@@ -28,6 +28,9 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'advance_recovery_plane', description: 'recovery control', parameters: { type: 'object' } },
     { name: 'simulate_agent_plan', description: 'simulate', parameters: { type: 'object' } },
     { name: 'read_file', description: 'read', parameters: { type: 'object' } },
+    { name: 'get_workflow_artifact', description: 'artifact metadata', parameters: { type: 'object' } },
+    { name: 'review_agent_action', description: 'review', parameters: { type: 'object' } },
+    { name: 'narrate_origin', description: 'origin', parameters: { type: 'object' } },
     { name: 'write_file', description: 'write', parameters: { type: 'object' } },
     { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
     { name: 'query_database', description: 'database', parameters: { type: 'object' } },
@@ -103,7 +106,12 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
     advance_recovery_plane: toolFn,
     simulate_agent_plan: toolFn,
     read_file: toolFn,
+    get_workflow_artifact: toolFn,
+    review_agent_action: toolFn,
+    narrate_origin: toolFn,
     write_file: toolFn,
+    dispatch_workflow: toolFn,
+    query_database: toolFn,
   },
 }));
 
@@ -278,6 +286,42 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(ensureCanonicalTrajectoryState).not.toHaveBeenCalled();
     expect(executeGovernedTool).toHaveBeenCalledTimes(1);
     expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('simulate_agent_plan');
+  });
+
+  it.each([
+    ['get_workflow_artifact', {}],
+    ['review_agent_action', {}],
+    ['narrate_origin', {}],
+    ['query_database', { sql: 'SELECT 1' }],
+  ])('does not record a trajectory observation for read-only %s', async (toolName, arguments_) => {
+    validateApiKey.mockResolvedValue({ valid: true, key: { id: 'private-test-readonly', plan: 'private_test' } });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key: { id: 'private-test-readonly', plan: 'private_test' } });
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: toolName, arguments: arguments_ },
+      id: `read-only-${toolName}`,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(ensureCanonicalTrajectoryState).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['query_database', { sql: 'UPDATE accounts SET active = 0' }],
+    ['query_database', { sql: 'DELETE FROM accounts' }],
+    ['dispatch_workflow', { workflow: 'sync' }],
+    ['write_file', { path: 'README.md', content: 'change' }],
+  ])('keeps trajectory governance for mutating %s', async (toolName, arguments_) => {
+    validateApiKey.mockResolvedValue({ valid: true, key: { id: 'private-test-mutating', plan: 'private_test' } });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key: { id: 'private-test-mutating', plan: 'private_test' } });
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: toolName, arguments: arguments_ },
+      id: `mutating-${toolName}`,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(ensureCanonicalTrajectoryState).toHaveBeenCalledTimes(1);
   });
 
   it('denies a private_test key from running the canary when its owner is not allowlisted', async () => {
@@ -472,6 +516,7 @@ describe('MCP constitutional dispatch boundary', () => {
       'run_governance',
       'get_constitutional_state',
       'simulate_agent_plan',
+      'review_agent_action',
       'discover_external_tool',
       'govern_external_action',
       'consume_external_action',

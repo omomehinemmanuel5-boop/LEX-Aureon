@@ -996,7 +996,7 @@ export async function POST(req: Request) {
     const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
     try {
       await runZTrajMigrations();
-      if (!isNonMutatingInspectionTool(dispatchToolName)
+      if (!isNonMutatingInspectionTool(dispatchToolName, args)
         && !(await ensureCanonicalTrajectoryState(sessionId))) {
         return NextResponse.json({
           jsonrpc: '2.0',
