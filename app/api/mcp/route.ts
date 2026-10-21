@@ -1057,7 +1057,22 @@ export async function POST(req: Request) {
       const executionArgs = dispatchToolName === 'preview_patch_file'
         ? Object.fromEntries(Object.entries(baseToolArgs).filter(([key]) => key !== 'approval_token'))
         : baseToolArgs;
-      const toolArgs = bindGovernanceToolSession(dispatchToolName, executionArgs, sessionId);
+      // Normalize optional defaults before approval hashing. This ensures the
+      // exact approved action binds the effective PR base/body and branch source,
+      // even when a client omits optional fields on both attempts.
+      const normalizedExecutionArgs = dispatchToolName === 'open_pr'
+        ? {
+          ...executionArgs,
+          base: typeof executionArgs.base === 'string' ? executionArgs.base : 'main',
+          body: typeof executionArgs.body === 'string' ? executionArgs.body : '',
+        }
+        : dispatchToolName === 'create_branch'
+          ? {
+            ...executionArgs,
+            from_branch: typeof executionArgs.from_branch === 'string' ? executionArgs.from_branch : 'main',
+          }
+          : executionArgs;
+      const toolArgs = bindGovernanceToolSession(dispatchToolName, normalizedExecutionArgs, sessionId);
       const requestedCapability = getToolCapability(dispatchToolName);
       if (requestedCapability?.approvalRequired
         && args.approval_token === undefined
