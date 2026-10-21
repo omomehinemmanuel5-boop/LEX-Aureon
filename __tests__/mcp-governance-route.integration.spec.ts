@@ -549,8 +549,8 @@ describe('MCP constitutional dispatch boundary', () => {
       params: {
         name: 'request_approval',
         arguments: {
-          tool_name: 'write_file',
-          arguments: { path: 'README.md', content: 'safe edit', message: 'public approval test' },
+          tool_name: 'run_governance',
+          arguments: { prompt: 'Summarize the user-provided document' },
         },
       },
       id: 'public-request-approval',
@@ -561,8 +561,8 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(result?.content?.[0]?.text).not.toContain('unclassified_tool:request_approval');
     expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
       ownerId: 'public-approval-owner',
-      toolName: 'write_file',
-      args: expect.objectContaining({ path: 'README.md', message: 'public approval test' }),
+      toolName: 'run_governance',
+      args: expect.objectContaining({ prompt: 'Summarize the user-provided document' }),
     }));
   });
 
