@@ -453,6 +453,9 @@ const MEDIUM_RISK_TOOLS = new Set([
   // was being touched, unlike every other write tool. Same path-based
   // scoring (protected paths, build files) now applies.
   'patch_file',
+  // PR #158 added these tools without classifying them, so governance denied
+  // them as unclassified. Medium: reversible branch/PR creation, never a merge.
+  'create_branch', 'open_pr',
 ]);
 
 // ── Argument scanner ───────────────────────────────────────────────────────
