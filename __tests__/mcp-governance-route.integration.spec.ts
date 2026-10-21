@@ -153,6 +153,7 @@ vi.mock('../lib/agents/trajectory_session_store', () => ({
 }));
 
 import { POST } from '../app/api/mcp/route';
+import { measureToolCRS } from '../lib/agents/tool_crs';
 
 function request(body: Record<string, unknown>, extraHeaders: Record<string, string> = {}) {
   return new Request('http://localhost/api/mcp', {
@@ -523,6 +524,46 @@ describe('MCP constitutional dispatch boundary', () => {
     const payload = response.body as unknown as { result: { structuredContent: unknown } };
     expect(payload.result.structuredContent).toEqual({ value: 'approved:    true\\ncache_hit:   false\\nTOOL_RESULT' });
     expect(Array.isArray(payload.result.structuredContent)).toBe(false);
+  });
+
+  it('allows a public-profile request_approval through CRS to create a pending request', async () => {
+    const key = { id: 'public-approval-owner', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    executeGovernedTool.mockImplementationOnce(async (name, args, handler, sessionId) => {
+      const measurement = await measureToolCRS({
+        id: 'public-request-approval',
+        name: String(name),
+        arguments: args as Record<string, unknown>,
+        session_id: String(sessionId ?? 'public-approval-owner:session'),
+      });
+      if (measurement.unclassified || measurement.risk_level === 'BLOCKED') {
+        return `DENIED:${measurement.blocked_pattern ?? 'blocked'}`;
+      }
+      return (handler as (input: Record<string, unknown>) => Promise<string>)(args as Record<string, unknown>);
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'request_approval',
+        arguments: {
+          tool_name: 'write_file',
+          arguments: { path: 'README.md', content: 'safe edit', message: 'public approval test' },
+        },
+      },
+      id: 'public-request-approval',
+    }));
+
+    expect(response.status).toBe(200);
+    const result = (response.body as { result?: { content?: Array<{ text?: string }> } }).result;
+    expect(result?.content?.[0]?.text).not.toContain('unclassified_tool:request_approval');
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'public-approval-owner',
+      toolName: 'write_file',
+      args: expect.objectContaining({ path: 'README.md', message: 'public approval test' }),
+    }));
   });
 
   it('cannot set an approval request status or owner through MCP arguments', async () => {
