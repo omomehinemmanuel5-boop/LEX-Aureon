@@ -39,4 +39,10 @@ describe('environment contract', () => {
     delete process.env.GEMINI_API_KEY;
     expect(env.GEMINI_API_KEY).toBeUndefined();
   });
+
+  it('requires the dedicated MCP session secret in production', () => {
+    delete process.env.MCP_SESSION_SECRET;
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+    expect(() => env.MCP_SESSION_SECRET).toThrow('[Lexaureon] Missing required env var: MCP_SESSION_SECRET');
+  });
 });

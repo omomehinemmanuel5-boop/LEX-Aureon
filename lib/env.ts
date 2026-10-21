@@ -44,6 +44,7 @@ type EnvShape = {
   LOG_DRAIN_URL:                string | undefined;
   LOG_DRAIN_TOKEN:              string | undefined;
   BENCH_SECRET:                 string | undefined;
+  MCP_SESSION_SECRET:           string | undefined;
   MCP_OPERATOR_SECRET:          string | undefined;
   LEX_CANARY_OWNER_IDS:          string | undefined;
   LEX_APPROVAL_IMPLICIT_LIMIT:   string | undefined;
@@ -68,6 +69,7 @@ export const env = new Proxy({} as EnvShape, {
   get(_, prop: string) {
     const key = prop as keyof EnvShape;
     if (REQUIRED.has(key)) return required(prop);
+    if (key === 'MCP_SESSION_SECRET' && process.env.NODE_ENV === 'production') return required(prop);
     if (key === 'NEXT_PUBLIC_SITE_URL') return siteUrlForMetadata();
     const sourceKey = ALIASES[key] ?? prop;
     return optional(sourceKey);

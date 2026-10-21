@@ -1,5 +1,8 @@
 import { CONSTITUTION } from '../constitution';
-import type { ToolCapability } from './tool_capability_registry';
+
+type ToolCapability =
+  | 'read' | 'recovery' | 'write' | 'external' | 'destructive'
+  | 'identity' | 'financial' | 'network' | 'execute' | 'delegate';
 
 export type RecoveryState =
   | 'QUARANTINED'

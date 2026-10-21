@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, validateMcpSession } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
@@ -19,6 +19,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   interceptToolCall: vi.fn(async () => ({ approved: true, decision: 'approved', reason: 'allowed', receipt_id: 'approval-receipt' })),
   createGovernanceApprovalToken: vi.fn(() => 'approval-token'),
   createApprovalRequest: vi.fn(async () => ({ requestId: 'a'.repeat(22), expiresAt: Date.now() + 900_000 })),
+  validateMcpSession: vi.fn(),
   definitions: [
     { name: 'request_approval', description: 'request', parameters: { type: 'object' } },
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
@@ -64,6 +65,8 @@ vi.mock('@/lib/api_keys', () => ({
   validateAndConsumeKey,
   validateApiKey,
 }));
+
+vi.mock('@/lib/mcp_sessions', () => ({ validateMcpSession }));
 
 vi.mock('@/lib/rate_limit', () => ({ checkRateLimit }));
 
@@ -181,6 +184,7 @@ describe('MCP constitutional dispatch boundary', () => {
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
     isOperatorSecret.mockReturnValue(false);
+    validateMcpSession.mockResolvedValue({ valid: false, error: 'Invalid MCP session' });
     toolFn.mockResolvedValue('TOOL_RESULT');
     readCanonicalGovernanceState.mockResolvedValue({
       available: true,
@@ -227,6 +231,22 @@ describe('MCP constitutional dispatch boundary', () => {
     log.mockRestore();
   });
 
+  it.each([
+    ['MCP session expired', 'Session expired. Reconnect Lex Aureon to refresh credentials, then retry this tool call.'],
+    ['Invalid MCP session', 'Session token is invalid. Reconnect Lex Aureon, then retry this tool call.'],
+    ['Session authentication unavailable', 'Session service temporarily unavailable. Retry this tool call shortly.'],
+  ])('returns a specific tool error for %s', async (reason, expected) => {
+    validateMcpSession.mockResolvedValue({ valid: false, error: reason });
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'get_constitutional_state', arguments: {} },
+      id: 'session-error',
+    }, { 'x-lex-session-token': 'session-token', 'x-lex-api-key': '' }));
+    expect(response.status).toBe(200);
+    expect((response.body as unknown as { result: { content: Array<{ text: string }>; isError: boolean } }).result.isError).toBe(true);
+    expect((response.body as unknown as { result: { content: Array<{ text: string }> } }).result.content[0].text).toBe(expected);
+  });
+
   it('does not bootstrap z_traj for read-only constitutional inspection', async () => {
     const key = { id: 'public-inspector', plan: 'free' };
     validateApiKey.mockResolvedValue({ valid: true, key });
@@ -269,10 +289,33 @@ describe('MCP constitutional dispatch boundary', () => {
       params: { name: 'run_recovery_canary', arguments: { session_id: 'private-test-1:canary-session' } },
       id: 'private-test-not-allowlisted',
     }));
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
+    expect((response.body as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }).result?.isError).toBe(true);
+    expect((response.body as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text)
+      .toContain('Your credential is valid');
     expect(executeGovernedToolStructured).not.toHaveBeenCalled();
     expect(toolFn).not.toHaveBeenCalled();
     expect(recordRecoveryCanaryEvidence).not.toHaveBeenCalled();
+  });
+
+  it('allows an explicitly allowlisted owner to reach the canary executor', async () => {
+    process.env.LEX_CANARY_OWNER_IDS = 'private-test-allowlisted';
+    const key = { id: 'private-test-allowlisted', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    executeGovernedToolStructured.mockResolvedValueOnce({
+      approved: true, result: 'CANARY_RESULT', receiptId: 'canary-receipt',
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call',
+      params: { name: 'run_recovery_canary', arguments: { session_id: 'private-test-allowlisted:canary-session' } },
+      id: 'private-test-allowlisted',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    expect(executeGovernedToolStructured.mock.calls[0]?.[0]).toBe('run_recovery_canary');
   });
 
   it('denies a non-allowlisted private-test key from advancing recovery before trajectory dispatch', async () => {

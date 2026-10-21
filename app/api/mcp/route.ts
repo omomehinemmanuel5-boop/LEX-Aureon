@@ -31,6 +31,7 @@ import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
+import { isNonMutatingInspectionTool } from '@/lib/mcp_route_policy';
 import { createApprovalRequest } from '@/lib/approval_requests';
 import { env } from '@/lib/env';
 import { CONSTITUTION } from '@/lib/constitution';
@@ -50,6 +51,9 @@ function ipHash(req: Request): string {
 // Bind the fallback to the authenticated actor, not the transport IP, so a
 // proxy hop change cannot split canary evidence from the consequential action.
 // Explicit session_id values still take precedence and remain session-scoped.
+// Because the fallback includes the UTC date, stateless clients reset their
+// recovery trajectory daily; stable connectors should send an explicit,
+// persistent session_id so canary evidence remains bound to the same session.
 function defaultMcpSessionId(actorId: string): string {
   const day = new Date().toISOString().slice(0, 10);
   const actorHash = crypto.createHash('sha256').update(actorId).digest('hex').slice(0, 12);
@@ -164,6 +168,24 @@ function oauthToolChallenge(id: number | string | null | undefined) {
         'Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"',
       ],
     },
+    id,
+  });
+}
+
+function mcpSessionError(id: number | string | null | undefined, reason: string) {
+  const expired = reason === 'MCP session expired' || reason === 'API credential expired or revoked';
+  const unavailable = reason === 'Session authentication unavailable';
+  const text = unavailable
+    ? 'Session service temporarily unavailable. Retry this tool call shortly.'
+    : expired
+      ? 'Session expired. Reconnect Lex Aureon to refresh credentials, then retry this tool call.'
+      : 'Session token is invalid. Reconnect Lex Aureon, then retry this tool call.';
+  return NextResponse.json({
+    jsonrpc: '2.0',
+    result: { content: [{ type: 'text', text }], isError: true },
+    _meta: { 'mcp/www_authenticate': [
+      'Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Session token is no longer valid"',
+    ] },
     id,
   });
 }
@@ -336,23 +358,6 @@ type JsonRpcRequest = {
 const MAX_SESSION_ID_LENGTH = 128;
 const MAX_MCP_BODY_BYTES = 128 * 1024;
 const MCP_REQUESTS_PER_MINUTE = 60;
-
-// These inspection tools must not bootstrap or otherwise mutate the trajectory they inspect.
-const NON_MUTATING_INSPECTION_TOOLS = new Set([
-  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
-  'read_file', 'read_directory', 'list_directory', 'list_files',
-  'read_memory', 'search_memory', 'search_code', 'fetch_page', 'http_get',
-  'get_file', 'read_json', 'parse_csv', 'cat', 'head', 'tail', 'grep',
-  'find', 'ls', 'dir', 'glob', 'get_build_status', 'get_workflow_run',
-  'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
-  'check_github_token_scope', 'get_trajectory_status', 'run_recovery_canary',
-  // A simulated plan is read-only with respect to canonical trajectory state.
-  'simulate_agent_plan',
-]);
-
-export function isNonMutatingInspectionTool(toolName: string): boolean {
-  return NON_MUTATING_INSPECTION_TOOLS.has(toolName);
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -578,8 +583,10 @@ export async function POST(req: Request) {
       if (sessionToken) {
         const session = await validateMcpSession(sessionToken);
         if (!session.valid) {
-          logMcpAuth(toolName, credentialPath, 'rejected_invalid_session');
-          return oauthToolChallenge(id);
+          const expired = session.error === 'MCP session expired'
+            || session.error === 'API credential expired or revoked';
+          logMcpAuth(toolName, credentialPath, expired ? 'rejected_expired_session' : 'rejected_invalid_session');
+          return mcpSessionError(id, session.error);
         }
         sessionKeyId = session.key.id;
         ownerId = session.key.id;
@@ -989,7 +996,7 @@ export async function POST(req: Request) {
     const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
     try {
       await runZTrajMigrations();
-      if (!NON_MUTATING_INSPECTION_TOOLS.has(dispatchToolName)
+      if (!isNonMutatingInspectionTool(dispatchToolName)
         && !(await ensureCanonicalTrajectoryState(sessionId))) {
         return NextResponse.json({
           jsonrpc: '2.0',
@@ -1098,8 +1105,8 @@ export async function POST(req: Request) {
             canary_passed: canonical.state.canaryPassed === true,
             approval_created: false,
             next_step: canonical.state.M >= 0.15 && canonical.state.nStable >= 3 && !canonical.state.canaryPassed
-              ? 'Run the operator-only recovery canary for this exact session, then retry the action.'
-              : 'Continue safe governed observations and retry after Lex reports a restorable state.',
+              ? `Run the operator-only recovery canary for this exact session; n_stable is ${canonical.state.nStable}/3 and velocity must be below the stability threshold before the canary can pass, then retry the action.`
+              : `Continue safe governed observations until n_stable reaches 3/3 and velocity is below the stability threshold${canonical.state.canaryPassed ? '' : '; the recovery canary is still needed once those requirements are met'}, then retry the action.`,
           });
         }
         const configuredApprovalLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
@@ -1184,8 +1191,15 @@ export async function POST(req: Request) {
         return unauthorized(id);
       }
       if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
-        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
-        return unauthorized(id);
+        logMcpAuth(toolName, credentialPath, 'rejected_canary_owner_not_allowlisted', profile);
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          result: {
+            content: [{ type: 'text', text: 'run_recovery_canary is restricted to allowlisted operator owners. Your credential is valid, but this owner is not in LEX_CANARY_OWNER_IDS. Ask the operator to add it.' }],
+            isError: true,
+          },
+          id,
+        });
       }
       const TRAJECTORY_META_TOOLS = new Set(['declare_trajectory_plan', 'get_trajectory_status', 'clear_trajectory_plan', 'request_approval']);
       // Diagnostics must remain reachable when a plan is stale, locked, or
@@ -1315,8 +1329,15 @@ export async function POST(req: Request) {
         return unauthorized(id);
       }
       if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
-        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
-        return unauthorized(id);
+        logMcpAuth(toolName, credentialPath, 'rejected_canary_owner_not_allowlisted', profile);
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          result: {
+            content: [{ type: 'text', text: 'run_recovery_canary is restricted to allowlisted operator owners. Your credential is valid, but this owner is not in LEX_CANARY_OWNER_IDS. Ask the operator to add it.' }],
+            isError: true,
+          },
+          id,
+        });
       }
       if (dispatchToolName === 'advance_recovery_plane') {
         const controller = new AbortController();

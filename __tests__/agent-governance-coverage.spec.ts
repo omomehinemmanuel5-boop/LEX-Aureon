@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_DEFINITIONS, TOOL_REGISTRY } from '../lib/lex_crs_agent/tools';
 import { PATCH_FILE_DEFINITION, patch_file, preview_patch_file } from '../lib/lex_crs_agent/tools/patch_file';
 import { requireKnownToolCapability } from '../lib/agents/tool_capability_registry';
-import { isNonMutatingInspectionTool } from '../app/api/mcp/route';
+import { isNonMutatingInspectionTool } from '../lib/mcp_route_policy';
 import { isNonMutatingGovernanceTool } from '../lib/agents/constitutional_tool_executor';
 
 describe('agent governance coverage', () => {
