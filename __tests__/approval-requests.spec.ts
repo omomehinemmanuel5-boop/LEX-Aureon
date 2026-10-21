@@ -97,6 +97,54 @@ describe('one-tap approval request persistence', () => {
     expect(row?.status).toBe('used');
   });
 
+  it('binds branch and every PR-defining field into the approval hash', async () => {
+    const action = {
+      ownerId: 'owner-a',
+      sessionId: 'owner-a:session-1',
+      toolName: 'open_pr',
+      args: {
+        head: 'fix/branch-tools',
+        base: 'main',
+        title: 'Add branch tools',
+        body: 'Reviewable changes',
+        session_id: 'owner-a:session-1',
+      },
+    };
+    const created = await createApprovalRequest(action);
+    row!.status = 'approved';
+    const changedFields = [
+      { ...action.args, head: 'fix/other' },
+      { ...action.args, base: 'release' },
+      { ...action.args, title: 'Different title' },
+      { ...action.args, body: 'Different body' },
+    ];
+    for (const args of changedFields) {
+      expect((await consumeApprovalRequest({ requestId: created.requestId, ...action, args })).consumed).toBe(false);
+    }
+    expect(row?.status).toBe('approved');
+    expect((await consumeApprovalRequest({ requestId: created.requestId, ...action })).consumed).toBe(true);
+    expect((await consumeApprovalRequest({ requestId: created.requestId, ...action })).consumed).toBe(false);
+  });
+
+  it('rejects a changed create_branch target when retrying an approved request', async () => {
+    const action = {
+      ownerId: 'owner-a',
+      sessionId: 'owner-a:session-1',
+      toolName: 'create_branch',
+      args: { branch: 'fix/original', from_branch: 'main', session_id: 'owner-a:session-1' },
+    };
+    const created = await createApprovalRequest(action);
+    row!.status = 'approved';
+    expect((await consumeApprovalRequest({
+      requestId: created.requestId,
+      ...action,
+      args: { ...action.args, branch: 'fix/changed' },
+    })).consumed).toBe(false);
+    expect(row?.status).toBe('approved');
+    expect((await consumeApprovalRequest({ requestId: created.requestId, ...action })).consumed).toBe(true);
+    expect((await consumeApprovalRequest({ requestId: created.requestId, ...action })).consumed).toBe(false);
+  });
+
   it('denies changed arguments and a different owner', async () => {
     const created = await createApprovalRequest(requestInput);
     row!.status = 'approved';
