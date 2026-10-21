@@ -453,6 +453,8 @@ const MEDIUM_RISK_TOOLS = new Set([
   // was being touched, unlike every other write tool. Same path-based
   // scoring (protected paths, build files) now applies.
   'patch_file',
+  // request_approval creates a pending approval record and never executes the requested action.
+  'request_approval',
   // PR #158 added these tools without classifying them, so governance denied
   // them as unclassified. Medium: reversible branch/PR creation, never a merge.
   'create_branch', 'open_pr',
