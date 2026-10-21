@@ -698,6 +698,18 @@ export async function POST(req: Request) {
       // Private-test credentials have operator capabilities, but they are not
       // operator-secret sessions and must retain owner-scoped session binding.
       const requestedSession = canonicalMcpSessionId(ownerId, requestedClientSession, operator);
+      const normalizedRequestedArgs = requestedTool === 'open_pr'
+        ? {
+          ...requestedArgs,
+          base: typeof requestedArgs.base === 'string' ? requestedArgs.base : 'main',
+          body: typeof requestedArgs.body === 'string' ? requestedArgs.body : '',
+        }
+        : requestedTool === 'create_branch'
+          ? {
+            ...requestedArgs,
+            from_branch: typeof requestedArgs.from_branch === 'string' ? requestedArgs.from_branch : 'main',
+          }
+          : requestedArgs;
       try {
         await runZTrajMigrations();
         if (!(await ensureCanonicalTrajectoryState(requestedSession))) {
@@ -749,7 +761,7 @@ export async function POST(req: Request) {
       const review = await interceptToolCall({
         id: crypto.randomUUID(),
         name: requestedTool,
-        arguments: requestedArgs,
+        arguments: normalizedRequestedArgs,
         session_id: requestedSession,
         actor_id: actorId,
         task_context: taskContext,
@@ -767,7 +779,7 @@ export async function POST(req: Request) {
           ownerId,
           sessionId: requestedSession,
           toolName: requestedTool,
-          args: { ...requestedArgs, session_id: requestedSession },
+          args: { ...normalizedRequestedArgs, session_id: requestedSession },
         });
         return mcpToolResult(id, {
           status: 'approval_required',
