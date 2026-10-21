@@ -114,4 +114,31 @@ describe('injectionSimilarity — natural-language shape gate', () => {
     expect(result.blocked_pattern).toBeNull();
     expect(result.unclassified).toBe(false);
   });
+  it('classifies create_branch and open_pr as governed MEDIUM-risk tools', async () => {
+    const cases = [
+      {
+        name: 'create_branch',
+        arguments: { branch: 'govern/example' },
+      },
+      {
+        name: 'open_pr',
+        arguments: { head: 'govern/example', title: 'Example' },
+      },
+    ];
+
+    for (const toolCase of cases) {
+      const result = await measureToolCRS({
+        id: `classified-${toolCase.name}`,
+        name: toolCase.name,
+        arguments: toolCase.arguments,
+        session_id: 'test-session',
+        task_context: 'Open a pull request for a reviewed fix',
+      });
+
+      expect(result.risk_level, toolCase.name).toBe('MEDIUM');
+      expect(result.unclassified, toolCase.name).toBeFalsy();
+      expect(result.blocked_pattern, toolCase.name).toBeNull();
+    }
+  });
+
 });
