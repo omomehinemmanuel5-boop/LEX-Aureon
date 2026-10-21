@@ -30,6 +30,8 @@ export const INTERNAL_MCP_TOOLS = new Set([
   'list_directory',
   'search_code',
   'write_file',
+  'create_branch',
+  'open_pr',
   'patch_file',
   'preview_patch_file',
   'get_build_status',
