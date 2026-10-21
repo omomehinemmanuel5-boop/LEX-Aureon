@@ -60,7 +60,7 @@ describe('validated GitHub branch and PR tools', () => {
     expect(validateTargetBranch('other/x')).toContain('govern/');
     expect(validateTargetBranch('fix/a..b')).toContain('..');
     expect(validateTargetBranch('fix/has space')).toContain('spaces');
-    expect(validateTargetBranch('fix/with\\nnewline')).toContain('control');
+    expect(validateTargetBranch('fix/with' + String.fromCharCode(10) + 'newline')).toContain('control');
     expect(validateTargetBranch('fix/' + 'x'.repeat(97))).toContain('100 characters');
   });
 
