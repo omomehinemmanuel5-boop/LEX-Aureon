@@ -59,6 +59,7 @@
  */
 
 import { getGitHubCredentialForApprovedAction } from '../../agents/credential_broker';
+import { validateTargetBranch } from './github_branch_validation';
 
 /* Type-only import: erased at compile time, so it adds no runtime dependency on
    typescript. The VALUE is loaded dynamically in parseGate() and may be absent
@@ -222,6 +223,7 @@ export async function patch_file(input: {
   new_str: string;
   message: string;
   repo?: string;
+  branch?: string;
   replace_all?: boolean;
   dry_run?: boolean;
   approval_token?: unknown;
@@ -232,10 +234,15 @@ export async function patch_file(input: {
     new_str,
     message,
     repo = FRONTEND_REPO,
+    branch,
     replace_all = false,
     dry_run = false,
     approval_token,
   } = input;
+  if (branch !== undefined) {
+    const branchError = validateTargetBranch(branch);
+    if (branchError) return 'Error: invalid branch: ' + branchError;
+  }
   signal?.throwIfAborted();
   let credential: string | undefined;
   if (dry_run) {
@@ -255,7 +262,7 @@ export async function patch_file(input: {
       return `Error: ${error instanceof Error ? error.message : 'Lex privileged credential check failed.'}`;
     }
   }
-  const head = await ghFetch(`/repos/${repo}/contents/${path}`, credential, { signal });
+  const head = await ghFetch(`/repos/${repo}/contents/${path}${branch ? `?ref=${encodeURIComponent(branch)}` : ''}`, credential, { signal });
   if (!head.ok) return `Error: ${head.status} — file not found at ${path} in ${repo}`;
   const meta = (await head.json()) as { content?: string; sha?: string };
   if (!meta.content || !meta.sha) return 'Error: no content or sha returned by GitHub';
@@ -298,6 +305,7 @@ export async function patch_file(input: {
       message: `[Lex CRS Agent] ${message}`,
       content: Buffer.from(outcome.content).toString('base64'),
       sha: meta.sha,
+      ...(branch !== undefined ? { branch } : {}),
     }),
   });
   if (!res.ok) {
@@ -328,6 +336,7 @@ export const PATCH_FILE_DEFINITION = {
       new_str: { type: 'string', description: 'Replacement text. Use an empty string to delete the matched region.' },
       message: { type: 'string', description: 'Commit message (prefixed with [Lex CRS Agent]).' },
       repo: { type: 'string', description: `Optional. Defaults to ${FRONTEND_REPO}.` },
+      branch: { type: 'string', description: 'Optional target branch. Must start with govern/ or fix/; invalid names are rejected before any GitHub request.' },
       replace_all: { type: 'boolean', description: 'Replace every occurrence instead of requiring uniqueness. Default false.' },
       dry_run: { type: 'boolean', description: 'Report match count, diff and gate verdict without committing. Default false.' },
       approval_token: { type: 'string', description: 'Action-bound Lex approval token. Issued only through the operator authorization boundary; never log or persist it.' },
