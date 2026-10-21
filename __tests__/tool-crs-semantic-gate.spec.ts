@@ -80,6 +80,24 @@ describe('injectionSimilarity — natural-language shape gate', () => {
     expect(result.blocked_pattern).toBe('unclassified_tool:mystery_side_effect');
   });
 
+  it('classifies request_approval as governed MEDIUM risk rather than unclassified', async () => {
+    const result = await measureToolCRS({
+      id: 'request-approval-classification',
+      name: 'request_approval',
+      arguments: {
+        tool_name: 'create_branch',
+        arguments: { branch: 'govern/example', from_branch: 'main' },
+      },
+      session_id: 'test-session',
+      task_context: 'Request approval for a reviewed branch creation',
+    });
+
+    expect(result.risk_level).toBe('MEDIUM');
+    expect(result.unclassified).toBeFalsy();
+    expect(result.blocked_pattern).toBeNull();
+  });
+
+
   it('classifies known read-only tools without intent-keyword gaps', async () => {
     const result = await measureToolCRS({
       id: 'self-test', name: 'run_self_test', arguments: {},
