@@ -31,7 +31,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'get_workflow_artifact', description: 'artifact metadata', parameters: { type: 'object' } },
     { name: 'review_agent_action', description: 'review', parameters: { type: 'object' } },
     { name: 'narrate_origin', description: 'origin', parameters: { type: 'object' } },
-    { name: 'write_file', description: 'write', parameters: { type: 'object' } },
+    { name: 'write_file', description: 'write', parameters: { type: 'object', properties: { branch: { type: 'string' } } } },
     { name: 'create_branch', description: 'create branch', parameters: { type: 'object', properties: { branch: { type: 'string' } }, required: ['branch'] } },
     { name: 'open_pr', description: 'open PR', parameters: { type: 'object', properties: { head: { type: 'string' }, title: { type: 'string' } }, required: ['head', 'title'] } },
     { name: 'dispatch_workflow', description: 'dispatch', parameters: { type: 'object' } },
@@ -120,7 +120,7 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
 }));
 
 vi.mock('../lib/lex_crs_agent/tools/patch_file', () => ({
-  PATCH_FILE_DEFINITION: { name: 'patch_file', description: 'patch', inputSchema: { type: 'object' } },
+  PATCH_FILE_DEFINITION: { name: 'patch_file', description: 'patch', inputSchema: { type: 'object', properties: { branch: { type: 'string' } } } },
   patch_file: toolFn,
 }));
 
