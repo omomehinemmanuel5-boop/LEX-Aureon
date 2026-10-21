@@ -24,6 +24,7 @@ import {
   consumeGovernanceApprovalToken,
   releaseConsumedGovernanceApprovalToken,
   evaluateToolGovernance,
+  classifyDatabaseOperation,
   hashGovernanceArguments,
   redactGovernanceText,
   redactGovernanceValue,
@@ -61,7 +62,10 @@ const NON_MUTATING_GOVERNANCE_TOOLS = new Set([
   'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
 ]);
 
-export function isNonMutatingGovernanceTool(toolName: string): boolean {
+export function isNonMutatingGovernanceTool(toolName: string, args: Record<string, unknown> = {}): boolean {
+  if (toolName === 'query_database') {
+    return classifyDatabaseOperation(String(args.sql ?? '')) === 'read';
+  }
   return NON_MUTATING_GOVERNANCE_TOOLS.has(toolName);
 }
 
@@ -76,9 +80,9 @@ const RECOVERY_CONTROL_TOOLS = new Set(['advance_recovery_plane']);
  * observations for one MCP request; executeGovern() also correctly skips
  * recovery mutations for governance_mode="simulate".
  */
-export function shouldAdvanceRecoveryBeforeTool(toolName: string): boolean {
+export function shouldAdvanceRecoveryBeforeTool(toolName: string, args: Record<string, unknown> = {}): boolean {
   return toolName !== 'run_governance'
-    && !isNonMutatingGovernanceTool(toolName)
+    && !isNonMutatingGovernanceTool(toolName, args)
     && !RECOVERY_CONTROL_TOOLS.has(toolName);
 }
 
@@ -138,7 +142,7 @@ export function shouldRecordTrajectoryObservation(
   cacheHit: boolean,
 ): boolean {
   if (cacheHit) return false;
-  if (NON_MUTATING_GOVERNANCE_TOOLS.has(toolName) || RECOVERY_CONTROL_TOOLS.has(toolName)) return false;
+  if (isNonMutatingGovernanceTool(toolName, args) || RECOVERY_CONTROL_TOOLS.has(toolName)) return false;
   if (toolName === 'run_governance' && args.governance_mode === 'simulate') return false;
   return true;
 }
@@ -325,7 +329,7 @@ export async function executeGovernedToolStructured(
   // unmet and no passing canary is bound to this state. Never invalidate
   // verified evidence as a side effect of an approval attempt or a retry.
   let recoveryNote = '';
-  if (shouldAdvanceRecoveryBeforeTool(toolName)
+  if (shouldAdvanceRecoveryBeforeTool(toolName, args)
     && canonicalRead.available
     && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
     try {

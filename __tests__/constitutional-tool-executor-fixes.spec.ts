@@ -10,6 +10,8 @@ describe('simulation trajectory isolation', () => {
     expect(shouldAdvanceRecoveryBeforeTool('run_governance')).toBe(false);
     expect(shouldAdvanceRecoveryBeforeTool('write_file')).toBe(true);
     expect(shouldAdvanceRecoveryBeforeTool('get_constitutional_state')).toBe(false);
+    expect(shouldAdvanceRecoveryBeforeTool('query_database', { sql: 'SELECT 1' })).toBe(false);
+    expect(shouldAdvanceRecoveryBeforeTool('query_database', { sql: 'UPDATE accounts SET active = 0' })).toBe(true);
   });
 
   it('does not record a trajectory observation for simulate-mode run_governance', () => {
@@ -27,6 +29,8 @@ describe('simulation trajectory isolation', () => {
 
   it('keeps non-mutating tools and cache hits out of the trajectory', () => {
     expect(shouldRecordTrajectoryObservation('read_file', {}, false)).toBe(false);
+    expect(shouldRecordTrajectoryObservation('query_database', { sql: 'SELECT 1' }, false)).toBe(false);
+    expect(shouldRecordTrajectoryObservation('query_database', { sql: 'UPDATE accounts SET active = 0' }, false)).toBe(true);
     expect(shouldRecordTrajectoryObservation('write_file', {}, true)).toBe(false);
     expect(shouldRecordTrajectoryObservation('write_file', {}, false)).toBe(true);
   });

@@ -22,6 +22,7 @@ vi.mock('../lib/agents/recovery_runtime', () => ({
 }));
 
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
+import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
 import { recordZTrajObservation, type ExpectedZTrajSample } from '../lib/kv';
 
 const SESSION = 'observation-session';
@@ -103,8 +104,18 @@ function selectTrajectory(sessionId: string) {
   return mocks.rows.get(sessionId);
 }
 
+function approvedArgs(toolName: string, args: Record<string, unknown>) {
+  return {
+    ...args,
+    approval_token: createGovernanceApprovalToken({
+      actorId: 'internal-agent', sessionId: SESSION, toolName, args,
+    }),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.LEX_APPROVAL_SIGNING_SECRET = 'executor-observation-test-secret';
   mocks.rows.clear();
   mocks.rows.set(SESSION, row());
   mocks.interceptToolCall.mockResolvedValue(successDecision());
@@ -165,6 +176,63 @@ describe('governed tool stability observations', () => {
       && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
     )).toHaveLength(0);
   });
+
+  it('does not observe or advance recovery for a read-only query_database SELECT', async () => {
+    const tool = vi.fn(async () => 'SELECT_RESULT');
+
+    const result = await executeGovernedToolStructured(
+      'query_database', { sql: 'SELECT 1' }, tool, SESSION,
+    );
+
+    expect(result.approved).toBe(true);
+    expect(mocks.advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(mocks.dbExecute.mock.calls.filter(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    )).toHaveLength(0);
+  });
+
+  it('continues observing a mutating query_database UPDATE', async () => {
+    const tool = vi.fn(async () => 'UPDATE_RESULT');
+
+    const result = await executeGovernedToolStructured(
+      'query_database', approvedArgs('query_database', { sql: 'UPDATE accounts SET active = 0' }), tool, SESSION,
+    );
+
+    expect(result.approved).toBe(true);
+    expect(mocks.dbExecute.mock.calls.filter(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    )).toHaveLength(1);
+  });
+
+  it.each(['get_workflow_artifact', 'review_agent_action', 'narrate_origin'])
+    ('does not observe pure inspection tool %s', async (toolName) => {
+      const tool = vi.fn(async () => 'INSPECTION_RESULT');
+      const result = await executeGovernedToolStructured(
+        toolName, approvedArgs(toolName, { fixture: toolName }), tool, SESSION,
+      );
+
+      expect(result.approved).toBe(true);
+      expect(mocks.dbExecute.mock.calls.filter(([query]) =>
+        typeof query === 'object' && query !== null && 'sql' in query
+        && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+      )).toHaveLength(0);
+    });
+
+  it.each(['dispatch_workflow', 'write_file'])
+    ('continues observing mutating tool %s', async (toolName) => {
+      const tool = vi.fn(async () => 'MUTATION_RESULT');
+      const result = await executeGovernedToolStructured(
+        toolName, approvedArgs(toolName, { fixture: toolName }), tool, SESSION,
+      );
+
+      expect(result.approved).toBe(true);
+      expect(mocks.dbExecute.mock.calls.filter(([query]) =>
+        typeof query === 'object' && query !== null && 'sql' in query
+        && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+      )).toHaveLength(1);
+    });
 
   it('records nothing for a denied call', async () => {
     mocks.interceptToolCall.mockResolvedValueOnce({
