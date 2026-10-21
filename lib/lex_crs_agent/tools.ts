@@ -1757,6 +1757,7 @@ export const TOOL_DEFINITIONS = [
         arguments: { type: 'object', description: 'Exact arguments that will be used for the authorized action. Do not include approval_token.' },
         session_id: { type: 'string', description: 'Governance session binding.' },
         task_context: { type: 'string', description: 'Context for Lex governance review.' },
+        approval_request_id: { type: 'string', description: 'Read-only status lookup for an existing request; does not grant execution or consume approval.' },
       },
       required: ['tool_name', 'arguments'],
     },
