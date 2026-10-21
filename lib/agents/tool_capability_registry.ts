@@ -42,7 +42,7 @@ const READ_TOOLS = [
 
 const WRITE_TOOLS = [
   'write_file','write_file_governed','create_file','patch_file','log_decision',
-  'narrate_origin',
+  'narrate_origin','create_branch','open_pr',
 ] as const;
 
 const EXTERNAL_TOOLS = [
