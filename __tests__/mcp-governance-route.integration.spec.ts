@@ -192,6 +192,9 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(readTool?.inputSchema.properties?.approval_request_id).toBeUndefined();
     expect(createBranchTool?.inputSchema.properties).toHaveProperty('approval_request_id');
     expect(openPrTool?.inputSchema.properties).toHaveProperty('approval_request_id');
+    expect(body.result.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+      'create_branch', 'open_pr', 'write_file', 'patch_file',
+    ]));
     expect(createBranchTool).toBeDefined();
     expect(openPrTool).toBeDefined();
     expect(writeTool?.inputSchema.properties).toHaveProperty('branch');
