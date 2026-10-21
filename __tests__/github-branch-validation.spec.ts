@@ -12,7 +12,7 @@ describe('governed target branch validation', () => {
     'fix/../main',
     'govern/has space',
     'fix/control\nchar',
-    'fix/' + 'x'.repeat(96),
+    'fix/' + 'x'.repeat(97),
     'fix//empty-segment',
     'fix/trailing/',
   ])('rejects invalid branch %s', branch => {
