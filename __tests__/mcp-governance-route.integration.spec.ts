@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
@@ -39,6 +39,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'query_database', description: 'database', parameters: { type: 'object' } },
     { name: 'authorize_tool_action', description: 'authorize', parameters: { type: 'object' } },
   ],
+  patchDefinition: { name: 'patch_file', description: 'patch', inputSchema: { type: 'object', properties: { branch: { type: 'string' } } } },
 }));
 
 const externalBrokerMocks = vi.hoisted(() => ({
@@ -121,7 +122,7 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
 }));
 
 vi.mock('../lib/lex_crs_agent/tools/patch_file', () => ({
-  PATCH_FILE_DEFINITION: { name: 'patch_file', description: 'patch', inputSchema: { type: 'object', properties: { branch: { type: 'string' } } } },
+  PATCH_FILE_DEFINITION: patchDefinition,
   patch_file: toolFn,
 }));
 
@@ -597,6 +598,33 @@ describe('MCP constitutional dispatch boundary', () => {
     const requestApprovalText = requestApprovalBody.result?.content?.[0]?.text ?? '';
     expect(requestApprovalText).toMatch(/^\{"request_id":"a{22}","expires_at":"[^"]+","approval_url":"https:\/\/[^/]+\/approvals#a{22}"\}$/);
   });
+
+  it('serves the actual operator tool definitions and branch schemas from tools/list', async () => {
+    const actualTools = await vi.importActual<typeof import('../lib/lex_crs_agent/tools')>('../lib/lex_crs_agent/tools');
+    const actualPatch = await vi.importActual<typeof import('../lib/lex_crs_agent/tools/patch_file')>('../lib/lex_crs_agent/tools/patch_file');
+    const savedDefinitions = [...definitions];
+    const savedPatch = { ...patchDefinition };
+    try {
+      (definitions as unknown as unknown[]).splice(0, definitions.length, ...(actualTools.TOOL_DEFINITIONS as unknown as unknown[]));
+      Object.assign(patchDefinition, actualPatch.PATCH_FILE_DEFINITION);
+      validateApiKey.mockResolvedValue({ valid: true, key: { id: 'operator-catalog-test', plan: 'private_test' } });
+
+      const response = await POST(request({ jsonrpc: '2.0', method: 'tools/list', id: 'real-operator-catalog' }));
+      expect(response.status).toBe(200);
+      const body = response.body as unknown as { result: { tools: Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }> } };
+      const names = body.result.tools.map(tool => tool.name);
+      expect(names).toContain('create_branch');
+      expect(names).toContain('open_pr');
+      const write = body.result.tools.find(tool => tool.name === 'write_file');
+      const patch = body.result.tools.find(tool => tool.name === 'patch_file');
+      expect(write?.inputSchema.properties).toHaveProperty('branch');
+      expect(patch?.inputSchema.properties).toHaveProperty('branch');
+    } finally {
+      (definitions as unknown as unknown[]).splice(0, definitions.length, ...(savedDefinitions as unknown as unknown[]));
+      Object.assign(patchDefinition, savedPatch);
+    }
+  });
+
 
   it('allows a public-profile request_approval call to reach approval creation', async () => {
     const key = { id: 'public-profile', plan: 'free' };
