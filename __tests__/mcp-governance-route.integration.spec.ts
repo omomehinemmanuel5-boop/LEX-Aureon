@@ -598,6 +598,37 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(requestApprovalText).toMatch(/^\{"request_id":"a{22}","expires_at":"[^"]+","approval_url":"https:\/\/[^/]+\/approvals#a{22}"\}$/);
   });
 
+  it('allows a public-profile request_approval call to reach approval creation', async () => {
+    const key = { id: 'public-profile', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    executeGovernedTool.mockImplementation(async (_name, args, handler) =>
+      (handler as (input: Record<string, unknown>) => Promise<string>)(args as Record<string, unknown>));
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'request_approval',
+        arguments: {
+          tool_name: 'run_governance',
+          arguments: { prompt: 'reviewed governance task' },
+        },
+      },
+      id: 'public-request-approval',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: 'run_governance',
+      args: expect.objectContaining({ prompt: 'reviewed governance task' }),
+    }));
+    const payload = response.body as { result?: { content?: Array<{ text?: string }> } };
+    const resultText = payload.result?.content?.[0]?.text ?? '';
+    expect(resultText).not.toContain('unclassified_tool:request_approval');
+    expect(resultText).toMatch(/"request_id":"a{22}"/);
+  });
+
   it('does not expose or execute infrastructure tools for public API keys', async () => {
     const listResponse = await POST(request({
       jsonrpc: '2.0',
