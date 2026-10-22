@@ -133,7 +133,7 @@ export async function consumeApprovalRequest(input: {
     if (String(row.owner_id) !== input.ownerId) return { consumed: false, reason: 'Approval request belongs to another owner.' };
     if (String(row.session_id) !== input.sessionId) return { consumed: false, reason: 'Approval request belongs to another session.' };
     if (String(row.tool_name) !== input.toolName) return { consumed: false, reason: 'Approval request is bound to another tool.' };
-    if (String(row.args_hash) !== approvalArgsHash(input.args)) return { consumed: false, reason: 'Approval request is bound to different arguments.' };
+    if (String(row.args_hash) !== approvalArgsHash(input.args)) return { consumed: false, reason: 'Approval request is bound to different arguments. Retry with exactly the arguments shown on the approval screen; fields such as task_context are part of the binding and must be omitted unless they were approved.' };
     const result = await getClient().execute({
       sql: `UPDATE approval_requests SET status = 'used'
             WHERE request_id = ? AND owner_id = ? AND session_id = ? AND tool_name = ?
