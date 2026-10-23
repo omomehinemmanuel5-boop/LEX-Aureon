@@ -107,4 +107,9 @@ describe('MCP sessions', () => {
     expect(siteUrlForMetadata()).toBeDefined();
     expect(await issueMcpSession(key)).toBeNull();
   });
+
+  it('rejects a validly signed session token that has extra segments', async () => {
+    const session = await issueMcpSession(key);
+    expect(await validateMcpSession(`${session!.token}.extra`)).toEqual({ valid: false, error: 'Invalid MCP session' });
+  });
 });
