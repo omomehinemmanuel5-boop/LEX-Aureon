@@ -108,4 +108,23 @@ describe('MCP patch_file write path', () => {
     expect(String(changed.result)).toContain('already used');
     expect(commitCalls).toBe(1);
   });
+
+  it('keeps the provider side-effect boundary closed when the canonical recovery gate denies', async () => {
+    const args = { path: 'README.md', old_str: 'before', new_str: 'after', message: 'blocked patch', session_id: session.sessionId };
+    const pending = await createApprovalRequest({ ownerId: 'owner-write', sessionId: session.sessionId, toolName: 'patch_file', args });
+    expect(await decideApprovalRequest({ requestId: pending.requestId, decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
+
+    canonicalExecutionAllowed.mockReturnValue({ allowed: false, reason: 'test: recovery evidence missing' });
+    const result = await executeGovernedToolStructured(
+      'patch_file',
+      { ...args, approval_request_id: pending.requestId },
+      (handlerArgs) => patch_file(handlerArgs as Parameters<typeof patch_file>[0]),
+      session.sessionId, undefined, session.actorId, undefined, 'owner-write', 'owner-write',
+    );
+
+    expect(result.approved).toBe(false);
+    expect(commitCalls).toBe(0);
+    expect(content).toBe('const before = true;\\n');
+  });
+
 });
