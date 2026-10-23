@@ -1107,6 +1107,62 @@ export async function POST(req: Request) {
           : executionArgs;
       const toolArgs = bindGovernanceToolSession(dispatchToolName, normalizedExecutionArgs, sessionId);
       const requestedCapability = getToolCapability(dispatchToolName);
+
+      // Recovery must progress before trajectory-plan admission for approved
+      // retries too. Otherwise a locked/stale plan can reject the request before
+      // executeGovernedTool gets a chance to record a bounded recovery pulse,
+      // leaving the recovery gate permanently dependent on a different route.
+      // This does not grant authority: the canonical gate below remains
+      // fail-closed, and approval binding is still checked by the executor.
+      if (requestedCapability?.approvalRequired
+        && (args.approval_token !== undefined || args.approval_request_id !== undefined)) {
+        let recoveryPreflight = await readCanonicalGovernanceState({
+          sessionId,
+          actorId,
+          capability: requestedCapability.capability,
+          authorization: 'approval_required',
+        });
+        if (recoveryPreflight.available && shouldAdvanceRecoveryPlane(recoveryPreflight.state)) {
+          try {
+            await advanceRecoveryPlane(sessionId);
+            recoveryPreflight = await readCanonicalGovernanceState({
+              sessionId,
+              actorId,
+              capability: requestedCapability.capability,
+              authorization: 'approval_required',
+            });
+          } catch {
+            // Preserve the canonical read and fail closed below if it is still unhealthy.
+          }
+        }
+        if (!recoveryPreflight.available) {
+          return mcpToolResult(id, {
+            status: 'denied',
+            decision: 'DENIED_LOCKED',
+            reason: recoveryPreflight.reason ?? 'Canonical governance state unavailable; no action was executed.',
+            approval_created: false,
+          });
+        }
+        const recoveryGate = canonicalExecutionAllowed(recoveryPreflight.state);
+        if (!recoveryGate.allowed) {
+          return mcpToolResult(id, {
+            status: 'denied',
+            decision: 'DENIED_BLOCKED',
+            reason: recoveryGate.reason ?? 'Canonical governance state denied execution; no action was executed.',
+            recovery_state: recoveryPreflight.state.recoveryState,
+            M: recoveryPreflight.state.M,
+            n_stable: recoveryPreflight.state.nStable,
+            canary_passed: recoveryPreflight.state.canaryPassed === true,
+            approval_created: false,
+            next_step: recoveryPreflight.state.M >= 0.15
+              && recoveryPreflight.state.nStable >= 3
+              && !recoveryPreflight.state.canaryPassed
+              ? 'Run the operator-only recovery canary for this exact session after verifying velocity is below the stability threshold, then retry the action.'
+              : 'Continue safe governed observations at least 5 seconds apart until the stability and velocity requirements are met; then run the operator-only recovery canary. See docs/recovery-runbook.md.',
+          });
+        }
+      }
+
       if (requestedCapability?.approvalRequired
         && args.approval_token === undefined
         && args.approval_request_id === undefined) {
