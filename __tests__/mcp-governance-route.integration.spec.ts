@@ -955,6 +955,53 @@ describe('MCP constitutional dispatch boundary', () => {
     });
   });
 
+  it('allows an approved retry through recovery preflight only when canonical recovery is eligible', async () => {
+    const key = { id: 'private-test-recovery-eligible', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-recovery-eligible:session',
+        actorId: 'api_key:private-test-recovery-eligible',
+        C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+        healthBand: 'OPTIMAL', recoveryState: 'NORMAL', sigmaViol: 0,
+        toolCalls: 3, trajectoryAvailable: true, nStable: 3, velocity: 0,
+        canaryPassed: true, canaryReceiptId: 'verified-canary-receipt',
+        stateFingerprint: 'd'.repeat(64),
+        trajectoryUpdatedAt: '2026-10-23T00:00:00.000Z',
+        authorization: 'approval_required', policyRisk: 'write',
+        version: 'test', observedAt: '2026-10-23T00:00:00.000Z',
+      },
+    });
+    executeGovernedTool.mockResolvedValue('approved: true\\ncache_hit: false\\nTOOL_RESULT');
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'write_file',
+        arguments: {
+          path: 'recovery-eligible.ts',
+          content: 'export const safe = true;',
+          message: 'approved eligible retry',
+          approval_request_id: 'a'.repeat(22),
+        },
+      },
+      id: 'approved-retry-recovery-eligible',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(canonicalExecutionAllowed).toHaveBeenCalled();
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(executeGovernedTool).toHaveBeenCalledWith(
+      'write_file',
+      expect.objectContaining({ path: 'recovery-eligible.ts' }),
+      expect.any(Function),
+      'private-test-recovery-eligible:session',
+    );
+  });
+
   it('fails closed when implicit approval rate-limit storage is unavailable', async () => {
     const key = { id: 'private-test-rate-limit', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
