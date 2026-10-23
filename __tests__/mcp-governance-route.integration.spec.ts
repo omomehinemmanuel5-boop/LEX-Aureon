@@ -902,6 +902,105 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(checkRateLimit).toHaveBeenCalledWith('approval-implicit:private-test-1', 20, 3600);
   });
 
+  it('advances bounded recovery before an approved retry can be stopped by trajectory admission', async () => {
+    const key = { id: 'private-test-recovery-retry', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-recovery-retry:session',
+        actorId: 'api_key:private-test-recovery-retry',
+        C: 0.2, R: 0.4, S: 0.4, M: 0.2,
+        healthBand: 'STRESSED', recoveryState: 'RESTORING', sigmaViol: 0,
+        toolCalls: 0, trajectoryAvailable: true, nStable: 0, velocity: 0,
+        canaryPassed: false, stateFingerprint: 'c'.repeat(64),
+        trajectoryUpdatedAt: '2026-10-17T00:00:00.000Z',
+        authorization: 'approval_required', policyRisk: 'write',
+        version: 'test', observedAt: '2026-10-17T00:00:00.000Z',
+      },
+    });
+    canonicalExecutionAllowed.mockReturnValueOnce({
+      allowed: false,
+    });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'write_file',
+        arguments: {
+          path: 'recovery-retry.ts',
+          content: 'export const safe = true;',
+          message: 'approved retry',
+          approval_request_id: 'a'.repeat(22),
+        },
+      },
+      id: 'approved-retry-recovery-preflight',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(advanceRecoveryPlane).toHaveBeenCalledTimes(1);
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+    const result = (response.body as unknown as {
+      result: { structuredContent: Record<string, unknown> };
+    }).result.structuredContent;
+    expect(result).toMatchObject({
+      status: 'denied',
+      decision: 'DENIED_BLOCKED',
+      recovery_state: 'RESTORING',
+      n_stable: 0,
+      canary_passed: false,
+      approval_created: false,
+    });
+  });
+
+  it('allows an approved retry through recovery preflight only when canonical recovery is eligible', async () => {
+    const key = { id: 'private-test-recovery-eligible', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-recovery-eligible:session',
+        actorId: 'api_key:private-test-recovery-eligible',
+        C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+        healthBand: 'OPTIMAL', recoveryState: 'NORMAL', sigmaViol: 0,
+        toolCalls: 3, trajectoryAvailable: true, nStable: 3, velocity: 0,
+        canaryPassed: true, canaryReceiptId: 'verified-canary-receipt',
+        stateFingerprint: 'd'.repeat(64),
+        trajectoryUpdatedAt: '2026-10-23T00:00:00.000Z',
+        authorization: 'approval_required', policyRisk: 'write',
+        version: 'test', observedAt: '2026-10-23T00:00:00.000Z',
+      },
+    });
+    executeGovernedTool.mockResolvedValue('approved: true\\ncache_hit: false\\nTOOL_RESULT');
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'write_file',
+        arguments: {
+          path: 'recovery-eligible.ts',
+          content: 'export const safe = true;',
+          message: 'approved eligible retry',
+          approval_request_id: 'a'.repeat(22),
+        },
+      },
+      id: 'approved-retry-recovery-eligible',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(canonicalExecutionAllowed).toHaveBeenCalled();
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(executeGovernedTool).toHaveBeenCalled();
+    expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('write_file');
+    expect(executeGovernedTool.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ path: 'recovery-eligible.ts' }),
+    );
+  });
+
   it('fails closed when implicit approval rate-limit storage is unavailable', async () => {
     const key = { id: 'private-test-rate-limit', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
