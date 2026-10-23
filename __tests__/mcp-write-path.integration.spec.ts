@@ -124,7 +124,7 @@ describe('MCP patch_file write path', () => {
 
     expect(result.approved).toBe(false);
     expect(commitCalls).toBe(0);
-    expect(content).toBe('const before = true;\\n');
+    expect(content).toBe('const before = true;\n');
   });
 
 });
