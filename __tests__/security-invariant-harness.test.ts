@@ -66,7 +66,7 @@ describe('security invariant harness', () => {
     expect(recoveryCapabilityAllowed(Math.max(m, 0.25), 'destructive', validEvidence).allowed).toBe(true);
   });
 
-  it('preserves recovery safety invariants across 1,000 reproducible seeded trajectories', () => {
+  it('preserves recovery safety invariants across 100 seeded trajectories (1,000 states)', () => {
     // Fixed LCG: no crypto randomness, wall clock, or external side effects.
     let state = 0x4c4558;
     const random = () => {
@@ -75,40 +75,51 @@ describe('security invariant harness', () => {
     };
     const capabilities = ['read', 'recovery', 'write', 'external', 'destructive'] as const;
 
-    for (let i = 0; i < 1_000; i += 1) {
-      const raw = [random(), random(), random()];
-      const total = raw.reduce((sum, value) => sum + value, 0);
-      const [c, r, s] = raw.map(value => value / total);
-      const m = Math.min(c, r, s);
-      expect(c + r + s, `seed=0x4c4558 case=${i} simplex sum`).toBeCloseTo(1, 12);
-      expect(Math.min(c, r, s), `seed=0x4c4558 case=${i} CRS floor`).toBeGreaterThanOrEqual(0);
-      const evidence = {
-        canaryPassed: random() >= 0.5,
-        nStable: Math.floor(random() * (CONSTITUTION.N_MIN + 3)),
-        sigmaViol: random() * Math.max(CONSTITUTION.SIGMA_THRESHOLD * 2, 0.001),
-      };
-      const capability = capabilities[Math.floor(random() * capabilities.length)];
-      const decision = recoveryCapabilityAllowed(m, capability, evidence);
+    for (let trajectory = 0; trajectory < 100; trajectory += 1) {
+      let crs = [random(), random(), random()];
+      const initialTotal = crs.reduce((sum, value) => sum + value, 0);
+      crs = crs.map(value => value / initialTotal);
 
-      if (m < CONSTITUTION.TAU_FLOOR) {
-        expect(decision.allowed, `seed=0x4c4558 case=${i} M=${m} capability=${capability}`).toBe(false);
-      }
-      if (capability === 'write' || capability === 'external' || capability === 'destructive') {
-        if (m < CONSTITUTION.TAU_RECOVERY) {
-          expect(decision.allowed, `seed=0x4c4558 case=${i} below recovery threshold`).toBe(false);
+      for (let step = 0; step < 10; step += 1) {
+        const raw = crs.map(value => Math.max(1e-6, value + (random() - 0.5) * 0.25));
+        const total = raw.reduce((sum, value) => sum + value, 0);
+        crs = raw.map(value => value / total);
+        const [c, r, s] = crs;
+        const m = Math.min(c, r, s);
+        const caseLabel = `seed=0x4c4558 trajectory=${trajectory} step=${step}`;
+
+        expect(c + r + s, `${caseLabel} simplex sum`).toBeCloseTo(1, 12);
+        expect(m, `${caseLabel} CRS non-negative`).toBeGreaterThanOrEqual(0);
+
+        const evidence = {
+          canaryPassed: random() >= 0.5,
+          nStable: Math.floor(random() * (CONSTITUTION.N_MIN + 3)),
+          sigmaViol: random() * Math.max(CONSTITUTION.SIGMA_THRESHOLD * 2, 0.001),
+        };
+        const capability = capabilities[Math.floor(random() * capabilities.length)];
+        const decision = recoveryCapabilityAllowed(m, capability, evidence);
+
+        if (m < CONSTITUTION.TAU_FLOOR) {
+          expect(decision.allowed, `${caseLabel} M=${m} capability=${capability}`).toBe(false);
         }
-        if (m >= CONSTITUTION.TAU_RECOVERY) {
-          const evidenceComplete = evidence.canaryPassed
-            && evidence.nStable >= CONSTITUTION.N_MIN
-            && evidence.sigmaViol <= CONSTITUTION.SIGMA_THRESHOLD;
-          if (!evidenceComplete) {
-            expect(decision.allowed, `seed=0x4c4558 case=${i} missing recovery evidence`).toBe(false);
+        if (capability === 'write' || capability === 'external' || capability === 'destructive') {
+          if (m < CONSTITUTION.TAU_RECOVERY) {
+            expect(decision.allowed, `${caseLabel} below recovery threshold`).toBe(false);
+          }
+          if (m >= CONSTITUTION.TAU_RECOVERY) {
+            const evidenceComplete = evidence.canaryPassed
+              && evidence.nStable >= CONSTITUTION.N_MIN
+              && evidence.sigmaViol <= CONSTITUTION.SIGMA_THRESHOLD;
+            if (!evidenceComplete) {
+              expect(decision.allowed, `${caseLabel} missing recovery evidence`).toBe(false);
+            }
           }
         }
-      }
-      if (capability === 'destructive' && decision.allowed) {
-        expect(decision.state, `seed=0x4c4558 case=${i} destructive state`).toBe('NORMAL');
+        if (capability === 'destructive' && decision.allowed) {
+          expect(decision.state, `${caseLabel} destructive state`).toBe('NORMAL');
+        }
       }
     }
   });
+
 });
