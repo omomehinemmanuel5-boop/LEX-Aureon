@@ -1154,7 +1154,7 @@ export async function POST(req: Request) {
             approval_created: false,
             next_step: canonical.state.M >= 0.15 && canonical.state.nStable >= 3 && !canonical.state.canaryPassed
               ? `Run the operator-only recovery canary for this exact session; n_stable is ${canonical.state.nStable}/3 and velocity must be below the stability threshold before the canary can pass, then retry the action.`
-              : `Continue safe governed observations, at least 5 seconds apart, until n_stable reaches 3/3 and velocity is below the stability threshold${canonical.state.canaryPassed ? '' : '; the recovery canary is still needed once those requirements are met'}, then retry the action.`,
+              : `Continue safe governed observations, at least 5 seconds apart, until n_stable reaches 3/3 and velocity is below the stability threshold${canonical.state.canaryPassed ? '' : '; the recovery canary is still needed once those requirements are met'}, then retry the action. See docs/recovery-runbook.md.`,
           });
         }
         const configuredApprovalLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
