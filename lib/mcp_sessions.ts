@@ -110,7 +110,9 @@ export type ValidatedMcpSession =
 
 export async function validateMcpSession(raw: string): Promise<ValidatedMcpSession> {
   if (!secret()) return { valid: false, error: 'Session authentication unavailable' };
-  const [payload, signature] = raw.split('.');
+  const parts = raw.split('.');
+  if (parts.length !== 2) return { valid: false, error: 'Invalid MCP session' };
+  const [payload, signature] = parts;
   if (!payload || !signature || !safeEqual(sign(payload), signature)) return { valid: false, error: 'Invalid MCP session' };
   let claims: Claims;
   try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Claims; } catch { return { valid: false, error: 'Invalid MCP session' }; }
