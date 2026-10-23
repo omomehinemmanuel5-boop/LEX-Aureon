@@ -76,7 +76,12 @@ describe('security invariant harness', () => {
     const capabilities = ['read', 'recovery', 'write', 'external', 'destructive'] as const;
 
     for (let i = 0; i < 1_000; i += 1) {
-      const m = random();
+      const raw = [random(), random(), random()];
+      const total = raw.reduce((sum, value) => sum + value, 0);
+      const [c, r, s] = raw.map(value => value / total);
+      const m = Math.min(c, r, s);
+      expect(c + r + s, `seed=0x4c4558 case=${i} simplex sum`).toBeCloseTo(1, 12);
+      expect(Math.min(c, r, s), `seed=0x4c4558 case=${i} CRS floor`).toBeGreaterThanOrEqual(0);
       const evidence = {
         canaryPassed: random() >= 0.5,
         nStable: Math.floor(random() * (CONSTITUTION.N_MIN + 3)),
