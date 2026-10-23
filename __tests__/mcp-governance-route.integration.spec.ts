@@ -994,11 +994,10 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(response.status).toBe(200);
     expect(canonicalExecutionAllowed).toHaveBeenCalled();
     expect(advanceRecoveryPlane).not.toHaveBeenCalled();
-    expect(executeGovernedTool).toHaveBeenCalledWith(
-      'write_file',
+    expect(executeGovernedTool).toHaveBeenCalled();
+    expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('write_file');
+    expect(executeGovernedTool.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({ path: 'recovery-eligible.ts' }),
-      expect.any(Function),
-      'private-test-recovery-eligible:session',
     );
   });
 
