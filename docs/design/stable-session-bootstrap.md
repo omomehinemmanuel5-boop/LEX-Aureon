@@ -14,26 +14,45 @@ Because the UTC date is included, stateless MCP clients that omit `session_id` r
 
 ## Observed result for a new stable session ID
 
-The observed new-session result was quarantined and uninitialized: `QUARANTINED`, sigma violations `1.0`, no `z_traj` row, and consequential execution suspended. The canonical-state implementation in `lib/agents/canonical_governance_state.ts` represents that state with the following exact response fields and values:
+The observed new-session result was quarantined and uninitialized: `QUARANTINED`, sigma violations `1.0`, no `z_traj` row, and consequential execution suspended. For a session-specific call to `get_constitutional_state`, `lib/lex_crs_agent/tools.ts` serializes the canonical state using the following exact response field names and values for the no-trajectory case (unrelated timestamps and session ID omitted):
 
 ```json
 {
-  "healthBand": "UNINITIALIZED",
-  "recoveryState": "QUARANTINED",
-  "sigmaViol": 1,
+  "available": true,
+  "health_band": "UNINITIALIZED",
+  "recovery_state": "QUARANTINED",
+  "n_stable": 0,
+  "n_stable_required": 3,
   "velocity": 0,
-  "trajectoryAvailable": false,
-  "nStable": 0,
-  "canaryPassed": false,
-  "canaryReceiptId": null,
-  "stateFingerprint": null,
-  "trajectoryUpdatedAt": null,
+  "stability_threshold": 0.02,
+  "sigma_viol": 1,
+  "canary_passed": false,
+  "canary_receipt_id": null,
+  "state_fingerprint": null,
+  "gate_snapshot": {
+    "health_band": "UNINITIALIZED",
+    "recovery_state": "QUARANTINED",
+    "authorization": "denied",
+    "trajectory_available": false,
+    "n_stable": 0,
+    "n_stable_required": 3,
+    "velocity": 0,
+    "stability_threshold": 0.02,
+    "sigma_viol": 1,
+    "canary_passed": false,
+    "state_fingerprint": null
+  },
+  "diagnostic": {
+    "trajectory_updated_at": null
+  },
   "authorization": "denied",
-  "reason": "Canonical trajectory state is uninitialized; read-only diagnostics remain available for bootstrap, while consequential execution remains suspended until z_traj exists."
+  "trajectory_available": false,
+  "reason": "Canonical trajectory state is uninitialized; read-only diagnostics remain available for bootstrap, while consequential execution remains suspended until z_traj exists.",
+  "next_step": "Quarantined below the hard floor; only operator recovery diagnostics are actionable."
 }
 ```
 
-These are the canonical-state field names/values in source; diagnostic tools may serialize selected fields using snake_case (for example, `sigma_viol`). The code's missing-trajectory branch uses numeric `sigmaViol: 1`, equivalent to the observed `1.0`. Do not interpret this as a successful bootstrap or a passing canary.
+The values above follow the source's missing-trajectory branch: `available: true` means the diagnostic successfully read an uninitialized state, not that a trajectory exists. The JSON uses `sigma_viol: 1` (numeric 1.0), `trajectory_available: false`, and `authorization: "denied"`. Do not interpret this as a successful bootstrap or a passing canary.
 
 ## What must be proven before an agent switches to a stable session
 
