@@ -63,6 +63,21 @@ jobs:
           NEXT_PUBLIC_SITE_URL: https://lexaureon.com
         run: npm run test -- --run
 
+      - name: Security invariant harness (seeded trajectories + write boundary)
+        if: always()
+        run: |
+          set -o pipefail
+          npx vitest run __tests__/security-invariant-harness.test.ts __tests__/mcp-write-path.integration.spec.ts --reporter=verbose 2>&1 | tee security-invariant-results.txt
+
+      - name: Upload security invariant report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-invariant-results-${{ github.sha }}
+          path: security-invariant-results.txt
+          if-no-files-found: warn
+          retention-days: 14
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
