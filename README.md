@@ -26,6 +26,8 @@
 - [Architecture overview](docs/architecture/system-overview.md)
 - [Security model](docs/security.md)
 - [Operator MCP access](docs/operator-access.md)
+- [Recovery runbook](docs/recovery-runbook.md)
+- [Agent process and PR rules](docs/agent-process.md)
 - [Production readiness and reproducibility](docs/production-readiness.md)
 - [Evaluation manifest](docs/evaluation-manifest.md)
 - [Contributing](CONTRIBUTING.md)
