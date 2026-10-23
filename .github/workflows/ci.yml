@@ -67,7 +67,8 @@ jobs:
         if: always()
         run: |
           set -o pipefail
-          npx vitest run __tests__/security-invariant-harness.test.ts __tests__/mcp-write-path.integration.spec.ts --reporter=verbose 2>&1 | tee security-invariant-results.txt
+          npm run red-team:tools 2>&1 | tee security-invariant-results.txt
+          npx vitest run __tests__/security-invariant-harness.test.ts __tests__/mcp-write-path.integration.spec.ts --reporter=verbose 2>&1 | tee -a security-invariant-results.txt
 
       - name: Upload security invariant report
         if: always()
