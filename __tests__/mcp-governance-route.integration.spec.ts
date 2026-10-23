@@ -922,7 +922,6 @@ describe('MCP constitutional dispatch boundary', () => {
     });
     canonicalExecutionAllowed.mockReturnValueOnce({
       allowed: false,
-      reason: 'Recovery stability evidence is incomplete.',
     });
 
     const response = await POST(request({
