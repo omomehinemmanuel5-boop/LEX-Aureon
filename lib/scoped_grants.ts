@@ -86,6 +86,15 @@ function parseArray(value: unknown): string[] {
   }
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 function branchFor(toolName: string, args: Record<string, unknown>): string {
   const value = toolName === 'open_pr' ? args.head : args.branch;
   return typeof value === 'string' ? value.trim() : '';
@@ -230,7 +239,7 @@ export async function consumeScopedGrant(action: ScopedGrantAction & { grantId: 
       const receiptId = `SGR-${crypto.randomUUID()}`;
       const branch = branchFor(action.toolName, action.args);
       const path = typeof action.args.path === 'string' ? action.args.path : null;
-      const argsHash = crypto.createHash('sha256').update(JSON.stringify(action.args, Object.keys(action.args).sort())).digest('hex');
+      const argsHash = crypto.createHash('sha256').update(stableJson(action.args)).digest('hex');
       await tx.execute({
         sql: `INSERT INTO tool_receipts
           (receipt_id, session_id, actor_id, tool_name, args_hash, decision, c_score, r_score, s_score, m_score,
