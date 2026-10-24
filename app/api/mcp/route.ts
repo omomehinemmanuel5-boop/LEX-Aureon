@@ -1403,6 +1403,33 @@ export async function POST(req: Request) {
         }
         const execution = trajectoryOutcome.value;
 
+        if (execution.result === 'SCOPED_GRANT_FALLBACK_APPROVAL') {
+          // Release the in-flight trajectory claim because no handler ran; then use the ordinary approval path.
+          if (isTrajectoryActive(execution.state)) {
+            await compareAndSetTrajectoryState(sessionId, execution.state, claimedVersion);
+          } else {
+            await clearTrajectoryState(sessionId);
+          }
+          const fallbackArgs = { ...(toolArgs as Record<string, unknown>) };
+          delete fallbackArgs.__scoped_grant_id;
+          const configuredLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
+          const approvalLimit = Number.isSafeInteger(configuredLimit) && configuredLimit > 0 ? Math.min(configuredLimit, 1000) : 20;
+          const approvalRate = await checkRateLimit(`approval-implicit:${ownerId}`, approvalLimit, 3600);
+          if (approvalRate.storageError || !approvalRate.allowed) {
+            return NextResponse.json({ jsonrpc: '2.0', error: {
+              code: approvalRate.storageError ? -32003 : -32029,
+              message: 'Scoped grant no longer matched; approval fallback could not be admitted.',
+            }, id }, { status: approvalRate.storageError ? 503 : 429 });
+          }
+          const pending = await createApprovalRequest({ ownerId, sessionId, toolName: dispatchToolName, args: fallbackArgs });
+          return mcpToolResult(id, {
+            status: 'approval_required', request_id: pending.requestId, tool_name: dispatchToolName,
+            expires_at: new Date(pending.expiresAt).toISOString(),
+            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+            next_step: 'The grant could not be consumed; a human approver must approve this exact action. Retry with approval_request_id and unchanged arguments.',
+          });
+        }
+
         if (isTrajectoryActive(execution.state)) {
           const committed = await compareAndSetTrajectoryState(sessionId, execution.state, claimedVersion);
           if (!committed) {
