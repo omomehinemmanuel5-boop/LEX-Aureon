@@ -240,7 +240,7 @@ export async function consumeScopedGrant(action: ScopedGrantAction & { grantId: 
             AND expires_at > ? AND revoked_at IS NULL RETURNING uses`,
         args: [grant.grant_id, action.ownerId, grant.uses, now],
       });
-      if ((updated.rowsAffected ?? 0) !== 1 || !updated.rows?.length) { await tx.rollback(); return null; }
+      if (updated.rows?.length !== 1) { await tx.rollback(); return null; }
       const useNumber = Number(updated.rows[0].uses);
       const receiptId = `SGR-${crypto.randomUUID()}`;
       const branch = branchFor(action.toolName, action.args);
