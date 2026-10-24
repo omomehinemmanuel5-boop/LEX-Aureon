@@ -252,6 +252,7 @@ describe('MCP constitutional dispatch boundary', () => {
   it.each([
     ['create_branch', { branch: 'fix/approval-gate-test' }],
     ['open_pr', { head: 'fix/approval-gate-test', title: 'Approval gate test', body: 'Test body' }],
+    ['dispatch_workflow', { workflow: 'ci.yml' }],
   ])('%s creates an approval request before invoking the GitHub handler', async (name, args) => {
     isOperatorSecret.mockReturnValue(true);
     const response = await POST(request({
