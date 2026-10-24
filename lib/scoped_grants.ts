@@ -104,6 +104,12 @@ function isMainBranch(branch: string): boolean {
   return branch.toLowerCase() === 'main';
 }
 
+function isSafeRelativePath(path: string): boolean {
+  return !path.startsWith('/')
+    && !path.includes('\\\\')
+    && !path.split('/').some(segment => segment === '.' || segment === '..');
+}
+
 export function scopedGrantMatchesAction(grant: ScopedGrantRecord, action: ScopedGrantAction): boolean {
   const now = action.nowMs ?? Date.now();
   if (action.recoveryAllowed === false) return false;
@@ -118,7 +124,7 @@ export function scopedGrantMatchesAction(grant: ScopedGrantRecord, action: Scope
   }
   if (action.toolName === 'write_file' || action.toolName === 'patch_file') {
     const path = typeof action.args.path === 'string' ? action.args.path.trim() : '';
-    if (!path || !grant.path_prefixes.some(prefix => path.startsWith(prefix))) return false;
+    if (!path || !isSafeRelativePath(path) || !grant.path_prefixes.some(prefix => path.startsWith(prefix))) return false;
   }
   return true;
 }
