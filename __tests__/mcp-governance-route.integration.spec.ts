@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
@@ -21,6 +21,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   createApprovalRequest: vi.fn(async () => ({ requestId: 'a'.repeat(22), expiresAt: Date.now() + 900_000 })),
   getApprovalRequestStatus: vi.fn(async () => ({ status: 'approved' as const })),
   validateMcpSession: vi.fn(),
+  findMatchingScopedGrant: vi.fn(async () => null),
   definitions: [
     { name: 'request_approval', description: 'request', parameters: { type: 'object' } },
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
@@ -88,6 +89,7 @@ vi.mock('@/lib/db', () => ({
 }));
 
 vi.mock('@/lib/approval_requests', () => ({ createApprovalRequest, getApprovalRequestStatus }));
+vi.mock('@/lib/scoped_grants', () => ({ findMatchingScopedGrant }));
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState,
@@ -226,6 +228,28 @@ describe('MCP constitutional dispatch boundary', () => {
   });
 
   it.each([
+    ['create_branch', { branch: 'govern/scoped-grant' }],
+    ['write_file', { branch: 'govern/scoped-grant', path: 'docs/scoped-grant.md', content: 'grant', message: 'test' }],
+  ])('%s bypasses request creation only when the owner-scoped grant matcher finds a match', async (name, args) => {
+    isOperatorSecret.mockReturnValue(true);
+    findMatchingScopedGrant.mockResolvedValue({
+      grant_id: 'grant-1', owner_id: 'operator', allowed_tools: [name], branch_prefixes: ['govern/'],
+      path_prefixes: ['docs/'], max_uses: 1, uses: 0, expires_at: Date.now() + 30_000,
+      revoked_at: null, created_at: Date.now(),
+    });
+    const response = await POST(request({
+      jsonrpc: '2.0', method: 'tools/call', params: { name, arguments: args }, id: 'scoped-grant-' + name,
+    }));
+    expect(response.status).toBe(200);
+    expect(findMatchingScopedGrant).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'operator', toolName: name, args: expect.objectContaining(args),
+    }));
+    expect(createApprovalRequest).not.toHaveBeenCalled();
+    expect(executeGovernedTool).toHaveBeenCalledOnce();
+    expect(executeGovernedTool.mock.calls[0]?.[1]).toMatchObject({ __scoped_grant_id: 'grant-1' });
+  });
+
+  it.each([
     ['create_branch', { branch: 'fix/approval-gate-test' }],
     ['open_pr', { head: 'fix/approval-gate-test', title: 'Approval gate test', body: 'Test body' }],
   ])('%s creates an approval request before invoking the GitHub handler', async (name, args) => {
@@ -247,6 +271,7 @@ describe('MCP constitutional dispatch boundary', () => {
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 59, retryAfter: 0, storageError: false });
     isOperatorSecret.mockReturnValue(false);
+    findMatchingScopedGrant.mockResolvedValue(null);
     validateMcpSession.mockResolvedValue({ valid: false, error: 'Invalid MCP session' });
     toolFn.mockResolvedValue('TOOL_RESULT');
     readCanonicalGovernanceState.mockResolvedValue({
