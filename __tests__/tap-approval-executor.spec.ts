@@ -173,4 +173,83 @@ describe('one-tap approval executor integration', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+
+  it('does not consume a matched grant when governance denies the call', async () => {
+    interceptToolCall.mockResolvedValueOnce({
+      approved: false, decision: 'DENIED_BLOCKED', reason: 'sigma lock', receipt_id: 'denied',
+      crs: { C: 0, R: 0, S: 0, M: 0, risk_level: 'BLOCKED' }, health_band: 'CRITICAL', sigma_viol: 1,
+    });
+    const handler = vi.fn(async () => 'SHOULD_NOT_RUN');
+    const result = await executeGovernedToolStructured(
+      'create_branch',
+      { branch: 'govern/denied', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(result.approved).toBe(false);
+    expect(consumeScopedGrant).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('consumes exactly one grant use and writes one receipt only after governance approval', async () => {
+    let uses = 0;
+    const receipts: Array<{ grantId: string; useNumber: number }> = [];
+    consumeScopedGrant.mockImplementationOnce(async () => {
+      uses += 1;
+      const receipt = { grantId: 'grant-1', useNumber: uses };
+      receipts.push(receipt);
+      return { ...receipt, receiptId: 'SGR-one' };
+    });
+    const handler = vi.fn(async () => 'GOVERNED_WRITE_COMPLETE');
+    const result = await executeGovernedToolStructured(
+      'create_branch',
+      { branch: 'govern/approved', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(result.approved).toBe(true);
+    expect(interceptToolCall.mock.invocationCallOrder[0]).toBeLessThan(consumeScopedGrant.mock.invocationCallOrder[0]);
+    expect(uses).toBe(1);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toEqual({ grantId: 'grant-1', useNumber: 1 });
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to approval and never executes when grant consumption throws', async () => {
+    consumeScopedGrant.mockRejectedValueOnce(new Error('transaction unavailable'));
+    const handler = vi.fn(async () => 'SHOULD_NOT_RUN');
+    const result = await executeGovernedToolStructured(
+      'create_branch',
+      { branch: 'govern/consume-error', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(result.approved).toBe(false);
+    expect(result.result).toBe('SCOPED_GRANT_FALLBACK_APPROVAL');
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('allows the last grant use and falls back on the next call at the max-use boundary', async () => {
+    let uses = 0;
+    consumeScopedGrant.mockImplementation(async () => {
+      if (uses >= 1) return null;
+      uses += 1;
+      return { grantId: 'grant-1', useNumber: uses, receiptId: 'SGR-last' };
+    });
+    const handler = vi.fn(async () => 'GOVERNED_WRITE_COMPLETE');
+    const first = await executeGovernedToolStructured(
+      'create_branch',
+      { branch: 'govern/last-use', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(first.approved).toBe(true);
+    expect(uses).toBe(1);
+    const second = await executeGovernedToolStructured(
+      'create_branch',
+      { branch: 'govern/over-limit', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(second.approved).toBe(false);
+    expect(second.result).toBe('SCOPED_GRANT_FALLBACK_APPROVAL');
+    expect(uses).toBe(1);
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
 });
