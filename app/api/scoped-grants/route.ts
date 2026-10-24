@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       const grant = await createScopedGrant({
         owner_id: typeof body.owner_id === 'string' ? body.owner_id : '',
         allowed_tools: Array.isArray(body.allowed_tools) ? body.allowed_tools as string[] : [],
-        branch_prefixes: Array.isArray(body.branch_prefixes) ? body.branch_prefixes as string[] : undefined,
+        branch_prefixes: body.branch_prefixes === undefined ? undefined : Array.isArray(body.branch_prefixes) ? body.branch_prefixes as string[] : [],
         path_prefixes: Array.isArray(body.path_prefixes) ? body.path_prefixes as string[] : [],
         max_uses: Number(body.max_uses),
         expires_at: typeof body.expires_at === 'number' || typeof body.expires_at === 'string' ? body.expires_at : Number.NaN,
