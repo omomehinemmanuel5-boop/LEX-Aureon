@@ -106,7 +106,7 @@ function isMainBranch(branch: string): boolean {
 
 function isSafeRelativePath(path: string): boolean {
   return !path.startsWith('/')
-    && !path.includes('\\\\')
+    && !path.includes(String.fromCharCode(92))
     && !path.split('/').some(segment => segment === '.' || segment === '..');
 }
 
