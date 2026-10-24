@@ -146,7 +146,8 @@ describe('one-tap approval executor integration', () => {
     expect(result.approved).toBe(true);
   }, 15_000);
 
-  it('does not consume the grant or invoke the handler when the recovery gate denies the call', async () => {
+  it('does not consume the grant or invoke the handler when the recovery gate denies a RESTORING session', async () => {
+    readCanonicalGovernanceState.mockResolvedValue({ available: true, state: { ...state, recoveryState: 'RESTORING' } });
     canonicalExecutionAllowed.mockReturnValue({ allowed: false, reason: 'RESTORING' });
     const handler = vi.fn(async () => 'SHOULD_NOT_RUN');
     const result = await executeGovernedToolStructured(
