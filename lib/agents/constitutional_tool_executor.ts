@@ -18,6 +18,7 @@ import { healthBand } from '../health_band';
 import { getZTraj, recordZTrajObservation } from '../kv';
 import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
 import { approvalArgsHash, consumeApprovalRequest, releaseConsumedApprovalRequest } from '../approval_requests';
+import { consumeScopedGrant } from '../scoped_grants';
 import { withConsumedApproval } from './approval_execution_context';
 import type { ToolCallDecision } from './types';
 import {
@@ -285,6 +286,14 @@ export async function executeGovernedToolStructured(
   environmentId = 'internal',
   ownerId = 'operator',
 ): Promise<GovernedToolExecution> {
+  // Internal grant metadata is injected only by the authenticated MCP route after a read-only match.
+  // Strip it before hashing arguments, classification, or invoking any tool adapter.
+  const scopedGrantId = typeof args.__scoped_grant_id === 'string' ? args.__scoped_grant_id : undefined;
+  if (scopedGrantId) {
+    args = { ...args };
+    delete args.__scoped_grant_id;
+  }
+
   // Reference-monitor admission: capability must be explicitly registered.
   // Never infer authority from an unknown tool name or caller-supplied label.
   let capability: ToolCapabilityRecord;
@@ -403,6 +412,10 @@ export async function executeGovernedToolStructured(
     };
   }
 
+  // A match is only a candidate authorization. Do not spend the grant until both
+  // the interceptor and centralized policy approve and execution is about to dispatch.
+  const hasScopedGrantMatch = Boolean(scopedGrantId);
+
   const decision = await interceptToolCall({
     id: crypto.randomUUID(),
     name: toolName,
@@ -419,6 +432,13 @@ export async function executeGovernedToolStructured(
     authorized: true,
     approvalToken: args.approval_token,
   });
+  if (hasScopedGrantMatch && policy.decision === 'approval_required') {
+    policy = {
+      ...policy,
+      decision: 'allow',
+      reasons: [...policy.reasons, 'A matching owner-scoped grant may replace per-action approval only after interceptor approval; recovery and CRS governance remain enforced.'],
+    };
+  }
   const approvalRequestId = typeof args.approval_request_id === 'string'
     ? args.approval_request_id
     : undefined;
@@ -430,10 +450,11 @@ export async function executeGovernedToolStructured(
     };
   }
   const requestApprovalCanReplaceToken = Boolean(
-    approvalRequestId
-    && args.approval_token === undefined
-    && policy.requiresApproval
-    && policy.decision === 'approval_required',
+    hasScopedGrantMatch
+    || (approvalRequestId
+      && args.approval_token === undefined
+      && policy.requiresApproval
+      && policy.decision === 'approval_required'),
   );
 
   if (!decision.approved) {
@@ -517,7 +538,7 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  if (policy.requiresApproval) {
+  if (policy.requiresApproval && !hasScopedGrantMatch) {
     const consumed = approvalRequestId
       ? await consumeApprovalRequest({
         requestId: approvalRequestId,
@@ -667,6 +688,30 @@ export async function executeGovernedToolStructured(
       policy,
       verification,
     };
+  }
+
+  // Spend the grant only after all canonical, interceptor, centralized-policy,
+  // cancellation, and approval checks have passed. consumeScopedGrant atomically
+  // checks scope/use limits, increments uses, and writes the single use receipt.
+  // A thrown/ambiguous transaction is treated exactly like a failed match.
+  let scopedGrantUse: { grantId: string; useNumber: number; receiptId: string } | null = null;
+  if (scopedGrantId) {
+    try {
+      scopedGrantUse = await consumeScopedGrant({
+        grantId: scopedGrantId, ownerId, toolName, args, sessionId, actorId,
+      });
+    } catch {
+      scopedGrantUse = null;
+    }
+    if (!scopedGrantUse) {
+      return {
+        result: 'SCOPED_GRANT_FALLBACK_APPROVAL',
+        approved: false,
+        decision: 'SCOPED_GRANT_FALLBACK_APPROVAL',
+        receiptId: null,
+        risk: capability.capability,
+      };
+    }
   }
 
   // Approval metadata is for the reference monitor only. Never forward a

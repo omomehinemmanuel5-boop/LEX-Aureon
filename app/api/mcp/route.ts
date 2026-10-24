@@ -33,6 +33,7 @@ import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
 import { isNonMutatingInspectionTool } from '@/lib/mcp_route_policy';
 import { createApprovalRequest, getApprovalRequestStatus } from '@/lib/approval_requests';
+import { findMatchingScopedGrant } from '@/lib/scoped_grants';
 import { env } from '@/lib/env';
 import { CONSTITUTION } from '@/lib/constitution';
 
@@ -1106,6 +1107,8 @@ export async function POST(req: Request) {
           }
           : executionArgs;
       const toolArgs = bindGovernanceToolSession(dispatchToolName, normalizedExecutionArgs, sessionId);
+      // Caller-supplied internal grant metadata is never trusted.
+      delete (toolArgs as Record<string, unknown>).__scoped_grant_id;
       const requestedCapability = getToolCapability(dispatchToolName);
 
       // Recovery must progress before trajectory-plan admission for approved
@@ -1213,7 +1216,14 @@ export async function POST(req: Request) {
               : `Continue safe governed observations, at least 5 seconds apart, until n_stable reaches 3/3 and velocity is below the stability threshold${canonical.state.canaryPassed ? '' : '; the recovery canary is still needed once those requirements are met'}, then retry the action. See docs/recovery-runbook.md.`,
           });
         }
-        const configuredApprovalLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
+        // Match is read-only. The executor consumes the grant only after its own canonical recovery gate passes.
+        const scopedGrantCandidate = await findMatchingScopedGrant({
+          ownerId, toolName: dispatchToolName, args: toolArgs, nowMs: Date.now(),
+        });
+        if (scopedGrantCandidate) {
+          (toolArgs as Record<string, unknown>).__scoped_grant_id = scopedGrantCandidate.grant_id;
+        } else {
+          const configuredApprovalLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
         const approvalLimit = Number.isSafeInteger(configuredApprovalLimit) && configuredApprovalLimit > 0
           ? Math.min(configuredApprovalLimit, 1000)
           : 20;
@@ -1257,6 +1267,7 @@ export async function POST(req: Request) {
             error: { code: -32003, message: 'Could not create a pending approval request; no action was started' },
             id,
           }, { status: 503 });
+        }
         }
       }
       let runContext: AutonomousRunContext | undefined;
@@ -1391,6 +1402,33 @@ export async function POST(req: Request) {
           });
         }
         const execution = trajectoryOutcome.value;
+
+        if (execution.result === 'SCOPED_GRANT_FALLBACK_APPROVAL') {
+          // Release the in-flight trajectory claim because no handler ran; then use the ordinary approval path.
+          if (isTrajectoryActive(execution.state)) {
+            await compareAndSetTrajectoryState(sessionId, execution.state, claimedVersion);
+          } else {
+            await clearTrajectoryState(sessionId);
+          }
+          const fallbackArgs = { ...(toolArgs as Record<string, unknown>) };
+          delete fallbackArgs.__scoped_grant_id;
+          const configuredLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
+          const approvalLimit = Number.isSafeInteger(configuredLimit) && configuredLimit > 0 ? Math.min(configuredLimit, 1000) : 20;
+          const approvalRate = await checkRateLimit(`approval-implicit:${ownerId}`, approvalLimit, 3600);
+          if (approvalRate.storageError || !approvalRate.allowed) {
+            return NextResponse.json({ jsonrpc: '2.0', error: {
+              code: approvalRate.storageError ? -32003 : -32029,
+              message: 'Scoped grant no longer matched; approval fallback could not be admitted.',
+            }, id }, { status: approvalRate.storageError ? 503 : 429 });
+          }
+          const pending = await createApprovalRequest({ ownerId, sessionId, toolName: dispatchToolName, args: fallbackArgs });
+          return mcpToolResult(id, {
+            status: 'approval_required', request_id: pending.requestId, tool_name: dispatchToolName,
+            expires_at: new Date(pending.expiresAt).toISOString(),
+            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+            next_step: 'The grant could not be consumed; a human approver must approve this exact action. Retry with approval_request_id and unchanged arguments.',
+          });
+        }
 
         if (isTrajectoryActive(execution.state)) {
           const committed = await compareAndSetTrajectoryState(sessionId, execution.state, claimedVersion);
@@ -1628,6 +1666,26 @@ export async function POST(req: Request) {
         ? 'EXECUTION_STATUS=unknown_after_deadline. Cancellation was requested, but the tool or remote system may already have completed the action. Verify its state and receipt before retrying.'
         : outcome.value;
 
+      if (!outcome.timedOut && result === 'SCOPED_GRANT_FALLBACK_APPROVAL') {
+        const configuredLimit = Number(env.LEX_APPROVAL_IMPLICIT_LIMIT ?? '20');
+        const approvalLimit = Number.isSafeInteger(configuredLimit) && configuredLimit > 0 ? Math.min(configuredLimit, 1000) : 20;
+        const approvalRate = await checkRateLimit(`approval-implicit:${ownerId}`, approvalLimit, 3600);
+        if (approvalRate.storageError || !approvalRate.allowed) {
+          return NextResponse.json({ jsonrpc: '2.0', error: {
+            code: approvalRate.storageError ? -32003 : -32029,
+            message: 'Scoped grant no longer matched; approval fallback could not be admitted.',
+          }, id }, { status: approvalRate.storageError ? 503 : 429 });
+        }
+        const fallbackArgs = { ...(toolArgs as Record<string, unknown>) };
+        delete fallbackArgs.__scoped_grant_id;
+        const pending = await createApprovalRequest({ ownerId, sessionId, toolName: dispatchToolName, args: fallbackArgs });
+        return mcpToolResult(id, {
+          status: 'approval_required', request_id: pending.requestId, tool_name: dispatchToolName,
+          expires_at: new Date(pending.expiresAt).toISOString(),
+          approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+          next_step: 'The grant could not be consumed; a human approver must approve this exact action. Retry with approval_request_id and unchanged arguments.',
+        });
+      }
       return mcpToolResult(id, result);
     } catch (e) {
       return NextResponse.json({
