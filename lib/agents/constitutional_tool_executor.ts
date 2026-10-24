@@ -412,24 +412,9 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  // Consume a matched grant only after the authoritative recovery gate passed.
-  // The grant store atomically checks scope/use limits, increments uses, and writes its receipt.
-  let scopedGrantUse: { grantId: string; useNumber: number; receiptId: string } | null = null;
-  if (scopedGrantId) {
-    scopedGrantUse = await consumeScopedGrant({
-      grantId: scopedGrantId, ownerId, toolName, args, sessionId, actorId,
-    });
-    if (!scopedGrantUse) {
-      // The route converts this sentinel into the ordinary approval flow. Storage errors never authorize.
-      return {
-        result: 'SCOPED_GRANT_FALLBACK_APPROVAL',
-        approved: false,
-        decision: 'SCOPED_GRANT_FALLBACK_APPROVAL',
-        receiptId: null,
-        risk: capability.capability,
-      };
-    }
-  }
+  // A match is only a candidate authorization. Do not spend the grant until both
+  // the interceptor and centralized policy approve and execution is about to dispatch.
+  const hasScopedGrantMatch = Boolean(scopedGrantId);
 
   const decision = await interceptToolCall({
     id: crypto.randomUUID(),
@@ -447,11 +432,11 @@ export async function executeGovernedToolStructured(
     authorized: true,
     approvalToken: args.approval_token,
   });
-  if (scopedGrantUse && policy.decision === 'approval_required') {
+  if (hasScopedGrantMatch && policy.decision === 'approval_required') {
     policy = {
       ...policy,
       decision: 'allow',
-      reasons: [...policy.reasons, `Scoped grant ${scopedGrantUse.grantId} consumed use ${scopedGrantUse.useNumber}; CRS classification and recovery checks remain enforced.`],
+      reasons: [...policy.reasons, 'A matching owner-scoped grant may replace per-action approval only after interceptor approval; recovery and CRS governance remain enforced.'],
     };
   }
   const approvalRequestId = typeof args.approval_request_id === 'string'
@@ -465,7 +450,7 @@ export async function executeGovernedToolStructured(
     };
   }
   const requestApprovalCanReplaceToken = Boolean(
-    scopedGrantUse
+    hasScopedGrantMatch
     || (approvalRequestId
       && args.approval_token === undefined
       && policy.requiresApproval
@@ -553,7 +538,7 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  if (policy.requiresApproval && !scopedGrantUse) {
+  if (policy.requiresApproval && !hasScopedGrantMatch) {
     const consumed = approvalRequestId
       ? await consumeApprovalRequest({
         requestId: approvalRequestId,
@@ -703,6 +688,30 @@ export async function executeGovernedToolStructured(
       policy,
       verification,
     };
+  }
+
+  // Spend the grant only after all canonical, interceptor, centralized-policy,
+  // cancellation, and approval checks have passed. consumeScopedGrant atomically
+  // checks scope/use limits, increments uses, and writes the single use receipt.
+  // A thrown/ambiguous transaction is treated exactly like a failed match.
+  let scopedGrantUse: { grantId: string; useNumber: number; receiptId: string } | null = null;
+  if (scopedGrantId) {
+    try {
+      scopedGrantUse = await consumeScopedGrant({
+        grantId: scopedGrantId, ownerId, toolName, args, sessionId, actorId,
+      });
+    } catch {
+      scopedGrantUse = null;
+    }
+    if (!scopedGrantUse) {
+      return {
+        result: 'SCOPED_GRANT_FALLBACK_APPROVAL',
+        approved: false,
+        decision: 'SCOPED_GRANT_FALLBACK_APPROVAL',
+        receiptId: null,
+        risk: capability.capability,
+      };
+    }
   }
 
   // Approval metadata is for the reference monitor only. Never forward a
