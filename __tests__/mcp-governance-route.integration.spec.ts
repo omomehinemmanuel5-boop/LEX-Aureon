@@ -21,7 +21,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   createApprovalRequest: vi.fn(async () => ({ requestId: 'a'.repeat(22), expiresAt: Date.now() + 900_000 })),
   getApprovalRequestStatus: vi.fn(async () => ({ status: 'approved' as const })),
   validateMcpSession: vi.fn(),
-  findMatchingScopedGrant: vi.fn(async () => null),
+  findMatchingScopedGrant: vi.fn(async (): Promise<any> => null),
   definitions: [
     { name: 'request_approval', description: 'request', parameters: { type: 'object' } },
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
