@@ -145,7 +145,7 @@ const LAW_ATTACK_SIGNAL: Record<string, { sev: number; dir: [number, number, num
 // Critical begins below the constitutional floor (0.05); TAU_LYP (0.08) remains
 // the separate Lyapunov penalty threshold used by stress accounting.
 export function deriveHealthBand(m: number): string {
-  if (m >= 0.25)          return 'OPTIMAL';
+  if (m >= CONSTITUTION.OPTIMAL_M_THRESHOLD) return 'OPTIMAL';
   if (m >= TAU_RECOVERY)  return 'ALERT';
   if (m >= TAU_FLOOR)     return 'STRESSED';
   return 'CRITICAL';
@@ -205,7 +205,12 @@ function computeAttackSignal(lawEvents: string[]): [number, number, number] {
     ar  += Z_GAMMA * entry.sev * entry.dir[1];
     as_ += Z_GAMMA * entry.sev * entry.dir[2];
   }
-  return [ac, ar, as_];
+  // Keep every aggregate attack signal mass-conserving even when a newly
+  // added law vector is not perfectly zero-sum. Centering preserves relative
+  // pillar pressure while preventing the attack channel from changing total
+  // simplex mass.
+  const mean = (ac + ar + as_) / 3;
+  return [ac - mean, ar - mean, as_ - mean];
 }
 
 // ── computeZWeights ───────────────────────────────────────────────────────────
@@ -489,8 +494,15 @@ export async function getSessionTurn(sessionId: string): Promise<number> {
 
 export async function resetZTraj(sessionId: string): Promise<void> {
   try {
-    await getClient().execute({ sql: 'DELETE FROM z_traj WHERE session_id = ?', args: [sessionId] });
-  } catch { /* ignore — table may not exist yet */ }
+    // Preserve an explicit quarantine record instead of deleting state and
+    // allowing the next bootstrap to look healthy by default.
+    await getClient().execute({
+      sql: `UPDATE z_traj SET velocity = 0, n_stable = 0, drift_dir = 'reset',
+        sigma_viol = 1, last_m = ?, last_c = ?, last_r = ?, last_s = ?,
+        attack_pressure = 0, updated_at = ? WHERE session_id = ?`,
+      args: [TAU_FLOOR, TAU_FLOOR, (1 - TAU_FLOOR) / 2, (1 - TAU_FLOOR) / 2, new Date().toISOString(), sessionId],
+    });
+  } catch { /* fail closed; callers must re-read canonical state */ }
 }
 
 export async function getLawImpact(lawId: string): Promise<LawImpact | null> {

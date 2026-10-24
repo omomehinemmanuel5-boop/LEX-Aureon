@@ -1,8 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { validateApiKey, validateAndConsumeKey, checkRateLimit, runZTrajMigrations, interceptToolCall, lookup, httpsRequest } = vi.hoisted(() => ({
-  validateApiKey: vi.fn(),
+const { validateAndConsumeKey, checkRateLimit, runZTrajMigrations, interceptToolCall, lookup, httpsRequest } = vi.hoisted(() => ({
   validateAndConsumeKey: vi.fn(),
   checkRateLimit: vi.fn(),
   runZTrajMigrations: vi.fn(),
@@ -19,7 +18,7 @@ vi.mock('next/server', () => ({
     }),
   },
 }));
-vi.mock('@/lib/api_keys', () => ({ validateApiKey, validateAndConsumeKey }));
+vi.mock('@/lib/api_keys', () => ({ validateAndConsumeKey }));
 vi.mock('@/lib/rate_limit', () => ({
   getClientIp: () => '198.51.100.40',
   checkRateLimit,
@@ -64,13 +63,18 @@ function installHttpsResponse(payload: unknown = { result: { content: [] } }, st
     };
     req.setTimeout = vi.fn();
     req.destroy = (error?: Error) => { if (error) req.emit('error', error); };
-    req.end = () => {
+    req.end = (body?: string) => {
+      (req as { requestBody?: string }).requestBody = body;
       const response = new EventEmitter() as EventEmitter & { statusCode?: number; destroy: (error?: Error) => void };
       response.statusCode = statusCode;
       response.destroy = (error?: Error) => { if (error) response.emit('error', error); };
       process.nextTick(() => {
         callback(response);
-        response.emit('data', Buffer.from(JSON.stringify(payload)));
+        const requestBody = JSON.parse(String((req as { requestBody?: string }).requestBody ?? '{}')) as { id?: string };
+        const responsePayload = payload && typeof payload === 'object' && !Array.isArray(payload) && !('id' in payload)
+          ? { ...(payload as Record<string, unknown>), id: requestBody.id }
+          : payload;
+        response.emit('data', Buffer.from(JSON.stringify(responsePayload)));
         response.emit('end');
       });
     };
@@ -82,7 +86,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.MCP_OPERATOR_SECRET = 'operator-test-secret';
   delete process.env.TOOL_PROXY_ALLOWED_HOSTS;
-  validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key-123' } });
   validateAndConsumeKey.mockResolvedValue({ valid: true, key: { id: 'key-123' } });
   checkRateLimit.mockResolvedValue({ allowed: true, remaining: 29, retryAfter: 0 });
   runZTrajMigrations.mockResolvedValue(undefined);
@@ -108,7 +111,6 @@ describe('/api/tool-proxy governance boundary', () => {
     checkRateLimit.mockResolvedValue({ allowed: false, retryAfter: 5, storageError: true });
     const response = await POST(request(baseBody, { 'x-lex-api-key': 'secret-key' }));
     expect(response.status).toBe(503);
-    expect(validateApiKey).not.toHaveBeenCalled();
     expect(interceptToolCall).not.toHaveBeenCalled();
   });
 
@@ -118,7 +120,6 @@ describe('/api/tool-proxy governance boundary', () => {
       target_mcp_url: 'https://127.0.0.1/internal-mcp',
     }, { 'x-lex-operator-secret': 'operator-test-secret' }));
     expect(response.status).toBe(403);
-    expect(validateApiKey).not.toHaveBeenCalled();
     expect(interceptToolCall).not.toHaveBeenCalled();
     expect(lookup).not.toHaveBeenCalled();
   });
@@ -132,7 +133,6 @@ describe('/api/tool-proxy governance boundary', () => {
 
     expect(response.status).toBe(401);
     expect(lookup).not.toHaveBeenCalled();
-    expect(validateApiKey).not.toHaveBeenCalled();
   });
 
   it('requires an exact allowlisted public HTTPS host before forwarding', async () => {
@@ -175,11 +175,11 @@ describe('/api/tool-proxy governance boundary', () => {
     expect(JSON.stringify(payload)).not.toContain('raw-key');
   });
 
-  it('accepts the legacy x-api-key header alias', async () => {
+  it('accepts the legacy x-api-key header alias with one atomic credential check', async () => {
     const response = await POST(request(baseBody, { 'x-api-key': 'legacy-key' }));
     expect(response.status).toBe(200);
-    expect(validateApiKey).toHaveBeenCalledWith('legacy-key');
     expect(validateAndConsumeKey).toHaveBeenCalledWith('legacy-key');
+    expect(validateAndConsumeKey).toHaveBeenCalledTimes(1);
   });
 
   it('pins the verified DNS address and reports timeout as an unknown outcome', async () => {
@@ -192,7 +192,9 @@ describe('/api/tool-proxy governance boundary', () => {
       };
       req.setTimeout = (_ms, callback) => callback();
       req.destroy = (error?: Error) => { if (error) req.emit('error', error); };
-      req.end = () => {};
+      req.end = (body?: string) => {
+        (req as { requestBody?: string }).requestBody = body;
+      };
       options.lookup('tools.example.com', {}, (error, address, family) => {
         expect(error).toBeNull();
         expect(address).toBe('93.184.216.34');
@@ -227,6 +229,16 @@ describe('/api/tool-proxy governance boundary', () => {
     expect(payload.result).toEqual({ content: [] });
     expect(httpsRequest).toHaveBeenCalledOnce();
     expect(httpsRequest.mock.calls[0][0]).toMatchObject({ hostname: 'tools.example.com', servername: 'tools.example.com' });
+  });
+
+  it('treats a mismatched JSON-RPC response id as an unknown outcome', async () => {
+    process.env.TOOL_PROXY_ALLOWED_HOSTS = 'tools.example.com';
+    installHttpsResponse({ id: 'wrong-request', result: { content: [] } });
+    const response = await POST(request({ ...baseBody, target_mcp_url: 'https://tools.example.com/mcp' }, { 'x-lex-operator-secret': 'operator-test-secret' }));
+    const payload = await response.json() as { execution_status: string; execution_error: string };
+    expect(response.status).toBe(502);
+    expect(payload.execution_status).toBe('unknown');
+    expect(payload.execution_error).toContain('response id did not match');
   });
 
   it('labels remote HTTP errors as unknown rather than safe-to-retry failures', async () => {

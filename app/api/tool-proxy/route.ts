@@ -14,7 +14,7 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { request as httpsRequest } from 'node:https';
 import crypto from 'node:crypto';
-import { validateApiKey, validateAndConsumeKey } from '@/lib/api_keys';
+import { validateAndConsumeKey } from '@/lib/api_keys';
 import { getClientIp, checkRateLimit } from '@/lib/rate_limit';
 import { runZTrajMigrations } from '@/lib/db';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
@@ -23,6 +23,7 @@ import { isOperatorSecret } from '@/lib/lex_crs_agent/mcp_access';
 import { env } from '@/lib/env';
 
 const MAX_PROXY_BODY_BYTES = 64 * 1024;
+const MAX_PROXY_BODY_READ_MS = 10_000;
 const PROXY_ANONYMOUS_REQUESTS_PER_MINUTE = 30;
 // Authenticated agents are expected to fan out concurrent, short-lived tool
 // calls. Keep anonymous traffic conservative, but do not make a valid key
@@ -56,21 +57,26 @@ function extractHeaderApiKey(req: Request): string | null {
   return null;
 }
 
-async function readBoundedBody(req: Request): Promise<{ text?: string; tooLarge: boolean }> {
-  if (!req.body) return { text: '', tooLarge: false };
+async function readBoundedBody(req: Request): Promise<{ text?: string; tooLarge: boolean; timedOut: boolean }> {
+  if (!req.body) return { text: '', tooLarge: false, timedOut: false };
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
+  const deadline = new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), MAX_PROXY_BODY_READ_MS));
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
+      const next = await Promise.race([reader.read(), deadline]);
+      if (next === 'timeout') {
+        await reader.cancel();
+        return { tooLarge: false, timedOut: true };
+      }
+      if (next.done) break;
+      size += next.value.byteLength;
       if (size > MAX_PROXY_BODY_BYTES) {
         await reader.cancel();
-        return { tooLarge: true };
+        return { tooLarge: true, timedOut: false };
       }
-      chunks.push(value);
+      chunks.push(next.value);
     }
   } finally {
     reader.releaseLock();
@@ -81,7 +87,7 @@ async function readBoundedBody(req: Request): Promise<{ text?: string; tooLarge:
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return { text: new TextDecoder().decode(body), tooLarge: false };
+  return { text: new TextDecoder().decode(body), tooLarge: false, timedOut: false };
 }
 
 function ipv4IsPublic(address: string): boolean {
@@ -157,7 +163,7 @@ async function validateOutboundTarget(raw: string): Promise<URL | null> {
   return target;
 }
 
-function postToMcp(target: URL, payload: Record<string, unknown>): Promise<{ status: number; text: string }> {
+function postToMcp(target: URL, payload: Record<string, unknown>, operationId: string): Promise<{ status: number; text: string }> {
   const pinned = pinnedDestinations.get(target);
   if (!pinned) return Promise.reject(new Error('Validated outbound address is missing'));
   return new Promise((resolve, reject) => {
@@ -170,7 +176,7 @@ function postToMcp(target: URL, payload: Record<string, unknown>): Promise<{ sta
       path: `${target.pathname}${target.search}`,
       method: 'POST',
       servername: target.hostname,
-      headers: { 'Content-Type': 'application/json', Host: target.host },
+      headers: { 'Content-Type': 'application/json', Host: target.host, 'Idempotency-Key': operationId },
       // Pin TLS's network connection to the exact IP that passed the public
       // address check; retain the original hostname for SNI/certificate checks.
       lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
@@ -237,41 +243,8 @@ export async function POST(req: Request) {
     operator || apiKey ? PROXY_API_KEY_REQUESTS_PER_MINUTE : PROXY_ANONYMOUS_REQUESTS_PER_MINUTE,
   );
 
-  let checkedKey: Awaited<ReturnType<typeof validateApiKey>>['key'] | null = null;
-  if (!operator && apiKey) {
-    try {
-      const checked = await validateApiKey(apiKey);
-      if (!checked.valid || !checked.key) return jsonError(401, 'Valid API key or operator secret required');
-      checkedKey = checked.key;
-    } catch {
-      return jsonError(503, 'Tool proxy authentication temporarily unavailable');
-    }
-  }
-
-  if (checkedKey || operator) {
-    const quota = await checkRateLimit(
-      operator ? `tool-proxy:operator:${ipKey}` : `tool-proxy:key:${String(checkedKey!.id)}`,
-      operator ? PROXY_OPERATOR_REQUESTS_PER_MINUTE : PROXY_API_KEY_REQUESTS_PER_MINUTE,
-      60,
-    );
-    if (!quota.allowed) return rateLimitResponse(
-      quota.retryAfter,
-      Boolean(quota.storageError),
-      operator ? PROXY_OPERATOR_REQUESTS_PER_MINUTE : PROXY_API_KEY_REQUESTS_PER_MINUTE,
-    );
-    const ipSafety = await checkRateLimit(
-      `tool-proxy:authenticated-ip:${ipKey}`,
-      PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE,
-      60,
-    );
-    if (!ipSafety.allowed) return rateLimitResponse(
-      ipSafety.retryAfter,
-      Boolean(ipSafety.storageError),
-      PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE,
-    );
-  }
-
   const bounded = await readBoundedBody(req);
+  if (bounded.timedOut) return jsonError(408, 'Request body read timed out');
   if (bounded.tooLarge) return jsonError(413, 'Request body too large');
   let body: unknown;
   try { body = JSON.parse(bounded.text ?? ''); } catch { return jsonError(400, 'Invalid JSON'); }
@@ -324,6 +297,18 @@ export async function POST(req: Request) {
       return jsonError(503, 'Tool proxy authentication temporarily unavailable');
     }
   }
+  if (!operator && apiKey) {
+    const quota = await checkRateLimit(`tool-proxy:key:${actorId.slice('api_key:'.length)}`, PROXY_API_KEY_REQUESTS_PER_MINUTE, 60);
+    if (!quota.allowed) return rateLimitResponse(quota.retryAfter, Boolean(quota.storageError), PROXY_API_KEY_REQUESTS_PER_MINUTE);
+  }
+  if (operator) {
+    const quota = await checkRateLimit(`tool-proxy:operator:${ipKey}`, PROXY_OPERATOR_REQUESTS_PER_MINUTE, 60);
+    if (!quota.allowed) return rateLimitResponse(quota.retryAfter, Boolean(quota.storageError), PROXY_OPERATOR_REQUESTS_PER_MINUTE);
+  }
+  if (operator || apiKey) {
+    const ipSafety = await checkRateLimit(`tool-proxy:authenticated-ip:${ipKey}`, PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE, 60);
+    if (!ipSafety.allowed) return rateLimitResponse(ipSafety.retryAfter, Boolean(ipSafety.storageError), PROXY_AUTHENTICATED_IP_REQUESTS_PER_MINUTE);
+  }
 
   try {
     await runZTrajMigrations();
@@ -371,13 +356,14 @@ export async function POST(req: Request) {
     });
   }
 
+  const operationId = crypto.randomUUID();
   try {
     const mcpRes = await postToMcp(target, {
         jsonrpc: '2.0',
         method: 'tools/call',
         params: { name: toolName.trim(), arguments: args },
         id: toolCall.id,
-    });
+    }, operationId);
     if (mcpRes.status >= 300 && mcpRes.status < 400) {
       return NextResponse.json({
         approved: true,
@@ -402,9 +388,12 @@ export async function POST(req: Request) {
         warning: decision.warning ?? null,
       }, { status: 502 });
     }
-    let mcpData: { result?: unknown; error?: unknown };
-    try { mcpData = JSON.parse(mcpRes.text) as { result?: unknown; error?: unknown }; }
+    let mcpData: { id?: unknown; result?: unknown; error?: unknown };
+    try { mcpData = JSON.parse(mcpRes.text) as { id?: unknown; result?: unknown; error?: unknown }; }
     catch { throw new Error('Remote MCP returned invalid JSON after request dispatch'); }
+    if (mcpData.id !== toolCall.id) {
+      return NextResponse.json({ approved: true, execution_status: 'unknown', result: null, execution_error: 'Target MCP response id did not match the dispatched request; verify before retrying.', receipt_id: decision.receipt_id, reason: decision.reason, crs: decision.crs, warning: decision.warning ?? null, operation_id: operationId }, { status: 502 });
+    }
     if (mcpData.error) {
       return NextResponse.json({
         approved: true,
@@ -427,6 +416,7 @@ export async function POST(req: Request) {
       sigma_viol: decision.sigma_viol,
       health_band: decision.health_band,
       warning: decision.warning ?? null,
+      operation_id: operationId,
     });
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
@@ -441,6 +431,7 @@ export async function POST(req: Request) {
       reason: decision.reason,
       crs: decision.crs,
       warning: decision.warning ?? null,
+      operation_id: operationId,
     }, { status: 504 });
   }
 }

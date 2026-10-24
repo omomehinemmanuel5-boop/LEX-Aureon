@@ -1,6 +1,5 @@
 import { getZTraj, updateZTraj, recordZTrajObservation, type ZTraj } from '../kv';
 import {
-  TAU,
   TARGET_MARGIN,
   calculateZAwareGovernorG,
 } from '../aureonics_core';
@@ -143,7 +142,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
       reason,
     };
   }
-  if (M < TAU) {
+  if (M < CONSTITUTION.TAU_FLOOR) {
     return {
       advanced: false,
       stabilized: false,
@@ -162,7 +161,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
   let reason = 'Recovery state is already above τ_recovery; recording a stabilization observation.';
 
   if (M < CONSTITUTION.TAU_RECOVERY) {
-    const margin = M - TAU;
+    const margin = M - CONSTITUTION.TAU_FLOOR;
     const scalar = Math.min(Math.max(0, TARGET_MARGIN - margin), MAX_RECOVERY_STEP);
     const G = calculateZAwareGovernorG(x, z);
     let delta: [number, number, number] = [
@@ -176,7 +175,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     let scale = 1;
     for (let i = 0; i < 3; i += 1) {
       if (delta[i] < 0) {
-        const allowed = (x[i] - TAU) / -delta[i];
+        const allowed = (x[i] - CONSTITUTION.TAU_FLOOR) / -delta[i];
         scale = Math.min(scale, Math.max(0, allowed));
       }
     }
