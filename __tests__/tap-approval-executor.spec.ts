@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { readCanonicalGovernanceState, canonicalExecutionAllowed, interceptToolCall, consumeApprovalRequest, approvalArgsHash } = vi.hoisted(() => ({
+const { readCanonicalGovernanceState, canonicalExecutionAllowed, interceptToolCall, consumeApprovalRequest, approvalArgsHash, consumeScopedGrant } = vi.hoisted(() => ({
   readCanonicalGovernanceState: vi.fn(),
   canonicalExecutionAllowed: vi.fn(),
   interceptToolCall: vi.fn(),
   consumeApprovalRequest: vi.fn(),
   approvalArgsHash: vi.fn(() => 'bound-hash'),
+  consumeScopedGrant: vi.fn(),
 }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({ readCanonicalGovernanceState, canonicalExecutionAllowed }));
 vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall }));
 vi.mock('../lib/approval_requests', () => ({ consumeApprovalRequest, approvalArgsHash }));
+vi.mock('../lib/scoped_grants', () => ({ consumeScopedGrant }));
 
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
 import { currentConsumedApproval } from '../lib/agents/approval_execution_context';
@@ -122,4 +124,52 @@ describe('one-tap approval executor integration', () => {
     expect(result.approved).toBe(false);
     expect(handler).not.toHaveBeenCalled();
   });
+  it.each([
+    ['create_branch', { branch: 'govern/granted', from_branch: 'main' }],
+    ['write_file', { branch: 'govern/granted', path: 'docs/granted.md', content: 'ok', message: 'test' }],
+  ])('%s executes through the governed executor without creating/consuming a per-action approval', async (toolName, actionArgs) => {
+    consumeScopedGrant.mockResolvedValueOnce({ grantId: 'grant-1', useNumber: 1, receiptId: 'SGR-one' });
+    const handler = vi.fn(async (handlerArgs: Record<string, unknown>) => {
+      expect(handlerArgs.__scoped_grant_id).toBeUndefined();
+      return 'GOVERNED_WRITE_COMPLETE';
+    });
+    const result = await executeGovernedToolStructured(
+      toolName,
+      { ...actionArgs, session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(consumeScopedGrant).toHaveBeenCalledWith(expect.objectContaining({
+      grantId: 'grant-1', ownerId: 'owner-a', toolName, sessionId: state.sessionId,
+    }));
+    expect(consumeApprovalRequest).not.toHaveBeenCalled();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(result.approved).toBe(true);
+  }, 15_000);
+
+  it('does not consume the grant or invoke the handler when the recovery gate denies the call', async () => {
+    canonicalExecutionAllowed.mockReturnValue({ allowed: false, reason: 'RESTORING' });
+    const handler = vi.fn(async () => 'SHOULD_NOT_RUN');
+    const result = await executeGovernedToolStructured(
+      'create_branch',
+      { branch: 'govern/blocked', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(result.approved).toBe(false);
+    expect(consumeScopedGrant).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('returns to the approval fallback if a grant is revoked or cannot be consumed at execution time', async () => {
+    consumeScopedGrant.mockResolvedValueOnce(null);
+    const handler = vi.fn(async () => 'SHOULD_NOT_RUN');
+    const result = await executeGovernedToolStructured(
+      'create_branch',
+      { branch: 'govern/race', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+    );
+    expect(result.approved).toBe(false);
+    expect(result.result).toBe('SCOPED_GRANT_FALLBACK_APPROVAL');
+    expect(handler).not.toHaveBeenCalled();
+  });
+
 });
