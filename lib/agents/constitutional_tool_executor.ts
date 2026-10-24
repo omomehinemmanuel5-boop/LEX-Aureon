@@ -18,6 +18,7 @@ import { healthBand } from '../health_band';
 import { getZTraj, recordZTrajObservation } from '../kv';
 import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
 import { approvalArgsHash, consumeApprovalRequest, releaseConsumedApprovalRequest } from '../approval_requests';
+import { consumeScopedGrant } from '../scoped_grants';
 import { withConsumedApproval } from './approval_execution_context';
 import type { ToolCallDecision } from './types';
 import {
@@ -285,6 +286,14 @@ export async function executeGovernedToolStructured(
   environmentId = 'internal',
   ownerId = 'operator',
 ): Promise<GovernedToolExecution> {
+  // Internal grant metadata is injected only by the authenticated MCP route after a read-only match.
+  // Strip it before hashing arguments, classification, or invoking any tool adapter.
+  const scopedGrantId = typeof args.__scoped_grant_id === 'string' ? args.__scoped_grant_id : undefined;
+  if (scopedGrantId) {
+    args = { ...args };
+    delete args.__scoped_grant_id;
+  }
+
   // Reference-monitor admission: capability must be explicitly registered.
   // Never infer authority from an unknown tool name or caller-supplied label.
   let capability: ToolCapabilityRecord;
@@ -403,6 +412,25 @@ export async function executeGovernedToolStructured(
     };
   }
 
+  // Consume a matched grant only after the authoritative recovery gate passed.
+  // The grant store atomically checks scope/use limits, increments uses, and writes its receipt.
+  let scopedGrantUse: { grantId: string; useNumber: number; receiptId: string } | null = null;
+  if (scopedGrantId) {
+    scopedGrantUse = await consumeScopedGrant({
+      grantId: scopedGrantId, ownerId, toolName, args, sessionId, actorId,
+    });
+    if (!scopedGrantUse) {
+      // The route converts this sentinel into the ordinary approval flow. Storage errors never authorize.
+      return {
+        result: 'SCOPED_GRANT_FALLBACK_APPROVAL',
+        approved: false,
+        decision: 'SCOPED_GRANT_FALLBACK_APPROVAL',
+        receiptId: null,
+        risk: capability.capability,
+      };
+    }
+  }
+
   const decision = await interceptToolCall({
     id: crypto.randomUUID(),
     name: toolName,
@@ -419,6 +447,13 @@ export async function executeGovernedToolStructured(
     authorized: true,
     approvalToken: args.approval_token,
   });
+  if (scopedGrantUse && policy.decision === 'approval_required') {
+    policy = {
+      ...policy,
+      decision: 'allow',
+      reasons: [...policy.reasons, `Scoped grant ${scopedGrantUse.grantId} consumed use ${scopedGrantUse.useNumber}; CRS classification and recovery checks remain enforced.`],
+    };
+  }
   const approvalRequestId = typeof args.approval_request_id === 'string'
     ? args.approval_request_id
     : undefined;
@@ -430,10 +465,11 @@ export async function executeGovernedToolStructured(
     };
   }
   const requestApprovalCanReplaceToken = Boolean(
-    approvalRequestId
-    && args.approval_token === undefined
-    && policy.requiresApproval
-    && policy.decision === 'approval_required',
+    scopedGrantUse
+    || (approvalRequestId
+      && args.approval_token === undefined
+      && policy.requiresApproval
+      && policy.decision === 'approval_required'),
   );
 
   if (!decision.approved) {
@@ -517,7 +553,7 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  if (policy.requiresApproval) {
+  if (policy.requiresApproval && !scopedGrantUse) {
     const consumed = approvalRequestId
       ? await consumeApprovalRequest({
         requestId: approvalRequestId,
