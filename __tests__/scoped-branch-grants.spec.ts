@@ -134,8 +134,10 @@ describe('scoped branch grants — safety contract', () => {
     expect(await findMatchingScopedGrant(action('create_branch', { branch: 'main' }))).toBeNull();
   });
 
-  it('rejects a path outside the owner-approved path prefixes', () => {
+  it('rejects a path outside the owner-approved path prefixes and traversal attempts', () => {
     expect(scopedGrantMatchesAction(grant, action('write_file', { branch: 'govern/scoped', path: 'app/api/route.ts' }))).toBe(false);
+    expect(scopedGrantMatchesAction(grant, action('write_file', { branch: 'govern/scoped', path: 'docs/../.env' }))).toBe(false);
+    expect(scopedGrantMatchesAction(grant, action('patch_file', { branch: 'govern/scoped', path: 'docs\\\\..\\\\.env' }))).toBe(false);
   });
 
   it('requires open_pr base main and a scoped non-main head', () => {
