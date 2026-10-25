@@ -13,6 +13,9 @@ import { canonicalExecutionAllowed, readCanonicalGovernanceState, type Canonical
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
 import { writeGovernanceReceipt } from './governance_commit';
+import { invalidateRecoveryCanaryIfPassed } from './recovery_canary_evidence';
+import { CONSTITUTION } from '../constitution';
+import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
 import { getClient } from '../db';
 import { healthBand } from '../health_band';
 import { getZTraj, recordZTrajObservation } from '../kv';
@@ -265,6 +268,48 @@ function safeTaskContext(
     : derivedContext;
 }
 
+function recoveryBandBreachReason(state: CanonicalGovernanceState): string | null {
+  if (state.canaryEvidenceId == null && state.canaryPassed !== true) return null;
+  if (state.M < CONSTITUTION.TAU_RECOVERY) return `M=${state.M} is below TAU_RECOVERY=${CONSTITUTION.TAU_RECOVERY}`;
+  if (state.sigmaViol !== 0) return `sigma_viol=${state.sigmaViol} is not zero`;
+  if (state.velocity !== undefined && !Number.isFinite(state.velocity)) return 'velocity is not finite';
+  if (state.velocity !== undefined && state.velocity >= RECOVERY_STABILITY_THRESHOLD) {
+    return `velocity=${state.velocity} reached RECOVERY_STABILITY_THRESHOLD=${RECOVERY_STABILITY_THRESHOLD}`;
+  }
+  if (state.nStable < CONSTITUTION.N_MIN) return `n_stable=${state.nStable} is below N_MIN=${CONSTITUTION.N_MIN}`;
+  return null;
+}
+
+async function recordRecoveryBandBreach(
+  state: CanonicalGovernanceState,
+  sessionId: string,
+  actorId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  reason: string,
+): Promise<boolean> {
+  if (state.canaryEvidenceId == null) return false;
+  const recorded = await invalidateRecoveryCanaryIfPassed(state.canaryEvidenceId, reason);
+  if (recorded) {
+    try {
+      await writeGovernanceReceipt({
+        receipt_id: `recovery-canary-breach-${crypto.randomUUID()}`,
+        session_id: sessionId,
+        actor_id: actorId,
+        tool_name: toolName,
+        args_hash: hashGovernanceArguments(args).slice(0, 32),
+        decision: 'DENIED_BLOCKED',
+        crs: { C: state.C, R: state.R, S: state.S, M: state.M, risk_level: 'BLOCKED' },
+        reason: `Recovery canary invalidated before dispatch: ${reason}`,
+        sigma_viol: state.sigmaViol,
+      });
+    } catch {
+      // Invalidation is fail-closed even if audit storage is unavailable.
+    }
+  }
+  return recorded;
+}
+
 export interface GovernedToolExecution {
   result: string;
   approved: boolean;
@@ -382,6 +427,12 @@ export async function executeGovernedToolStructured(
   if (!canonicalGate.allowed) {
     // The preflight recovery pulse above is the only mutation allowed for this
     // request. A second pulse here would double-count stability observations.
+    const initialBreach = !isNonMutatingGovernanceTool(toolName, args)
+      ? recoveryBandBreachReason(canonicalRead.state)
+      : null;
+    if (initialBreach) {
+      await recordRecoveryBandBreach(canonicalRead.state, sessionId, actorId, toolName, args, initialBreach);
+    }
 
     const canonicalDecision: ToolCallDecision = {
       approved: false,
@@ -688,6 +739,49 @@ export async function executeGovernedToolStructured(
       policy,
       verification,
     };
+  }
+
+  // Re-read canonical state after interceptor/policy/approval checks and
+  // immediately before dispatch of every consequential action. A band breach
+  // is recorded by exactly one conditional passed-to-invalidated transition.
+  if (!isNonMutatingGovernanceTool(toolName, args)) {
+    const dispatchRead = await readCanonicalGovernanceState({
+      sessionId,
+      actorId,
+      capability: capability.capability,
+      authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
+    });
+    const dispatchState = dispatchRead.available ? dispatchRead.state : undefined;
+    const bandBreach = dispatchState ? recoveryBandBreachReason(dispatchState) : null;
+    const dispatchGate = dispatchState
+      ? canonicalExecutionAllowed(dispatchState, capability.bootstrapAllowed === true)
+      : { allowed: false, reason: bandBreach };
+    if (!dispatchGate.allowed || bandBreach) {
+      let breachRecorded = false;
+      if (dispatchState && bandBreach) {
+        breachRecorded = await recordRecoveryBandBreach(dispatchState, sessionId, actorId, toolName, args, bandBreach);
+      }
+      const released = await releaseConsumedApproval();
+      const denial: ToolCallDecision = {
+        ...decision,
+        approved: false,
+        decision: 'DENIED_BLOCKED',
+        reason: bandBreach ?? dispatchGate.reason ?? 'Canonical governance state denied execution before dispatch.',
+        warning: released === false
+          ? 'Consumed approval restoration failed; request a new approval.'
+          : breachRecorded ? 'Recovery canary breach recorded and permanently invalidated.' : undefined,
+      };
+      const verification = verifyToolResult(toolName, undefined, policy.risk);
+      return {
+        result: report(toolName, denial, undefined, false, policy, verification, canonicalRead.state, dispatchState),
+        approved: false,
+        decision: denial.decision,
+        receiptId: denial.receipt_id ?? null,
+        risk: policy.risk,
+        policy,
+        verification,
+      };
+    }
   }
 
   // Spend the grant only after all canonical, interceptor, centralized-policy,

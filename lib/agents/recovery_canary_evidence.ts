@@ -3,7 +3,7 @@ import { getClient } from '../db';
 import { CONSTITUTION } from '../constitution';
 import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
 
-export type RecoveryCanaryStatus = 'passed' | 'failed';
+export type RecoveryCanaryStatus = 'passed' | 'failed' | 'invalidated';
 
 export interface RecoverySnapshotFingerprintInput {
   sessionId: string;
@@ -29,6 +29,7 @@ export interface RecoveryCanaryEvidenceInput extends RecoverySnapshotFingerprint
 }
 
 export interface RecoveryCanaryCurrentState {
+  sessionId?: string;
   stateVersion: string;
   stateFingerprint: string;
   M: number;
@@ -37,17 +38,19 @@ export interface RecoveryCanaryCurrentState {
   velocity: number;
 }
 
+export interface RecoveryCanaryEvidenceResult {
+  passed: boolean;
+  receiptId: string | null;
+  status: RecoveryCanaryStatus | null;
+  evidenceId?: number | null;
+}
+
 function exactNumber(value: number): string {
   return Number.isFinite(value) ? value.toPrecision(17) : 'invalid';
 }
-
 /**
- * Fingerprint fields: sessionId, policyVersion, C, R, S, nStable, sigmaViol.
- * Numeric fields use 17-digit precision. Deliberately excluded: observed_at,
- * trajectory_updated_at, receipt IDs, and other observation metadata. Those
- * values describe when/how the snapshot was observed, not the governed state.
- * Read-only inspections therefore cannot invalidate canary evidence merely by
- * observing the same canonical state again.
+ * Keep the exact fingerprint as durable evidence. It is not an ongoing
+ * validity binding: ongoing validity is the health-band predicate below.
  */
 export function recoverySnapshotFingerprint(input: RecoverySnapshotFingerprintInput): string {
   const material = JSON.stringify([
@@ -62,12 +65,6 @@ export function recoverySnapshotFingerprint(input: RecoverySnapshotFingerprintIn
   return crypto.createHash('sha256').update(material).digest('hex');
 }
 
-/**
- * Append one observed canary outcome. Rows are intentionally immutable; the
- * latest result for an exact fingerprint determines whether that snapshot is
- * verified. A failed retry therefore supersedes an earlier pass at that same
- * snapshot without erasing the audit history.
- */
 export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidenceInput): Promise<void> {
   if (!input.sessionId || !input.actorId || !input.receiptId || !input.probeTool) {
     throw new Error('Recovery canary evidence requires session, actor, receipt, and probe identifiers.');
@@ -75,7 +72,6 @@ export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
   if (!/^[a-f0-9]{64}$/.test(input.stateFingerprint)) {
     throw new Error('Recovery canary evidence requires a valid exact-state fingerprint.');
   }
-
   await getClient().execute({
     sql: `INSERT INTO recovery_canary_evidence
       (session_id, actor_id, canary_status, state_fingerprint, state_version,
@@ -83,36 +79,21 @@ export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
        n_stable, sigma_viol, trajectory_updated_at, reason, recovery_state, issued_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      input.sessionId,
-      input.actorId,
-      input.status,
-      input.stateFingerprint,
-      input.policyVersion,
-      input.probeTool,
-      input.receiptId,
-      input.C,
-      input.R,
-      input.S,
-      Math.min(input.C, input.R, input.S),
-      input.nStable,
-      input.sigmaViol,
-      input.trajectoryUpdatedAt,
-      input.reason ?? null,
-      input.recoveryState ?? null,
+      input.sessionId, input.actorId, input.status, input.stateFingerprint,
+      input.policyVersion, input.probeTool, input.receiptId, input.C, input.R,
+      input.S, Math.min(input.C, input.R, input.S), input.nStable, input.sigmaViol,
+      input.trajectoryUpdatedAt, input.reason ?? null, input.recoveryState ?? null,
       input.issuedAt ?? new Date().toISOString(),
       input.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     ],
   });
 }
 
-/**
- * Apply the invariant-mode validity rules to the latest session canary.
- * Shared by governed-state reads and audit-receipt attribution.
- */
+/** Apply the health-band validity rules to the latest session canary. */
 export async function readInvariantRecoveryCanaryEvidence(
   sessionId: string,
   current: RecoveryCanaryCurrentState,
-): Promise<{ passed: boolean; receiptId: string | null; status: RecoveryCanaryStatus | null }> {
+): Promise<RecoveryCanaryEvidenceResult> {
   try {
     const result = await getClient().execute({
       sql: `SELECT e.*, (SELECT COUNT(*) FROM tool_receipts w WHERE w.session_id = e.session_id
@@ -124,60 +105,70 @@ export async function readInvariantRecoveryCanaryEvidence(
     });
     if (!result.rows.length) return { passed: false, receiptId: null, status: null };
     const row = result.rows[0];
-    const status = String(row.canary_status);
+    const status = String(row.canary_status) as RecoveryCanaryStatus;
     const expiryMs = Date.parse(String(row.expires_at ?? ''));
     const maxWrites = Number(process.env.CANARY_MAX_GOVERNED_WRITES ?? 50);
     const maxAgeMs = Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
     const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
     const valid = status === 'passed'
-      && String(row.state_version) === current.stateVersion
-      && String(row.state_fingerprint) === current.stateFingerprint
-      && current.M >= CONSTITUTION.TAU_RECOVERY && current.sigmaViol === 0
+      && (row.state_version === undefined || String(row.state_version) === current.stateVersion)
+      && current.M >= CONSTITUTION.TAU_RECOVERY
+      && current.sigmaViol === 0
       && current.nStable >= CONSTITUTION.N_MIN
-      && Number.isFinite(current.velocity) && current.velocity < RECOVERY_STABILITY_THRESHOLD
-      && Number(row.writes ?? 0) < maxWrites && Number.isFinite(expiryMs)
-      && Number.isFinite(issuedMs) && issuedMs <= Date.now() && Date.now() < expiryMs && Date.now() - issuedMs < maxAgeMs;
-    return { passed: valid, receiptId: valid ? String(row.receipt_id ?? '') || null : null, status: valid ? 'passed' : (status === 'failed' ? 'failed' : null) };
+      && Number.isFinite(current.velocity)
+      && current.velocity < RECOVERY_STABILITY_THRESHOLD
+      && Number(row.writes ?? 0) < maxWrites
+      && Number.isFinite(expiryMs)
+      && Number.isFinite(issuedMs)
+      && issuedMs <= Date.now()
+      && Date.now() < expiryMs
+      && Date.now() - issuedMs < maxAgeMs;
+    return {
+      passed: valid,
+      receiptId: valid ? String(row.receipt_id ?? '') || null : null,
+      status: valid ? 'passed' : (status === 'failed' ? 'failed' : null),
+      ...(Number.isFinite(Number(row.id)) ? { evidenceId: Number(row.id) } : {}),
+    };
   } catch {
     return { passed: false, receiptId: null, status: null };
   }
 }
 
-/** Return the latest proof for this exact snapshot; storage errors fail closed. */
+/** Return the latest session proof; fingerprint remains stored audit evidence. */
 export async function readRecoveryCanaryEvidence(
   sessionId: string,
   stateFingerprint: string,
   current?: RecoveryCanaryCurrentState,
-): Promise<{ passed: boolean; receiptId: string | null; status: RecoveryCanaryStatus | null }> {
+): Promise<RecoveryCanaryEvidenceResult> {
   if (process.env.CANARY_MODE === 'invariant' && current) {
     return readInvariantRecoveryCanaryEvidence(sessionId, { ...current, stateFingerprint });
   }
   try {
     const result = await getClient().execute({
-      sql: `SELECT canary_status, receipt_id, issued_at, expires_at, created_at
+      sql: `SELECT id, canary_status, receipt_id, state_version, issued_at, expires_at, created_at
             FROM recovery_canary_evidence
-            WHERE session_id = ? AND state_fingerprint = ?
+            WHERE session_id = ?
             ORDER BY id DESC LIMIT 1`,
-      args: [sessionId, stateFingerprint],
+      args: [sessionId],
     });
     if (!result.rows.length) return { passed: false, receiptId: null, status: null };
-    const status = String(result.rows[0].canary_status);
-    if (status !== 'passed' && status !== 'failed') {
+    const row = result.rows[0];
+    const status = String(row.canary_status) as RecoveryCanaryStatus;
+    if (status !== 'passed' && status !== 'failed' && status !== 'invalidated') {
       return { passed: false, receiptId: null, status: null };
     }
-    // The legacy mode must not accept unbounded or stale evidence. Enforce
-    // the same freshness window and canonical recovery prerequisites as the
-    // invariant mode; missing current-state context fails closed.
-    if (!current) return { passed: false, receiptId: null, status: status as RecoveryCanaryStatus };
-    const row = result.rows[0];
+    if (!current) return { passed: false, receiptId: null, status, evidenceId: Number(row.id) };
     const expiryMs = Date.parse(String(row.expires_at ?? ''));
     const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
     const valid = status === 'passed'
+      && (row.state_version === undefined || String(row.state_version) === current.stateVersion)
       && current.M >= CONSTITUTION.TAU_RECOVERY
       && current.sigmaViol === 0
       && current.nStable >= CONSTITUTION.N_MIN
-      && Number.isFinite(current.velocity) && current.velocity < RECOVERY_STABILITY_THRESHOLD
-      && Number.isFinite(expiryMs) && Number.isFinite(issuedMs)
+      && Number.isFinite(current.velocity)
+      && current.velocity < RECOVERY_STABILITY_THRESHOLD
+      && Number.isFinite(expiryMs)
+      && Number.isFinite(issuedMs)
       && issuedMs <= Date.now()
       && Date.now() < expiryMs
       && Date.now() - issuedMs < Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
@@ -185,9 +176,23 @@ export async function readRecoveryCanaryEvidence(
       passed: valid,
       receiptId: valid ? String(row.receipt_id ?? '') || null : null,
       status: valid ? 'passed' : (status === 'failed' ? 'failed' : null),
+      ...(Number.isFinite(Number(row.id)) ? { evidenceId: Number(row.id) } : {}),
     };
   } catch {
-    // A missing/unavailable evidence table must never be treated as a pass.
     return { passed: false, receiptId: null, status: null };
   }
+}
+
+/** Atomically and permanently invalidate one passed canary evidence row. */
+export async function invalidateRecoveryCanaryIfPassed(
+  evidenceId: number | string,
+  reason: string,
+): Promise<boolean> {
+  const result = await getClient().execute({
+    sql: `UPDATE recovery_canary_evidence
+          SET canary_status = 'invalidated', reason = ?
+          WHERE id = ? AND canary_status = 'passed'`,
+    args: [reason, evidenceId],
+  });
+  return Number(result.rowsAffected ?? 0) === 1;
 }

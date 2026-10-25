@@ -63,14 +63,14 @@ function addPassingCanary(sessionId: string, snapshot: {
     sigmaViol: snapshot.sigmaViol,
     trajectoryUpdatedAt: snapshot.updatedAt,
   });
-  canaryEvidence.set(`${sessionId}:${fingerprint}`, 'integration-canary-receipt');
+  canaryEvidence.set(sessionId, 'integration-canary-receipt');
 }
 
 function evidenceResult(query: unknown) {
   const record = query as { sql?: string; args?: unknown[] };
   if (!record.sql?.includes('FROM recovery_canary_evidence')) return null;
-  const [sessionId, fingerprint] = record.args ?? [];
-  const receiptId = canaryEvidence.get(`${String(sessionId)}:${String(fingerprint)}`);
+  const [sessionId] = record.args ?? [];
+  const receiptId = canaryEvidence.get(String(sessionId));
   return { rows: receiptId ? [{ canary_status: 'passed', receipt_id: receiptId, issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), created_at: new Date().toISOString() }] : [] };
 }
 
@@ -409,7 +409,7 @@ describe('governed tool execution integration boundary', () => {
     expect(dbExecute).toHaveBeenCalled();
   });
 
-  it('records post-action canonical state instead of only the pre-action snapshot', async () => {
+  it('blocks dispatch when the same-request canonical re-check sees a band breach', async () => {
     const tool = vi.fn(async () => 'WRITE_OK');
     addPassingCanary('post-action-session', { C: 0.4, R: 0.4, S: 0.4, nStable: 3, sigmaViol: 0, updatedAt: DEFAULT_UPDATED_AT });
     let trajectoryReads = 0;
@@ -443,11 +443,9 @@ describe('governed tool execution integration boundary', () => {
       'post-action-session',
     );
 
-    expect(tool).toHaveBeenCalledOnce();
-    expect(result.result).toContain('canonical_crs: C=0.400 R=0.400 S=0.400 M=0.400');
-    expect(result.result).toContain('post_action_canonical_crs: C=0.040 R=0.480 S=0.480 M=0.040');
-    expect(result.result).toContain('post_action_canonical_health_band: CRITICAL');
-    expect(result.result).toContain('POST_ACTION_GOVERNANCE: Post-action canonical M changed from 0.400 to 0.040');
+    expect(tool).not.toHaveBeenCalled();
+    expect(result.approved).toBe(false);
+    expect(result.result).toContain('Canonical M=0.040 < τ_floor=0.05');
   });
 
   it('lets run_governance initialize the same session that the executor gates', async () => {

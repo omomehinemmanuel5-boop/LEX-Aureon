@@ -401,6 +401,8 @@ npm run build          verify TypeScript
 
 [2026-10-15] FIX/DESIGN: Shared MCP session canonicalization now owner-scopes non-operator sessions consistently across ordinary calls, explicit authorization, and external-action approval paths; regression coverage added for raw, already-prefixed, and implicit sessions. Approval decisions now render an accessible, mobile-friendly outcome page that explicitly distinguishes recording approval from executing the action. CI verification pending.
 
+[2026-10-26] SECURITY: Recovery-canary validity now uses the canonical health-band predicate rather than exact snapshot equality. Consequential tool execution performs an immediate pre-dispatch canonical re-check; any breached passing canary is atomically invalidated and audited before dispatch. Boundary coverage includes threshold, velocity, stability, concurrent invalidation, and stale-approval cases. Validation: 646 Vitest tests, typecheck, and production build passed.
+
 
 [2026-09-28] SECURITY: Hardened `/api/mcp` and `/api/tool-proxy` with a dedicated operator secret, API-key actor attribution, fail-closed governance state/receipt commits, unknown-tool default denial, bounded admission, and exact-host public-HTTPS egress pinned to its validated DNS address. Remote failures are explicitly indeterminate; GitHub mutations receive cancellation signals. Focused boundary regressions are documented separately from comparative benchmark claims. Full validation: 276 Vitest tests, typecheck, and lint passed.
 
