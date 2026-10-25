@@ -23,6 +23,7 @@ export interface CanonicalGovernanceState {
   nStable: number;
   canaryPassed?: boolean;
   canaryReceiptId?: string | null;
+  canaryEvidenceId?: number | null;
   stateFingerprint?: string | null;
   trajectoryUpdatedAt?: string | null;
   authorization: 'authorized' | 'approval_required' | 'denied';
@@ -126,7 +127,7 @@ export async function readCanonicalGovernanceState(input: {
       C, R, S, nStable, sigmaViol,
       trajectoryUpdatedAt,
     });
-    const canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint, { stateVersion: STATE_VERSION, stateFingerprint, M, sigmaViol, nStable, velocity });
+    const canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint, { sessionId: input.sessionId, stateVersion: STATE_VERSION, stateFingerprint, M, sigmaViol, nStable, velocity });
     const recovery = recoveryCapabilityAllowed(M, input.capability, {
       nStable,
       sigmaViol,
@@ -146,6 +147,7 @@ export async function readCanonicalGovernanceState(input: {
       nStable,
       canaryPassed: canary.passed,
       canaryReceiptId: canary.receiptId,
+      canaryEvidenceId: canary.evidenceId ?? null,
       stateFingerprint,
       trajectoryUpdatedAt: trajectoryUpdatedAt || null,
       authorization: input.authorization ?? (input.capability === 'read' ? 'authorized' : 'approval_required'),
