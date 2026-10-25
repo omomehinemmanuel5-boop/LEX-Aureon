@@ -8,6 +8,7 @@ export const CONSTITUTION = Object.freeze({
   N_MIN:           3,
   RECOVERY_RATE:   0.02,
   SIGMA_THRESHOLD: 0.25,
+  OPTIMAL_M_THRESHOLD: 0.25,
   K0:              0.3,
   EPSILON_K:       0.01,
   SIMPLEX_SUM:     1.0,

@@ -51,7 +51,10 @@ export async function ensureCanonicalTrajectoryState(sessionId: string): Promise
        ON CONFLICT(session_id) DO NOTHING`,
       args: [
         sessionId,
-        1 / 3, 1 / 3, 1 / 3, 1 / 3,
+        CONSTITUTION.TAU_FLOOR,
+        CONSTITUTION.TAU_FLOOR,
+        (1 - CONSTITUTION.TAU_FLOOR) / 2,
+        (1 - CONSTITUTION.TAU_FLOOR) / 2,
         1 / 3, 1 / 3, 1 / 3,
         new Date().toISOString(),
       ],

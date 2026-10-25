@@ -30,7 +30,7 @@ export function deriveRecoveryState(M: number, evidence: RecoveryEvidence): Reco
     evidence.sigmaViol <= CONSTITUTION.SIGMA_THRESHOLD;
 
   if (!verified) return 'RESTORING';
-  return M < 0.25 ? 'VERIFIED' : 'NORMAL';
+  return M < CONSTITUTION.OPTIMAL_M_THRESHOLD ? 'VERIFIED' : 'NORMAL';
 }
 
 /**
