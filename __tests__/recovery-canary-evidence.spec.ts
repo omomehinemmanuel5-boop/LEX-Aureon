@@ -7,6 +7,7 @@ vi.mock('../lib/db', () => ({
 }));
 
 import {
+  invalidateRecoveryCanaryIfPassed,
   readRecoveryCanaryEvidence,
   recordRecoveryCanaryEvidence,
   recoverySnapshotFingerprint,
@@ -23,7 +24,7 @@ const snapshot = {
   trajectoryUpdatedAt: '2026-10-10T00:00:00.000Z',
 };
 
-describe('exact-snapshot recovery canary evidence', () => {
+describe('recovery canary evidence', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('fingerprints only governance state, not observation timestamps or receipt metadata', () => {
@@ -103,7 +104,7 @@ describe('exact-snapshot recovery canary evidence', () => {
     });
   });
 
-describe('flagged bounded invariant canary validity', () => {
+describe('health-band recovery canary validity', () => {
   beforeEach(() => { vi.clearAllMocks(); vi.stubEnv('CANARY_MODE', 'invariant'); });
 
   const liveRow = (overrides: Record<string, unknown> = {}) => ({
@@ -115,7 +116,7 @@ describe('flagged bounded invariant canary validity', () => {
   });
   const current = { stateVersion: 'canonical-v1', stateFingerprint: 'a'.repeat(64), M: 0.16, sigmaViol: 0, nStable: 3, velocity: 0 };
 
-  it('remains valid across read-only calls only for the exact current fingerprint', async () => {
+  it('remains valid across read-only calls while the current state remains in band', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     for (let i = 0; i < 5; i += 1) {
       await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), current))
@@ -123,10 +124,10 @@ describe('flagged bounded invariant canary validity', () => {
     }
   });
 
-  it('rejects invariant evidence when the canonical fingerprint changes', async () => {
+  it('accepts a changed fingerprint when the current state remains in band', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'b'.repeat(64), current))
-      .resolves.toMatchObject({ passed: false, receiptId: null });
+      .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
   });
 
   it('rejects the mocked write-count limit result (SQL integration coverage is separate)', async () => {
@@ -160,6 +161,95 @@ describe('flagged bounded invariant canary validity', () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, velocity: 0.019 }))
       .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
+  });
+
+  it('accepts M exactly equal to TAU_RECOVERY', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, M: 0.15 }))
+      .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
+  });
+
+  it('rejects M just below TAU_RECOVERY', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, M: 0.15 - Number.EPSILON }))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('rejects velocity exactly equal to RECOVERY_STABILITY_THRESHOLD', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, velocity: 0.02 }))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('rejects any positive sigma_viol, however small', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: Number.MIN_VALUE }))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('rejects evidence at the exact expiry instant', async () => {
+    const now = new Date('2026-10-10T01:00:00.000Z');
+    vi.setSystemTime(now);
+    dbExecute.mockResolvedValue({ rows: [liveRow({
+      issued_at: '2026-10-10T00:00:00.000Z',
+      expires_at: now.toISOString(),
+    })] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), current))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+    vi.useRealTimers();
+  });
+
+  it('rejects a non-finite velocity', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, velocity: Number.NaN }))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('rejects n_stable below N_MIN', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, nStable: 2 }))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('rejects a policy-version change', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, stateVersion: 'canonical-v2' }))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('binds evidence lookup to the requested session', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow()] });
+    await readRecoveryCanaryEvidence('different-session', 'a'.repeat(64), current);
+    expect((dbExecute.mock.calls[0][0] as { args: unknown[] }).args).toContain('different-session');
+  });
+
+  it('does not revive a canary after a breach when metrics recover into the band', async () => {
+    dbExecute.mockResolvedValue({ rows: [liveRow({ canary_status: 'invalidated', invalidated_at: '2026-10-10T00:30:00.000Z' })] });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), current))
+      .resolves.toMatchObject({ passed: false, receiptId: null });
+  });
+
+  it('invalidates a canary with an atomic passed-to-invalidated conditional update', async () => {
+    dbExecute.mockResolvedValue({ rowsAffected: 1 });
+    await expect(invalidateRecoveryCanaryIfPassed('canary-id-1', 'M fell below TAU_RECOVERY'))
+      .resolves.toBe(true);
+    const query = dbExecute.mock.calls[0][0] as { sql: string; args: unknown[] };
+    expect(query.sql).toMatch(/UPDATE recovery_canary_evidence/i);
+    expect(query.sql).toMatch(/canary_status\s*=\s*'passed'/i);
+    expect(query.sql).toMatch(/WHERE[^;]*id\s*=\s*\?/is);
+    expect(query.args).toEqual(['M fell below TAU_RECOVERY', 'canary-id-1']);
+  });
+
+  it('allows only one of two parallel breach invalidations to win the conditional update', async () => {
+    dbExecute
+      .mockResolvedValueOnce({ rowsAffected: 1 })
+      .mockResolvedValueOnce({ rowsAffected: 0 });
+    const results = await Promise.all([
+      invalidateRecoveryCanaryIfPassed('canary-id-1', 'sigma_viol became positive'),
+      invalidateRecoveryCanaryIfPassed('canary-id-1', 'velocity reached threshold'),
+    ]);
+    expect(results.sort()).toEqual([false, true]);
+    expect(dbExecute).toHaveBeenCalledTimes(2);
   });
 
   it('refuses a write when M falls below the constitutional recovery threshold', async () => {
