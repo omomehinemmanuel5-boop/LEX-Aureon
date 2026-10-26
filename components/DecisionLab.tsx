@@ -108,16 +108,37 @@ export default function DecisionLab() {
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const stepRailRef = useRef<HTMLDivElement | null>(null);
   const stepButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const active = useMemo(() => activeId === 'random' ? (randomScenario ?? makeRandom()) : BASE_SCENARIOS.find(s => s.id === activeId) ?? BASE_SCENARIOS[0], [activeId, randomScenario]);
-  const currentIndex = reducedMotion ? active.states.length - 1 : Math.min(step, active.states.length - 1);
+  const currentIndex = Math.min(step, active.states.length - 1);
   const current = active.states[currentIndex];
   const margin = Math.min(current.C, current.R, current.S);
 
-  useEffect(() => { const media = window.matchMedia('(prefers-reduced-motion: reduce)'); const update = () => setReducedMotion(media.matches); update(); media.addEventListener('change', update); return () => media.removeEventListener('change', update); }, []);
-  useEffect(() => { setStep(reducedMotion ? active.states.length - 1 : 0); setPlaying(!reducedMotion); }, [activeId, active.states.length, reducedMotion]);
-  useEffect(() => { if (!playing || reducedMotion || step >= active.states.length - 1) return; const timer = window.setTimeout(() => setStep(v => v + 1), activeId === 'random' ? 700 : 1300); return () => window.clearTimeout(timer); }, [active.states.length, activeId, playing, reducedMotion, step]);
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  // Pause the demo off-screen so it remains useful when mobile visitors reach it.
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section || typeof IntersectionObserver === 'undefined') { setIsVisible(true); return; }
+    const observer = new IntersectionObserver(([entry]) => setIsVisible(entry.isIntersecting), { rootMargin: '80px 0px', threshold: 0.01 });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => { setStep(0); setPlaying(!reducedMotion); }, [activeId, active.states.length, reducedMotion]);
+  useEffect(() => {
+    if (!playing || !isVisible || reducedMotion) return;
+    if (step >= active.states.length - 1) { setPlaying(false); return; }
+    const timer = window.setTimeout(() => setStep(value => value + 1), activeId === 'random' ? 420 : 1000);
+    return () => window.clearTimeout(timer);
+  }, [active.states.length, activeId, isVisible, playing, reducedMotion, step]);
   // Keep the active step visible in the mobile rail without moving the page vertically.
   useEffect(() => {
     if (typeof window === 'undefined' || window.matchMedia('(min-width: 640px)').matches) return;
@@ -131,14 +152,14 @@ export default function DecisionLab() {
   const replay = () => { if (activeId === 'random') setRandomScenario(makeRandom()); setStep(0); setPlaying(!reducedMotion); };
 
   return (
-    <section id="decision-lab" className="relative overflow-hidden border-y border-[#c9a84c]/20 bg-[#0a0b14] px-3 py-10 sm:px-5 sm:py-20">
+    <section ref={sectionRef} id="decision-lab" className="relative overflow-hidden border-y border-[#c9a84c]/20 bg-[#0a0b14] px-3 py-10 sm:px-5 sm:py-20">
       <div className="pointer-events-none absolute inset-0 opacity-40" style={{ background: 'radial-gradient(circle at 20% 20%, rgba(59,130,246,.16), transparent 32%), radial-gradient(circle at 80% 70%, rgba(16,185,129,.12), transparent 32%)' }} />
       <div className="relative mx-auto max-w-6xl">
         <div className="mb-7 max-w-3xl sm:mb-10"><div className="mb-3 text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-[#e8c96d] sm:text-xs">Decision Lab · M-score in motion</div><h2 className="text-3xl font-black tracking-tight text-white sm:text-5xl">Watch Lex allow, reshape, or block.</h2><p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:mt-4 sm:text-base">The M-score is the governing margin. Choose a scenario and watch C, R, and S move through the simplex as Lex detects pressure, intervenes, and records the transition.</p></div>
         <div className="grid gap-3 lg:grid-cols-[0.78fr_1.22fr]">
           <div className="grid grid-cols-2 content-start gap-1.5 sm:grid-cols-3 sm:gap-2 lg:grid-cols-1" aria-label="Governance scenarios">
-            {[...BASE_SCENARIOS.map(scenario => ({ id: scenario.id, label: scenario.label, kind: scenario.kind })), { id: 'random', label: 'Random trajectory', kind: 'Fast sim' }].map(scenario => <button key={scenario.id} type="button" onClick={() => select(scenario.id)} aria-pressed={active.id === scenario.id} className={`min-h-[58px] rounded-xl border p-2.5 text-left transition sm:min-h-[70px] sm:p-3 ${active.id === scenario.id ? 'border-[#e8c96d]/70 bg-[#c9a84c]/10' : 'border-white/10 bg-white/[0.025] hover:border-white/25'}`}><div className="flex min-h-9 flex-col justify-between gap-1 sm:min-h-0 sm:flex-row sm:items-start"><span className="text-[11px] font-bold leading-tight text-white sm:text-xs">{scenario.label}</span><span className="text-[8px] font-mono uppercase tracking-wider text-slate-500 sm:text-[9px]">{scenario.kind}</span></div></button>)}
-            <div className="col-span-2 mt-1 rounded-xl border border-white/10 bg-white/[0.025] p-2.5 sm:col-span-3 sm:p-3 lg:col-span-1"><div className="mb-2 text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">Playback · fast random mode</div><div className="flex flex-wrap gap-1.5"><button type="button" onClick={replay} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200">Replay</button><button type="button" onClick={() => setPlaying(v => !v)} disabled={reducedMotion || currentIndex >= active.states.length - 1} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-40">{playing ? 'Pause' : 'Play'}</button><button type="button" onClick={() => setStep(v => Math.max(0, v - 1))} disabled={currentIndex === 0} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-40">Back</button><button type="button" onClick={() => setStep(v => Math.min(active.states.length - 1, v + 1))} disabled={currentIndex >= active.states.length - 1} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-40">Next</button></div></div>
+            {[...BASE_SCENARIOS.map(scenario => ({ id: scenario.id, label: scenario.label, kind: scenario.kind })), { id: 'random', label: 'Random trajectory', kind: 'Fast sim' }].map(scenario => <button key={scenario.id} type="button" onClick={() => select(scenario.id)} aria-pressed={active.id === scenario.id} className={`min-h-[64px] rounded-xl border p-2.5 text-left transition sm:min-h-[70px] sm:p-3 ${active.id === scenario.id ? 'border-[#e8c96d]/70 bg-[#c9a84c]/10' : 'border-white/10 bg-white/[0.025] hover:border-white/25'}`}><div className="flex min-h-9 flex-col justify-between gap-1 sm:min-h-0 sm:flex-row sm:items-start"><span className="text-[11px] font-bold leading-tight text-white sm:text-xs">{scenario.label}</span><span className="text-[8px] font-mono uppercase tracking-wider text-slate-500 sm:text-[9px]">{scenario.kind}</span></div></button>)}
+            <div className="col-span-2 mt-1 rounded-xl border border-white/10 bg-white/[0.025] p-2.5 sm:col-span-3 sm:p-3 lg:col-span-1"><div className="mb-2 text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">Playback · {active.label}</div><div className="flex flex-wrap gap-1.5"><button type="button" onClick={replay} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200">Replay</button><button type="button" onClick={() => setPlaying(v => !v)} disabled={reducedMotion || currentIndex >= active.states.length - 1} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-40">{playing ? 'Pause' : 'Play'}</button><button type="button" onClick={() => { setPlaying(false); setStep(v => Math.max(0, v - 1)); }} disabled={currentIndex === 0} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-40">Back</button><button type="button" onClick={() => { setPlaying(false); setStep(v => Math.min(active.states.length - 1, v + 1)); }} disabled={currentIndex >= active.states.length - 1} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-40">Next</button></div></div>
           </div>
 
           <div className="min-w-0 rounded-2xl border border-[#c9a84c]/30 bg-black/25 p-3.5 sm:p-7" aria-live="polite">
