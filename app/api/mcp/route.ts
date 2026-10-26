@@ -216,13 +216,21 @@ function mcpToolResult(id: number | string | null | undefined, value: unknown) {
     && !Array.isArray(value)
     ? value
     : { value };
+  const valueRecord = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+  const decision = typeof valueRecord?.decision === 'string' ? valueRecord.decision : '';
+  const isGovernanceDenial = decision.startsWith('DENIED_')
+    || valueRecord?.approved === false && decision.startsWith('DENIED_')
+    || typeof value === 'string' && /(?:^|\\n)decision:\\s*DENIED_[A-Z_]+/m.test(value);
   return NextResponse.json({
     jsonrpc: '2.0',
     result: {
-      // MCP clients require every successful tools/call result to expose
-      // content. Keep the structured value for clients that support it.
+      // A denied governed action is an MCP tool error, not a successful tool
+      // result whose text merely happens to contain a DENIED decision.
       content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
       structuredContent,
+      ...(isGovernanceDenial ? { isError: true } : {}),
     },
     id,
   });
