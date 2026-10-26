@@ -540,3 +540,38 @@ main > section:not(:first-of-type) .rounded-3xl { border-radius: 1.25rem; }
   color: #e5eaf2 !important;
 }
 
+/* Final nested-surface normalization for light mode.
+   Several live landing components (governance strip, Decision Lab, benchmark
+   cards) use additional opacity variants. Match the utility family instead
+   of relying on a short list of exact variants. */
+[data-theme="light"] main > section:not(:first-of-type) [class*="bg-black/"]:not(pre):not(code),
+[data-theme="light"] main > section:not(:first-of-type) [class*="bg-[#0"]:not(pre):not(code),
+[data-theme="light"] main > section:not(:first-of-type) [class*="bg-[#1"]:not(pre):not(code) {
+  background-color: var(--landing-light-surface) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) [class*="bg-white/"] {
+  background-color: var(--landing-light-surface) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) [class*="border-white/"] {
+  border-color: var(--landing-light-border) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) [class*="text-white/"] {
+  color: var(--landing-light-muted) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) [class*="text-slate-200"],
+[data-theme="light"] main > section:not(:first-of-type) [class*="text-slate-300"] {
+  color: #354155 !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) [class*="text-slate-400"],
+[data-theme="light"] main > section:not(:first-of-type) [class*="text-slate-500"] {
+  color: var(--landing-light-muted) !important;
+}
+/* Preserve intentionally dark code/terminal blocks and their readable output. */
+[data-theme="light"] main > section:not(:first-of-type) pre,
+[data-theme="light"] main > section:not(:first-of-type) pre *,
+[data-theme="light"] main > section:not(:first-of-type) .terminal,
+[data-theme="light"] main > section:not(:first-of-type) .terminal * {
+  background-color: #111827 !important;
+  color: #e5eaf2 !important;
+}
+
