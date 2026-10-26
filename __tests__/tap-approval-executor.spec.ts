@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { readCanonicalGovernanceState, canonicalExecutionAllowed, interceptToolCall, consumeApprovalRequest, approvalArgsHash, consumeScopedGrant } = vi.hoisted(() => ({
+const { readCanonicalGovernanceState, canonicalExecutionAllowed, interceptToolCall, consumeApprovalRequest, approvalArgsHash, consumeScopedGrant, writeGovernanceReceipt } = vi.hoisted(() => ({
   readCanonicalGovernanceState: vi.fn(),
   canonicalExecutionAllowed: vi.fn(),
   interceptToolCall: vi.fn(),
   consumeApprovalRequest: vi.fn(),
   approvalArgsHash: vi.fn(() => 'bound-hash'),
   consumeScopedGrant: vi.fn(),
+  writeGovernanceReceipt: vi.fn(async () => undefined),
 }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({ readCanonicalGovernanceState, canonicalExecutionAllowed }));
 vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall }));
 vi.mock('../lib/approval_requests', () => ({ consumeApprovalRequest, approvalArgsHash }));
 vi.mock('../lib/scoped_grants', () => ({ consumeScopedGrant }));
+vi.mock('../lib/agents/governance_commit', () => ({ writeGovernanceReceipt }));
 
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
 import { currentConsumedApproval } from '../lib/agents/approval_execution_context';
