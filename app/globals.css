@@ -487,3 +487,56 @@ main > section:not(:first-of-type) .rounded-3xl { border-radius: 1.25rem; }
   main > section:not(:first-of-type) { padding-block: 1.8rem !important; }
   main > section:not(:first-of-type) .grid { row-gap: .8rem; }
 }
+
+/* ── Light-theme surface audit: remove stray dark panels below the hero ──
+   The landing page contains legacy hard-coded dark utility classes and inline
+   section colors. Normalize those surfaces in light mode while preserving the
+   dark hero, semantic status colors, gold CTAs, and genuinely technical
+   terminal/code panels. */
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-[#07070d]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-[#080811]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-[#0d0d1a]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-black/10"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-black/20"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-black/25"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-black/30"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-black/40"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-white/[0.02]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-white/[0.03]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-white/[0.035]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-white/[0.04]"] {
+  background-color: var(--landing-light-surface) !important;
+}
+
+/* Inline dark backgrounds were bypassing the class-based surface mapping. */
+[data-theme="light"] main > section:not(:first-of-type) [style*="background-color: rgb(7, 7, 13)"],
+[data-theme="light"] main > section:not(:first-of-type) [style*="background-color: rgb(8, 8, 17)"],
+[data-theme="light"] main > section:not(:first-of-type) [style*="background-color: rgb(13, 13, 26)"],
+[data-theme="light"] main > section:not(:first-of-type) [style*="background-color: rgb(2, 4, 8)"],
+[data-theme="light"] main > section:not(:first-of-type) [style*="background-color: rgb(4, 6, 9)"],
+[data-theme="light"] main > section:not(:first-of-type) [style*="background-color: rgb(5, 8, 16)"] {
+  background-color: var(--landing-light-bg) !important;
+}
+
+/* Give light-mode cards a clear, consistent hierarchy rather than black-on-black
+   remnants: white surface, quiet cool border, restrained shadow. */
+[data-theme="light"] main > section:not(:first-of-type) .rounded-xl,
+[data-theme="light"] main > section:not(:first-of-type) .rounded-2xl,
+[data-theme="light"] main > section:not(:first-of-type) .rounded-3xl {
+  border-color: var(--landing-light-border);
+}
+[data-theme="light"] main > section:not(:first-of-type) [class~="border-white/10"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="border-white/15"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="border-white/5"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="border-white/[0.04]"] {
+  border-color: var(--landing-light-border) !important;
+}
+
+/* Retain dark surfaces only where dark rendering is intentional. */
+[data-theme="light"] main > section:not(:first-of-type) pre,
+[data-theme="light"] main > section:not(:first-of-type) code,
+[data-theme="light"] main > section:not(:first-of-type) .terminal {
+  background-color: #111827 !important;
+  color: #e5eaf2 !important;
+}
+
