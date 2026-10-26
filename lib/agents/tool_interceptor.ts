@@ -29,6 +29,7 @@
 
 import { ToolCallInput, ToolCallDecision, ToolCRSState, ToolSessionState } from './types';
 import { measureToolCRS } from './tool_crs';
+import { TOOL_CAPABILITY_REGISTRY } from './tool_capability_registry';
 import { getClient } from '../db';
 import crypto from 'crypto';
 import {
@@ -50,8 +51,11 @@ const KERNEL_CRITICAL  = 0.05;  // deny ALL tool calls
 const KERNEL_STRESSED  = 0.15;  // deny write operations, allow reads only
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const KERNEL_ALERT     = 0.22;  // stricter HIGH threshold
-const WRITE_TOOLS      = new Set(['write_file','create_file','delete_file','drop_table',
-                           'execute_sql','run_command','bash','shell','eval']);
+const WRITE_TOOLS = new Set(
+  [...TOOL_CAPABILITY_REGISTRY.values()]
+    .filter(record => record.capability !== 'read' && record.capability !== 'recovery')
+    .map(record => record.name),
+);
 
 async function getKernelM(session_id: string): Promise<number | null> {
   // Test-only benchmark adapter. It is opt-in, namespaced, and unavailable in
