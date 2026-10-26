@@ -54,17 +54,19 @@ describe('tool interceptor dependency failures', () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('LEX_AGENTDOJO_SYNTHETIC_STATE', '1');
     dbExecute.mockRejectedValue(new Error('database unavailable'));
+    try {
+      const decision = await interceptToolCall({
+        id: 'synthetic-preview',
+        name: 'list_files',
+        arguments: {},
+        session_id: 'synthetic-preview-session',
+      });
 
-    const decision = await interceptToolCall({
-      id: 'synthetic-preview',
-      name: 'list_files',
-      arguments: {},
-      session_id: 'synthetic-preview-session',
-    });
-
-    expect(decision.approved).toBe(false);
-    expect(decision.reason).toContain('state unavailable');
-    vi.unstubAllEnvs();
+      expect(decision.approved).toBe(false);
+      expect(decision.reason).toContain('state unavailable');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('blocks patch_file when canonical kernel M is stressed', async () => {
