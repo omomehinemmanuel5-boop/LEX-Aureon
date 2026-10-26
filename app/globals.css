@@ -375,3 +375,115 @@ body {
   background-size: 72px 72px;
   mask-image: linear-gradient(to bottom, black, transparent 80%);
 }
+
+
+/* ── Homepage visual system: compact, editorial, light-mode ready ──
+   Scoped to the landing page so app consoles and terminal surfaces keep
+   their existing interaction and contrast treatment. */
+main {
+  --landing-light-bg: #f5f7fb;
+  --landing-light-surface: #ffffff;
+  --landing-light-ink: #151a27;
+  --landing-light-muted: #596579;
+  --landing-light-border: #e1e6ef;
+}
+main > section:not(:first-of-type) {
+  padding-block: clamp(2rem, 3.5vw, 3rem) !important;
+}
+main > section:first-of-type {
+  min-height: 0 !important;
+  padding-top: 5.25rem !important;
+  padding-bottom: 2rem !important;
+}
+main > section:first-of-type h1 {
+  font-size: clamp(2.25rem, 5.1vw, 4.4rem) !important;
+  line-height: 1.04 !important;
+  margin-bottom: 1rem !important;
+}
+main > section:first-of-type .text-base,
+main > section:first-of-type .text-xl {
+  font-size: clamp(.94rem, 1.4vw, 1.08rem) !important;
+}
+main > section:not(:first-of-type) h2 {
+  font-size: clamp(1.55rem, 3vw, 2.45rem) !important;
+  line-height: 1.12 !important;
+}
+main > section:not(:first-of-type) h3 {
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+}
+main > section:not(:first-of-type) .text-base { font-size: .94rem; }
+main > section:not(:first-of-type) .text-xl { font-size: 1.1rem; }
+main > section:not(:first-of-type) .text-3xl { font-size: clamp(1.55rem, 3vw, 2.1rem); }
+main > section:not(:first-of-type) .mb-12 { margin-bottom: 2rem !important; }
+main > section:not(:first-of-type) .mb-10 { margin-bottom: 1.65rem !important; }
+main > section:not(:first-of-type) .mt-7 { margin-top: 1.25rem !important; }
+main > section:not(:first-of-type) .p-6 { padding: 1.15rem !important; }
+main > section:not(:first-of-type) .p-5 { padding: 1rem !important; }
+main > section:not(:first-of-type) .rounded-3xl { border-radius: 1.25rem; }
+
+/* Light mode is a deliberate surface palette, not dark cards with dark text. */
+[data-theme="light"] main {
+  background: var(--landing-light-bg) !important;
+  color: var(--landing-light-ink);
+}
+[data-theme="light"] main > section:not(:first-of-type) {
+  background-color: var(--landing-light-bg) !important;
+  color: var(--landing-light-ink);
+  border-color: var(--landing-light-border) !important;
+}
+[data-theme="light"] main > section:nth-of-type(even):not(:first-of-type) {
+  background-color: var(--landing-light-surface) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) .rounded-2xl,
+[data-theme="light"] main > section:not(:first-of-type) .rounded-3xl {
+  background-color: var(--landing-light-surface);
+  border-color: var(--landing-light-border);
+  box-shadow: 0 5px 18px rgba(23, 35, 58, .045);
+}
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-white/[0.035]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-white/[0.03]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-[#c9a84c]/[0.04]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-[#c9a84c]/[0.05]"],
+[data-theme="light"] main > section:not(:first-of-type) [class~="bg-[#c9a84c]/[0.06]"] {
+  background-color: #ffffff !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) .border-white\/10,
+[data-theme="light"] main > section:not(:first-of-type) .border-white\/15,
+[data-theme="light"] main > section:not(:first-of-type) .border-white\/5 {
+  border-color: var(--landing-light-border) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) .text-white {
+  color: var(--landing-light-ink) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) .text-slate-200,
+[data-theme="light"] main > section:not(:first-of-type) .text-slate-300 {
+  color: #354155 !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) .text-slate-400,
+[data-theme="light"] main > section:not(:first-of-type) .text-slate-500 {
+  color: var(--landing-light-muted) !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) [class~="text-[#e8c96d]"] {
+  color: #84631c !important;
+}
+[data-theme="light"] main > section:not(:first-of-type) [class~="text-[#c9a84c]"] {
+  color: #84631c !important;
+}
+[data-theme="light"] main > section:first-of-type .text-white { color: #f8fafc !important; }
+[data-theme="light"] main > section:first-of-type .text-slate-200,
+[data-theme="light"] main > section:first-of-type .text-slate-300 { color: #d7deea !important; }
+[data-theme="light"] main > section:first-of-type .text-slate-400 { color: #aab5c7 !important; }
+[data-theme="light"] main > section:first-of-type [class~="text-[#e8c96d]"] { color: #e8c96d !important; }
+[data-theme="light"] main footer {
+  background-color: #eef1f6 !important;
+  border-color: var(--landing-light-border) !important;
+}
+[data-theme="light"] main footer .text-white { color: var(--landing-light-ink) !important; }
+[data-theme="light"] main footer .text-slate-400 { color: #596579 !important; }
+
+@media (max-width: 640px) {
+  main > section:first-of-type { padding-top: 4.75rem !important; }
+  main > section:first-of-type h1 { font-size: clamp(2rem, 9vw, 2.8rem) !important; }
+  main > section:not(:first-of-type) { padding-block: 1.8rem !important; }
+  main > section:not(:first-of-type) .grid { row-gap: .8rem; }
+}
