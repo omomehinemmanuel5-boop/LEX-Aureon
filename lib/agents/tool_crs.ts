@@ -88,6 +88,60 @@ import { projectToSimplex } from '../aureonics_math';
 import { embedTextResolved, embedTextWithProvider, EmbedProvider } from '../lex_memory';
 import { classifyDatabaseOperation } from './tool_governance_gateway';
 
+// The persistent embedding cache still provides cross-instance reuse, but a
+// hot serverless instance should not pay a Turso round trip for the same short
+// task/archetype text on every tool call. Keys include the provider so vectors
+// from different embedding spaces can never be reused interchangeably.
+const EMBEDDING_MEMO_TTL_MS = 5 * 60 * 1000;
+const EMBEDDING_MEMO_MAX_ENTRIES = 256;
+const embeddingMemo = new Map<string, { vector: number[]; expiresAt: number }>();
+const resolvedProviderMemo = new Map<string, { provider: EmbedProvider; expiresAt: number }>();
+
+function memoKey(provider: EmbedProvider, text: string): string {
+  return `${provider}\u0000${text}`;
+}
+
+function rememberEmbedding(provider: EmbedProvider, text: string, vector: number[]): number[] {
+  const key = memoKey(provider, text);
+  embeddingMemo.delete(key);
+  embeddingMemo.set(key, { vector, expiresAt: Date.now() + EMBEDDING_MEMO_TTL_MS });
+  while (embeddingMemo.size > EMBEDDING_MEMO_MAX_ENTRIES) {
+    const oldest = embeddingMemo.keys().next().value;
+    if (typeof oldest !== 'string') break;
+    embeddingMemo.delete(oldest);
+  }
+  return vector;
+}
+
+async function memoizedEmbedding(text: string, provider: EmbedProvider): Promise<number[]> {
+  const key = memoKey(provider, text);
+  const cached = embeddingMemo.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.vector;
+  if (cached) embeddingMemo.delete(key);
+  return rememberEmbedding(provider, text, await embedTextWithProvider(text, provider));
+}
+
+async function resolvedMemoizedEmbedding(text: string): Promise<{ vector: number[]; provider: EmbedProvider }> {
+  const known = resolvedProviderMemo.get(text);
+  if (known && known.expiresAt > Date.now()) {
+    try {
+      return { vector: await memoizedEmbedding(text, known.provider), provider: known.provider };
+    } catch {
+      resolvedProviderMemo.delete(text);
+    }
+  } else if (known) {
+    resolvedProviderMemo.delete(text);
+  }
+  const { vector, provider } = await embedTextResolved(text);
+  resolvedProviderMemo.set(text, { provider, expiresAt: Date.now() + EMBEDDING_MEMO_TTL_MS });
+  while (resolvedProviderMemo.size > EMBEDDING_MEMO_MAX_ENTRIES) {
+    const oldest = resolvedProviderMemo.keys().next().value;
+    if (typeof oldest !== 'string') break;
+    resolvedProviderMemo.delete(oldest);
+  }
+  return { vector: rememberEmbedding(provider, text, vector), provider };
+}
+
 // ── Constitutional constants (shared with text governance) ─────────────────
 const TAU_FLOOR = 0.05;
 
@@ -317,9 +371,9 @@ async function embedArchetypesWithProvider(): Promise<{ vecs: number[][]; provid
   if (_archetypeVecs && _archetypeProvider) {
     return { vecs: _archetypeVecs, provider: _archetypeProvider };
   }
-  const { vector: first, provider } = await embedTextResolved(INJECTION_ARCHETYPES[0]);
+  const { vector: first, provider } = await resolvedMemoizedEmbedding(INJECTION_ARCHETYPES[0]);
   const rest = await Promise.all(
-    INJECTION_ARCHETYPES.slice(1).map(a => embedTextWithProvider(a, provider))
+    INJECTION_ARCHETYPES.slice(1).map(a => memoizedEmbedding(a, provider))
   );
   const vecs = [first, ...rest];
   _archetypeVecs = vecs;
@@ -385,7 +439,7 @@ export async function injectionSimilarity(
   if (!looksLikeNaturalLanguage(freeText)) return { similarity: 0, degraded: false };
   try {
     const { vecs: archetypeVecs, provider } = await embedArchetypesWithProvider();
-    const contentVec = await embedTextWithProvider(freeText, provider);
+    const contentVec = await memoizedEmbedding(freeText, provider);
     let best = 0, bestIdx = -1;
     for (let i = 0; i < archetypeVecs.length; i++) {
       const sim = cosineSimilarity(contentVec, archetypeVecs[i]);
@@ -711,8 +765,8 @@ async function measureC(tool: ToolCallInput): Promise<{ score: number; degraded:
     // spaces, not a real semantic mismatch. Fixed by resolving ONE provider
     // for task_context, then pinning describeToolCall(tool)'s embedding to
     // that SAME provider via embedTextWithProvider.
-    const { vector: taskEmb, provider } = await embedTextResolved(tool.task_context);
-    const callEmb = await embedTextWithProvider(describeToolCall(tool), provider);
+    const { vector: taskEmb, provider } = await resolvedMemoizedEmbedding(tool.task_context);
+    const callEmb = await memoizedEmbedding(describeToolCall(tool), provider);
     const sim  = cosineSimilarity(taskEmb, callEmb);
     const base = Math.max(0.05, Math.min(0.95, sim));
     return { score: applyDriftPenalty(tool, tool.task_context, base), degraded: false };

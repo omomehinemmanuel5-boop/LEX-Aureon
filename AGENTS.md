@@ -188,7 +188,7 @@ run_stats          run counters (e.g. total_runs) — owner: lib/kv.ts
 benchmark_results  LexBench run results — owner: lib/benchmark_results.ts
 clause_bank        constitutional clause bank — owner: lib/agents/clause_bank.ts
 vaulturex_rules    Vaulturex Sovereign Codex (50 laws) — owner: lib/db.ts / lex_crs_agent tools
-tool_sessions      agent tool-call sessions — owner: lib/agents/tool_interceptor.ts
+tool_sessions      agent tool-call telemetry — owner: lib/agents/tool_interceptor.ts; recovery authority is z_traj
 tool_receipts      agent tool-call audit receipts — owner: lib/agents/tool_interceptor.ts
 sovereign_laws     law definitions — owner: lib/db.ts / lex_crs_agent tools
 provider_cooldowns cross-instance LLM/embedding provider cooldown state
@@ -403,8 +403,10 @@ npm run build          verify TypeScript
 
 [2026-10-26] SECURITY: Recovery-canary validity now uses the canonical health-band predicate rather than exact snapshot equality. Consequential tool execution performs an immediate pre-dispatch canonical re-check; any breached passing canary is atomically invalidated and audited before dispatch. Boundary coverage includes threshold, velocity, stability, concurrent invalidation, and stale-approval cases. Validation: 646 Vitest tests, typecheck, and production build passed.
 
+[2026-10-26] ARCHITECTURE/SECURITY: Removed the duplicate `/api/tool-proxy` route and its compatibility pipeline; `/api/mcp` is now the sole agent execution boundary. Removed legacy per-session lock enforcement in favor of canonical z-trajectory recovery authority, retained the database field only for migration compatibility, and added a bounded provider-scoped embedding memo to reduce repeated cache lookups and provider calls. Validation: 642 Vitest tests, typecheck, lint, and production build passed.
 
-[2026-09-28] SECURITY: Hardened `/api/mcp` and `/api/tool-proxy` with a dedicated operator secret, API-key actor attribution, fail-closed governance state/receipt commits, unknown-tool default denial, bounded admission, and exact-host public-HTTPS egress pinned to its validated DNS address. Remote failures are explicitly indeterminate; GitHub mutations receive cancellation signals. Focused boundary regressions are documented separately from comparative benchmark claims. Full validation: 276 Vitest tests, typecheck, and lint passed.
+
+[2026-09-28] SECURITY: Hardened `/api/mcp` with a dedicated operator secret, API-key actor attribution, fail-closed governance state/receipt commits, unknown-tool default denial, bounded admission, and exact-host public-HTTPS egress pinned to its validated DNS address. Remote failures are explicitly indeterminate; GitHub mutations receive cancellation signals. Focused boundary regressions are documented separately from comparative benchmark claims. Full validation: 276 Vitest tests, typecheck, and lint passed.
 
 [2026-09-29] FIX: Local-only, uncommitted, undeployed branch `fix/governance-diagnostic-consistency` makes diagnostic-intent detection negation-aware, distinguishes policy refusal from refusal-style generated output, classifies stateful `run_governance` as an approval-bound write, and prevents denial-like source text from being mistaken for tool execution status. Validation: 312 Vitest tests, typecheck, and lint passed.
 
