@@ -50,6 +50,38 @@ describe('tool interceptor dependency failures', () => {
     }
   });
 
+  it('does not allow synthetic governance state outside test mode', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('LEX_AGENTDOJO_SYNTHETIC_STATE', '1');
+    dbExecute.mockRejectedValue(new Error('database unavailable'));
+
+    const decision = await interceptToolCall({
+      id: 'synthetic-preview',
+      name: 'list_files',
+      arguments: {},
+      session_id: 'synthetic-preview-session',
+    });
+
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toContain('state unavailable');
+    vi.unstubAllEnvs();
+  });
+
+  it('blocks patch_file when canonical kernel M is stressed', async () => {
+    dbExecute.mockResolvedValue({ rows: [{ last_m: 0.1 }] });
+
+    const decision = await interceptToolCall({
+      id: 'stressed-patch',
+      name: 'patch_file',
+      arguments: { path: 'README.md', old_str: 'old', new_str: 'new' },
+      session_id: 'stressed-patch-session',
+    });
+
+    expect(decision.approved).toBe(false);
+    expect(decision.decision).toBe('DENIED_BLOCKED');
+    expect(decision.reason).toContain('write operations suspended');
+  });
+
   it('denies when tool-session state cannot be read instead of assuming a clean session', async () => {
     dbExecute
       .mockResolvedValueOnce({ rows: [{ last_m: 1.0 }] })
