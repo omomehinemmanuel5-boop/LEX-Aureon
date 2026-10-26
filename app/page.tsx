@@ -189,7 +189,7 @@ async function Hero() {
 
       <div className="relative z-10 w-full max-w-4xl mx-auto text-center">
 
-        <div className="mb-6"><HeroTicker /></div>
+        <div className="mt-4 mb-3 sm:mt-5 sm:mb-4"><HeroTicker /></div>
 
         <div
           className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 max-w-[90vw] px-4 py-1.5 rounded-2xl sm:rounded-full border mb-8 text-[11px] sm:text-xs font-mono"
