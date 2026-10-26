@@ -8,14 +8,13 @@
  */
 
 export const HIGH_RISK_TOOL_NAMES = [
-  'execute_command', 'run_terminal', 'bash', 'shell', 'run_command',
-  'exec', 'system', 'spawn', 'dispatch_workflow',
+  'bash', 'shell', 'run_command', 'exec', 'dispatch_workflow',
   'change_access', 'revoke_key', 'change_billing', 'authorize_external_action',
 ] as const;
 
 export const MEDIUM_RISK_TOOL_NAMES = [
-  'write_file', 'create_file', 'modify_file', 'update_file',
-  'delete_file', 'rename_file', 'move_file',
+  'write_file', 'create_file',
+  'delete_file',
   'run_governance', 'declare_trajectory_plan', 'clear_trajectory_plan',
   'review_agent_action', 'simulate_agent_plan', 'explain_denial', 'log_decision',
   'govern_external_action', 'patch_file', 'request_approval',

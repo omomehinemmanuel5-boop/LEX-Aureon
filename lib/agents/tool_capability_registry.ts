@@ -37,12 +37,12 @@ const READ_TOOLS = [
   'simulate_agent_plan','explain_denial','get_build_status','get_workflow_run',
   'get_workflow_log','get_workflow_artifact','get_recent_receipts',
   'search_code','check_github_token_scope','get_vercel_logs','run_self_test',
-  'self_reflect','query_database','preview_patch_file',
+  'self_reflect','narrate_origin','query_database','preview_patch_file',
 ] as const;
 
 const WRITE_TOOLS = [
   'write_file','write_file_governed','create_file','patch_file','log_decision',
-  'narrate_origin','create_branch','open_pr',
+  'create_branch','open_pr',
 ] as const;
 
 const EXTERNAL_TOOLS = [
