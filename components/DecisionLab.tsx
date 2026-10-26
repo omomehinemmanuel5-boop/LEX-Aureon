@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DynamicSimplex from './DynamicSimplex';
 
 type Decision = 'ALLOWED' | 'INTERVENED' | 'BLOCKED';
@@ -108,26 +108,81 @@ export default function DecisionLab() {
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const trajectoryListRef = useRef<HTMLDivElement | null>(null);
+  const trajectoryStepRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const active = useMemo(() => activeId === 'random' ? (randomScenario ?? makeRandom()) : BASE_SCENARIOS.find(s => s.id === activeId) ?? BASE_SCENARIOS[0], [activeId, randomScenario]);
-  const currentIndex = reducedMotion ? active.states.length - 1 : Math.min(step, active.states.length - 1);
+  const currentIndex = Math.min(step, active.states.length - 1);
   const current = active.states[currentIndex];
   const margin = Math.min(current.C, current.R, current.S);
 
-  useEffect(() => { const media = window.matchMedia('(prefers-reduced-motion: reduce)'); const update = () => setReducedMotion(media.matches); update(); media.addEventListener('change', update); return () => media.removeEventListener('change', update); }, []);
-  useEffect(() => { setStep(reducedMotion ? active.states.length - 1 : 0); setPlaying(!reducedMotion); }, [activeId, active.states.length, reducedMotion]);
-  useEffect(() => { if (!playing || reducedMotion || step >= active.states.length - 1) return; const timer = window.setTimeout(() => setStep(v => v + 1), activeId === 'random' ? 420 : 1000); return () => window.clearTimeout(timer); }, [active.states.length, activeId, playing, reducedMotion, step]);
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  // Do not let a short demo finish before a mobile visitor scrolls down to it.
+  // Playback pauses off-screen and resumes when the lab comes back into view.
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section || typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { rootMargin: '80px 0px', threshold: 0.01 },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    setStep(0);
+    setPlaying(!reducedMotion);
+  }, [activeId, active.states, reducedMotion]);
+
+  useEffect(() => {
+    if (!playing || !isVisible || reducedMotion) return;
+    if (step >= active.states.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setStep(value => value + 1), activeId === 'random' ? 420 : 1000);
+    return () => window.clearTimeout(timer);
+  }, [active.states, activeId, isVisible, playing, reducedMotion, step]);
+
+  // Keep the active step visible inside the scrollable mobile trajectory panel,
+  // without scrolling the whole page away from the visualization.
+  useEffect(() => {
+    const container = trajectoryListRef.current;
+    const item = trajectoryStepRefs.current[currentIndex];
+    if (!container || !item) return;
+    const containerTop = container.getBoundingClientRect().top;
+    const itemTop = item.getBoundingClientRect().top - containerTop + container.scrollTop;
+    if (itemTop < container.scrollTop) {
+      container.scrollTop = itemTop;
+    } else if (itemTop + item.offsetHeight > container.scrollTop + container.clientHeight) {
+      container.scrollTop = itemTop + item.offsetHeight - container.clientHeight;
+    }
+  }, [currentIndex, active.id]);
+
   const select = (id: string) => { if (id === 'random') setRandomScenario(makeRandom()); setActiveId(id); setStep(0); setPlaying(!reducedMotion); };
   const replay = () => { if (activeId === 'random') setRandomScenario(makeRandom()); setStep(0); setPlaying(!reducedMotion); };
 
   return (
-    <section id="decision-lab" className="relative overflow-hidden border-y border-[#c9a84c]/20 bg-[#0a0b14] px-3 py-10 sm:px-5 sm:py-20">
+    <section ref={sectionRef} id="decision-lab" className="relative overflow-hidden border-y border-[#c9a84c]/20 bg-[#0a0b14] px-3 py-10 sm:px-5 sm:py-20">
       <div className="pointer-events-none absolute inset-0 opacity-40" style={{ background: 'radial-gradient(circle at 20% 20%, rgba(59,130,246,.16), transparent 32%), radial-gradient(circle at 80% 70%, rgba(16,185,129,.12), transparent 32%)' }} />
       <div className="relative mx-auto max-w-6xl">
         <div className="mb-7 max-w-3xl sm:mb-10"><div className="mb-3 text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-[#e8c96d] sm:text-xs">Decision Lab · M-score in motion</div><h2 className="text-3xl font-black tracking-tight text-white sm:text-5xl">Watch Lex allow, reshape, or block.</h2><p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:mt-4 sm:text-base">The M-score is the governing margin. Choose a scenario and watch C, R, and S move through the simplex as Lex detects pressure, intervenes, and records the transition.</p></div>
         <div className="grid gap-3 lg:grid-cols-[0.78fr_1.22fr]">
           <div className="grid grid-cols-2 content-start gap-1.5 sm:grid-cols-3 sm:gap-2 lg:grid-cols-1" aria-label="Governance scenarios">
-            {[...BASE_SCENARIOS.map(scenario => ({ id: scenario.id, label: scenario.label, kind: scenario.kind })), { id: 'random', label: 'Random trajectory', kind: 'Fast sim' }].map(scenario => <button key={scenario.id} type="button" onClick={() => select(scenario.id)} aria-pressed={active.id === scenario.id} className={`min-h-[58px] rounded-xl border p-2.5 text-left transition sm:min-h-[70px] sm:p-3 ${active.id === scenario.id ? 'border-[#e8c96d]/70 bg-[#c9a84c]/10' : 'border-white/10 bg-white/[0.025] hover:border-white/25'}`}><div className="flex min-h-9 flex-col justify-between gap-1 sm:min-h-0 sm:flex-row sm:items-start"><span className="text-[11px] font-bold leading-tight text-white sm:text-xs">{scenario.label}</span><span className="text-[8px] font-mono uppercase tracking-wider text-slate-500 sm:text-[9px]">{scenario.kind}</span></div></button>)}
-            <div className="col-span-2 mt-1 rounded-xl border border-white/10 bg-white/[0.025] p-2.5 sm:col-span-3 sm:p-3 lg:col-span-1"><div className="mb-2 text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">Playback · fast random mode</div><div className="flex flex-wrap gap-1.5"><button type="button" onClick={replay} className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1.5 text-[10px] font-bold text-slate-200">Replay</button><button type="button" onClick={() => setPlaying(v => !v)} disabled={reducedMotion || currentIndex >= active.states.length - 1} className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1.5 text-[10px] font-bold text-slate-200 disabled:opacity-40">{playing ? 'Pause' : 'Play'}</button><button type="button" onClick={() => setStep(v => Math.max(0, v - 1))} disabled={currentIndex === 0} className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1.5 text-[10px] font-bold text-slate-200 disabled:opacity-40">Back</button><button type="button" onClick={() => setStep(v => Math.min(active.states.length - 1, v + 1))} disabled={currentIndex >= active.states.length - 1} className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1.5 text-[10px] font-bold text-slate-200 disabled:opacity-40">Next</button></div></div>
+            {[...BASE_SCENARIOS.map(scenario => ({ id: scenario.id, label: scenario.label, kind: scenario.kind })), { id: 'random', label: 'Random trajectory', kind: 'Fast sim' }].map(scenario => <button key={scenario.id} type="button" onClick={() => select(scenario.id)} aria-pressed={active.id === scenario.id} className={`min-h-[64px] rounded-xl border p-2.5 text-left transition sm:min-h-[70px] sm:p-3 ${active.id === scenario.id ? 'border-[#e8c96d]/70 bg-[#c9a84c]/10' : 'border-white/10 bg-white/[0.025] hover:border-white/25'}`}><div className="flex min-h-9 flex-col justify-between gap-1 sm:min-h-0 sm:flex-row sm:items-start"><span className="text-[11px] font-bold leading-tight text-white sm:text-xs">{scenario.label}</span><span className="text-[8px] font-mono uppercase tracking-wider text-slate-500 sm:text-[9px]">{scenario.kind}</span></div></button>)}
+            <div className="col-span-2 mt-1 rounded-xl border border-white/10 bg-white/[0.025] p-2.5 sm:col-span-3 sm:p-3 lg:col-span-1"><div className="mb-2 text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">Playback · {active.label}</div><div className="flex flex-wrap gap-2"><button type="button" onClick={replay} aria-label={`Replay ${active.label} scenario`} className="min-h-11 min-w-[68px] rounded-lg border border-white/15 px-3 py-2 text-[11px] font-bold text-slate-200">Replay</button><button type="button" onClick={() => setPlaying(v => !v)} disabled={reducedMotion || currentIndex >= active.states.length - 1} aria-label={playing ? 'Pause playback' : 'Play playback'} className="min-h-11 min-w-[68px] rounded-lg border border-white/15 px-3 py-2 text-[11px] font-bold text-slate-200 disabled:opacity-40">{currentIndex >= active.states.length - 1 ? 'Finished' : playing ? 'Pause' : 'Play'}</button><button type="button" onClick={() => { setPlaying(false); setStep(v => Math.max(0, v - 1)); }} disabled={currentIndex === 0} className="min-h-11 min-w-[68px] rounded-lg border border-white/15 px-3 py-2 text-[11px] font-bold text-slate-200 disabled:opacity-40">Back</button><button type="button" onClick={() => { setPlaying(false); setStep(v => Math.min(active.states.length - 1, v + 1)); }} disabled={currentIndex >= active.states.length - 1} className="min-h-11 min-w-[68px] rounded-lg border border-white/15 px-3 py-2 text-[11px] font-bold text-slate-200 disabled:opacity-40">Next</button></div></div>
           </div>
 
           <div className="min-w-0 rounded-2xl border border-[#c9a84c]/30 bg-black/25 p-3.5 sm:p-7" aria-live="polite">
@@ -135,7 +190,7 @@ export default function DecisionLab() {
             <div className="mt-4 grid gap-4 xl:grid-cols-[0.92fr_1.08fr] xl:items-center"><div className="min-w-0"><div className="mx-auto w-full max-w-[300px]"><DynamicSimplex key={`${active.id}-${active.receipt}`} liveC={current.C} liveR={current.R} liveS={current.S} liveM={margin} intervention={current.decision !== 'ALLOWED'} animating={playing && !reducedMotion} recovering={current.recovering} /></div><div className="mt-2 text-center text-[10px] font-mono text-slate-500">M={margin.toFixed(2)} · floor 5% · recovery 15%</div></div><div className="min-w-0"><div className="text-[10px] font-mono uppercase tracking-widest text-slate-500">Current transition</div><p className="mt-1 text-base font-bold leading-snug text-white sm:text-lg">{current.label}</p><p className="mt-1 text-xs leading-relaxed text-slate-400">{current.detail}</p><div className="mt-3 rounded-lg border border-blue-400/20 bg-blue-400/[0.06] p-2.5"><div className="text-[9px] font-mono uppercase tracking-widest text-blue-300">Signal</div><p className="mt-1 break-words text-[11px] leading-relaxed text-slate-300">{active.signal}</p></div></div></div>
             <div className="mt-4 grid gap-1.5 sm:grid-cols-3"><div className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 font-mono text-[10px]"><div className="text-slate-500">C / R / S</div><div className="mt-1 text-slate-200">{current.C.toFixed(2)} / {current.R.toFixed(2)} / {current.S.toFixed(2)}</div></div><div className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 font-mono text-[10px]"><div className="text-slate-500">outcome</div><div className="mt-1 text-[#e8c96d]">{current.decision}</div></div><div className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 font-mono text-[10px]"><div className="text-slate-500">receipt</div><div className="mt-1 text-[#e8c96d]">{active.receipt}</div></div></div>
             <details className="mt-3 rounded-lg border border-white/10 bg-white/[0.025] p-2.5"><summary className="cursor-pointer text-[10px] font-mono uppercase tracking-widest text-slate-500">Show transformation</summary><div className="mt-2 grid gap-2 text-[11px] leading-relaxed sm:grid-cols-2"><div><div className="font-mono text-[9px] uppercase text-rose-300">Original</div><p className="mt-1 text-slate-400">{active.original ?? active.prompt}</p></div><div><div className="font-mono text-[9px] uppercase text-emerald-300">Governed</div><p className="mt-1 text-slate-300">{active.governed ?? active.action}</p></div></div></details>
-            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.025] p-2.5"><div className="mb-2 flex items-center justify-between gap-2"><div className="text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">Trajectory</div><div className="text-[9px] font-mono text-slate-600">tap a step</div></div><div className="grid gap-1.5">{active.states.map((state, index) => <button key={`${active.id}-${index}`} type="button" onClick={() => { setStep(index); setPlaying(false); }} aria-current={index === currentIndex ? 'step' : undefined} className={`grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg border p-2 text-left ${index === currentIndex ? 'border-[#e8c96d]/55 bg-[#c9a84c]/[0.08]' : 'border-white/5 bg-black/10'}`}><span className="font-mono text-[9px] text-[#e8c96d]">0{index + 1}</span><span className="min-w-0"><span className="block truncate text-[10px] font-bold text-white">{state.label}</span><span className="hidden truncate text-[9px] text-slate-500 sm:block">{state.detail}</span></span><span className={`rounded border px-1.5 py-0.5 text-[8px] font-mono font-bold ${decisionStyle[state.decision]}`}>{state.decision}</span></button>)}</div></div>
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.025] p-2.5"><div className="mb-2 flex items-center justify-between gap-2"><div className="text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">Trajectory</div><div className="text-[9px] font-mono text-slate-600">tap a step</div></div><div ref={trajectoryListRef} className="grid max-h-64 gap-1.5 overflow-y-auto overscroll-contain pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">{active.states.map((state, index) => <button ref={node => { trajectoryStepRefs.current[index] = node; }} key={`${active.id}-${index}`} type="button" onClick={() => { setStep(index); setPlaying(false); }} aria-current={index === currentIndex ? 'step' : undefined} className={`grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border p-2.5 text-left ${index === currentIndex ? 'border-[#e8c96d]/55 bg-[#c9a84c]/[0.08]' : 'border-white/5 bg-black/10'}`}><span className="font-mono text-[9px] text-[#e8c96d]">{String(index + 1).padStart(2, '0')}</span><span className="min-w-0"><span className="block truncate text-[10px] font-bold text-white">{state.label}</span><span className="hidden truncate text-[9px] text-slate-500 sm:block">{state.detail}</span></span><span className={`rounded border px-1.5 py-0.5 text-[8px] font-mono font-bold ${decisionStyle[state.decision]}`}>{state.decision}</span></button>)}</div></div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="text-[10px] text-slate-500">Detect → Correct → Prove · illustrative simulation</div><a href="/console" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-gradient-to-r from-[#c9a84c] via-[#e8c96d] to-[#c9a84c] px-4 py-2 text-xs font-black text-[#07070d]">Run live in Console →</a></div>
           </div>
         </div>
