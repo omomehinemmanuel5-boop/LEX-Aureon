@@ -37,7 +37,14 @@ export interface CanonicalGovernanceRead {
   state: CanonicalGovernanceState;
   reason?: string;
 }
-
+export interface CanonicalGovernanceReadInput {
+  sessionId: string;
+  actorId: string;
+  capability: ToolCapability;
+  authorization?: CanonicalGovernanceState['authorization'];
+  /** Historical tool-session telemetry is not part of authorization hot paths. */
+  includeToolTelemetry?: boolean;
+}
 const STATE_VERSION = 'canonical-governance-2026-10-10.1';
 
 export async function ensureCanonicalTrajectoryState(sessionId: string): Promise<boolean> {
@@ -74,16 +81,13 @@ async function getToolSession(sessionId: string): Promise<{ sigmaViol: number; t
   };
 }
 
-export async function readCanonicalGovernanceState(input: {
-  sessionId: string;
-  actorId: string;
-  capability: ToolCapability;
-  authorization?: CanonicalGovernanceState['authorization'];
-}): Promise<CanonicalGovernanceRead> {
+export async function readCanonicalGovernanceState(input: CanonicalGovernanceReadInput): Promise<CanonicalGovernanceRead> {
   try {
     const [trajectory, toolSession] = await Promise.all([
       getZTraj(input.sessionId),
-      getToolSession(input.sessionId),
+      input.includeToolTelemetry
+        ? getToolSession(input.sessionId)
+        : Promise.resolve({ sigmaViol: 0, toolCalls: 0 }),
     ]);
 
     if (!trajectory) {
@@ -186,6 +190,37 @@ export async function readCanonicalGovernanceState(input: {
       reason: 'Canonical governance state unavailable; execution must fail closed.',
     };
   }
+}
+
+/**
+ * Request-local state reader. It never survives a request boundary and never
+ * caches across sessions. Call refresh() after a mutation that can change the
+ * canonical trajectory or recovery evidence.
+ */
+export function createCanonicalGovernanceStateReader() {
+  const cache = new Map<string, CanonicalGovernanceRead>();
+  const keyFor = (input: CanonicalGovernanceReadInput): string => JSON.stringify([
+    input.sessionId,
+    input.actorId,
+    input.capability,
+    input.authorization ?? '',
+    input.includeToolTelemetry === true,
+  ]);
+  const read = async (input: CanonicalGovernanceReadInput): Promise<CanonicalGovernanceRead> => {
+    const key = keyFor(input);
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const result = await readCanonicalGovernanceState(input);
+    cache.set(key, result);
+    return result;
+  };
+  const refresh = async (input: CanonicalGovernanceReadInput): Promise<CanonicalGovernanceRead> => {
+    const key = keyFor(input);
+    const result = await readCanonicalGovernanceState(input);
+    cache.set(key, result);
+    return result;
+  };
+  return { read, refresh };
 }
 
 export function canonicalExecutionAllowed(

@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
   readCanonicalGovernanceState: vi.fn(),
+  createCanonicalGovernanceStateReader: vi.fn(() => ({
+    read: (...args: unknown[]) => readCanonicalGovernanceState(...args),
+    refresh: (...args: unknown[]) => readCanonicalGovernanceState(...args),
+  })),
   canonicalExecutionAllowed: vi.fn(() => ({ allowed: true })),
   advanceRecoveryPlane: vi.fn(async () => {}),
   shouldAdvanceRecoveryPlane: vi.fn((state: { trajectoryAvailable?: boolean; M?: number; nStable?: number; canaryPassed?: boolean }) =>
@@ -94,6 +98,7 @@ vi.mock('@/lib/scoped_grants', () => ({ findMatchingScopedGrant }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState,
   readCanonicalGovernanceState,
+  createCanonicalGovernanceStateReader,
   canonicalExecutionAllowed,
 }));
 
