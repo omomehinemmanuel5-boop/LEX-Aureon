@@ -19,8 +19,8 @@ Agent actions can have effects beyond generated text. The MCP boundary makes too
 
 - API-key plans do not grant operator privileges. Operator-only tools require the separate `MCP_OPERATOR_SECRET`; the admin password is not an MCP credential.
 - Unknown tool names fail closed until their side effects have an explicit CRS risk classification. The legacy interceptor cache path was removed; only the shared executor may reuse read results after a fresh authorization decision.
-- `/api/tool-proxy` independently authenticates callers, rate-limits and bounds requests, namespaces API-key sessions, and stores a non-secret actor ID on tool receipts. Optional forwarding is disabled by default and requires an exact `TOOL_PROXY_ALLOWED_HOSTS` hostname, HTTPS, a public DNS result, and no redirects.
-- Bare and trajectory-governed MCP calls have bounded deadlines with cancellation signals. A timeout, transport error, redirect, non-2xx response, or JSON-RPC error after tool-proxy dispatch is reported as an unknown remote outcome; it must not be treated as a denial or automatically retried without checking the target.
+- `/api/mcp` is the single canonical agent execution boundary: it owns authentication, rate limits, capability registration, approval flows, session binding, constitutional governance, execution, and receipts. `/api/tool-proxy` is only a deprecated request-shape adapter that delegates to `/api/mcp`; it has no independent credentials, rate limits, governance, or execution path.
+- Remote MCP forwarding is not part of the governed route. Removing the duplicate forwarding pipeline avoids a second policy boundary and avoids presenting a generated per-request operation ID as retry-safe remote idempotency.
 
 These controls cover only requests that pass through the governed routes; repository changes made through independent integrations remain outside this enforcement and audit boundary.
 
