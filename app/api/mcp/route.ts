@@ -36,6 +36,7 @@ import { createApprovalRequest, getApprovalRequestStatus } from '@/lib/approval_
 import { findMatchingScopedGrant } from '@/lib/scoped_grants';
 import { env } from '@/lib/env';
 import { CONSTITUTION } from '@/lib/constitution';
+import { readBoundedBody } from '@/lib/http/bounded_body';
 
 // fix (2026-08-24): short, non-reversible correlation key for a caller.
 // Used for mcp_client_identity and rate limiting; it is deliberately NOT the
@@ -418,7 +419,7 @@ function rateLimited(retryAfter: number, storageError = false) {
   });
 }
 
-export async function POST(req: Request) {
+async function handlePost(req: Request) {
   const contentLength = Number(req.headers.get('content-length') ?? '0');
   if (Number.isFinite(contentLength) && contentLength > MAX_MCP_BODY_BYTES) {
     return requestTooLarge();
@@ -435,9 +436,19 @@ export async function POST(req: Request) {
   );
   if (!rate.allowed) return rateLimited(rate.retryAfter, rate.storageError);
 
+  const bounded = await readBoundedBody(req, MAX_MCP_BODY_BYTES, 10_000);
+  if (bounded.kind === 'too_large') return requestTooLarge();
+  if (bounded.kind === 'timed_out') {
+    return NextResponse.json({
+      jsonrpc: '2.0',
+      error: { code: -32010, message: 'Request body read timed out' },
+      id: null,
+    }, { status: 408 });
+  }
   let body: unknown;
   try {
-    body = await req.json();
+    if (bounded.kind !== 'ok') throw new Error('request body read failed');
+    body = JSON.parse(bounded.text);
   } catch {
     return NextResponse.json({
       jsonrpc: '2.0',
@@ -1703,6 +1714,16 @@ export async function POST(req: Request) {
   });
 }
 
+function noStore(response: Response): Response {
+  const headers = (response as Response & { headers?: Headers }).headers;
+  headers?.set('Cache-Control', 'no-store');
+  return response;
+}
+
+export async function POST(req: Request) {
+  return noStore(await handlePost(req));
+}
+
 async function withDeadline<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -1725,12 +1746,12 @@ async function withDeadline<T>(
 }
 
 export async function GET() {
-  return NextResponse.json({
+  return noStore(NextResponse.json({
     name: SERVER_INFO.name,
     version: SERVER_INFO.version,
     description: 'Lex CRS Agent — MCP coding agent with constitutional authorization before every tool execution; read-only results may use authorization-checked execution caching.',
     tools: servedTools().length,
     endpoint: '/api/mcp',
     protocol: 'MCP legacy handshake (2024-11-05 through 2025-11-25)',
-  });
+  }));
 }

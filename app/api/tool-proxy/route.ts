@@ -14,6 +14,7 @@
 import { NextResponse } from 'next/server';
 import { POST as canonicalMcpPost } from '@/app/api/mcp/route';
 import crypto from 'node:crypto';
+import { readBoundedBody } from '@/lib/http/bounded_body';
 
 const MAX_PROXY_BODY_BYTES = 64 * 1024;
 const MAX_SESSION_ID_LENGTH = 128;
@@ -45,12 +46,14 @@ export async function POST(req: Request) {
     return jsonError(413, 'Request body too large');
   }
 
+  const bounded = await readBoundedBody(req, MAX_PROXY_BODY_BYTES, 10_000);
+  if (bounded.kind === 'too_large') return jsonError(413, 'Request body too large');
+  if (bounded.kind === 'timed_out') return jsonError(408, 'Request body read timed out');
+  if (bounded.kind !== 'ok') return jsonError(400, 'Unable to read request body');
+
   let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonError(400, 'Invalid JSON');
-  }
+  try { body = JSON.parse(bounded.text); }
+  catch { return jsonError(400, 'Invalid JSON'); }
   if (!isRecord(body)) return jsonError(400, 'Request body must be a JSON object');
 
   // The former route supported optional remote forwarding. Keeping this field

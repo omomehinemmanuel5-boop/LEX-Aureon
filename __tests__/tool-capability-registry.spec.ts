@@ -4,6 +4,7 @@ import {
   isKnownGovernedTool,
   requireKnownToolCapability,
 } from '@/lib/agents/tool_capability_registry';
+import { TOOL_DEFINITIONS } from '@/lib/lex_crs_agent/tools';
 
 describe('Lex reference monitor capability registry', () => {
   it('registers capabilities by effect rather than trusting tool names', () => {
@@ -50,6 +51,12 @@ describe('Lex reference monitor capability registry', () => {
     expect(() => requireKnownToolCapability('mystery_side_effect')).toThrow(
       'Unknown tool capability',
     );
+  });
+
+  it('registers every core tool exposed by the MCP catalog', () => {
+    for (const tool of TOOL_DEFINITIONS) {
+      expect(getToolCapability(tool.name), `${tool.name} is not registered`).toBeDefined();
+    }
   });
 
   it('marks consequential capabilities as approval-bound', () => {
