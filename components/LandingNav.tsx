@@ -35,7 +35,7 @@ export default function LandingNav() {
           <div className="min-w-0">
             <div className="text-sm font-black text-white leading-none">Lex Aureon</div>
             <div
-              className="text-[9px] leading-none mt-1 font-bold whitespace-nowrap"
+              className="hidden sm:block text-[9px] leading-none mt-1 font-bold whitespace-nowrap"
               style={{ color: G.gold, fontFamily: 'monospace', letterSpacing: '0.08em' }}
             >
               GOVERN · ENSURE TRUST · DEFEND TRUTH
@@ -58,6 +58,19 @@ export default function LandingNav() {
 
         <div className="flex items-center gap-2 sm:gap-3">
           <ThemeToggle />
+          <Link
+            href="/console"
+            aria-label="Try the Lex Aureon demo"
+            className="sm:hidden inline-flex min-h-11 items-center justify-center rounded-lg px-2.5 text-[11px] font-black transition-all active:scale-95"
+            style={{
+              background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`,
+              color: '#07070d',
+              boxShadow: `0 4px 16px ${G.gold}30`,
+            }}
+          >
+            Try demo
+          </Link>
+
           <Link
             href="/console"
             className="hidden sm:block text-xs font-bold px-4 py-2 rounded-lg transition-all active:scale-95"
