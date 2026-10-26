@@ -284,7 +284,7 @@ function ProductModesSection() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-10 text-center">
           <div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">One layer · two control points</div>
-          <h2 className="mt-4 text-3xl font-black text-white sm:text-5xl">Govern the response. Govern the action.</h2>
+          <h2 className="mx-auto mt-4 max-w-4xl text-3xl font-black text-white sm:text-5xl">Govern the response. Govern the action.</h2>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-300">Lex sits at the boundary where an AI decision becomes visible to a person or executable by a tool.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -314,7 +314,7 @@ function GovernanceFlowSection() {
   ];
 
   return (
-    <section className="py-14 sm:py-20 px-4 sm:px-5" style={{ backgroundColor: '#07070d' }}>
+    <section className="border-t border-white/[0.04] px-4 py-16 sm:px-5 sm:py-24" style={{ backgroundColor: '#07070d' }}>
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <div className="text-xs font-mono uppercase tracking-widest mb-3 font-bold" style={{ color: G.gold }}>Before the fact · not after the incident</div>
@@ -324,7 +324,7 @@ function GovernanceFlowSection() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4 mb-5">
+        <div className="grid gap-5 md:grid-cols-3 mb-6">
           {steps.map((step, index) => (
             <div key={step.number} className="relative rounded-2xl border border-[#c9a84c]/25 bg-white/[0.035] p-6 card-hover">
               {index < steps.length - 1 && <div className="hidden md:block absolute top-10 -right-3 z-10 h-px w-6" style={{ background: `linear-gradient(90deg, ${G.gold}80, transparent)` }} />}
@@ -340,7 +340,7 @@ function GovernanceFlowSection() {
 
         <BenchmarkStatsStrip />
 
-        <div className="grid lg:grid-cols-[1fr_auto] gap-4 items-stretch mt-5">
+        <div className="grid lg:grid-cols-[1fr_auto] items-stretch gap-5 mt-6">
           <div className="rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
             <div className="text-xs font-mono uppercase tracking-[0.18em] font-bold mb-3" style={{ color: G.goldL }}>Receipt schema · live evidence</div>
             <div className="grid sm:grid-cols-3 gap-2 text-xs font-mono">
@@ -359,9 +359,9 @@ function GovernanceFlowSection() {
 
 function ProofBoundarySection() {
   return (
-    <section className="px-4 py-6 sm:px-5 sm:py-8" style={{ backgroundColor: '#07070d' }}>
-      <div className="mx-auto max-w-5xl rounded-2xl border border-[#c9a84c]/25 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
-        <div className="grid gap-5 md:grid-cols-[auto_1fr_1fr] md:items-center">
+    <section className="border-y border-white/[0.04] bg-[#080811] px-4 py-10 sm:px-5 sm:py-12">
+      <div className="mx-auto max-w-5xl rounded-2xl border border-[#c9a84c]/25 bg-[#c9a84c]/[0.04] p-6 sm:p-7">
+        <div className="grid gap-6 md:grid-cols-[auto_1fr_1fr] md:items-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#c9a84c]/40 bg-[#c9a84c]/10 font-mono text-lg font-black text-[#e8c96d]">◎</div>
           <div>
             <div className="text-xs font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">Evidence boundary</div>
@@ -379,8 +379,8 @@ function ProofBoundarySection() {
 
 function FinalConversionSection() {
   return (
-    <section className="px-4 py-10 sm:px-5 sm:py-14" style={{ backgroundColor: '#07070d' }}>
-      <div className="mx-auto max-w-4xl rounded-3xl border border-[#c9a84c]/35 bg-[#c9a84c]/[0.06] p-7 text-center sm:p-10">
+    <section className="border-t border-white/[0.04] px-4 py-16 sm:px-5 sm:py-20" style={{ backgroundColor: '#07070d' }}>
+      <div className="mx-auto max-w-4xl rounded-3xl border border-[#c9a84c]/35 bg-[#c9a84c]/[0.06] p-8 text-center sm:p-12">
         <div className="text-xs font-mono uppercase tracking-[0.2em] font-bold text-[#e8c96d]">Your next governed run</div>
         <h2 className="mt-4 text-2xl font-black text-white sm:text-4xl">Correct before the fact. Prove after.</h2>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">Try Explorer free, see the control point in action, and move to Sovereign when your AI system reaches production.</p>
@@ -402,11 +402,11 @@ function ProductPathsSection() {
     { title: 'Deploy with a team', text: 'Explore shared controls, observability, and enterprise access.', href: 'mailto:lexaureon@gmail.com', label: 'Contact the team' },
   ];
   return (
-    <section id="paths" className="bg-[#07070d] px-4 py-12 sm:px-5 sm:py-16">
+    <section id="paths" className="border-t border-white/[0.04] bg-[#07070d] px-4 py-16 sm:px-5 sm:py-20">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-9 text-center"><div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">Choose your next step</div><h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Go deeper only where you need to.</h2></div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {paths.map((path) => <Link key={path.title} href={path.href} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-[#e8c96d]/50 hover:bg-[#c9a84c]/[0.06]"><div className="text-lg font-black text-white">{path.title}</div><p className="mt-2 text-sm leading-relaxed text-slate-400">{path.text}</p><div className="mt-4 text-sm font-bold text-[#e8c96d] group-hover:text-white">{path.label} →</div></Link>)}
+        <div className="mx-auto mb-10 max-w-3xl text-center"><div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[#e8c96d]">Choose your next step</div><h2 className="mt-4 text-3xl font-black text-white sm:text-4xl">Go deeper only where you need to.</h2></div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {paths.map((path) => <Link key={path.title} href={path.href} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition hover:border-[#e8c96d]/50 hover:bg-[#c9a84c]/[0.06]"><div className="text-lg font-black text-white">{path.title}</div><p className="mt-2 text-sm leading-relaxed text-slate-400">{path.text}</p><div className="mt-4 text-sm font-bold text-[#e8c96d] group-hover:text-white">{path.label} →</div></Link>)}
         </div>
       </div>
     </section>
