@@ -1344,6 +1344,7 @@ export async function POST(req: Request) {
           jsonrpc: '2.0',
           result: {
             content: [{ type: 'text', text: `Trajectory denied: ${trajectoryState.lockReason ?? 'trajectory_locked'}` }],
+            isError: true,
             trajectory: {
               decision: 'deny', reason: trajectoryState.lockReason ?? 'trajectory_locked',
               plan_id: trajectoryState.plan.planId, session_id: sessionId,
@@ -1399,7 +1400,7 @@ export async function POST(req: Request) {
             result: { content: [{
               type: 'text',
               text: 'EXECUTION_STATUS=unknown_after_deadline. Trajectory is locked fail-closed; verify its state and receipt before retrying.',
-            }], trajectory: {
+            }], isError: true, trajectory: {
               decision: 'paused', reason: 'execution_unknown_after_deadline', plan_id: claimedState.plan.planId,
               session_id: sessionId, step_before: claimedState.currentStep,
               step_after: pausedState?.currentStep ?? claimedState.currentStep,
@@ -1443,7 +1444,7 @@ export async function POST(req: Request) {
           if (!committed) {
             return NextResponse.json({
               jsonrpc: '2.0',
-              result: { content: [{ type: 'text', text: 'TRAJECTORY PAUSED: state changed during execution; verify the receipt before retrying.' }] },
+              result: { content: [{ type: 'text', text: 'TRAJECTORY PAUSED: state changed during execution; verify the receipt before retrying.' }], isError: true },
               id,
             });
           }
