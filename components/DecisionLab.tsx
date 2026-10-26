@@ -124,7 +124,7 @@ export default function DecisionLab() {
     const rail = stepRailRef.current;
     const button = stepButtonRefs.current[currentIndex];
     if (!rail || !button) return;
-    const left = button.offsetLeft - (rail.clientWidth - button.clientWidth) / 2;
+    const left = button.offsetLeft - rail.offsetLeft - (rail.clientWidth - button.clientWidth) / 2;
     rail.scrollTo({ left: Math.max(0, left), behavior: reducedMotion ? 'auto' : 'smooth' });
   }, [currentIndex, reducedMotion]);
   const select = (id: string) => { if (id === 'random') setRandomScenario(makeRandom()); setActiveId(id); setStep(0); setPlaying(!reducedMotion); };
