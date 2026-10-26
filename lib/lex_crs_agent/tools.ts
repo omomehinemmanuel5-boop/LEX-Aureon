@@ -502,6 +502,7 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
         sessionId: session_id,
         actorId: 'constitutional-state-diagnostic',
         capability: 'read',
+        includeToolTelemetry: true,
       });
       const state = canonical.state;
       const nextStep = !canonical.available

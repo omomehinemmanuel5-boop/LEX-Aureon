@@ -23,7 +23,7 @@ import { checkRateLimit } from '@/lib/rate_limit';
 import { canCallTool, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
-import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
+import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, createCanonicalGovernanceStateReader } from '@/lib/agents/canonical_governance_state';
 import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
 import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
 import { discoverExternalTool, governExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
@@ -339,6 +339,7 @@ async function handlePost(req: Request) {
   }
 
   const { method, params, id } = body as JsonRpcRequest;
+  const canonicalStateReader = createCanonicalGovernanceStateReader();
 
   if (method === 'initialize') {
     // fix (2026-08-24): clientInfo (name/version) arrives here per the MCP
@@ -630,7 +631,7 @@ async function handlePost(req: Request) {
           id,
         }, { status: 503 });
       }
-      let authorizationCanonical = await readCanonicalGovernanceState({
+      let authorizationCanonical = await canonicalStateReader.read({
         sessionId: requestedSession,
         actorId,
         capability: capability.capability,
@@ -638,7 +639,7 @@ async function handlePost(req: Request) {
       });
       if (authorizationCanonical.available && shouldAdvanceRecoveryPlane(authorizationCanonical.state)) {
         await advanceRecoveryPlane(requestedSession);
-        authorizationCanonical = await readCanonicalGovernanceState({
+        authorizationCanonical = await canonicalStateReader.refresh({
           sessionId: requestedSession,
           actorId,
           capability: capability.capability,
@@ -737,7 +738,7 @@ async function handlePost(req: Request) {
       }
       if (toolName === 'authorize_external_action' || toolName === 'consume_external_action') {
         const externalCapability = toolName === 'consume_external_action' ? 'external' : 'identity';
-        let canonical = await readCanonicalGovernanceState({
+        let canonical = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: externalCapability,
@@ -745,7 +746,7 @@ async function handlePost(req: Request) {
         });
         if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           await advanceRecoveryPlane(sessionId);
-          canonical = await readCanonicalGovernanceState({
+          canonical = await canonicalStateReader.refresh({
             sessionId,
             actorId,
             capability: externalCapability,
@@ -1001,7 +1002,7 @@ async function handlePost(req: Request) {
       // fail-closed, and approval binding is still checked by the executor.
       if (requestedCapability?.approvalRequired
         && (args.approval_token !== undefined || args.approval_request_id !== undefined)) {
-        let recoveryPreflight = await readCanonicalGovernanceState({
+        let recoveryPreflight = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: requestedCapability.capability,
@@ -1010,7 +1011,7 @@ async function handlePost(req: Request) {
         if (recoveryPreflight.available && shouldAdvanceRecoveryPlane(recoveryPreflight.state)) {
           try {
             await advanceRecoveryPlane(sessionId);
-            recoveryPreflight = await readCanonicalGovernanceState({
+            recoveryPreflight = await canonicalStateReader.refresh({
               sessionId,
               actorId,
               capability: requestedCapability.capability,
@@ -1055,7 +1056,7 @@ async function handlePost(req: Request) {
         // only after Lex establishes that this session is healthy enough to
         // reach the execution gate; otherwise we create an approval that can
         // never be consumed and force the user through avoidable friction.
-        let canonical = await readCanonicalGovernanceState({
+        let canonical = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: requestedCapability.capability,
@@ -1064,7 +1065,7 @@ async function handlePost(req: Request) {
         if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           try {
             await advanceRecoveryPlane(sessionId);
-            canonical = await readCanonicalGovernanceState({
+            canonical = await canonicalStateReader.refresh({
               sessionId,
               actorId,
               capability: requestedCapability.capability,
@@ -1452,7 +1453,7 @@ async function handlePost(req: Request) {
           execution.receiptId
         ) {
           const fingerprint = String(probe.state_fingerprint);
-          const current = await readCanonicalGovernanceState({
+          const current = await canonicalStateReader.refresh({
             sessionId,
             actorId,
             capability: 'read',
@@ -1497,7 +1498,7 @@ async function handlePost(req: Request) {
               expiresAt: String(probe.expires_at ?? new Date(Date.now() + 60 * 60 * 1000).toISOString()),
               reason: evidenceReason,
             });
-            const confirmed = await readCanonicalGovernanceState({
+            const confirmed = await canonicalStateReader.refresh({
               sessionId,
               actorId,
               capability: 'read',
