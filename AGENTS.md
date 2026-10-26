@@ -405,6 +405,8 @@ npm run build          verify TypeScript
 
 [2026-10-26] ARCHITECTURE/SECURITY: Removed the duplicate `/api/tool-proxy` route and its compatibility pipeline; `/api/mcp` is now the sole agent execution boundary. Removed legacy per-session lock enforcement in favor of canonical z-trajectory recovery authority, retained the database field only for migration compatibility, and added a bounded provider-scoped embedding memo to reduce repeated cache lookups and provider calls. Validation: 642 Vitest tests, typecheck, lint, and production build passed.
 
+[2026-10-26] ARCHITECTURE/PERFORMANCE: Centralized CRS risk catalogs in `lib/agents/tool_policy.ts`, extracted MCP transport identity/response helpers into `lib/mcp_http.ts`, made `z_traj` authoritative for canonical sigma state, and stopped writing the inert `tool_sessions.locked` field. Validation: 642 Vitest tests, typecheck, lint, production build, and diff checks passed.
+
 
 [2026-09-28] SECURITY: Hardened `/api/mcp` with a dedicated operator secret, API-key actor attribution, fail-closed governance state/receipt commits, unknown-tool default denial, bounded admission, and exact-host public-HTTPS egress pinned to its validated DNS address. Remote failures are explicitly indeterminate; GitHub mutations receive cancellation signals. Focused boundary regressions are documented separately from comparative benchmark claims. Full validation: 276 Vitest tests, typecheck, and lint passed.
 

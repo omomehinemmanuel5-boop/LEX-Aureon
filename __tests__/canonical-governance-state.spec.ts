@@ -71,7 +71,8 @@ describe('canonical governance state', () => {
     expect(result.available).toBe(true);
     expect(result.state).toMatchObject({
       C: 0.42, R: 0.18, S: 0.31, M: 0.18,
-      sigmaViol: 0.12, toolCalls: 7, healthBand: 'ALERT',
+      // The legacy tool-session row reports 0.12, but z_traj is authoritative.
+      sigmaViol: 0.04, toolCalls: 7, healthBand: 'ALERT',
       trajectoryAvailable: true,
       recoveryState: 'RESTORING',
       canaryPassed: false,

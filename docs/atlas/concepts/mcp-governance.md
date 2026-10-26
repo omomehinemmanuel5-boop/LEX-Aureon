@@ -11,8 +11,11 @@ Agent actions can have effects beyond generated text. The MCP boundary makes too
 ## Runtime implementation
 
 - [`app/api/mcp/route.ts`](../../../app/api/mcp/route.ts) implements the MCP HTTP/JSON-RPC route, request validation, admission checks, and dispatch.
+- [`lib/mcp_http.ts`](../../../lib/mcp_http.ts) owns transport identity canonicalization and JSON-RPC response shaping shared by the route.
 - [`lib/agents/tool_interceptor.ts`](../../../lib/agents/tool_interceptor.ts) intercepts and governs tool calls.
 - [`lib/agents/tool_crs.ts`](../../../lib/agents/tool_crs.ts) measures tool-call CRS and scans arguments.
+- [`lib/agents/tool_policy.ts`](../../../lib/agents/tool_policy.ts) is the shared CRS risk manifest used by measurement and policy tests.
+- [`lib/agents/canonical_governance_state.ts`](../../../lib/agents/canonical_governance_state.ts) projects authorization state from `z_traj`; tool-session rows are telemetry and optimistic-concurrency support only.
 - [`lib/agents/constitutional_tool_executor.ts`](../../../lib/agents/constitutional_tool_executor.ts) is part of the internal governed tool-execution path.
 
 ## Current boundary rules
@@ -20,6 +23,7 @@ Agent actions can have effects beyond generated text. The MCP boundary makes too
 - API-key plans do not grant operator privileges. Operator-only tools require the separate `MCP_OPERATOR_SECRET`; the admin password is not an MCP credential.
 - Unknown tool names fail closed until their side effects have an explicit CRS risk classification. The legacy interceptor cache path was removed; only the shared executor may reuse read results after a fresh authorization decision.
 - `/api/mcp` is the only agent execution boundary: it owns authentication, rate limits, capability registration, approval flows, session binding, constitutional governance, execution, and receipts. There is no compatibility execution route or alternate tool-call pipeline.
+- `z_traj` is the only recovery authority. The historical `tool_sessions.locked` field is retained for schema compatibility but is not read as an authorization decision and is no longer written by governance commits.
 - Remote MCP forwarding is not part of the governed route. Removing the duplicate forwarding pipeline avoids a second policy boundary and avoids presenting a generated per-request operation ID as retry-safe remote idempotency.
 
 These controls cover only requests that pass through the governed routes; repository changes made through independent integrations remain outside this enforcement and audit boundary.

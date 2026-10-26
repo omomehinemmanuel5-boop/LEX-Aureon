@@ -117,7 +117,10 @@ export async function readCanonicalGovernanceState(input: {
     const R = trajectory.last_r;
     const S = trajectory.last_s;
     const M = Math.min(C, R, S);
-    const sigmaViol = Math.max(trajectory.sigma_viol ?? 0, toolSession.sigmaViol);
+    // z_traj is the only authorization authority. tool_sessions is retained
+    // here only for historical call-count telemetry and must not elevate or
+    // otherwise alter canonical recovery state.
+    const sigmaViol = Number(trajectory.sigma_viol ?? 0);
     const nStable = Number(trajectory.n_stable ?? 0);
     const velocity = Number(trajectory.velocity ?? 0);
     const trajectoryUpdatedAt = String(trajectory.updated_at ?? '');
