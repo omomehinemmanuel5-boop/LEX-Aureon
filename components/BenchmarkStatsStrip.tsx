@@ -74,28 +74,42 @@ export default function BenchmarkStatsStrip() {
   if (!stats || stats.length === 0) return null;
 
   return (
-    <div className="mt-5 rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-5 sm:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-mono uppercase tracking-[0.18em] font-bold text-[#e8c96d]">Live benchmark results</div>
-        <Link href="/benchmarks" className="text-xs font-bold text-[#e8c96d] hover:text-white">All eight benchmarks →</Link>
+    <section aria-label="Live benchmark results" className="mt-6 rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-4 sm:mt-7 sm:p-6">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-xs font-mono uppercase tracking-[0.16em] font-bold text-[#e8c96d]">Live benchmark results</div>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Published comparisons · latest scored row for each metric</p>
+        </div>
+        <Link href="/benchmarks" className="inline-flex min-h-11 w-fit items-center gap-2 rounded-lg border border-[#c9a84c]/25 px-3 py-2 text-xs font-bold text-[#e8c96d] transition hover:border-[#e8c96d]/60 hover:bg-white/[0.03]">
+          All eight benchmarks <span aria-hidden="true">→</span>
+        </Link>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-400" aria-label="Score legend">
+        <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-slate-500" /> Bare model</span>
+        <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#e8c96d]" /> Lex-governed</span>
+        <span>Percentages are metric-specific; direction matters.</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((s) => (
-          <div key={s.row.benchmark + s.row.metric_name} className="rounded-xl border border-white/10 bg-black/20 p-4">
-            <div className="text-xs text-slate-400">{s.label}</div>
-            <div className="mt-2 flex items-baseline gap-2 font-mono">
+          <div key={s.row.benchmark + s.row.metric_name} className="flex min-w-0 flex-col rounded-xl border border-white/10 bg-black/20 p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 text-sm font-semibold leading-snug text-slate-200">{s.label}</div>
+              <span className="shrink-0 rounded-full border border-white/10 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-slate-400">
+                {s.direction === "lower" ? "Lower is better" : "Higher is better"}
+              </span>
+            </div>
+            <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono">
               <span className="text-sm text-slate-500 line-through decoration-slate-600">{s.row.bare_score.toFixed(1)}%</span>
-              <span className="text-xl font-black text-white">{s.row.governed_score.toFixed(1)}%</span>
+              <span aria-hidden="true" className="text-xs text-slate-600">→</span>
+              <span className="text-2xl font-black tabular-nums text-white">{s.row.governed_score.toFixed(1)}%</span>
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">
-              bare → governed · {s.direction === "lower" ? "lower is safer" : "higher is better"} · n={s.row.n_total}
-            </div>
+            <div className="mt-2 text-[11px] text-slate-400">Bare → governed · n={s.row.n_total}</div>
           </div>
         ))}
       </div>
-      <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
-        Read live from the results table; same methodology and judge disclosed on <Link href="/benchmarks" className="underline hover:text-slate-300">the full benchmarks page</Link>.
+      <p className="mt-4 border-t border-white/10 pt-3 text-xs leading-relaxed text-slate-400">
+        These are benchmark-specific results, not a universal safety guarantee. See the <Link href="/benchmarks" className="underline decoration-[#c9a84c]/50 underline-offset-2 hover:text-slate-200">full benchmark table</Link> for methodology, judge details, and limitations.
       </p>
-    </div>
+    </section>
   );
 }
