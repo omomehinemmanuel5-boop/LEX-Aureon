@@ -24,6 +24,7 @@ import { approvalArgsHash, consumeApprovalRequest, releaseConsumedApprovalReques
 import { consumeScopedGrant } from '../scoped_grants';
 import { withConsumedApproval } from './approval_execution_context';
 import type { ToolCallDecision } from './types';
+import { EXECUTOR_READ_TOOLS, NON_MUTATING_GOVERNANCE_TOOLS } from './tool_policy';
 import {
   consumeGovernanceApprovalToken,
   releaseConsumedGovernanceApprovalToken,
@@ -36,35 +37,6 @@ import {
   type GovernancePolicyDecision,
   type PostActionVerification,
 } from './tool_governance_gateway';
-
-const READ_TOOLS = new Set([
-  'read_file', 'read_directory', 'list_directory', 'list_files', 'read_memory',
-  'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file',
-  'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob', 'run_recovery_canary',
-  'read_json', 'parse_csv',
-  // Governed diagnostics are receipted but must not mutate the recovery trajectory.
-  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
-  'search_code', 'get_build_status', 'get_workflow_run', 'get_workflow_log',
-  'get_vercel_logs', 'preview_patch_file', 'check_github_token_scope',
-  'get_trajectory_status', 'get_workflow_artifact', 'review_agent_action', 'narrate_origin',
-]);
-
-// Tools in this set are read-only inspections of the governed system state.
-// Keep it separate from READ_TOOLS: e.g. generic curl may perform an external
-// mutation and must not inherit non-mutating trajectory semantics by name alone.
-const NON_MUTATING_GOVERNANCE_TOOLS = new Set([
-  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
-  'read_file', 'list_directory', 'search_code', 'get_build_status',
-  'get_workflow_run', 'get_workflow_log', 'get_vercel_logs',
-  'preview_patch_file', 'check_github_token_scope', 'get_trajectory_status',
-  'get_workflow_artifact', 'review_agent_action', 'narrate_origin',
-  'run_recovery_canary',
-  // Hypothetical agent plans must not advance recovery or append live observations.
-  'simulate_agent_plan',
-  'read_directory', 'list_files', 'read_memory', 'search_memory',
-  'fetch_page', 'http_get', 'get_file', 'read_json', 'parse_csv',
-  'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
-]);
 
 export function isNonMutatingGovernanceTool(toolName: string, args: Record<string, unknown> = {}): boolean {
   if (toolName === 'query_database') {
@@ -95,7 +67,7 @@ const KERNEL_CRITICAL = 0.05;
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
   ttlMs: 60_000,
   // State snapshots and canary probes must always be fresh; caching them could display a stale gate decision.
-  isCacheable: (toolName) => READ_TOOLS.has(toolName)
+  isCacheable: (toolName) => EXECUTOR_READ_TOOLS.has(toolName)
     && !['run_recovery_canary', 'get_constitutional_state', 'get_trajectory_status'].includes(toolName),
   authorize: async () => {
     throw new Error('Authorization must be supplied by executeGovernedTool.');
@@ -118,7 +90,7 @@ async function getCurrentKernelM(sessionId: string): Promise<{ available: boolea
 }
 
 function dependencyFailureDecision(toolName: string): ToolCallDecision {
-  const policy = dependencyFailurePolicy(READ_TOOLS.has(toolName) ? 'read' : 'high_risk');
+  const policy = dependencyFailurePolicy(EXECUTOR_READ_TOOLS.has(toolName) ? 'read' : 'high_risk');
   return {
     approved: false,
     decision: 'DENIED_LOCKED',
@@ -666,7 +638,7 @@ export async function executeGovernedToolStructured(
   // The cached value itself is never an authorization artifact. Recheck the
   // kernel immediately before serving it; if that state read fails, emit a
   // separate actor-attributed denial receipt where storage is available.
-  if (READ_TOOLS.has(toolName)) {
+  if (EXECUTOR_READ_TOOLS.has(toolName)) {
     const kernelState = await getCurrentKernelM(sessionId);
     if (!kernelState.available) {
       const unavailableDecision = dependencyFailureDecision(toolName);
