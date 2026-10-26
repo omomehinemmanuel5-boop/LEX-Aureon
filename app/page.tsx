@@ -242,6 +242,15 @@ async function Hero() {
           </a>
         </div>
 
+        <div className="mb-3 flex justify-center">
+          <Link
+            href="#decision-lab"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-slate-300 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e8c96d]"
+          >
+            See a decision replay <span aria-hidden="true">↓</span>
+          </Link>
+        </div>
+
         <Link
           href="/observatory"
           className="inline-flex min-h-11 max-w-[92vw] items-center justify-center gap-2 rounded-full border border-[#c9a84c]/40 bg-[#c9a84c]/10 px-4 py-2.5 text-center text-xs font-bold text-[#e8c96d] transition hover:border-[#e8c96d]/70 hover:bg-[#c9a84c]/20 sm:text-sm"
