@@ -257,7 +257,12 @@ export const SEMANTIC_INJECTION_THRESHOLD = 0.85;
 // tools (write_file's content/message, run_governance's prompt, etc.) —
 // deliberately excludes structural fields like path/repo/sql, which are
 // correctly handled by the regex pass above, not the semantic one.
-const FREE_TEXT_FIELDS = ['content', 'message', 'task_context', 'prompt', 'text', 'query'];
+const FREE_TEXT_FIELDS = [
+  'content', 'message', 'task_context', 'prompt', 'text', 'query',
+  // Patch/file-write payloads and human-authored metadata can carry injected
+  // instructions too; do not limit the semantic pass to chat-shaped fields.
+  'new_str', 'body', 'title', 'reason', 'description', 'instructions',
+];
 
 // fix (2026-07-11, second pass): extract ONLY genuine free-text fields as
 // plain concatenated text, not the whole JSON.stringify(args) blob — see
