@@ -26,6 +26,22 @@ describe('tool interceptor dependency failures', () => {
     expect(decision.warning).toContain('fail-closed');
   });
 
+  it('fails closed when the canonical trajectory row is missing', async () => {
+    dbExecute.mockResolvedValue({ rows: [] });
+
+    const decision = await interceptToolCall({
+      id: 'missing-kernel-state',
+      name: 'read_file',
+      arguments: { path: 'README.md' },
+      session_id: 'missing-kernel-state',
+    });
+
+    expect(decision.approved).toBe(false);
+    expect(decision.decision).toBe('DENIED_BLOCKED');
+    expect(decision.reason).toContain('Constitutional state unavailable');
+    expect(decision.warning).toContain('fail-closed');
+  });
+
   it('allows isolated synthetic state only outside production', async () => {
     const previousSynthetic = process.env.LEX_AGENTDOJO_SYNTHETIC_STATE;
     vi.stubEnv('NODE_ENV', 'test');
