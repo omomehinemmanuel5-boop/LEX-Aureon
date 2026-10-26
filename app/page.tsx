@@ -4,6 +4,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import SimplexVisualizer from '@/components/SimplexVisualizer';
 import HeroTicker from '@/components/HeroTicker';
 import LandingNav from '@/components/LandingNav';
+import ThemeToggle from '@/components/ThemeToggle';
 import DecisionLab from '@/components/DecisionLab';
 import LiveGovernanceStrip from '@/components/LiveGovernanceStrip';
 import BenchmarkStatsStrip from '@/components/BenchmarkStatsStrip';
@@ -456,8 +457,9 @@ export default async function LandingPage() {
             <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paper</a>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
           </div>
-          <div className="text-xs font-mono text-slate-400 font-bold">
-            © 2026 Aureonics Systems · Built in Lagos
+          <div className="flex items-center gap-3 text-xs font-mono text-slate-400 font-bold">
+            <ThemeToggle />
+            <span>© 2026 Aureonics Systems · Built in Lagos</span>
           </div>
         </div>
       </footer>
