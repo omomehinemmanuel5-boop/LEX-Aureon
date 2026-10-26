@@ -208,7 +208,9 @@ describe('MCP constitutional dispatch boundary', () => {
   });
 
   it('marks a locked trajectory denial as an MCP tool error', async () => {
-    validateApiKey.mockResolvedValue({ valid: true, key: { id: 'private-test-1', plan: 'private_test' } });
+    const key = { id: 'private-test-1', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
     getTrajectoryState.mockResolvedValueOnce({
       locked: true,
       lockReason: 'trajectory_locked_for_test',
@@ -294,6 +296,10 @@ describe('MCP constitutional dispatch boundary', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Clear queued one-shot trajectory fixtures between tests; otherwise a
+    // denied/unauthenticated request can leave a locked state for the next case.
+    getTrajectoryState.mockReset();
+    getTrajectoryState.mockResolvedValue(undefined);
     delete process.env.LEX_CANARY_OWNER_IDS;
     validateApiKey.mockResolvedValue({ valid: true, key: {} });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });
