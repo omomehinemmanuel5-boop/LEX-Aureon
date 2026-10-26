@@ -29,9 +29,42 @@ export const READ_ONLY_TOOL_NAMES = [
   'preview_patch_file', 'run_recovery_canary', 'get_trajectory_status',
 ] as const;
 
+/** Read operations eligible for executor result caching, excluding fresh-state probes below. */
+export const EXECUTOR_READ_TOOL_NAMES = [
+  'read_file', 'read_directory', 'list_directory', 'list_files', 'read_memory',
+  'search_memory', 'fetch_page', 'curl', 'http_get', 'get_file', 'cat', 'head',
+  'tail', 'grep', 'find', 'ls', 'dir', 'glob', 'run_recovery_canary',
+  'read_json', 'parse_csv', 'get_constitutional_state', 'get_recent_receipts',
+  'explain_denial', 'search_code', 'get_build_status', 'get_workflow_run',
+  'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
+  'check_github_token_scope', 'get_trajectory_status', 'get_workflow_artifact',
+  'review_agent_action', 'narrate_origin',
+] as const;
+
+/** Tools that inspect state but must not advance or sample the live trajectory. */
+export const NON_MUTATING_GOVERNANCE_TOOL_NAMES = [
+  'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
+  'read_file', 'list_directory', 'search_code', 'get_build_status',
+  'get_workflow_run', 'get_workflow_log', 'get_vercel_logs', 'preview_patch_file',
+  'check_github_token_scope', 'get_trajectory_status', 'get_workflow_artifact',
+  'review_agent_action', 'narrate_origin', 'run_recovery_canary',
+  'simulate_agent_plan', 'read_directory', 'list_files', 'read_memory',
+  'search_memory', 'fetch_page', 'http_get', 'get_file', 'read_json', 'parse_csv',
+  'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
+] as const;
+
+/** Exact historical set used by the stressed-kernel compatibility gate. */
+export const KERNEL_GATED_WRITE_TOOL_NAMES = [
+  'write_file', 'create_file', 'delete_file', 'drop_table', 'execute_sql',
+  'run_command', 'bash', 'shell', 'eval',
+] as const;
+
 export const HIGH_RISK_TOOLS: ReadonlySet<string> = new Set(HIGH_RISK_TOOL_NAMES);
 export const MEDIUM_RISK_TOOLS: ReadonlySet<string> = new Set(MEDIUM_RISK_TOOL_NAMES);
 export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(READ_ONLY_TOOL_NAMES);
+export const EXECUTOR_READ_TOOLS: ReadonlySet<string> = new Set(EXECUTOR_READ_TOOL_NAMES);
+export const NON_MUTATING_GOVERNANCE_TOOLS: ReadonlySet<string> = new Set(NON_MUTATING_GOVERNANCE_TOOL_NAMES);
+export const KERNEL_GATED_WRITE_TOOLS: ReadonlySet<string> = new Set(KERNEL_GATED_WRITE_TOOL_NAMES);
 
 export const BUILD_FILE_PATTERNS: readonly RegExp[] = [
   /package\.json$/i,

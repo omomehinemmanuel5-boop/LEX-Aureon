@@ -30,6 +30,7 @@ import { ToolCallInput, ToolCallDecision, ToolCRSState, ToolSessionState } from 
 import { measureToolCRS } from './tool_crs';
 import { getClient } from '../db';
 import crypto from 'crypto';
+import { KERNEL_GATED_WRITE_TOOLS } from './tool_policy';
 import {
   commitGovernanceDecision,
   GovernanceCommitConflict,
@@ -49,9 +50,6 @@ const KERNEL_CRITICAL  = 0.05;  // deny ALL tool calls
 const KERNEL_STRESSED  = 0.15;  // deny write operations, allow reads only
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const KERNEL_ALERT     = 0.22;  // stricter HIGH threshold
-const WRITE_TOOLS      = new Set(['write_file','create_file','delete_file','drop_table',
-                           'execute_sql','run_command','bash','shell','eval']);
-
 async function getKernelM(session_id: string): Promise<number | null> {
   // Test-only benchmark adapter. It is opt-in, namespaced, and unavailable in
   // production so local/CI agent replays can measure utility without a live
@@ -219,7 +217,7 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     };
   }
 
-  if (kernelM < KERNEL_STRESSED && WRITE_TOOLS.has(tool.name)) {
+  if (kernelM < KERNEL_STRESSED && KERNEL_GATED_WRITE_TOOLS.has(tool.name)) {
     const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_STRESSED',
       crs: kernelCRS,

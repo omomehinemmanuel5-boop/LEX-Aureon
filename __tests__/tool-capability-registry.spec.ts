@@ -5,7 +5,14 @@ import {
   requireKnownToolCapability,
 } from '@/lib/agents/tool_capability_registry';
 import { TOOL_DEFINITIONS } from '@/lib/lex_crs_agent/tools';
-import { HIGH_RISK_TOOL_NAMES, MEDIUM_RISK_TOOL_NAMES, READ_ONLY_TOOL_NAMES } from '@/lib/agents/tool_policy';
+import {
+  EXECUTOR_READ_TOOLS,
+  HIGH_RISK_TOOL_NAMES,
+  KERNEL_GATED_WRITE_TOOLS,
+  MEDIUM_RISK_TOOL_NAMES,
+  NON_MUTATING_GOVERNANCE_TOOLS,
+  READ_ONLY_TOOL_NAMES,
+} from '@/lib/agents/tool_policy';
 
 describe('Lex reference monitor capability registry', () => {
   it('registers capabilities by effect rather than trusting tool names', () => {
@@ -71,5 +78,14 @@ describe('Lex reference monitor capability registry', () => {
     for (const toolName of [...HIGH_RISK_TOOL_NAMES, ...MEDIUM_RISK_TOOL_NAMES, ...READ_ONLY_TOOL_NAMES]) {
       expect(getToolCapability(toolName), `${toolName} is missing from the capability registry`).toBeDefined();
     }
+  });
+
+  it('keeps executor cache, trajectory, and stressed-kernel policy boundaries explicit', () => {
+    expect(EXECUTOR_READ_TOOLS.has('read_file')).toBe(true);
+    expect(EXECUTOR_READ_TOOLS.has('get_constitutional_state')).toBe(true);
+    expect(NON_MUTATING_GOVERNANCE_TOOLS.has('simulate_agent_plan')).toBe(true);
+    expect(NON_MUTATING_GOVERNANCE_TOOLS.has('write_file')).toBe(false);
+    expect(KERNEL_GATED_WRITE_TOOLS.has('write_file')).toBe(true);
+    expect(KERNEL_GATED_WRITE_TOOLS.has('read_file')).toBe(false);
   });
 });
