@@ -222,7 +222,7 @@ function mcpToolResult(id: number | string | null | undefined, value: unknown) {
   const decision = typeof valueRecord?.decision === 'string' ? valueRecord.decision : '';
   const isGovernanceDenial = decision.startsWith('DENIED_')
     || valueRecord?.approved === false && decision.startsWith('DENIED_')
-    || typeof value === 'string' && /(?:^|\\n)decision:\\s*DENIED_[A-Z_]+/m.test(value);
+    || typeof value === 'string' && /decision:\\s*DENIED_[A-Z_]+/.test(value);
   return NextResponse.json({
     jsonrpc: '2.0',
     result: {
