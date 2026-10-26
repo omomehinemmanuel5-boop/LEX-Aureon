@@ -223,7 +223,7 @@ describe('MCP constitutional dispatch boundary', () => {
     const response = await POST(request({
       jsonrpc: '2.0',
       method: 'tools/call',
-      params: { name: 'write_file', arguments: { path: 'README.md', content: 'must not execute' } },
+      params: { name: 'write_file', arguments: { path: 'README.md', content: 'must not execute', approval_request_id: 'approved-test-request' } },
       id: 'locked-trajectory-error',
     }));
 
