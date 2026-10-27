@@ -1,3 +1,5 @@
+import { TOOL_CAPABILITY_REGISTRY } from './tool_capability_registry';
+
 /**
  * Shared tool-risk policy manifest.
  *
@@ -53,11 +55,14 @@ export const NON_MUTATING_GOVERNANCE_TOOL_NAMES = [
   'cat', 'head', 'tail', 'grep', 'find', 'ls', 'dir', 'glob',
 ] as const;
 
-/** Exact historical set used by the stressed-kernel compatibility gate. */
-export const KERNEL_GATED_WRITE_TOOL_NAMES = [
-  'write_file', 'create_file', 'delete_file', 'drop_table', 'execute_sql',
-  'run_command', 'bash', 'shell', 'eval',
-] as const;
+/**
+ * Every explicitly registered effectful capability is gated while the kernel
+ * is stressed. Derive this from the capability registry so new write,
+ * external, execute, or destructive tools cannot silently bypass this gate.
+ */
+export const KERNEL_GATED_WRITE_TOOL_NAMES = [...TOOL_CAPABILITY_REGISTRY.values()]
+  .filter(record => record.capability !== 'read' && record.capability !== 'recovery')
+  .map(record => record.name) as readonly string[];
 
 export const HIGH_RISK_TOOLS: ReadonlySet<string> = new Set(HIGH_RISK_TOOL_NAMES);
 export const MEDIUM_RISK_TOOLS: ReadonlySet<string> = new Set(MEDIUM_RISK_TOOL_NAMES);

@@ -64,6 +64,36 @@ export function shouldAdvanceRecoveryBeforeTool(toolName: string, args: Record<s
 
 const KERNEL_CRITICAL = 0.05;
 
+async function persistExecutorDenialReceipt(input: {
+  receiptId: string;
+  sessionId: string;
+  actorId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  decision: string;
+  crs: ToolCallDecision['crs'];
+  sigmaViol: number;
+  reason: string;
+}): Promise<string | undefined> {
+  try {
+    await writeGovernanceReceipt({
+      receipt_id: input.receiptId,
+      session_id: input.sessionId,
+      actor_id: input.actorId,
+      tool_name: input.toolName,
+      args_hash: hashGovernanceArguments(input.args).slice(0, 32),
+      decision: input.decision,
+      crs: input.crs,
+      reason: input.reason,
+      sigma_viol: input.sigmaViol,
+    });
+    return undefined;
+  } catch {
+    // Authorization remains denied even when the audit store is unavailable.
+    return 'Denial receipt could not be persisted; execution remains denied.';
+  }
+}
+
 const cache = new ConstitutionalExecutionCache<string, ToolCallDecision>({
   ttlMs: 60_000,
   // State snapshots and canary probes must always be fresh; caching them could display a stale gate decision.
@@ -333,6 +363,18 @@ export async function executeGovernedToolStructured(
       health_band: 'LOCKED',
       warning: 'Reference monitor fail-closed: explicitly register the tool capability before execution.',
     };
+    const receiptWarning = await persistExecutorDenialReceipt({
+      receiptId: unknownDecision.receipt_id,
+      sessionId,
+      actorId,
+      toolName,
+      args,
+      decision: unknownDecision.decision,
+      crs: unknownDecision.crs,
+      sigmaViol: unknownDecision.sigma_viol,
+      reason: unknownDecision.reason,
+    });
+    if (receiptWarning) unknownDecision.warning = `${unknownDecision.warning} ${receiptWarning}`;
     const verification = verifyToolResult(toolName, undefined, 'destructive');
     return {
       result: report(toolName, unknownDecision, undefined, false, undefined, verification),
@@ -384,6 +426,18 @@ export async function executeGovernedToolStructured(
       health_band: 'CRITICAL',
       warning: 'Canonical governance state unavailable; the reference monitor refused execution.',
     };
+    const receiptWarning = await persistExecutorDenialReceipt({
+      receiptId: unavailableDecision.receipt_id,
+      sessionId,
+      actorId,
+      toolName,
+      args,
+      decision: unavailableDecision.decision,
+      crs: unavailableDecision.crs,
+      sigmaViol: unavailableDecision.sigma_viol,
+      reason: unavailableDecision.reason,
+    });
+    if (receiptWarning) unavailableDecision.warning = `${unavailableDecision.warning} ${receiptWarning}`;
     const verification = verifyToolResult(toolName, undefined, 'destructive');
     return {
       result: report(toolName, unavailableDecision, undefined, false, undefined, verification),
@@ -424,6 +478,18 @@ export async function executeGovernedToolStructured(
         : canonicalRead.state.healthBand === 'CRITICAL' ? 'CRITICAL' : 'STRESSED',
       warning: 'Canonical governance state is authoritative for execution health; recovery is handled separately and never grants execution authority.',
     };
+    const receiptWarning = await persistExecutorDenialReceipt({
+      receiptId: canonicalDecision.receipt_id,
+      sessionId,
+      actorId,
+      toolName,
+      args,
+      decision: canonicalDecision.decision,
+      crs: canonicalDecision.crs,
+      sigmaViol: canonicalDecision.sigma_viol,
+      reason: canonicalDecision.reason,
+    });
+    if (receiptWarning) canonicalDecision.warning = `${canonicalDecision.warning} ${receiptWarning}`;
     const verification = verifyToolResult(toolName, undefined, capability.capability === 'read' ? 'read' : 'write');
     return {
       result: report(toolName, canonicalDecision, undefined, false, undefined, verification, canonicalRead.state),

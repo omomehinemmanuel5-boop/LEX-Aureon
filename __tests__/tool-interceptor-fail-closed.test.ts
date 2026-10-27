@@ -26,6 +26,22 @@ describe('tool interceptor dependency failures', () => {
     expect(decision.warning).toContain('fail-closed');
   });
 
+  it('fails closed when the canonical trajectory row is missing', async () => {
+    dbExecute.mockResolvedValue({ rows: [] });
+
+    const decision = await interceptToolCall({
+      id: 'missing-kernel-state',
+      name: 'read_file',
+      arguments: { path: 'README.md' },
+      session_id: 'missing-kernel-state',
+    });
+
+    expect(decision.approved).toBe(false);
+    expect(decision.decision).toBe('DENIED_BLOCKED');
+    expect(decision.reason).toContain('Constitutional state unavailable');
+    expect(decision.warning).toContain('fail-closed');
+  });
+
   it('allows isolated synthetic state only outside production', async () => {
     const previousSynthetic = process.env.LEX_AGENTDOJO_SYNTHETIC_STATE;
     vi.stubEnv('NODE_ENV', 'test');
@@ -48,6 +64,40 @@ describe('tool interceptor dependency failures', () => {
       if (previousSynthetic === undefined) delete process.env.LEX_AGENTDOJO_SYNTHETIC_STATE;
       else process.env.LEX_AGENTDOJO_SYNTHETIC_STATE = previousSynthetic;
     }
+  });
+
+  it('does not allow synthetic governance state outside test mode', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('LEX_AGENTDOJO_SYNTHETIC_STATE', '1');
+    dbExecute.mockRejectedValue(new Error('database unavailable'));
+    try {
+      const decision = await interceptToolCall({
+        id: 'synthetic-preview',
+        name: 'list_files',
+        arguments: {},
+        session_id: 'synthetic-preview-session',
+      });
+
+      expect(decision.approved).toBe(false);
+      expect(decision.reason).toContain('state unavailable');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('blocks patch_file when canonical kernel M is stressed', async () => {
+    dbExecute.mockResolvedValue({ rows: [{ last_m: 0.1 }] });
+
+    const decision = await interceptToolCall({
+      id: 'stressed-patch',
+      name: 'patch_file',
+      arguments: { path: 'README.md', old_str: 'old', new_str: 'new' },
+      session_id: 'stressed-patch-session',
+    });
+
+    expect(decision.approved).toBe(false);
+    expect(decision.decision).toBe('DENIED_BLOCKED');
+    expect(decision.reason).toContain('write operations suspended');
   });
 
   it('denies when tool-session state cannot be read instead of assuming a clean session', async () => {

@@ -97,16 +97,25 @@ export function mcpSessionError(id: number | string | null | undefined, reason: 
 }
 
 export function mcpToolResult(id: number | string | null | undefined, value: unknown) {
+  // MCP structuredContent must be an object. Wrap primitive and array results.
   const structuredContent = value !== null
     && typeof value === 'object'
     && !Array.isArray(value)
     ? value
     : { value };
+  const valueRecord = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+  const decision = typeof valueRecord?.decision === 'string' ? valueRecord.decision : '';
+  const isGovernanceDenial = decision.startsWith('DENIED_')
+    || valueRecord?.approved === false && decision.startsWith('DENIED_')
+    || typeof value === 'string' && /decision:\s*DENIED_[A-Z_]+/.test(value);
   return NextResponse.json({
     jsonrpc: '2.0',
     result: {
       content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
       structuredContent,
+      ...(isGovernanceDenial ? { isError: true } : {}),
     },
     id,
   });

@@ -64,11 +64,14 @@ async function getKernelM(session_id: string): Promise<number | null> {
       sql: 'SELECT last_m FROM z_traj WHERE session_id = ? LIMIT 1',
       args: [session_id],
     });
-    if (!res.rows.length) return 1.0; // no kernel state = treat as stable
-    return Number(res.rows[0].last_m ?? 1.0);
+    // A missing trajectory is uninitialized, not evidence of a healthy session.
+    // The canonical MCP route initializes it before dispatch; direct callers
+    // must fail closed rather than synthesize a stable state.
+    if (!res.rows.length) return null;
+    const lastM = Number(res.rows[0].last_m);
+    return Number.isFinite(lastM) ? lastM : null;
   } catch {
-    // A missing row is a clean new session; an unavailable state store is not.
-    // Keep those cases distinct so tool authorization fails closed on outage.
+    // An unavailable or malformed state store must never synthesize a clean session.
     return null;
   }
 }
