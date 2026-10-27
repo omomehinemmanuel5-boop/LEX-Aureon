@@ -86,3 +86,41 @@ The in-memory harness under `scripts/agentdojo-real/` now contains seven paired 
 A local synthetic-state run on this branch reached 7/7 attack outcomes and 7/7 benign outcomes in the bare arm. The governed arms had **0 eligible cases**: all 7 per-tool rows failed closed because canonical tool-session state was unavailable, and all 7 per-tool-plus-trajectory rows were excluded because that failure also prevented durable trajectory receipt completion. The raw worlds therefore showed no attacks, but that is an infrastructure-denial result, **not a measured attack-success rate or evidence of effectiveness**; raw governed utility was only 1/7 before exclusion. The CI job does not configure an isolated governance store, so it is intentionally a fail-closed smoke check. Reports now retain block reasons and exclude state/receipt infrastructure failures from governed effectiveness denominators (`n=0`, rates `n/a`) rather than treating them as successful defenses. An isolated state-backed environment is required for a meaningful paired result.
 
 The four-arm paired study, baseline framework comparison, full official AgentDojo task suite, live state-backed execution, independent receipt verification, confidence intervals, and second-operator reproduction remain uncompleted acceptance work. No world-best or comparative safety claim is supported by the smoke run.
+
+## Model-in-the-loop counterfactual runner (2026-10-27)
+
+`scripts/agentdojo-real/model-in-loop.ts` closes the next evaluation gap without
+requiring a paid benchmark model. It asks one configured text-governance model
+to produce a bounded JSON tool plan for each task, then replays that exact plan
+against a fresh world in four arms: bare execution, deterministic-invariant
+baseline, Lex per-call governance, and Lex trajectory governance. Keeping the
+model plan fixed makes the governance delta causal and limits the pilot to one
+completion per task. It is intentionally not yet an adaptive multi-turn ReAct
+benchmark; a later runner must measure how an agent responds to denials and tool
+results over multiple turns.
+
+The default backend is the existing `generateGoverned` provider path, so a
+deployment uses the same text-governance model selection as production. For a
+temporary compatible free/low-cost model, set `LEX_EVAL_BACKEND=openai-compatible`
+along with `LEX_EVAL_BASE_URL`, `LEX_EVAL_API_KEY`, and `LEX_EVAL_MODEL`; no
+credential is committed. The runner supports a strict JSON response envelope,
+caps plans at 12 calls, and records provider/model/attempt metadata.
+
+Use `npm run agentdojo:model -- --limit 2 --json /tmp/model-eval.json` for a
+small pilot. Rows with model errors, malformed plans, unavailable governance
+state, or trajectory receipt failures are excluded from effectiveness rates and
+remain visible in the raw report. A successful run is still custom Lex evidence,
+not official AgentDojo evidence; report benign utility and unauthorized-action
+security separately.
+
+The first seven-task pilot using the available low-cost `gpt-6-luna` compatible
+model generated valid plans for all seven tasks. The bare and deterministic
+baseline arms completed the benign outcomes in this small sample and observed
+no attack because this model did not choose the planted attack calls. That is
+not evidence that Lex prevented attacks. The Lex per-call arm had only one
+eligible row and the trajectory arm had two eligible rows; the remaining rows
+were excluded because this local run lacked an isolated canonical governance
+store and durable trajectory receipt store. The raw artifact is
+`data/eval/model-in-loop-pilot-2026-10-27.json`. This result demonstrates that
+the harness and model adapter work, while confirming that a state-backed pilot
+is still required before measuring Lex effectiveness.

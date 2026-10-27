@@ -44,7 +44,8 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run test",
     "verify": "npm run lint && npm test && npm run test:coverage && npm run build",
-    "red-team:tools": "npx tsx scripts/tool-governance-red-team.ts"
+    "red-team:tools": "npx tsx scripts/tool-governance-red-team.ts",
+    "agentdojo:model": "npx tsx scripts/agentdojo-real/model-in-loop.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
