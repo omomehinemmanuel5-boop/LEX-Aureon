@@ -256,7 +256,8 @@ export function classifyGovernanceRisk(toolName: string, args: Record<string, un
   const registered = getToolCapability(toolName);
   if (registered) {
     switch (registered.capability) {
-      case 'read': return 'read';
+      case 'read':
+      case 'recovery_probe': return 'read';
       case 'write': return 'write';
       case 'external':
       case 'network':

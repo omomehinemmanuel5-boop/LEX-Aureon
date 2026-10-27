@@ -61,7 +61,7 @@ export const NON_MUTATING_GOVERNANCE_TOOL_NAMES = [
  * external, execute, or destructive tools cannot silently bypass this gate.
  */
 export const KERNEL_GATED_WRITE_TOOL_NAMES = [...TOOL_CAPABILITY_REGISTRY.values()]
-  .filter(record => record.capability !== 'read' && record.capability !== 'recovery')
+  .filter(record => record.capability !== 'read' && record.capability !== 'recovery' && record.capability !== 'recovery_probe')
   .map(record => record.name) as readonly string[];
 
 export const HIGH_RISK_TOOLS: ReadonlySet<string> = new Set(HIGH_RISK_TOOL_NAMES);

@@ -62,6 +62,7 @@ export default function ApiDocsPage() {
           <div className="flex items-center gap-4">
             <Link href="/constitution" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">Constitution</Link>
             <Link href="/research" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">Research</Link>
+            <Link href="/quickstart" className="text-xs text-amber-400 hover:text-amber-300 transition-colors">Quickstart</Link>
             <Link href="/console"
               className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all"
               style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>

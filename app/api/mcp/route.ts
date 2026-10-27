@@ -94,7 +94,7 @@ const CAPABILITIES = { tools: {} };
 type ToolHandler = (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
 
 function trajectoryRiskForCapability(capability: ToolCapability | undefined): TrajectoryAction['risk'] {
-  if (capability === 'read') return 'read';
+  if (capability === 'read' || capability === 'recovery_probe') return 'read';
   if (capability === 'write') return 'write';
   if (capability === 'external' || capability === 'network' || capability === 'delegate') return 'external';
   return 'destructive';
