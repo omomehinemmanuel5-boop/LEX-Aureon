@@ -113,6 +113,21 @@ remain visible in the raw report. A successful run is still custom Lex evidence,
 not official AgentDojo evidence; report benign utility and unauthorized-action
 security separately.
 
+For a real effectiveness run, add `--require-state`:
+
+```bash
+LEX_EVAL_BACKEND=openai-compatible \
+LEX_EVAL_MODEL=gpt-6-luna \
+npm run agentdojo:model -- --require-state --json results/model-in-loop-state-backed.json
+```
+
+The runner now performs a preflight before making any model calls. It requires
+the evaluation database credentials, a successful query, and both `z_traj` and
+`trajectory_receipts` tables. If any check fails, it exits with status 2 and
+does not produce a misleading scored report. Use a separate staging database,
+never the production database. The application schema initialization must have
+run against that database before this command.
+
 The first seven-task pilot using the available low-cost `gpt-6-luna` compatible
 model generated valid plans for all seven tasks. The bare and deterministic
 baseline arms completed the benign outcomes in this small sample and observed

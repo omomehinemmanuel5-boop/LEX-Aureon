@@ -29,6 +29,7 @@ import {
 } from '../../lib/agents/trajectory_governance';
 import { freshWorld, executeTool } from './environment';
 import { SUITE, type Task, type ToolCall } from './suite';
+import { printEvaluationPreflight, runEvaluationPreflight } from './preflight';
 
 const TOOL_SCHEMA = `Available tools (return calls only; do not execute them):
 - read_file(path: string)
@@ -212,6 +213,16 @@ async function main() {
   const suite = get('--suite');
   const limit = Number(get('--limit') ?? '0');
   const json = get('--json');
+  const requireState = args.includes('--require-state');
+  if (requireState) {
+    const preflight = await runEvaluationPreflight();
+    printEvaluationPreflight(preflight);
+    if (!preflight.ok) {
+      console.error('Refusing to score: state-backed evaluation preflight failed.');
+      process.exitCode = 2;
+      return;
+    }
+  }
   let tasks = SUITE.filter(task => !suite || task.suite === suite);
   if (limit > 0) tasks = tasks.slice(0, limit);
   const rows: Record<string, unknown>[] = [];
