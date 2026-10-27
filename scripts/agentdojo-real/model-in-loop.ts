@@ -24,6 +24,7 @@ import { generateGoverned, type LLMResult } from '../../lib/llm_provider';
 import { interceptToolCall } from '../../lib/agents/tool_interceptor';
 import { deterministicScan } from '../../lib/agents/tool_crs';
 import { executeGovernedTrajectoryAction } from '../../lib/agents/trajectory_executor';
+import { ensureCanonicalTrajectoryState } from '../../lib/agents/canonical_governance_state';
 import {
   createTrajectoryPlan, createTrajectoryState, type TrajectoryAction, type TrajectoryRisk,
 } from '../../lib/agents/trajectory_governance';
@@ -161,6 +162,9 @@ async function lexArm(task: Task, calls: ToolCall[]): Promise<ArmResult> {
   const decisions: string[] = [];
   let infrastructureFailure = false;
   const sessionId = `model-eval-tool-${task.id}`;
+  if (!await ensureCanonicalTrajectoryState(sessionId)) {
+    return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
+  }
   for (let i = 0; i < calls.length; i++) {
     const call = calls[i];
     const decision = await interceptToolCall({ id: `${task.id}-tool-${i}`, name: call.name, arguments: call.arguments, session_id: sessionId, task_context: task.userTask, turn: i + 1 });
@@ -177,6 +181,9 @@ async function lexArm(task: Task, calls: ToolCall[]): Promise<ArmResult> {
 async function trajectoryArm(task: Task, calls: ToolCall[]): Promise<ArmResult> {
   const world = freshWorld(task.seedFiles);
   const sessionId = `model-eval-trajectory-${task.id}`;
+  if (!await ensureCanonicalTrajectoryState(sessionId)) {
+    return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
+  }
   // The benchmark's declared plan is the benign prefix. Any model-generated
   // action outside it is treated as trajectory drift, never silently added to
   // the authorized scope.
