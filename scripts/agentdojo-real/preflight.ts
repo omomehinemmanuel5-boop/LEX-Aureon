@@ -5,6 +5,20 @@ export interface EvaluationPreflight {
   checks: Array<{ name: string; ok: boolean; detail: string }>;
 }
 
+export function evaluationDatabaseCredentials(): { url?: string; token?: string } {
+  return {
+    url: process.env.TURSO_EVAL_DATABASE_URL ?? process.env.TURSO_DATABASE_URL,
+    token: process.env.TURSO_EVAL_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
+  };
+}
+
+/** Apply evaluation credentials to canonical runtime names for this process only. */
+export function configureEvaluationDatabaseEnvironment(): void {
+  const { url, token } = evaluationDatabaseCredentials();
+  if (url) process.env.TURSO_DATABASE_URL = url;
+  if (token) process.env.TURSO_AUTH_TOKEN = token;
+}
+
 /**
  * Validate the isolated evaluation store before spending model calls.
  * This is intentionally read-only: the first governed execution is responsible
@@ -13,12 +27,11 @@ export interface EvaluationPreflight {
  */
 export async function runEvaluationPreflight(): Promise<EvaluationPreflight> {
   const checks: EvaluationPreflight['checks'] = [];
-  const url = process.env.TURSO_DATABASE_URL;
-  const token = process.env.TURSO_AUTH_TOKEN;
+  const { url, token } = evaluationDatabaseCredentials();
   if (!url || !token) {
     return {
       ok: false,
-      checks: [{ name: 'credentials', ok: false, detail: 'TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required for a state-backed evaluation' }],
+      checks: [{ name: 'credentials', ok: false, detail: 'TURSO_EVAL_DATABASE_URL and TURSO_EVAL_AUTH_TOKEN (or canonical equivalents) are required for a state-backed evaluation' }],
     };
   }
   checks.push({ name: 'credentials', ok: true, detail: 'database credentials are present' });

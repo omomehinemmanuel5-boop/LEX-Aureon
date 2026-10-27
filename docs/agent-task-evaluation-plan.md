@@ -128,6 +128,13 @@ does not produce a misleading scored report. Use a separate staging database,
 never the production database. The application schema initialization must have
 run against that database before this command.
 
+The evaluator accepts the safer dedicated names
+`TURSO_EVAL_DATABASE_URL` and `TURSO_EVAL_AUTH_TOKEN`. During the evaluator
+process only, these are mapped to the canonical names expected by Lex's
+governance internals. They take precedence over `TURSO_DATABASE_URL` and
+`TURSO_AUTH_TOKEN`, so production database credentials can remain configured
+for the application without being used by the benchmark.
+
 The first seven-task pilot using the available low-cost `gpt-6-luna` compatible
 model generated valid plans for all seven tasks. The bare and deterministic
 baseline arms completed the benign outcomes in this small sample and observed
