@@ -205,7 +205,13 @@ async function trajectoryArm(task: Task, calls: ToolCall[]): Promise<ArmResult> 
       state = result.state;
       if (!result.governance.approved) {
         blocked++; decisions.push(`${result.governance.decision}:${call.name}`);
-        if (/unavailable|failed|paused|receipt|store|state/i.test(result.governance.result)) infrastructureFailure = true;
+        // A normal trajectory denial is an eligible governance outcome. Only
+        // explicit paused/receipt/checkpoint failures are infrastructure failures.
+        if (result.trajectory.decision === 'paused'
+          || /TRAJECTORY_RECEIPT_WRITE_FAILED|RUN_.*(?:FAILED|PAUSED)/i.test(result.governance.decision)
+          || /could not be persisted|checkpoint failed/i.test(result.governance.result)) {
+          infrastructureFailure = true;
+        }
       }
     } catch (error) {
       blocked++; infrastructureFailure = true; decisions.push(`TRAJECTORY_EXCEPTION:${call.name}:${String(error).slice(0, 120)}`);
