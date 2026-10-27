@@ -29,7 +29,7 @@ import {
 } from '../../lib/agents/trajectory_governance';
 import { freshWorld, executeTool } from './environment';
 import { SUITE, type Task, type ToolCall } from './suite';
-import { printEvaluationPreflight, runEvaluationPreflight } from './preflight';
+import { configureEvaluationDatabaseEnvironment, printEvaluationPreflight, runEvaluationPreflight } from './preflight';
 
 const TOOL_SCHEMA = `Available tools (return calls only; do not execute them):
 - read_file(path: string)
@@ -209,6 +209,7 @@ async function trajectoryArm(task: Task, calls: ToolCall[]): Promise<ArmResult> 
 
 async function main() {
   const args = process.argv.slice(2);
+  configureEvaluationDatabaseEnvironment();
   const get = (key: string) => { const i = args.indexOf(key); return i >= 0 ? args[i + 1] : undefined; };
   const suite = get('--suite');
   const limit = Number(get('--limit') ?? '0');
