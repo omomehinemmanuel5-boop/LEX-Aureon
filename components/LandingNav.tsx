@@ -14,6 +14,7 @@ const NAV_LINKS = [
   ['Benchmarks', '/benchmarks'],
   ['Observatory', '/observatory'],
   ['Research', '/research'],
+  ['Quickstart', '/quickstart'],
   ['API docs', '/api-docs'],
 ] as const;
 

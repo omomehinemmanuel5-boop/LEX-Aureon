@@ -1103,7 +1103,7 @@ export async function declare_trajectory_plan({
   if (!authorized_scope?.length) return 'Error: authorized_scope must contain at least one registered capability.';
 
   const riskForCapability = (capability: ToolCapability): TrajectoryRisk => {
-    if (capability === 'read') return 'read';
+    if (capability === 'read' || capability === 'recovery_probe') return 'read';
     if (capability === 'write') return 'write';
     if (capability === 'external' || capability === 'network' || capability === 'delegate') return 'external';
     return 'destructive';
@@ -1221,7 +1221,7 @@ export async function review_agent_action(input: {
 
   const capabilityRisk: Record<ToolCapability, string> = {
     read: 'read',
-    recovery: 'write',
+    recovery: 'write', recovery_probe: 'read',
     write: 'write',
     external: 'external',
     destructive: 'destructive',
@@ -1256,7 +1256,7 @@ export async function simulate_agent_plan(input: {
   const actions = Array.isArray(input.actions) ? input.actions : [];
   const riskOrder = ['read', 'write', 'external', 'destructive'] as const;
   const capabilityRisk: Record<ToolCapability, typeof riskOrder[number]> = {
-    read: 'read', recovery: 'write', write: 'write', external: 'external', network: 'external', delegate: 'external',
+    read: 'read', recovery: 'write', recovery_probe: 'read', write: 'write', external: 'external', network: 'external', delegate: 'external',
     destructive: 'destructive', identity: 'destructive', financial: 'destructive', execute: 'destructive',
   };
   const SIMULATION_MODEL_VERSION = 'production-transition-shadow-v2';

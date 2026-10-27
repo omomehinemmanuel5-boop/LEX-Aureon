@@ -1,7 +1,7 @@
 import { CONSTITUTION } from '../constitution';
 
 type ToolCapability =
-  | 'read' | 'recovery' | 'write' | 'external' | 'destructive'
+  | 'read' | 'recovery' | 'recovery_probe' | 'write' | 'external' | 'destructive'
   | 'identity' | 'financial' | 'network' | 'execute' | 'delegate';
 
 export type RecoveryState =
@@ -60,14 +60,14 @@ export function recoveryCapabilityAllowed(
 
   // The recovery capability may only invoke the bounded recovery controller;
   // it never grants ordinary write authority and remains blocked below τ_floor.
-  if (capability === 'recovery') return { allowed: true, state };
+  if (capability === 'recovery' || capability === 'recovery_probe') return { allowed: true, state };
 
   if (M < CONSTITUTION.TAU_RECOVERY) {
     if (capability === 'read') return { allowed: true, state };
     return {
       allowed: false,
       state,
-      reason: `Recovery state ${state}: M=${M.toFixed(3)} is below τ_recovery=${CONSTITUTION.TAU_RECOVERY}; only recovery/read capabilities are restored.`,
+      reason: `Recovery state ${state}: M=${M.toFixed(3)} is below τ_recovery=${CONSTITUTION.TAU_RECOVERY}; only recovery-probe/read capabilities are restored.`,
     };
   }
 

@@ -24,7 +24,7 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('query_database')?.capability).toBe('read');
     expect(getToolCapability('query_database')?.approvalRequired).toBe(false);
     expect(getToolCapability('run_recovery_canary')).toMatchObject({
-      capability: 'read', approvalRequired: false, reversible: false, source: 'mcp',
+      capability: 'recovery_probe', approvalRequired: false, reversible: false, source: 'mcp',
     });
     expect(getToolCapability('advance_recovery_plane')).toMatchObject({
       capability: 'recovery', approvalRequired: false, reversible: false, source: 'mcp',
