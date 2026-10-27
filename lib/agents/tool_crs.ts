@@ -612,6 +612,16 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
   const name = tool.name.toLowerCase();
   const args = JSON.stringify(tool.arguments).toLowerCase();
 
+  // Recovery is a bounded, operator-only control-plane mutation, not a
+  // repository write and not a read-only probe. Give it an explicit risk
+  // classification so it cannot fall through to the unclassified-tool block.
+  // Operator authority, canonical session binding, recovery thresholds,
+  // CAS/timing checks, and the no-write-authority invariant are enforced by
+  // the MCP route and recovery runtime; this score does not grant authority.
+  if (name === 'advance_recovery_plane') {
+    return { score: 0.85, risk: 'LOW' };
+  }
+
   // fix (2026-08-31): READ_ONLY_TOOLS is a curated, manually-vetted safe
   // list — but the only place that previously checked it was nested inside
   // the /read|get|fetch|list|search/ naming-heuristic branch further below.
