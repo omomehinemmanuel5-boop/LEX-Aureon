@@ -1,0 +1,70 @@
+name: State-backed Model-in-the-Loop Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Maximum tasks to run (default: 7)'
+        required: false
+        default: '7'
+        type: string
+      suite:
+        description: 'Optional suite name; leave blank for the complete task suite'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: state-backed-model-evaluation
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  evaluate:
+    name: Isolated state-backed evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out requested revision
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run model-in-the-loop evaluation
+        env:
+          # Dedicated evaluation credentials only; never production credentials.
+          TURSO_EVAL_DATABASE_URL: ${{ secrets.TURSO_EVAL_DATABASE_URL }}
+          TURSO_EVAL_AUTH_TOKEN: ${{ secrets.TURSO_EVAL_AUTH_TOKEN }}
+          # Existing low-cost governance-provider credentials.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          LEX_EVAL_BACKEND: governance
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          args=(--require-state --json results/model-in-loop-state-backed.json)
+          if [ -n "${{ inputs.limit }}" ]; then args+=(--limit "${{ inputs.limit }}"); fi
+          if [ -n "${{ inputs.suite }}" ]; then args+=(--suite "${{ inputs.suite }}"); fi
+          npx tsx scripts/agentdojo-real/model-in-loop.ts "${args[@]}"
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-in-loop-state-backed-${{ github.run_id }}
+          path: results/model-in-loop-state-backed.json
+          if-no-files-found: warn
+          retention-days: 30
