@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import ThemeToggle from './ThemeToggle';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -29,13 +28,13 @@ export default function LandingNav() {
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 backdrop-blur-xl"
       style={{ backgroundColor: 'rgba(7,7,13,0.85)' }}
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-5 h-14 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 min-w-0">
-          <Image src="/logo.png" alt="Lex Aureon" width={32} height={32} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+      <div className="max-w-6xl mx-auto px-4 sm:px-5 h-12 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2 min-w-0">
+          <Image src="/logo.png" alt="Lex Aureon" width={28} height={28} className="w-7 h-7 rounded-md object-cover shrink-0" />
           <div className="min-w-0">
             <div className="text-sm font-black text-white leading-none">Lex Aureon</div>
             <div
-              className="text-[9px] leading-none mt-1 font-bold whitespace-nowrap"
+              className="hidden sm:block text-[9px] leading-none mt-1 font-bold whitespace-nowrap"
               style={{ color: G.gold, fontFamily: 'monospace', letterSpacing: '0.08em' }}
             >
               GOVERN · ENSURE TRUST · DEFEND TRUTH
@@ -44,7 +43,7 @@ export default function LandingNav() {
         </Link>
 
         {/* Desktop links */}
-        <div className="hidden sm:flex items-center gap-5 text-xs text-slate-300 font-black tracking-tight">
+        <div className="hidden sm:flex items-center gap-4 text-xs text-slate-300 font-black tracking-tight">
           {NAV_LINKS.map(([label, href]) => (
             <Link
               key={label}
@@ -56,8 +55,20 @@ export default function LandingNav() {
           ))}
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
-          <ThemeToggle />
+        <div className="flex items-center gap-2 sm:gap-2">
+          <Link
+            href="/console"
+            aria-label="Try the Lex Aureon demo"
+            className="sm:hidden inline-flex min-h-11 items-center justify-center rounded-lg px-2.5 text-[11px] font-black transition-all active:scale-95"
+            style={{
+              background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`,
+              color: '#07070d',
+              boxShadow: `0 4px 16px ${G.gold}30`,
+            }}
+          >
+            Try demo
+          </Link>
+
           <Link
             href="/console"
             className="hidden sm:block text-xs font-bold px-4 py-2 rounded-lg transition-all active:scale-95"

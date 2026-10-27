@@ -87,6 +87,31 @@ describe('tool interceptor concurrent CAS conflicts', () => {
     expect(persistedVersion).toBe(2);
   });
 
+  it('ignores a legacy tool-session lock because trajectory state owns recovery', async () => {
+    dbExecute.mockImplementation(async ({ sql }: { sql: string }) => {
+      if (sql.includes('SELECT last_m FROM z_traj')) return { rows: [{ last_m: 1.0 }] };
+      if (sql.includes('SELECT * FROM tool_sessions')) {
+        return { rows: [{
+          session_id: 'legacy-locked-session', sigma_viol: 0, n_stable: 0,
+          locked: 1, tool_calls: 0, state_version: 0, updated_at: new Date().toISOString(),
+        }] };
+      }
+      return { rows: [] };
+    });
+    commitMock.mockImplementation(async (state: unknown) => state);
+
+    const decision = await interceptToolCall({
+      id: 'legacy-lock',
+      name: 'read_file',
+      arguments: { path: 'README.md' },
+      session_id: 'legacy-locked-session',
+      task_context: 'Read using read_file',
+    });
+
+    expect(decision.approved).toBe(true);
+    expect(decision.decision).toBe('APPROVED_ULTRA_LOW');
+  });
+
   it('fails closed after the bounded retries are exhausted', async () => {
     commitMock.mockImplementation(async () => {
       throw new GovernanceCommitConflict('concurrency-session');

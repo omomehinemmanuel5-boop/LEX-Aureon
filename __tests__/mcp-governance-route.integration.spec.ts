@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, getTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
-  getTrajectoryState: vi.fn(async () => undefined),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
   readCanonicalGovernanceState: vi.fn(),
+  createCanonicalGovernanceStateReader: vi.fn(() => ({
+    read: (...args: unknown[]) => readCanonicalGovernanceState(...args),
+    refresh: (...args: unknown[]) => readCanonicalGovernanceState(...args),
+  })),
   canonicalExecutionAllowed: vi.fn(() => ({ allowed: true })),
   advanceRecoveryPlane: vi.fn(async () => {}),
   shouldAdvanceRecoveryPlane: vi.fn((state: { trajectoryAvailable?: boolean; M?: number; nStable?: number; canaryPassed?: boolean }) =>
@@ -95,6 +98,7 @@ vi.mock('@/lib/scoped_grants', () => ({ findMatchingScopedGrant }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState,
   readCanonicalGovernanceState,
+  createCanonicalGovernanceStateReader,
   canonicalExecutionAllowed,
 }));
 
@@ -150,7 +154,7 @@ vi.mock('@/lib/agents/tool_governance_gateway', async () => {
 // actual scenario, rather than letting it fall through to a real (Turso)
 // DB call this test doesn't otherwise set up.
 vi.mock('../lib/agents/trajectory_session_store', () => ({
-  getTrajectoryState,
+  getTrajectoryState: vi.fn(async () => undefined),
   setTrajectoryState: vi.fn(async () => {}),
   clearTrajectoryState: vi.fn(async () => {}),
   isTrajectoryActive: () => false,
@@ -205,34 +209,6 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(writeTool?.inputSchema.properties).toHaveProperty('branch');
     const patchTool = body.result.tools.find(tool => tool.name === 'patch_file');
     expect(patchTool?.inputSchema.properties).toHaveProperty('branch');
-  });
-
-  it('marks a locked trajectory denial as an MCP tool error', async () => {
-    const key = { id: 'private-test-1', plan: 'private_test' };
-    validateApiKey.mockResolvedValue({ valid: true, key });
-    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
-    getTrajectoryState.mockResolvedValueOnce({
-      locked: true,
-      lockReason: 'trajectory_locked_for_test',
-      plan: { planId: 'plan-locked' },
-      currentStep: 1,
-      driftScore: 0.8,
-      version: 2,
-    } as never);
-
-    const response = await POST(request({
-      jsonrpc: '2.0',
-      method: 'tools/call',
-      params: { name: 'write_file', arguments: { path: 'README.md', content: 'must not execute', approval_request_id: 'approved-test-request' } },
-      id: 'locked-trajectory-error',
-    }));
-
-    expect(response.status).toBe(200);
-    expect((response.body as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.isError).toBe(true);
-    expect((response.body as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text)
-      .toContain('trajectory_locked_for_test');
-    expect(executeGovernedTool).not.toHaveBeenCalled();
-    expect(toolFn).not.toHaveBeenCalled();
   });
 
   it('authorize_tool_action reports an existing approval status without creating or consuming a request', async () => {
@@ -296,10 +272,6 @@ describe('MCP constitutional dispatch boundary', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Clear queued one-shot trajectory fixtures between tests; otherwise a
-    // denied/unauthenticated request can leave a locked state for the next case.
-    getTrajectoryState.mockReset();
-    getTrajectoryState.mockResolvedValue(undefined);
     delete process.env.LEX_CANARY_OWNER_IDS;
     validateApiKey.mockResolvedValue({ valid: true, key: {} });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key: {} });

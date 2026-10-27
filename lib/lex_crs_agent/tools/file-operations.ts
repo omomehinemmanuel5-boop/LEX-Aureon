@@ -3,7 +3,7 @@
  * FILE OPERATIONS TOOLS — Constitutional File I/O
  * 
  * Tools for reading, writing, and managing files within constitutional bounds.
- * All operations are measured by CRS and gated by tool-proxy.
+ * All operations are measured by CRS and gated by the canonical MCP route.
  * ═══════════════════════════════════════════════════════════════════════
  */
 

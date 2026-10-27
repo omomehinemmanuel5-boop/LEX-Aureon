@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.MCP_OPERATOR_SECRET = 'trajectory-test-operator';
 
-const { executeGovernedTool, executeGovernedToolStructured, executeGovernedTrajectoryAction, dbExecute } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, executeGovernedTrajectoryAction, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, dbExecute } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   executeGovernedTrajectoryAction: vi.fn(),
+  readCanonicalGovernanceState: vi.fn(),
+  createCanonicalGovernanceStateReader: vi.fn(() => ({
+    read: (...args: unknown[]) => readCanonicalGovernanceState(...args),
+    refresh: (...args: unknown[]) => readCanonicalGovernanceState(...args),
+  })),
   dbExecute: vi.fn(),
 }));
 
@@ -48,7 +53,8 @@ vi.mock('../lib/db', () => ({
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   ensureCanonicalTrajectoryState: vi.fn(async () => true),
-  readCanonicalGovernanceState: vi.fn(),
+  readCanonicalGovernanceState,
+  createCanonicalGovernanceStateReader,
 }));
 
 function installFakeTrajectoryTable() {

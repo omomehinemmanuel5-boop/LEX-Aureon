@@ -20,15 +20,14 @@ import { validateApiKey, validateAndConsumeKey, consumeApiKeyById, getApiKeyById
 import { validateMcpSession } from '@/lib/mcp_sessions';
 import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate_limit';
-import { canCallTool, isOperatorSecret, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
+import { canCallTool, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
-import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
+import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, createCanonicalGovernanceStateReader } from '@/lib/agents/canonical_governance_state';
 import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
 import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
 import { discoverExternalTool, governExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
-import crypto from 'crypto';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
 import { isNonMutatingInspectionTool } from '@/lib/mcp_route_policy';
@@ -36,41 +35,9 @@ import { createApprovalRequest, getApprovalRequestStatus } from '@/lib/approval_
 import { findMatchingScopedGrant } from '@/lib/scoped_grants';
 import { env } from '@/lib/env';
 import { CONSTITUTION } from '@/lib/constitution';
+import { readBoundedBody } from '@/lib/http/bounded_body';
+import { canonicalMcpSessionId, credentialPathFor, defaultMcpSessionId, extractApiKey, extractSessionToken, ipHash, isOperatorRequest, mcpSessionError, mcpToolResult, oauthToolChallenge, unauthorized, type McpCredentialPath } from '@/lib/mcp_http';
 
-// fix (2026-08-24): short, non-reversible correlation key for a caller.
-// Used for mcp_client_identity and rate limiting; it is deliberately NOT the
-// governance-session identity because reverse proxies can vary the forwarded
-// IP between calls from the same authenticated MCP client.
-function ipHash(req: Request): string {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    ?? req.headers.get('x-real-ip')
-    ?? 'unknown';
-  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12);
-}
-
-// Stateless MCP clients do not reliably send a session_id on every tools/call.
-// Bind the fallback to the authenticated actor, not the transport IP, so a
-// proxy hop change cannot split canary evidence from the consequential action.
-// Explicit session_id values still take precedence and remain session-scoped.
-// Because the fallback includes the UTC date, stateless clients reset their
-// recovery trajectory daily; stable connectors should send an explicit,
-// persistent session_id so canary evidence remains bound to the same session.
-function defaultMcpSessionId(actorId: string): string {
-  const day = new Date().toISOString().slice(0, 10);
-  const actorHash = crypto.createHash('sha256').update(actorId).digest('hex').slice(0, 12);
-  return `mcp-${day}-${actorHash}`;
-}
-
-// Canonicalize all non-operator MCP sessions identically, including the
-// explicit approval and external-action control planes. Private-test keys have
-// operator capabilities but remain API-key identities and must be owner-scoped.
-function canonicalMcpSessionId(ownerId: string, clientSessionId: string, operator: boolean): string {
-  if (operator) return clientSessionId;
-  const ownerSessionPrefix = `${ownerId}:`;
-  return clientSessionId.startsWith(ownerSessionPrefix)
-    ? clientSessionId
-    : `${ownerSessionPrefix}${clientSessionId}`;
-}
 
 // fix (2026-09-01): reuses the exact header convention already documented
 // in /api-docs for /api/lex/govern (x-lex-api-key, or Authorization:
@@ -79,22 +46,7 @@ function canonicalMcpSessionId(ownerId: string, clientSessionId: string, operato
 // since this endpoint's blast radius (repo write, CI dispatch, DB read)
 // is categorically larger than a rate-limited text-governance call.
 //
-function extractApiKey(req: Request): string | null {
-  // Keep x-api-key as a compatibility alias for older client configurations.
-  const header = req.headers.get('x-lex-api-key') ?? req.headers.get('x-api-key');
-  if (header) return header.trim();
-  const auth = req.headers.get('authorization');
-  if (auth?.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
-  return null;
-}
-
-function extractSessionToken(req: Request): string | null {
-  return req.headers.get('x-lex-session-token')?.trim() || null;
-}
-
-function isOperator(req: Request): boolean {
-  return isOperatorSecret(req.headers.get('x-lex-operator-secret'));
-}
+function isOperator(req: Request): boolean { return isOperatorRequest(req); }
 
 /** Operator authority may come from the operator secret or an authenticated operator-profile identity. */
 function hasOperatorAuthority(operatorSecretValid: boolean, profile: McpAccessProfile): boolean {
@@ -108,16 +60,6 @@ function isCanaryOwnerAllowed(ownerId: string): boolean {
     .map(value => value.trim())
     .filter(Boolean);
   return ownerId !== '' && ownerId !== 'anonymous' && allowedOwners.includes(ownerId);
-}
-
-type McpCredentialPath = 'operator_secret' | 'session_token' | 'oauth_bearer' | 'api_key' | 'missing';
-
-function credentialPathFor(req: Request): McpCredentialPath {
-  if (isOperator(req)) return 'operator_secret';
-  if (extractSessionToken(req)) return 'session_token';
-  const key = extractApiKey(req);
-  if (!key) return req.headers.has('x-lex-operator-secret') ? 'operator_secret' : 'missing';
-  return key.startsWith('lex_at_') ? 'oauth_bearer' : 'api_key';
 }
 
 function logMcpAuth(toolName: string, credentialPath: McpCredentialPath, outcome: string, profile?: McpAccessProfile): void {
@@ -135,19 +77,6 @@ function logMcpAuth(toolName: string, credentialPath: McpCredentialPath, outcome
   }));
 }
 
-function unauthorized(id: number | string | null | undefined) {
-  return NextResponse.json({
-    jsonrpc: '2.0',
-    error: { code: -32001, message: 'Unauthorized: valid API key or OAuth bearer token required' },
-    id,
-  }, {
-    status: 401,
-    headers: {
-      'WWW-Authenticate': `Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"`,
-    },
-  });
-}
-
 /**
  * ChatGPT's tool-level OAuth UX is triggered by an MCP error result carrying
  * _meta["mcp/www_authenticate"]. Keep the HTTP 401 challenge above for generic
@@ -155,42 +84,6 @@ function unauthorized(id: number | string | null | undefined) {
  * without a usable credential. This lets ChatGPT launch OAuth instead of
  * surfacing a generic authentication failure.
  */
-function oauthToolChallenge(id: number | string | null | undefined) {
-  // Used by tools/call when a session token is invalid or no API/OAuth credential is supplied.
-  // tools/list uses the HTTP 401 resource-metadata challenge instead.
-  return NextResponse.json({
-    jsonrpc: '2.0',
-    result: {
-      content: [{ type: 'text', text: 'Authentication required. Connect Lex Aureon and retry this tool call.' }],
-      isError: true,
-    },
-    _meta: {
-      'mcp/www_authenticate': [
-        'Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication is required for this MCP operation"',
-      ],
-    },
-    id,
-  });
-}
-
-function mcpSessionError(id: number | string | null | undefined, reason: string) {
-  const expired = reason === 'MCP session expired' || reason === 'API credential expired or revoked';
-  const unavailable = reason === 'Session authentication unavailable';
-  const text = unavailable
-    ? 'Session service temporarily unavailable. Retry this tool call shortly.'
-    : expired
-      ? 'Session expired. Reconnect Lex Aureon to refresh credentials, then retry this tool call.'
-      : 'Session token is invalid. Reconnect Lex Aureon, then retry this tool call.';
-  return NextResponse.json({
-    jsonrpc: '2.0',
-    result: { content: [{ type: 'text', text }], isError: true },
-    _meta: { 'mcp/www_authenticate': [
-      'Bearer resource_metadata="https://www.lexaureon.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Session token is no longer valid"',
-    ] },
-    id,
-  });
-}
-
 const SERVER_INFO = {
   name:    'lex-crs-agent',
   version: '2.3.0',
@@ -205,35 +98,6 @@ function trajectoryRiskForCapability(capability: ToolCapability | undefined): Tr
   if (capability === 'write') return 'write';
   if (capability === 'external' || capability === 'network' || capability === 'delegate') return 'external';
   return 'destructive';
-}
-
-function mcpToolResult(id: number | string | null | undefined, value: unknown) {
-  // MCP structuredContent must be a JSON object. Most Lex tools return their
-  // governed result as plain text, so wrap primitive/array results instead of
-  // emitting structuredContent as a bare string that strict clients reject.
-  const structuredContent = value !== null
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    ? value
-    : { value };
-  const valueRecord = value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-  const decision = typeof valueRecord?.decision === 'string' ? valueRecord.decision : '';
-  const isGovernanceDenial = decision.startsWith('DENIED_')
-    || valueRecord?.approved === false && decision.startsWith('DENIED_')
-    || typeof value === 'string' && /decision:\s*DENIED_[A-Z_]+/.test(value);
-  return NextResponse.json({
-    jsonrpc: '2.0',
-    result: {
-      // A denied governed action is an MCP tool error, not a successful tool
-      // result whose text merely happens to contain a DENIED decision.
-      content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
-      structuredContent,
-      ...(isGovernanceDenial ? { isError: true } : {}),
-    },
-    id,
-  });
 }
 
 const EXTERNAL_CAPABILITY_DEFINITIONS = [
@@ -426,7 +290,7 @@ function rateLimited(retryAfter: number, storageError = false) {
   });
 }
 
-export async function POST(req: Request) {
+async function handlePost(req: Request) {
   const contentLength = Number(req.headers.get('content-length') ?? '0');
   if (Number.isFinite(contentLength) && contentLength > MAX_MCP_BODY_BYTES) {
     return requestTooLarge();
@@ -443,9 +307,19 @@ export async function POST(req: Request) {
   );
   if (!rate.allowed) return rateLimited(rate.retryAfter, rate.storageError);
 
+  const bounded = await readBoundedBody(req, MAX_MCP_BODY_BYTES, 10_000);
+  if (bounded.kind === 'too_large') return requestTooLarge();
+  if (bounded.kind === 'timed_out') {
+    return NextResponse.json({
+      jsonrpc: '2.0',
+      error: { code: -32010, message: 'Request body read timed out' },
+      id: null,
+    }, { status: 408 });
+  }
   let body: unknown;
   try {
-    body = await req.json();
+    if (bounded.kind !== 'ok') throw new Error('request body read failed');
+    body = JSON.parse(bounded.text);
   } catch {
     return NextResponse.json({
       jsonrpc: '2.0',
@@ -465,6 +339,7 @@ export async function POST(req: Request) {
   }
 
   const { method, params, id } = body as JsonRpcRequest;
+  const canonicalStateReader = createCanonicalGovernanceStateReader();
 
   if (method === 'initialize') {
     // fix (2026-08-24): clientInfo (name/version) arrives here per the MCP
@@ -756,7 +631,7 @@ export async function POST(req: Request) {
           id,
         }, { status: 503 });
       }
-      let authorizationCanonical = await readCanonicalGovernanceState({
+      let authorizationCanonical = await canonicalStateReader.read({
         sessionId: requestedSession,
         actorId,
         capability: capability.capability,
@@ -764,7 +639,7 @@ export async function POST(req: Request) {
       });
       if (authorizationCanonical.available && shouldAdvanceRecoveryPlane(authorizationCanonical.state)) {
         await advanceRecoveryPlane(requestedSession);
-        authorizationCanonical = await readCanonicalGovernanceState({
+        authorizationCanonical = await canonicalStateReader.refresh({
           sessionId: requestedSession,
           actorId,
           capability: capability.capability,
@@ -863,7 +738,7 @@ export async function POST(req: Request) {
       }
       if (toolName === 'authorize_external_action' || toolName === 'consume_external_action') {
         const externalCapability = toolName === 'consume_external_action' ? 'external' : 'identity';
-        let canonical = await readCanonicalGovernanceState({
+        let canonical = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: externalCapability,
@@ -871,7 +746,7 @@ export async function POST(req: Request) {
         });
         if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           await advanceRecoveryPlane(sessionId);
-          canonical = await readCanonicalGovernanceState({
+          canonical = await canonicalStateReader.refresh({
             sessionId,
             actorId,
             capability: externalCapability,
@@ -1127,7 +1002,7 @@ export async function POST(req: Request) {
       // fail-closed, and approval binding is still checked by the executor.
       if (requestedCapability?.approvalRequired
         && (args.approval_token !== undefined || args.approval_request_id !== undefined)) {
-        let recoveryPreflight = await readCanonicalGovernanceState({
+        let recoveryPreflight = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: requestedCapability.capability,
@@ -1136,7 +1011,7 @@ export async function POST(req: Request) {
         if (recoveryPreflight.available && shouldAdvanceRecoveryPlane(recoveryPreflight.state)) {
           try {
             await advanceRecoveryPlane(sessionId);
-            recoveryPreflight = await readCanonicalGovernanceState({
+            recoveryPreflight = await canonicalStateReader.refresh({
               sessionId,
               actorId,
               capability: requestedCapability.capability,
@@ -1181,7 +1056,7 @@ export async function POST(req: Request) {
         // only after Lex establishes that this session is healthy enough to
         // reach the execution gate; otherwise we create an approval that can
         // never be consumed and force the user through avoidable friction.
-        let canonical = await readCanonicalGovernanceState({
+        let canonical = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: requestedCapability.capability,
@@ -1190,7 +1065,7 @@ export async function POST(req: Request) {
         if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
           try {
             await advanceRecoveryPlane(sessionId);
-            canonical = await readCanonicalGovernanceState({
+            canonical = await canonicalStateReader.refresh({
               sessionId,
               actorId,
               capability: requestedCapability.capability,
@@ -1344,7 +1219,6 @@ export async function POST(req: Request) {
           jsonrpc: '2.0',
           result: {
             content: [{ type: 'text', text: `Trajectory denied: ${trajectoryState.lockReason ?? 'trajectory_locked'}` }],
-            isError: true,
             trajectory: {
               decision: 'deny', reason: trajectoryState.lockReason ?? 'trajectory_locked',
               plan_id: trajectoryState.plan.planId, session_id: sessionId,
@@ -1400,7 +1274,7 @@ export async function POST(req: Request) {
             result: { content: [{
               type: 'text',
               text: 'EXECUTION_STATUS=unknown_after_deadline. Trajectory is locked fail-closed; verify its state and receipt before retrying.',
-            }], isError: true, trajectory: {
+            }], trajectory: {
               decision: 'paused', reason: 'execution_unknown_after_deadline', plan_id: claimedState.plan.planId,
               session_id: sessionId, step_before: claimedState.currentStep,
               step_after: pausedState?.currentStep ?? claimedState.currentStep,
@@ -1444,7 +1318,7 @@ export async function POST(req: Request) {
           if (!committed) {
             return NextResponse.json({
               jsonrpc: '2.0',
-              result: { content: [{ type: 'text', text: 'TRAJECTORY PAUSED: state changed during execution; verify the receipt before retrying.' }], isError: true },
+              result: { content: [{ type: 'text', text: 'TRAJECTORY PAUSED: state changed during execution; verify the receipt before retrying.' }] },
               id,
             });
           }
@@ -1579,7 +1453,7 @@ export async function POST(req: Request) {
           execution.receiptId
         ) {
           const fingerprint = String(probe.state_fingerprint);
-          const current = await readCanonicalGovernanceState({
+          const current = await canonicalStateReader.refresh({
             sessionId,
             actorId,
             capability: 'read',
@@ -1624,7 +1498,7 @@ export async function POST(req: Request) {
               expiresAt: String(probe.expires_at ?? new Date(Date.now() + 60 * 60 * 1000).toISOString()),
               reason: evidenceReason,
             });
-            const confirmed = await readCanonicalGovernanceState({
+            const confirmed = await canonicalStateReader.refresh({
               sessionId,
               actorId,
               capability: 'read',
@@ -1712,6 +1586,16 @@ export async function POST(req: Request) {
   });
 }
 
+function noStore(response: Response): Response {
+  const headers = (response as Response & { headers?: Headers }).headers;
+  headers?.set('Cache-Control', 'no-store');
+  return response;
+}
+
+export async function POST(req: Request) {
+  return noStore(await handlePost(req));
+}
+
 async function withDeadline<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -1734,12 +1618,12 @@ async function withDeadline<T>(
 }
 
 export async function GET() {
-  return NextResponse.json({
+  return noStore(NextResponse.json({
     name: SERVER_INFO.name,
     version: SERVER_INFO.version,
     description: 'Lex CRS Agent — MCP coding agent with constitutional authorization before every tool execution; read-only results may use authorization-checked execution caching.',
     tools: servedTools().length,
     endpoint: '/api/mcp',
     protocol: 'MCP legacy handshake (2024-11-05 through 2025-11-25)',
-  });
+  }));
 }

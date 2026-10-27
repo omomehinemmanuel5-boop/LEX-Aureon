@@ -8,6 +8,7 @@ vi.mock('../lib/db', () => ({
 
 import {
   canonicalExecutionAllowed,
+  createCanonicalGovernanceStateReader,
   readCanonicalGovernanceState,
 } from '../lib/agents/canonical_governance_state';
 import { recoveryCapabilityAllowed, deriveRecoveryState } from '../lib/agents/recovery_state';
@@ -56,7 +57,7 @@ describe('constitutional recovery policy', () => {
 });
 
 describe('canonical governance state', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => { vi.resetAllMocks(); });
 
   it('projects CRS and recovery state from z_traj rather than local tool scores', async () => {
     dbExecute
@@ -65,13 +66,14 @@ describe('canonical governance state', () => {
       .mockResolvedValueOnce({ rows: [{ canary_status: 'passed', receipt_id: 'canary-receipt', issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), created_at: new Date().toISOString() }] });
 
     const result = await readCanonicalGovernanceState({
-      sessionId: 'canonical-session', actorId: 'agent-a', capability: 'read',
+      sessionId: 'canonical-session', actorId: 'agent-a', capability: 'read', includeToolTelemetry: true,
     });
 
     expect(result.available).toBe(true);
     expect(result.state).toMatchObject({
       C: 0.42, R: 0.18, S: 0.31, M: 0.18,
-      sigmaViol: 0.12, toolCalls: 7, healthBand: 'ALERT',
+      // The legacy tool-session row reports 0.12, but z_traj is authoritative.
+      sigmaViol: 0.04, toolCalls: 7, healthBand: 'ALERT',
       trajectoryAvailable: true,
       recoveryState: 'RESTORING',
       canaryPassed: false,
@@ -103,6 +105,25 @@ describe('canonical governance state', () => {
       expect({ C: state.C, R: state.R, S: state.S, M: state.M }).toEqual({ C: 0.31, R: 0.32, S: 0.37, M: 0.31 });
       expect(gate.allowed).toBe(true);
     }
+  });
+
+  it('does not read legacy telemetry by default and refreshes the request-local cache explicitly', async () => {
+    dbExecute.mockImplementation(async (query: unknown) => {
+      const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
+      if (sql.includes('FROM z_traj')) return { rows: [{ last_c: 0.4, last_r: 0.4, last_s: 0.4, velocity: 0, sigma_viol: 0, n_stable: 3, updated_at: '2026-10-10T00:00:00.000Z' }] };
+      if (sql.includes('FROM recovery_canary_evidence')) return { rows: [] };
+      if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 99 }] };
+      return { rows: [] };
+    });
+    const reader = createCanonicalGovernanceStateReader();
+    const input = { sessionId: 'cached-state-session', actorId: 'agent-a' as const, capability: 'read' as const };
+    const first = await reader.read(input);
+    const second = await reader.read(input);
+    expect(second).toBe(first);
+    expect(first.state.toolCalls).toBe(0);
+    expect(dbExecute.mock.calls.filter(([query]) => String((query as { sql?: string })?.sql ?? query).includes('FROM tool_sessions'))).toHaveLength(0);
+    await reader.refresh(input);
+    expect(dbExecute.mock.calls.filter(([query]) => String((query as { sql?: string })?.sql ?? query).includes('FROM z_traj'))).toHaveLength(2);
   });
 
   it('does not infer a successful canary from M=0.333 and stable observations alone', async () => {

@@ -142,14 +142,15 @@ export interface ToolCallDecision {
 /**
  * Per-session tool governance state — persisted in Turso (tool_sessions table).
  * Tracks cumulative constitutional health across tool calls.
- * Implements the slow-drip defence: a single HIGH is allowed, but
- * recovery requires n_stable >= N_MIN before another HIGH proceeds.
+ * Recovery authority is the canonical z-trajectory; this row retains
+ * cumulative telemetry and optimistic-concurrency metadata only.
  */
 export interface ToolSessionState {
   session_id:     string;
   sigma_viol:     number;   // cumulative violation pressure
   n_stable:       number;   // consecutive non-HIGH calls since last HIGH
-  locked:         boolean;  // hard lock: two HIGHs in recovery window
+  /** Legacy schema field retained for migration compatibility; never gates execution. */
+  locked:         boolean;
   tool_calls:     number;   // total calls this session
   state_version:  number;   // optimistic-concurrency version for atomic commits
   last_high_at?:  number;   // timestamp of last HIGH action

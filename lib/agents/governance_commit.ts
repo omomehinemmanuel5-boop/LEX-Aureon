@@ -85,16 +85,16 @@ export async function commitGovernanceDecision(
 
   const auditValues = await receiptAuditValues(receipt);
   const updateSql = `UPDATE tool_sessions
-    SET sigma_viol = ?, n_stable = ?, locked = ?, tool_calls = ?,
+    SET sigma_viol = ?, n_stable = ?, tool_calls = ?,
         last_high_at = ?, updated_at = ?, state_version = state_version + 1
     WHERE session_id = ? AND state_version = ?`;
   const updateArgs = [
-    state.sigma_viol, state.n_stable, state.locked ? 1 : 0, state.tool_calls,
+    state.sigma_viol, state.n_stable, state.tool_calls,
     state.last_high_at ?? null, state.updated_at, state.session_id, expectedVersion,
   ];
   const initializeSql = `INSERT OR IGNORE INTO tool_sessions
-    (session_id, sigma_viol, n_stable, locked, tool_calls, state_version, last_high_at, updated_at)
-    VALUES (?, 0, 3, 0, 0, 0, NULL, ?)`;
+    (session_id, sigma_viol, n_stable, tool_calls, state_version, last_high_at, updated_at)
+    VALUES (?, 0, 3, 0, 0, NULL, ?)`;
   const initializeArgs = [state.session_id, state.updated_at];
   if (client.transaction) {
     const tx = await client.transaction('write');

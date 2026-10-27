@@ -76,7 +76,7 @@ NODE_ENV=test LEX_AGENTDOJO_SYNTHETIC_STATE=1 \
 
 ## Focused boundary regressions (2026-09-28)
 
-The implementation regression suite includes route-level checks for missing credentials, admission-store outage, private-network and non-HTTPS egress targets, API-key actor/session scoping, approval-before-forwarding, and unknown timeout outcomes (`__tests__/tool-proxy-governance-route.spec.ts`). Additional tests pin API-plan privilege separation, unknown-tool default denial, and actor persistence in atomic receipt commits (`__tests__/mcp-access.spec.ts`, `__tests__/tool-crs-semantic-gate.spec.ts`, and `__tests__/governance-commit.test.ts`). These are targeted correctness/security regressions; they are not a full paired benchmark, do not establish a comparative attack-success rate, and do not replace the evaluation gates above.
+The implementation regression suite includes canonical MCP route checks for missing credentials, admission-store outage, API-key actor/session scoping, approval handling, bounded request bodies, trajectory dispatch, unknown-tool default denial, and actor persistence in atomic receipt commits (`__tests__/mcp-governance-route.integration.spec.ts`, `__tests__/bounded-body.test.ts`, `__tests__/mcp-access.spec.ts`, `__tests__/tool-crs-semantic-gate.spec.ts`, and `__tests__/governance-commit.test.ts`). These are targeted correctness/security regressions; they are not a full paired benchmark, do not establish a comparative attack-success rate, and do not replace the evaluation gates above.
 
 
 ## Custom three-arm smoke harness status (2026-10-01)

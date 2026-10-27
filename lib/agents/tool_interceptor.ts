@@ -8,8 +8,7 @@
  * Decision hierarchy:
  *   BLOCKED injection  → DENIED_INJECTION  (no execution ever)
  *   BLOCKED pattern    → DENIED_BLOCKED    (no execution ever)
- *   Session LOCKED     → DENIED_LOCKED     (two HIGHs in recovery)
- *   HIGH in recovery   → DENIED_LOCKED     (sigma_viol elevated)
+ *   Canonical trajectory → upstream route/executor owns recovery admission
  *   HIGH (clean state) → APPROVED_HIGH     (executes, sigma_viol rises)
  *   MEDIUM             → APPROVED_MEDIUM   (executes, logged)
  *   LOW                → APPROVED          (executes)
@@ -29,9 +28,9 @@
 
 import { ToolCallInput, ToolCallDecision, ToolCRSState, ToolSessionState } from './types';
 import { measureToolCRS } from './tool_crs';
-import { TOOL_CAPABILITY_REGISTRY } from './tool_capability_registry';
 import { getClient } from '../db';
 import crypto from 'crypto';
+import { KERNEL_GATED_WRITE_TOOLS } from './tool_policy';
 import {
   commitGovernanceDecision,
   GovernanceCommitConflict,
@@ -51,18 +50,12 @@ const KERNEL_CRITICAL  = 0.05;  // deny ALL tool calls
 const KERNEL_STRESSED  = 0.15;  // deny write operations, allow reads only
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const KERNEL_ALERT     = 0.22;  // stricter HIGH threshold
-const WRITE_TOOLS = new Set(
-  [...TOOL_CAPABILITY_REGISTRY.values()]
-    .filter(record => record.capability !== 'read' && record.capability !== 'recovery')
-    .map(record => record.name),
-);
-
 async function getKernelM(session_id: string): Promise<number | null> {
   // Test-only benchmark adapter. It is opt-in, namespaced, and unavailable in
   // production so local/CI agent replays can measure utility without a live
   // Turso database or receipt writes. It must never be used as a production
   // outage fallback.
-  if (process.env.NODE_ENV === 'test' && process.env.LEX_AGENTDOJO_SYNTHETIC_STATE === '1') {
+  if (process.env.NODE_ENV !== 'production' && process.env.LEX_AGENTDOJO_SYNTHETIC_STATE === '1') {
     return 1.0;
   }
   try {
@@ -71,9 +64,9 @@ async function getKernelM(session_id: string): Promise<number | null> {
       sql: 'SELECT last_m FROM z_traj WHERE session_id = ? LIMIT 1',
       args: [session_id],
     });
-    // Match canonical governance semantics: absent trajectory state is
-    // uninitialized, not evidence of a healthy session. Fail closed until the
-    // canonical state has been initialized rather than synthesizing M=1.0.
+    // A missing trajectory is uninitialized, not evidence of a healthy session.
+    // The canonical MCP route initializes it before dispatch; direct callers
+    // must fail closed rather than synthesize a stable state.
     if (!res.rows.length) return null;
     const lastM = Number(res.rows[0].last_m);
     return Number.isFinite(lastM) ? lastM : null;
@@ -227,7 +220,7 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     };
   }
 
-  if (kernelM < KERNEL_STRESSED && WRITE_TOOLS.has(tool.name)) {
+  if (kernelM < KERNEL_STRESSED && KERNEL_GATED_WRITE_TOOLS.has(tool.name)) {
     const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_STRESSED',
       crs: kernelCRS,
@@ -292,88 +285,14 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     };
   }
 
-  // fix (2026-08-15): hard lock previously had no expiry — locked:true was
-  // written once (with a real last_high_at timestamp, right below) and never
-  // auto-cleared, so a legitimate solo operator working across a real day
-  // had no path back in except raw SQL against production (UPDATE
-  // tool_sessions SET locked=0 ...). Found 6 separate sessions stuck this
-  // way, dating back to 2026-08-07. The lock is a slow-drip CIRCUIT BREAKER
-  // — its actual purpose is to block RAPID compounding HIGH actions in a
-  // short window, not to require permanent manual intervention. Auto-expiry
-  // preserves that real protection (a burst of HIGH actions within
-  // LOCK_TTL_MS still gets denied) while removing the requirement to ever
-  // touch the database by hand again.
-  const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes — tunable, not safety-critical
-  const lockExpired = session.locked && session.last_high_at != null
-    && (Date.now() - session.last_high_at) > LOCK_TTL_MS;
+  // `tool_sessions.locked` is retained only for schema compatibility with
+  // historical rows. Recovery authority lives in the canonical z-trajectory;
+  // never import a legacy lock into the active decision state.
+  session = { ...session, locked: false };
 
-  // Step 4: Hard lock check
-  if (session.locked && !lockExpired) {
-    const receiptWarning = await persistDenialReceipt({
-      receipt_id, session_id: tool.session_id,
-      actor_id: tool.actor_id, tool_name: tool.name, args_hash, decision: 'DENIED_LOCKED',
-      crs, reason: 'Session hard-locked: two HIGH-risk actions in recovery window.',
-      sigma_viol: session.sigma_viol,
-    });
-
-    return {
-      approved: false,
-      decision:     'DENIED_LOCKED',
-      reason:       'Session hard-locked. Two HIGH-risk actions were detected in the same recovery window. Session requires manual review.',
-      crs,
-      receipt_id,
-      sigma_viol:   session.sigma_viol,
-      health_band:  'LOCKED',
-      ...(receiptWarning ? { warning: receiptWarning } : {}),
-    };
-  }
-  if (lockExpired) {
-    // Auto-clear: same fresh state a manual DB reset would have produced.
-    session.locked = false;
-    session.sigma_viol = 0;
-    session.n_stable = N_MIN;
-  }
-
-  // Step 5: HIGH action in recovery window — deny to prevent slow-drip
-  if (crs.risk_level === 'HIGH' && session.n_stable < N_MIN) {
-    // Second HIGH in recovery: hard lock the session
-    const newSigma = Math.min(1.0, session.sigma_viol + 0.30);
-    const newState: ToolSessionState = {
-      ...session,
-      sigma_viol: newSigma,
-      n_stable:   0,
-      locked:     true, // HARD LOCK
-      tool_calls: session.tool_calls + 1,
-      last_high_at: t,
-    };
-    const reason = `Slow-drip attack detected: HIGH action during recovery (n_stable=${session.n_stable} < N_MIN=${N_MIN}). Session locked.`;
-    try {
-      await commitGovernanceDecision(newState, session.state_version, {
-        receipt_id, session_id: tool.session_id, actor_id: tool.actor_id,
-        tool_name: tool.name, args_hash, decision: 'DENIED_LOCKED',
-        crs, reason, sigma_viol: newSigma,
-      });
-    } catch {
-      return {
-        approved: false, decision: 'DENIED_LOCKED',
-        reason: 'HIGH-risk action denied; recovery lock and audit receipt could not be committed. Execution remains blocked.',
-        crs, receipt_id, sigma_viol: newSigma, health_band: 'LOCKED',
-        warning: 'Governance state or denial receipt could not be committed atomically.',
-      };
-    }
-
-    return {
-      approved: false,
-      decision:    'DENIED_LOCKED',
-      reason:      `Slow-drip protection: HIGH-risk action attempted while session is recovering from a previous HIGH action (${session.n_stable}/${N_MIN} stable calls). Session locked.`,
-      crs,
-      receipt_id,
-      sigma_viol:  newSigma,
-      health_band: 'LOCKED',
-    };
-  }
-
-  // Step 6: Approve — update session state based on risk level
+  // Step 4: Approve — update session telemetry based on risk level. Recovery
+  // admission is authoritative in z_traj/canonical_governance_state; this
+  // legacy telemetry row must never create a second lock or policy boundary.
   let newState: ToolSessionState;
   let decision: ToolCallDecision['decision'];
   let warning: string | undefined;

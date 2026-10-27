@@ -87,6 +87,61 @@ import { ToolCallInput, ToolCRSState } from './types';
 import { projectToSimplex } from '../aureonics_math';
 import { embedTextResolved, embedTextWithProvider, EmbedProvider } from '../lex_memory';
 import { classifyDatabaseOperation } from './tool_governance_gateway';
+import { BUILD_FILE_PATTERNS, HIGH_RISK_TOOLS, MEDIUM_RISK_TOOLS, READ_ONLY_TOOLS } from './tool_policy';
+
+// The persistent embedding cache still provides cross-instance reuse, but a
+// hot serverless instance should not pay a Turso round trip for the same short
+// task/archetype text on every tool call. Keys include the provider so vectors
+// from different embedding spaces can never be reused interchangeably.
+const EMBEDDING_MEMO_TTL_MS = 5 * 60 * 1000;
+const EMBEDDING_MEMO_MAX_ENTRIES = 256;
+const embeddingMemo = new Map<string, { vector: number[]; expiresAt: number }>();
+const resolvedProviderMemo = new Map<string, { provider: EmbedProvider; expiresAt: number }>();
+
+function memoKey(provider: EmbedProvider, text: string): string {
+  return `${provider}\u0000${text}`;
+}
+
+function rememberEmbedding(provider: EmbedProvider, text: string, vector: number[]): number[] {
+  const key = memoKey(provider, text);
+  embeddingMemo.delete(key);
+  embeddingMemo.set(key, { vector, expiresAt: Date.now() + EMBEDDING_MEMO_TTL_MS });
+  while (embeddingMemo.size > EMBEDDING_MEMO_MAX_ENTRIES) {
+    const oldest = embeddingMemo.keys().next().value;
+    if (typeof oldest !== 'string') break;
+    embeddingMemo.delete(oldest);
+  }
+  return vector;
+}
+
+async function memoizedEmbedding(text: string, provider: EmbedProvider): Promise<number[]> {
+  const key = memoKey(provider, text);
+  const cached = embeddingMemo.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.vector;
+  if (cached) embeddingMemo.delete(key);
+  return rememberEmbedding(provider, text, await embedTextWithProvider(text, provider));
+}
+
+async function resolvedMemoizedEmbedding(text: string): Promise<{ vector: number[]; provider: EmbedProvider }> {
+  const known = resolvedProviderMemo.get(text);
+  if (known && known.expiresAt > Date.now()) {
+    try {
+      return { vector: await memoizedEmbedding(text, known.provider), provider: known.provider };
+    } catch {
+      resolvedProviderMemo.delete(text);
+    }
+  } else if (known) {
+    resolvedProviderMemo.delete(text);
+  }
+  const { vector, provider } = await embedTextResolved(text);
+  resolvedProviderMemo.set(text, { provider, expiresAt: Date.now() + EMBEDDING_MEMO_TTL_MS });
+  while (resolvedProviderMemo.size > EMBEDDING_MEMO_MAX_ENTRIES) {
+    const oldest = resolvedProviderMemo.keys().next().value;
+    if (typeof oldest !== 'string') break;
+    resolvedProviderMemo.delete(oldest);
+  }
+  return { vector: rememberEmbedding(provider, text, vector), provider };
+}
 
 // ── Constitutional constants (shared with text governance) ─────────────────
 const TAU_FLOOR = 0.05;
@@ -165,15 +220,6 @@ const BLOCKED_TOOL_PATTERNS: Record<string, RegExp[]> = {
 // Protected build/config files — soft HIGH-risk (see measureS below), not a
 // hard invariant. Kept as its own named set so measureS's isBuildFile check
 // stays readable and this list has one place to update.
-const BUILD_FILE_PATTERNS: RegExp[] = [
-  /package\.json$/i,
-  /package-lock\.json$/i,
-  /turbo\.json$/i,
-  /next\.config\./i,
-  /vercel\.json$/i,
-  /tsconfig\.json$/i,
-];
-
 // Prompt injection patterns — fast first-pass. Kept for zero-latency coverage
 // of the exact phrasings written here; semanticInjectionCheck (below) is the
 // paraphrase-tolerant second pass for everything this list misses.
@@ -322,9 +368,9 @@ async function embedArchetypesWithProvider(): Promise<{ vecs: number[][]; provid
   if (_archetypeVecs && _archetypeProvider) {
     return { vecs: _archetypeVecs, provider: _archetypeProvider };
   }
-  const { vector: first, provider } = await embedTextResolved(INJECTION_ARCHETYPES[0]);
+  const { vector: first, provider } = await resolvedMemoizedEmbedding(INJECTION_ARCHETYPES[0]);
   const rest = await Promise.all(
-    INJECTION_ARCHETYPES.slice(1).map(a => embedTextWithProvider(a, provider))
+    INJECTION_ARCHETYPES.slice(1).map(a => memoizedEmbedding(a, provider))
   );
   const vecs = [first, ...rest];
   _archetypeVecs = vecs;
@@ -390,7 +436,7 @@ export async function injectionSimilarity(
   if (!looksLikeNaturalLanguage(freeText)) return { similarity: 0, degraded: false };
   try {
     const { vecs: archetypeVecs, provider } = await embedArchetypesWithProvider();
-    const contentVec = await embedTextWithProvider(freeText, provider);
+    const contentVec = await memoizedEmbedding(freeText, provider);
     let best = 0, bestIdx = -1;
     for (let i = 0; i < archetypeVecs.length; i++) {
       const sim = cosineSimilarity(contentVec, archetypeVecs[i]);
@@ -439,34 +485,6 @@ async function semanticInjectionCheck(freeText: string): Promise<SemanticInjecti
 
 // ── Tool-specific hardcoded scope rules ────────────────────────────────────
 // Tools that require extra scrutiny regardless of CRS score.
-const HIGH_RISK_TOOLS = new Set([
-  'execute_command', 'run_terminal', 'bash', 'shell', 'run_command',
-  'exec', 'system', 'spawn', 'dispatch_workflow',
-  // Explicit identity/financial scope changes from tool_capability_registry.
-  'change_access', 'revoke_key', 'change_billing', 'authorize_external_action',
-]);
-
-const MEDIUM_RISK_TOOLS = new Set([
-  'write_file', 'create_file', 'modify_file', 'update_file',
-  'delete_file', 'rename_file', 'move_file',
-  'run_governance', 'declare_trajectory_plan', 'clear_trajectory_plan',
-  'review_agent_action', 'simulate_agent_plan', 'explain_denial', 'log_decision',
-  'govern_external_action',
-  // fix (2026-08-19): patch_file was unclassified here, silently falling
-  // through to the generic {score: 0.70, risk: 'LOW'} catch-all at the
-  // bottom of measureS — its S score never varied with which file or path
-  // was being touched, unlike every other write tool. Same path-based
-  // scoring (protected paths, build files) now applies.
-  'patch_file',
-  // request_approval creates a pending approval record and never executes the requested action.
-  'request_approval',
-  // PR #158 added these tools without classifying them, so governance denied
-  // them as unclassified. Medium: reversible branch/PR creation, never a merge.
-  'create_branch', 'open_pr',
-  // Creates a pending exact-action approval record; execution remains separate.
-  'request_approval',
-]);
-
 // ── Argument scanner ───────────────────────────────────────────────────────
 // fix (2026-07-11): now async — the fast regex pass still runs first and
 // returns immediately on any hit (unchanged latency for the common/known
@@ -716,8 +734,8 @@ async function measureC(tool: ToolCallInput): Promise<{ score: number; degraded:
     // spaces, not a real semantic mismatch. Fixed by resolving ONE provider
     // for task_context, then pinning describeToolCall(tool)'s embedding to
     // that SAME provider via embedTextWithProvider.
-    const { vector: taskEmb, provider } = await embedTextResolved(tool.task_context);
-    const callEmb = await embedTextWithProvider(describeToolCall(tool), provider);
+    const { vector: taskEmb, provider } = await resolvedMemoizedEmbedding(tool.task_context);
+    const callEmb = await memoizedEmbedding(describeToolCall(tool), provider);
     const sim  = cosineSimilarity(taskEmb, callEmb);
     const base = Math.max(0.05, Math.min(0.95, sim));
     return { score: applyDriftPenalty(tool, tool.task_context, base), degraded: false };
@@ -853,15 +871,6 @@ function measureR(tool: ToolCallInput): { score: number; unclassified?: boolean 
 }
 
 // ── Tool categorization ────────────────────────────────────────────────────
-const READ_ONLY_TOOLS = new Set([
-  'read_file', 'list_directory', 'search_code', 'get_build_status',
-  'get_workflow_run', 'get_workflow_log', 'get_workflow_artifact',
-  'check_github_token_scope', 'get_constitutional_state', 'get_recent_receipts',
-  'get_vercel_logs', 'run_self_test', 'self_reflect', 'narrate_origin',
-  'preview_patch_file', 'run_recovery_canary',
-  'get_trajectory_status'
-]);
-
 // ── Main: measure tool call CRS ────────────────────────────────────────────
 // fix (2026-07-11): now async — see scanArguments above.
 export async function measureToolCRS(tool: ToolCallInput): Promise<ToolCRSState & {
