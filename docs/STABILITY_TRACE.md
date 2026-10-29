@@ -134,3 +134,18 @@ This source trace identifies a liveness mismatch: the canary asks for exact zero
 **Verified from source:** update equation, call paths, the separate `tool_sessions` counter, and exact-zero canary predicate.
 
 **Not verified:** a live production session's sigma value, how often it receives canonical `updateZTraj()` writes, or whether any external/administrative process alters the persisted row. No production database was queried.
+
+
+## Canonical sigma finite-time decay policy
+
+`updateZTraj()` delegates the canonical sigma accumulator calculation to `lib/agents/sigma_decay.ts`. The rolling-window recurrence remains unchanged:
+
+```ts
+next = previousSigma * ((window - 1) / window) + currentViolation / window;
+```
+
+When the current observation has **no** Lyapunov stress (`currentViolation === 0`), a finite, non-negative residual at or below `SIGMA_ZERO_TOLERANCE = 1e-6` is normalized to exact zero. This creates a finite-time path to the existing exact-zero canary predicate without changing that predicate or recovery thresholds.
+
+A positive current-stress contribution is never rounded away, even if the result is below tolerance. Non-finite and negative accumulator values are not normalized to healthy zero. This numerical cleanup does not grant authority, bypass snapshot/evidence binding, or change `M >= 0.15`, `n_stable >= 3`, velocity, evidence expiry, operator restrictions, or approval requirements.
+
+Focused tests live in `__tests__/sigma-decay.spec.ts`. Passing CI validates the branch's configured checks; it does not establish live production recovery. No production database is queried by this change.
