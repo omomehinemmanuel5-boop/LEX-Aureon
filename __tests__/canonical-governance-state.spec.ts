@@ -144,6 +144,36 @@ describe('canonical governance state', () => {
     expect(canonicalExecutionAllowed(result.state).allowed).toBe(false);
   });
 
+  it.each([
+    ['above threshold', 0.021],
+    ['at threshold', 0.02],
+    ['missing', undefined],
+    ['non-finite', Number.NaN],
+  ])('fails closed at the canonical execution gate when a claimed passing canary has velocity %s', (_label, velocity) => {
+    const gate = canonicalExecutionAllowed({
+      sessionId: 'velocity-defense', actorId: 'agent-a',
+      C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+      healthBand: 'OPTIMAL', recoveryState: 'NORMAL', sigmaViol: 0,
+      velocity, toolCalls: 1, trajectoryAvailable: true, nStable: 3,
+      canaryPassed: true, authorization: 'authorized', policyRisk: 'write',
+      version: 'test', observedAt: new Date().toISOString(),
+    });
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('Canonical recovery velocity is not stable');
+  });
+
+  it('does not apply the ordinary velocity proof gate to bounded recovery probes', () => {
+    const gate = canonicalExecutionAllowed({
+      sessionId: 'recovery-probe', actorId: 'operator',
+      C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+      healthBand: 'OPTIMAL', recoveryState: 'NORMAL', sigmaViol: 0,
+      velocity: 0.5, toolCalls: 1, trajectoryAvailable: true, nStable: 3,
+      canaryPassed: true, authorization: 'authorized', policyRisk: 'recovery_probe',
+      version: 'test', observedAt: new Date().toISOString(),
+    });
+    expect(gate.allowed).toBe(true);
+  });
+
   it('allows recovery reads below 0.15', () => {
     const gate = canonicalExecutionAllowed({
       sessionId: 's', actorId: 'a', C: 0.20, R: 0.07, S: 0.30, M: 0.07,
