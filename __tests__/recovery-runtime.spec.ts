@@ -236,6 +236,37 @@ describe('bounded recovery plane', () => {
     expect(mocks.recordZTrajObservation).not.toHaveBeenCalled();
   });
 
+  it('reports exact-zero sigma as the remaining recovery blocker', async () => {
+    mocks.readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: { recoveryState: 'RESTORING', nStable: 3, sigmaViol: 0.1, canaryPassed: false },
+    });
+    mocks.recordZTrajObservation.mockResolvedValue(true);
+    mocks.getZTraj.mockResolvedValue({
+      session_id: 's',
+      velocity: 0,
+      n_stable: 3,
+      drift_dir: 'stable',
+      sigma_viol: 0.1,
+      last_m: 0.20,
+      last_c: 0.20,
+      last_r: 0.40,
+      last_s: 0.40,
+      z_c: 1 / 3,
+      z_r: 1 / 3,
+      z_s: 1 / 3,
+      attack_pressure: 0,
+      updated_at: new Date(Date.now() - 10_000).toISOString(),
+    });
+
+    const result = await advanceRecoveryPlane('s');
+
+    expect(result.advanced).toBe(true);
+    expect(result.state).toBe('RESTORING');
+    expect(result.reason).toContain('sigma_viol=0.1 must be exactly 0');
+    expect(result.reason).toContain('healthy observations');
+  });
+
   it('does not mutate quarantined states below the hard floor', async () => {
     mocks.getZTraj.mockResolvedValue({
       session_id: 's',
