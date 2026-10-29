@@ -154,3 +154,6 @@ Focused helper tests live in `__tests__/sigma-decay.spec.ts`, and the compare-an
 ## Canonical execution velocity defense in depth
 
 Canary evidence is already rejected unless canonical velocity is finite and strictly below `RECOVERY_STABILITY_THRESHOLD` (0.02). The exported `canonicalExecutionAllowed()` gate now repeats that invariant for ordinary non-read capabilities when a state claims a passing canary, protecting against stale or caller-assembled state objects. Bounded `recovery` and `recovery_probe` capabilities remain outside this additional ordinary-execution check so the recovery controller can continue doing its restricted job. This does not replace normal authorization or approval checks.
+
+
+Recovery-state classification also treats exact-zero sigma as a prerequisite for VERIFIED/NORMAL, rather than accepting any value below the general `SIGMA_THRESHOLD`. The general threshold remains a separate diagnostic/classification constant; it does not define canary validity. This prevents a caller-assembled state with `canaryPassed: true` and residual positive sigma from being classified as recovered.
