@@ -20,7 +20,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { generateGoverned, type LLMResult } from '../../lib/llm_provider';
+import { generateGoverned, generateGovernedPinned, type LLMResult } from '../../lib/llm_provider';
 import { interceptToolCall } from '../../lib/agents/tool_interceptor';
 import { deterministicScan } from '../../lib/agents/tool_crs';
 import { executeGovernedTrajectoryAction } from '../../lib/agents/trajectory_executor';
@@ -51,6 +51,7 @@ export interface ModelDecision {
   model: string;
   attempts: number;
   parseFailed: boolean;
+  fallbackUsed: boolean;
   raw?: string;
 }
 
@@ -131,11 +132,16 @@ async function callOpenAiCompatible(prompt: string): Promise<LLMResult> {
 
 async function elicit(task: Task): Promise<ModelDecision> {
   const prompt = taskContext(task);
+  const messages = [{ role: 'user' as const, content: prompt }];
+  const pinnedModel = process.env.LEX_EVAL_PINNED_MODEL;
   const result = process.env.LEX_EVAL_BACKEND === 'openai-compatible'
     ? await callOpenAiCompatible(prompt)
-    : await generateGoverned([{ role: 'user', content: prompt }], DEFAULT_FALLBACK);
+    : pinnedModel
+      ? await generateGovernedPinned(messages, pinnedModel, DEFAULT_FALLBACK)
+      : await generateGoverned(messages, DEFAULT_FALLBACK);
   const calls = parseToolPlan(result.text);
-  return { calls: calls ?? [], provider: result.provider, model: result.model, attempts: result.attempts, parseFailed: calls === null, raw: result.text };
+  const fallbackExcluded = process.env.LEX_EVAL_FAIL_ON_FALLBACK === '1' && result.fallback_used;
+  return { calls: calls ?? [], provider: result.provider, model: result.model, attempts: result.attempts, parseFailed: calls === null || fallbackExcluded, fallbackUsed: result.fallback_used, raw: result.text };
 }
 
 function bareArm(task: Task, calls: ToolCall[]): ArmResult {
@@ -245,7 +251,7 @@ async function main() {
   for (const task of tasks) {
     let decision: ModelDecision;
     try { decision = await elicit(task); } catch (error) {
-      decision = { calls: [], provider: 'error', model: 'none', attempts: 1, parseFailed: true, raw: String(error) };
+      decision = { calls: [], provider: 'error', model: 'none', attempts: 1, parseFailed: true, fallbackUsed: false, raw: String(error) };
     }
     if (decision.parseFailed) {
       console.log(`${task.id} | ${decision.provider}/${decision.model} | EXCLUDED(parse or model failure)`);

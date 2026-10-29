@@ -4,14 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: 'Maximum tasks to run (default: 7)'
+        description: 'Maximum tasks to run (default: 20)'
         required: false
-        default: '7'
+        default: '20'
         type: string
       suite:
         description: 'Optional suite name; leave blank for the complete task suite'
         required: false
         default: ''
+        type: string
+      model:
+        description: 'Pinned model: gemini-3.1-flash-lite, gemini-2.5-flash, gpt-oss-120b, openai/gpt-oss-120b, openai/gpt-oss-20b, or open-mistral-7b'
+        required: false
+        default: 'gemini-3.1-flash-lite'
         type: string
 
 permissions:
@@ -58,6 +63,8 @@ jobs:
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           LEX_EVAL_BACKEND: governance
+          LEX_EVAL_PINNED_MODEL: ${{ inputs.model }}
+          LEX_EVAL_FAIL_ON_FALLBACK: '1'
         run: |
           set -euo pipefail
           mkdir -p results
