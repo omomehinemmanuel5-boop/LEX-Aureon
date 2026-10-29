@@ -130,9 +130,11 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     const nextStable = wasMoving ? 0 : current.n_stable + 1;
     const reason = wasMoving
       ? `A zero-velocity baseline was recorded, but the prior velocity ${current.velocity.toFixed(4)} exceeded the stability threshold ${RECOVERY_STABILITY_THRESHOLD}; wait at least ${RECOVERY_MIN_OBSERVATION_INTERVAL_MS / 1000}s before counting the next observation.`
-      : canonical.available && canonical.state.canaryPassed
-        ? 'Stable recovery observation recorded; exact-snapshot canary evidence is current.'
-        : `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); an operator canary is still required before consequential execution.`;
+      : canonical.available && canonical.state.sigmaViol !== 0
+        ? `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); canonical sigma_viol=${String(canonical.state.sigmaViol)} must be exactly 0 before canary verification. Continue healthy observations until residual stress decays to zero.`
+        : canonical.available && canonical.state.canaryPassed
+          ? 'Stable recovery observation recorded; exact-snapshot canary evidence is current.'
+          : `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); an operator canary is still required before consequential execution.`;
     return {
       advanced: true,
       stabilized: nextStable >= CONSTITUTION.N_MIN,
