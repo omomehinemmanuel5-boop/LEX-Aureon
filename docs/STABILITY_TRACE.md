@@ -163,3 +163,6 @@ Regression coverage in `__tests__/recovery-canary-tool.spec.ts` verifies that a 
 Canary evidence requires canonical velocity to be finite and strictly below `RECOVERY_STABILITY_THRESHOLD` (0.02). The exported `canonicalExecutionAllowed()` gate repeats that invariant for ordinary non-read capabilities when a state claims a passing canary, protecting against stale or caller-assembled state objects. Bounded `recovery` and `recovery_probe` capabilities remain outside this additional ordinary-execution check.
 
 Recovery-state classification also requires exact-zero sigma for VERIFIED/NORMAL. The general `SIGMA_THRESHOLD` remains a separate diagnostic/classification constant; it does not define canary validity. This prevents a caller-assembled state with `canaryPassed: true` and positive residual sigma from being classified as recovered. Neither change grants authority or replaces ordinary authorization/approval checks.
+
+
+The operator canary preflight now also requires velocity to be finite and strictly below `RECOVERY_STABILITY_THRESHOLD` before starting the diagnostic probe, and rechecks velocity in the diagnostic and post-probe canonical state. This closes a second preflight/evidence mismatch: a canary must not be attempted when the evidence validator will reject it for unstable velocity.
