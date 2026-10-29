@@ -27,7 +27,7 @@ export function deriveRecoveryState(M: number, evidence: RecoveryEvidence): Reco
   const verified =
     evidence.canaryPassed === true &&
     evidence.nStable >= CONSTITUTION.N_MIN &&
-    evidence.sigmaViol <= CONSTITUTION.SIGMA_THRESHOLD;
+    evidence.sigmaViol === 0;
 
   if (!verified) return 'RESTORING';
   return M < CONSTITUTION.OPTIMAL_M_THRESHOLD ? 'VERIFIED' : 'NORMAL';
@@ -78,7 +78,7 @@ export function recoveryCapabilityAllowed(
       ? 'No passing canary is persisted for this exact state snapshot; once recovery thresholds are met, an operator must run run_recovery_canary for this session.'
       : evidence.nStable < CONSTITUTION.N_MIN
         ? `Stable observations ${evidence.nStable}/${CONSTITUTION.N_MIN} are insufficient; continue safe governed observations.`
-        : `sigmaViol=${evidence.sigmaViol.toFixed(3)} exceeds ${CONSTITUTION.SIGMA_THRESHOLD}; investigate before restoration.`;
+        : `sigmaViol=${String(evidence.sigmaViol)} must be exactly 0 before restoration.`;
     return {
       allowed: false,
       state,
