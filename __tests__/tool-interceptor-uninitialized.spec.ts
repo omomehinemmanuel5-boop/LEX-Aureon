@@ -52,6 +52,8 @@ describe('tool interceptor with an uninitialized canonical trajectory', () => {
     expect(decision.approved).toBe(true);
     expect(measureToolCRS).toHaveBeenCalledTimes(1);
     expect(commitGovernanceDecision).toHaveBeenCalledTimes(1);
+    const receiptContext = commitGovernanceDecision.mock.calls[0][2] as { reason: string };
+    expect(receiptContext.reason).toContain('canonical_crs=UNINITIALIZED');
     expect(dbExecute.mock.calls.some(([query]) => {
       const sql = typeof query === 'string' ? query : String((query as { sql?: string }).sql ?? '');
       return /\b(INSERT|UPDATE|DELETE)\s+z_traj\b/i.test(sql);
