@@ -1228,7 +1228,7 @@ describe('MCP constitutional dispatch boundary', () => {
 
     const reviewedCall = interceptToolCall.mock.calls[0] as unknown as [{ session_id?: string }] | undefined;
     const reviewedSession = reviewedCall?.[0]?.session_id;
-    expect(reviewedSession).toMatch(/^private-test-1:mcp-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/);
+    expect(reviewedSession).toMatch(/^private-test-1:mcp-[a-f0-9]{12}$/);
     expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: reviewedSession,
       args: expect.objectContaining({ session_id: reviewedSession }),
@@ -1463,7 +1463,7 @@ describe('MCP constitutional dispatch boundary', () => {
     const call = executeGovernedTool.mock.calls[0] as unknown as [string, { session_id?: string }, unknown, string];
     expect(call[0]).toBe('run_governance');
     expect(call[1].session_id).toBe(call[3]);
-    expect(call[3]).toMatch(/^mcp-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/);
+    expect(call[3]).toMatch(/^mcp-[a-f0-9]{12}$/);
     expect(validateApiKey).not.toHaveBeenCalled();
   });
 

@@ -12,9 +12,11 @@ export function ipHash(req: Request): string {
 }
 
 export function defaultMcpSessionId(actorId: string): string {
-  const day = new Date().toISOString().slice(0, 10);
+  // Keep the fallback session stable across UTC dates so stateless clients do
+  // not silently start a fresh recovery trajectory every day. Explicit client
+  // session IDs still take precedence, and owner scoping is applied separately.
   const actorHash = crypto.createHash('sha256').update(actorId).digest('hex').slice(0, 12);
-  return `mcp-${day}-${actorHash}`;
+  return `mcp-${actorHash}`;
 }
 
 export function canonicalMcpSessionId(ownerId: string, clientSessionId: string, operator: boolean): string {
