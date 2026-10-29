@@ -24,6 +24,7 @@ vi.mock('../lib/agents/recovery_runtime', () => ({
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
 import { recordZTrajObservation, type ExpectedZTrajSample } from '../lib/kv';
+import { SIGMA_ZERO_TOLERANCE } from '../lib/agents/sigma_decay';
 
 const SESSION = 'observation-session';
 const PREVIOUS = { c: 0.30, r: 0.35, s: 0.35 };
@@ -55,6 +56,7 @@ function expectedFrom(record: Record<string, unknown>): ExpectedZTrajSample {
     last_c: Number(record.last_c),
     last_r: Number(record.last_r),
     last_s: Number(record.last_s),
+    sigma_viol: Number(record.sigma_viol ?? 0),
     updated_at: String(record.updated_at),
   };
 }
@@ -132,16 +134,18 @@ beforeEach(() => {
       return { rows: found ? [found] : [] };
     }
     if (sql.startsWith('UPDATE z_traj')) {
-      const [velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
-        updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt] = args;
+      const [sigmaViol, velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
+        updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt, expectedSigmaViol] = args;
       const current = mocks.rows.get(String(sessionId));
       if (!current
         || Number(current.last_c) !== Number(expectedC)
         || Number(current.last_r) !== Number(expectedR)
         || Number(current.last_s) !== Number(expectedS)
-        || String(current.updated_at) !== String(expectedUpdatedAt)) {
+        || String(current.updated_at) !== String(expectedUpdatedAt)
+        || Number(current.sigma_viol) !== Number(expectedSigmaViol)) {
         return { rows: [], rowsAffected: 0 };
       }
+      current.sigma_viol = sigmaViol;
       current.velocity = velocity;
       current.n_stable = Number(countStableObservation) === 1
         && Number(testedVelocity) < Number(threshold)
@@ -301,6 +305,26 @@ describe('governed tool stability observations', () => {
       typeof query === 'object' && query !== null && 'sql' in query
       && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
     )).toBe(false);
+  });
+
+  it('decays canonical sigma on healthy compare-and-set observations', async () => {
+    mocks.rows.set(SESSION, row({ sigma_viol: 0.5 }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.sigma_viol).toBeCloseTo(0.45, 12);
+  });
+
+  it('normalizes only a healthy residual within tolerance on the observation path', async () => {
+    mocks.rows.set(SESSION, row({ sigma_viol: SIGMA_ZERO_TOLERANCE / 2 }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.sigma_viol).toBe(0);
   });
 
   it('allows only one concurrent observation based on the same previous sample', async () => {

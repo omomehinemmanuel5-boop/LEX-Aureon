@@ -879,6 +879,7 @@ export async function executeGovernedToolStructured(
           last_c: previous.last_c,
           last_r: previous.last_r,
           last_s: previous.last_s,
+          sigma_viol: previous.sigma_viol,
           updated_at: previous.updated_at,
         } : null,
         {
