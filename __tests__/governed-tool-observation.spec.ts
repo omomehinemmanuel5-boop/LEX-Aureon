@@ -55,6 +55,7 @@ function expectedFrom(record: Record<string, unknown>): ExpectedZTrajSample {
     last_c: Number(record.last_c),
     last_r: Number(record.last_r),
     last_s: Number(record.last_s),
+    sigma_viol: Number(record.sigma_viol ?? 0),
     updated_at: String(record.updated_at),
   };
 }
@@ -132,16 +133,18 @@ beforeEach(() => {
       return { rows: found ? [found] : [] };
     }
     if (sql.startsWith('UPDATE z_traj')) {
-      const [velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
-        updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt] = args;
+      const [sigmaViol, velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
+        updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt, expectedSigmaViol] = args;
       const current = mocks.rows.get(String(sessionId));
       if (!current
         || Number(current.last_c) !== Number(expectedC)
         || Number(current.last_r) !== Number(expectedR)
         || Number(current.last_s) !== Number(expectedS)
-        || String(current.updated_at) !== String(expectedUpdatedAt)) {
+        || String(current.updated_at) !== String(expectedUpdatedAt)
+        || Number(current.sigma_viol) !== Number(expectedSigmaViol)) {
         return { rows: [], rowsAffected: 0 };
       }
+      current.sigma_viol = sigmaViol;
       current.velocity = velocity;
       current.n_stable = Number(countStableObservation) === 1
         && Number(testedVelocity) < Number(threshold)
