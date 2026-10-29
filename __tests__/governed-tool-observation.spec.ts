@@ -24,6 +24,7 @@ vi.mock('../lib/agents/recovery_runtime', () => ({
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
 import { recordZTrajObservation, type ExpectedZTrajSample } from '../lib/kv';
+import { SIGMA_ZERO_TOLERANCE } from '../lib/agents/sigma_decay';
 
 const SESSION = 'observation-session';
 const PREVIOUS = { c: 0.30, r: 0.35, s: 0.35 };
@@ -304,6 +305,26 @@ describe('governed tool stability observations', () => {
       typeof query === 'object' && query !== null && 'sql' in query
       && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
     )).toBe(false);
+  });
+
+  it('decays canonical sigma on healthy compare-and-set observations', async () => {
+    mocks.rows.set(SESSION, row({ sigma_viol: 0.5 }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.sigma_viol).toBeCloseTo(0.45, 12);
+  });
+
+  it('normalizes only a healthy residual within tolerance on the observation path', async () => {
+    mocks.rows.set(SESSION, row({ sigma_viol: SIGMA_ZERO_TOLERANCE / 2 }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.sigma_viol).toBe(0);
   });
 
   it('allows only one concurrent observation based on the same previous sample', async () => {
