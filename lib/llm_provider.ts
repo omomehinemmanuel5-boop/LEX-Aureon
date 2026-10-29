@@ -421,6 +421,34 @@ export async function generateSingle(
  *
  * Role: produce the constitutionally governed response every turn.
  */
+/**
+ * Benchmark-only single-model generation. This deliberately does not fall
+ * through to another provider: controlled comparisons must either use the
+ * requested model or record the task as excluded. Production callers should
+ * continue using generateGoverned().
+ */
+export async function generateGovernedPinned(
+  messages: LLMMessage[],
+  model: string,
+  staticFallback?: string,
+): Promise<LLMResult> {
+  const choices: Record<string, { provider: string; fn: () => Promise<string | null> }> = {
+    [MODELS.GEMINI_LITE]: { provider: 'gemini', fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
+    [MODELS.GEMINI_FULL]: { provider: 'gemini', fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
+    [MODELS.CEREBRAS]: { provider: 'cerebras', fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
+    [MODELS.PRIMARY]: { provider: 'groq', fn: () => tryGroq(messages, MODELS.PRIMARY) },
+    [MODELS.FAST]: { provider: 'groq', fn: () => tryGroq(messages, MODELS.FAST) },
+    [MODELS.MISTRAL]: { provider: 'mistral', fn: () => tryMistral(messages) },
+  };
+  const choice = choices[model];
+  if (!choice) {
+    return { text: staticFallback ?? '', provider: 'unknown', model, fallback_used: true, attempts: 0 };
+  }
+  const result = await choice.fn();
+  if (result) return { text: result, provider: choice.provider, model, fallback_used: false, attempts: 1 };
+  return { text: staticFallback ?? '', provider: choice.provider, model, fallback_used: true, attempts: 1 };
+}
+
 export async function generateGoverned(
   messages: LLMMessage[],
   staticFallback?: string,
