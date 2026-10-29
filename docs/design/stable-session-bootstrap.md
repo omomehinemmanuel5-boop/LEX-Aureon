@@ -1,89 +1,53 @@
-# Stable session bootstrap
+# Stable MCP session bootstrap
 
-> **Documentation of current behavior and open verification requirements.** This document does not change `defaultMcpSessionId` or runtime behavior.
+> **Current source behavior and remaining production verification.** PR #210 was merged to `main` as commit `b310e204fec275c77bb8347f9cab0973873ad4ca`. This document records the code change; it does not claim that the selected production trajectory or deployment has been inspected.
 
-## Default session and daily reset
+## Default session identity
 
-In `app/api/mcp/route.ts`, `defaultMcpSessionId(actorId)` derives a fallback session ID from the current UTC date and the first 12 hexadecimal characters of SHA-256(actor ID):
+`defaultMcpSessionId(actorId)` now returns a stable actor-derived fallback ID:
 
 ```ts
-return `mcp-${day}-${actorHash}`;
+const actorHash = crypto.createHash('sha256').update(actorId).digest('hex').slice(0, 12);
+return `mcp-${actorHash}`;
 ```
 
-Because the UTC date is included, stateless MCP clients that omit `session_id` receive a different default session each UTC day. For non-operator callers, `canonicalMcpSessionId` prefixes the authenticated owner ID unless the supplied session already begins with that owner's prefix. Explicit session IDs take precedence over the date-derived default. The `fix/stable-mcp-session-id` branch proposes removing the date component so fallback IDs remain stable across UTC rollovers. Do not merge this change until the live trajectory selected by the new ID, its current M/health band, and any collision or history-carry-forward implications have been inspected through an authorized read-only production data path.
+The UTC date is no longer part of the fallback. A stateless MCP client that omits `session_id` therefore reuses the same fallback across UTC rollovers. Explicit client session IDs still take precedence. For non-operator callers, `canonicalMcpSessionId` adds the authenticated owner prefix unless the session ID already has that prefix; the effective form is `<owner-id>:mcp-<12-hex-actor-hash>`. Operator session handling remains separate.
 
-## Observed result for a new stable session ID
+The ID change is a continuity change, **not** a recovery or authorization grant. It may select an existing trajectory under the stable ID, so production history/collision implications must not be inferred from unit tests.
 
-The observed new-session result was quarantined and uninitialized: `QUARANTINED`, sigma violations `1.0`, no `z_traj` row, and consequential execution suspended. For a session-specific call to `get_constitutional_state`, `lib/lex_crs_agent/tools.ts` serializes the canonical state using the following exact response field names and values for the no-trajectory case (unrelated timestamps and session ID omitted):
+## MCP bootstrap behavior
 
-```json
-{
-  "available": true,
-  "health_band": "UNINITIALIZED",
-  "recovery_state": "QUARANTINED",
-  "n_stable": 0,
-  "n_stable_required": 3,
-  "velocity": 0,
-  "stability_threshold": 0.02,
-  "sigma_viol": 1,
-  "canary_passed": false,
-  "canary_receipt_id": null,
-  "state_fingerprint": null,
-  "gate_snapshot": {
-    "health_band": "UNINITIALIZED",
-    "recovery_state": "QUARANTINED",
-    "authorization": "denied",
-    "trajectory_available": false,
-    "n_stable": 0,
-    "n_stable_required": 3,
-    "velocity": 0,
-    "stability_threshold": 0.02,
-    "sigma_viol": 1,
-    "canary_passed": false,
-    "state_fingerprint": null
-  },
-  "diagnostic": {
-    "trajectory_updated_at": null
-  },
-  "authorization": "denied",
-  "trajectory_available": false,
-  "reason": "Canonical trajectory state is uninitialized; read-only diagnostics remain available for bootstrap, while consequential execution remains suspended until z_traj exists.",
-  "next_step": "Quarantined below the hard floor; only operator recovery diagnostics are actionable."
-}
-```
+The MCP route calls `ensureCanonicalTrajectoryState(sessionId)` during admission. That function uses `INSERT ... ON CONFLICT DO NOTHING` to seed a missing `z_traj` row with neutral CRS values (`C=R=S=1/3`), zero velocity, `n_stable=0`, `sigma_viol=0`, and a bootstrap drift label. It does not overwrite a pre-existing row.
 
-The values above follow the source's missing-trajectory branch: `available: true` means the diagnostic successfully read an uninitialized state, not that a trajectory exists. The JSON uses `sigma_viol: 1` (numeric 1.0), `trajectory_available: false`, and `authorization: "denied"`. Do not interpret this as a successful bootstrap or a passing canary.
+This differs from a direct canonical-state read when no row exists: the diagnostic fallback reports `health_band: "UNINITIALIZED"`, `recovery_state: "QUARANTINED"`, `trajectory_available: false`, `n_stable: 0`, `sigma_viol: 1`, and consequential authorization denied. That fallback is not a persisted trajectory and is not evidence of a passing canary. `advanceRecoveryPlane` itself returns `UNINITIALIZED` if it is called before a trajectory exists; the MCP route's admission bootstrap is a separate operation.
 
-## What must be proven before an agent switches to a stable session
+For an existing stable-ID trajectory, `ON CONFLICT DO NOTHING` preserves its current state and history. That is why the selected production row must be inspected before treating the merge as operationally validated.
 
-A stable ID makes trajectory continuity possible, but does not itself initialize or recover the session. Before adopting it for an agent, the repository owner should require evidence for all of the following:
+## Recovery prerequisites remain unchanged
 
-1. **A real bootstrap path from quarantine.** Demonstrate how a session with no `z_traj` row reaches an initialized canonical trajectory and then meets the existing recovery prerequisites. In current source, `advanceRecoveryPlane` returns `UNINITIALIZED` when the trajectory is absent; it does not create the missing row.
-2. **The sigma decay/reset rate and mechanism.** Establish how `sigma_viol = 1.0` can become exactly zero, which persisted state is authoritative, what event causes decay/reset, and whether this is safe and auditable. Do not assume sigma decays merely with time or ordinary reads.
-3. **The number of calls and elapsed time required.** Measure the sequence from the actual quarantined starting state through bootstrap, recovery, stable observations, and operator canary. Current recovery logic requires (M \ge \texttt{TAU_RECOVERY}), velocity strictly below `RECOVERY_STABILITY_THRESHOLD`, zero sigma violations for canary eligibility, and at least `CONSTITUTION.N_MIN` stable observations (currently 3). Counted stability observations require at least five seconds between observations; if the prior velocity is too high, the controller first records a zero-velocity baseline without incrementing the stable count. This does **not** establish a fixed number of calls from a no-trajectory/sigma-1 starting state.
+The current source requires all existing recovery conditions before consequential execution can proceed:
 
-Do not switch an agent's production connector to a stable session until these points are demonstrated with reproducible runtime evidence and owner review.
+- (M = \min(C,R,S) \ge \texttt{CONSTITUTION.TAU_RECOVERY}) (currently 0.15).
+- Velocity strictly below `RECOVERY_STABILITY_THRESHOLD` (currently 0.02).
+- At least `CONSTITUTION.N_MIN` stable observations (currently 3).
+- Zero `sigma_viol` for canary eligibility, plus a passing operator-only canary bound to the exact current snapshot.
+- Counted stable observations must be separated by at least five seconds. If the preceding velocity is too high, the recovery runtime records a baseline without counting it as stable.
 
-## Session ID format and ownership
+The canary's exact-zero sigma rule has **not** been relaxed. The sigma decay/reset mechanism and the number of observations/time needed from a real production starting state are not established by this session-ID change.
 
-The MCP route returns the exact ownership validation message:
+## Required production verification — still outstanding
 
-```text
-session_id must belong to the authenticated caller
-```
+Use an authorized read-only production data path to inspect the exact effective session ID for the intended actor and owner. Record, without exposing credentials:
 
-For non-operator sessions, use the owner-scoped format:
+1. Whether a `z_traj` row already exists for that exact ID.
+2. Its current (C,R,S,M), health band, velocity, `n_stable`, `sigma_viol`, and `updated_at`.
+3. Whether its history belongs to the expected owner/agent and whether adopting it would carry forward prior state.
+4. If no row exists, confirm the deployed MCP admission path bootstraps it as expected and that ordinary consequential calls remain gated until recovery and approval conditions are satisfied.
 
-```text
-<owner-id>:<name>
-```
+**Status:** PR #210 is merged and its PR-triggered CI, Auto Review, and LexBench Production workflow runs passed. The merge-commit post-merge three-arm smoke workflow also passed. These results validate automated checks, not the live production trajectory, current (M), health band, deployment state, or absence of session-history collisions. Those live facts remain **unverified** here.
 
-Here, `<owner-id>` must be the authenticated caller's actual owner ID, and `<name>` should be a stable, unique, descriptive identifier for that agent. The owner prefix is an ownership boundary, not a secret or an authorization grant. Do not copy another caller's owner ID or assume a stable session ID grants elevated capabilities.
+## Session ownership and safety boundary
 
-## Safety boundary
+For non-operator sessions, use the authenticated caller's actual owner prefix. The owner prefix is an ownership boundary, not a secret. Do not copy another caller's owner ID or assume a stable session ID grants elevated capabilities.
 
-A persistent session ID is a continuity choice only. It does not bypass recovery, capability restrictions, or per-action approval. A passing canary is health evidence, not write authority; consequential actions continue to require the existing authorization and approval path.
-
----
-
-**Verification status:** the no-trajectory behavior and recovery prerequisites are grounded in source. A complete production bootstrap path, sigma decay/reset behavior, and call count from the observed quarantined state remain **unverified**.
+A persistent session ID does not bypass recovery, capability restrictions, or per-action approval. A passing canary is health evidence, not write authority.
