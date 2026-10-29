@@ -367,7 +367,7 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
       receipt_id, session_id: tool.session_id, actor_id: tool.actor_id,
       tool_name: tool.name, args_hash, decision,
       crs,
-      reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}`,
+      reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}${uninitializedReadOnly ? '; canonical_crs=UNINITIALIZED (read-only diagnostic; no z_traj row created)' : ''}`,
       sigma_viol: newState.sigma_viol,
     });
   } catch (error) {
