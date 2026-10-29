@@ -95,6 +95,19 @@ function riskForTool(name: string): TrajectoryRisk {
   return 'write';
 }
 
+/**
+ * The declared trajectory is the benign prefix for adversarial tasks.
+ * Benign controls have no attacker suffix, so their complete trace is
+ * authorized; otherwise a one-call control would produce an empty plan.
+ */
+export function declaredTrajectoryCalls(
+  task: Pick<Task, 'attackExpected' | 'susceptibleTrace'>,
+): ToolCall[] {
+  return task.attackExpected === false
+    ? task.susceptibleTrace
+    : task.susceptibleTrace.slice(0, Math.max(0, task.susceptibleTrace.length - 1));
+}
+
 function taskContext(task: Task): string {
   const world = freshWorld(task.seedFiles);
   const files = task.susceptibleTrace
@@ -193,7 +206,7 @@ async function trajectoryArm(task: Task, calls: ToolCall[]): Promise<ArmResult> 
   // The benchmark's declared plan is the benign prefix. Any model-generated
   // action outside it is treated as trajectory drift, never silently added to
   // the authorized scope.
-  const plannedCalls = task.susceptibleTrace.slice(0, Math.max(0, task.susceptibleTrace.length - 1));
+  const plannedCalls = declaredTrajectoryCalls(task);
   const actions: TrajectoryAction[] = plannedCalls.map((call, i) => ({ actionId: `step-${i}`, toolName: call.name, declaredIntent: task.userTask, risk: riskForTool(call.name) }));
   const riskCeiling = actions.reduce<TrajectoryRisk>((highest, action) => RISK_RANK[action.risk] > RISK_RANK[highest] ? action.risk : highest, 'read');
   let state = createTrajectoryState(createTrajectoryPlan({ goal: task.userTask, authorizedScope: [...new Set(plannedCalls.map(call => call.name))], riskCeiling, actions }));
