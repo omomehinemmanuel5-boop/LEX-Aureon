@@ -8,8 +8,12 @@
  */
 export const SIGMA_ZERO_TOLERANCE = 1e-6;
 
-export function nextSigmaViolation(previousSigma: number, currentViolation: number): number {
-  const next = previousSigma * 0.9 + currentViolation / 10;
+export function nextSigmaViolation(
+  previousSigma: number,
+  currentViolation: number,
+  window = 10,
+): number {
+  const next = previousSigma * ((window - 1) / window) + currentViolation / window;
 
   if (
     currentViolation === 0
