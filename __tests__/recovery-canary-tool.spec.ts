@@ -93,6 +93,29 @@ describe('operator recovery canary probe', () => {
     expect(readCanonicalGovernanceState).toHaveBeenCalledTimes(1);
   });
 
+  it('blocks canary preflight when sigma is positive but below the old threshold', async () => {
+    readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, { sigmaViol: 0.1 }));
+
+    const result = JSON.parse(await run_recovery_canary({ session_id: sessionId }));
+
+    expect(result.status).toBe('not_run');
+    expect(result.reason).toContain('sigma_viol 0.1 !== 0');
+    expect(result.reason).toContain('exact zero required');
+    expect(readCanonicalGovernanceState).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports exact-zero sigma as the next step before canary verification', async () => {
+    readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, {
+      sigmaViol: 0.1,
+      nStable: 3,
+    }));
+
+    const result = JSON.parse(await get_constitutional_state({ session_id: sessionId }));
+
+    expect(result.next_step).toContain('sigma_viol must be exactly 0');
+    expect(result.next_step).toContain('decays to zero');
+  });
+
   it('passes only after the actual canonical diagnostic returns the same session and exact snapshot', async () => {
     readCanonicalGovernanceState
       .mockResolvedValueOnce(canonical())
