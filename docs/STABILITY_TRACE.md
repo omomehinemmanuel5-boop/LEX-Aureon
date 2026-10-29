@@ -100,3 +100,37 @@ Source ranges inspected (line numbers refer to the checked-out source cited abov
 - `lib/agents/trajectory_executor.ts:85-220`
 - `lib/agents/governance_commit.ts:1-180`
 - `lib/agents/tool_interceptor.ts:80-455`
+
+
+## 7. Canonical sigma decay and exact-zero canary gate
+
+This section follows the canonical `z_traj.sigma_viol` field used by `readCanonicalGovernanceState()`; it does not treat the separate `tool_sessions.sigma_viol` counter as equivalent.
+
+### Update equation
+
+In `lib/kv.ts`, `updateZTraj()` calculates:
+
+```ts
+const viol = M < TAU_LYP ? (TAU_LYP - M) : 0;
+const prevSigma = existing?.sigma_viol ?? 0;
+const sigma_viol = prevSigma * ((SIGMA_WINDOW - 1) / SIGMA_WINDOW) + viol / SIGMA_WINDOW;
+```
+
+With `SIGMA_WINDOW = 10`, when `M >= TAU_LYP` (currently 0.08), the update is `sigma_next = 0.9 * sigma_previous`. This is exponential decay, not a finite-time reset. For a positive starting value, repeated multiplication by 0.9 remains positive in ordinary floating-point arithmetic until it eventually underflows; it does not intentionally set the value to zero at a defined recovery boundary. When `M < 0.08`, the positive stress term also contributes to sigma, so the value can increase or settle above zero.
+
+The canary eligibility predicate in `lib/agents/recovery_canary_evidence.ts` requires `sigma_viol === 0`. Therefore, a session with positive canonical sigma can satisfy that predicate only after the persisted value reaches exactly zero through some other explicit reset path or floating-point underflow. The current `resetZTraj()` definition sets sigma to 1 (quarantine), and repository search on this revision found no direct caller. Its existence is not evidence of an active recovery reset mechanism.
+
+### Important path distinction
+
+- `writeKernelReceipt()` calls `updateZTraj()` for successful non-simulation turns through the Lex governance/kernel HTTP paths.
+- `advanceRecoveryPlane()` calls `updateZTraj()` only for an existing trajectory in the recovery interval `0.05 <= M < 0.15`. At `M >= 0.15`, its stable-observation path uses `recordZTrajObservation()`, which updates CRS/velocity/stability count but does not update sigma.
+- Ordinary MCP governance commits update `tool_sessions` through `governance_commit.ts`; this is separate from canonical `z_traj`. The `tool_interceptor.ts` LOW/ULTRA_LOW branch that subtracts 0.05 from `tool_sessions.sigma_viol` does not by itself reduce the canonical `z_traj.sigma_viol` consumed by the recovery gate.
+- The recovery state currently accepts `sigmaViol <= SIGMA_THRESHOLD` for state derivation, while canary evidence requires exact zero. These are distinct conditions and should not be conflated.
+
+### Regression-test and policy implications
+
+This source trace identifies a liveness mismatch: the canary asks for exact zero, while the canonical accumulator has no explicit finite-time zeroing rule for a positive value during healthy observations. Do **not** relax the canary predicate or change the sigma formula solely to make recovery pass. A runtime fix requires an explicit owner decision about what canonical evidence qualifies as zero (for example, a documented numerical tolerance and an auditable clamp, or a separate verified reset event), plus tests proving that active stress cannot be erased and that the canary remains bound to the exact current snapshot.
+
+**Verified from source:** update equation, call paths, the separate `tool_sessions` counter, and exact-zero canary predicate.
+
+**Not verified:** a live production session's sigma value, how often it receives canonical `updateZTraj()` writes, or whether any external/administrative process alters the persisted row. No production database was queried.
