@@ -1,7 +1,7 @@
 import { getClient } from '../db';
 import { deriveHealthBand, getZTraj } from '../kv';
 import { CONSTITUTION } from '../constitution';
-import { recoveryCapabilityAllowed, type RecoveryState } from './recovery_state';
+import { RECOVERY_STABILITY_THRESHOLD, recoveryCapabilityAllowed, type RecoveryState } from './recovery_state';
 import { readRecoveryCanaryEvidence, recoverySnapshotFingerprint } from './recovery_canary_evidence';
 import type { ToolCapability } from './tool_capability_registry';
 
@@ -240,6 +240,25 @@ export function canonicalExecutionAllowed(
     return {
       allowed: false,
       reason: `Canonical M=${state.M.toFixed(3)} < τ_floor=${CONSTITUTION.TAU_FLOOR}; all governed tool execution is suspended.`,
+    };
+  }
+
+  // Defense in depth: the canonical reader validates velocity while loading
+  // canary evidence, but this exported gate must not trust a caller-assembled or
+  // stale state object that claims a canary passed while velocity is unstable.
+  const requiresRecoveryProof =
+    state.M >= CONSTITUTION.TAU_RECOVERY &&
+    state.canaryPassed === true &&
+    state.policyRisk !== 'read' &&
+    state.policyRisk !== 'recovery' &&
+    state.policyRisk !== 'recovery_probe';
+  if (
+    requiresRecoveryProof &&
+    (!Number.isFinite(state.velocity) || (state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD)
+  ) {
+    return {
+      allowed: false,
+      reason: `Canonical recovery velocity is not stable: velocity=${String(state.velocity)} must be finite and < ${RECOVERY_STABILITY_THRESHOLD} before non-read execution.`,
     };
   }
 
