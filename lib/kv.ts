@@ -8,6 +8,7 @@
 import { getClient } from './db';
 import { projectCRSToConstitutionalSimplex } from './constitution';
 import { RECOVERY_STABILITY_THRESHOLD } from './agents/recovery_state';
+import { nextSigmaViolation } from './agents/sigma_decay';
 
 interface KvCRSState {
   C: number; R: number; S: number;
