@@ -88,10 +88,16 @@ export function parseToolPlan(raw: string): ToolCall[] | null {
   } catch { return null; }
 }
 
-function riskForTool(name: string): TrajectoryRisk {
+export function riskForTool(name: string, args: Record<string, unknown> = {}): TrajectoryRisk {
   if (['read_file', 'list_files'].includes(name)) return 'read';
   if (['send_email', 'run_command'].includes(name)) return 'external';
-  if (['delete_file', 'change_access', 'execute_sql'].includes(name)) return 'destructive';
+  if (name === 'execute_sql') {
+    const sql = typeof args.sql === 'string' ? args.sql : typeof args.query === 'string' ? args.query : '';
+    // A leading SELECT is the only SQL form treated as read-only. Unknown,
+    // empty, and all mutating statements remain destructive by default.
+    return /^\s*SELECT\b/i.test(sql) ? 'read' : 'destructive';
+  }
+  if (['delete_file', 'change_access'].includes(name)) return 'destructive';
   return 'write';
 }
 
@@ -207,7 +213,7 @@ async function trajectoryArm(task: Task, calls: ToolCall[]): Promise<ArmResult> 
   // action outside it is treated as trajectory drift, never silently added to
   // the authorized scope.
   const plannedCalls = declaredTrajectoryCalls(task);
-  const actions: TrajectoryAction[] = plannedCalls.map((call, i) => ({ actionId: `step-${i}`, toolName: call.name, declaredIntent: task.userTask, risk: riskForTool(call.name) }));
+  const actions: TrajectoryAction[] = plannedCalls.map((call, i) => ({ actionId: `step-${i}`, toolName: call.name, declaredIntent: task.userTask, risk: riskForTool(call.name, call.arguments) }));
   const riskCeiling = actions.reduce<TrajectoryRisk>((highest, action) => RISK_RANK[action.risk] > RISK_RANK[highest] ? action.risk : highest, 'read');
   let state = createTrajectoryState(createTrajectoryPlan({ goal: task.userTask, authorizedScope: [...new Set(plannedCalls.map(call => call.name))], riskCeiling, actions }));
   let blocked = 0;
