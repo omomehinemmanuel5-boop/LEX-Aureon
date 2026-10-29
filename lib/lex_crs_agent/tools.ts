@@ -511,8 +511,8 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
           ? 'Quarantined below the hard floor; only operator recovery diagnostics are actionable.'
           : state.M < CONSTITUTION.TAU_RECOVERY
             ? 'Continue bounded recovery-plane observations until M reaches the recovery threshold.'
-            : state.sigmaViol > CONSTITUTION.SIGMA_THRESHOLD
-              ? 'Investigate sigma violations before canary verification.'
+            : state.sigmaViol !== 0
+              ? 'Canonical sigma_viol must be exactly 0 before canary verification; continue healthy observations until residual stress decays to zero.'
               : state.nStable < CONSTITUTION.N_MIN
                 ? `Continue safe governed observations (${state.nStable}/${CONSTITUTION.N_MIN}) before canary verification.`
                 : state.canaryPassed
@@ -659,7 +659,9 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
   const unmet: string[] = [];
   if (state.M < CONSTITUTION.TAU_RECOVERY) unmet.push(`M ${state.M.toFixed(3)} < τ_recovery ${CONSTITUTION.TAU_RECOVERY}`);
   if (state.nStable < CONSTITUTION.N_MIN) unmet.push(`n_stable ${state.nStable} < N_MIN ${CONSTITUTION.N_MIN}`);
-  if (state.sigmaViol > CONSTITUTION.SIGMA_THRESHOLD) unmet.push(`sigma_viol ${state.sigmaViol.toFixed(3)} > threshold ${CONSTITUTION.SIGMA_THRESHOLD}`);
+  // Evidence validation requires exact zero; a looser threshold here can report a
+  // canary as eligible even though its evidence will immediately be rejected.
+  if (state.sigmaViol !== 0) unmet.push(`sigma_viol ${String(state.sigmaViol)} !== 0 (exact zero required before canary verification)`);
   if (unmet.length) {
     return response({
       status: 'not_run',
