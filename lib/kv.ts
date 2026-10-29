@@ -8,6 +8,7 @@
 import { getClient } from './db';
 import { projectCRSToConstitutionalSimplex } from './constitution';
 import { RECOVERY_STABILITY_THRESHOLD } from './agents/recovery_state';
+import { nextSigmaViolation } from './agents/sigma_decay';
 
 interface KvCRSState {
   C: number; R: number; S: number;
@@ -372,7 +373,7 @@ export async function updateZTraj(
   // Accumulates when M < TAU_LYP (0.08) — detects slow-drip DURING drift.
   const viol = M < TAU_LYP ? (TAU_LYP - M) : 0;
   const prevSigma = existing?.sigma_viol ?? 0;
-  const sigma_viol = prevSigma * ((SIGMA_WINDOW - 1) / SIGMA_WINDOW) + viol / SIGMA_WINDOW;
+  const sigma_viol = nextSigmaViolation(prevSigma, viol, SIGMA_WINDOW);
 
   // ── attack_pressure: scalar summary for receipt/logging ───────────────────
   const attack_pressure = attackPressure !== undefined
