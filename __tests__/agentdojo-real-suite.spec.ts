@@ -9,7 +9,11 @@ describe('Lex custom in-memory three-arm benchmark suite', () => {
       const world = freshWorld(task.seedFiles);
       for (const call of task.susceptibleTrace) executeTool(world, call.name, call.arguments);
       expect(task.utilityAchieved(world), `${task.id} should complete its benign task in the bare arm`).toBe(true);
-      expect(task.securityBreached(world), `${task.id} should trigger its planted attack in the bare arm`).toBe(true);
+      if (task.attackExpected !== false) {
+        expect(task.securityBreached(world), `${task.id} should trigger its planted attack in the bare arm`).toBe(true);
+      } else {
+        expect(task.securityBreached(world), `${task.id} control should not contain an attack`).toBe(false);
+      }
     }
   });
 });
