@@ -7,7 +7,7 @@ describe('finite-time canonical sigma decay', () => {
   });
 
   it('snaps only a healthy residual at or below the explicit tolerance to exact zero', () => {
-    expect(nextSigmaViolation(SIGMA_ZERO_TOLERANCE * (10 / 9), 0)).toBe(0);
+    expect(nextSigmaViolation(SIGMA_ZERO_TOLERANCE, 0)).toBe(0);
     expect(nextSigmaViolation(SIGMA_ZERO_TOLERANCE * 2, 0)).toBeGreaterThan(0);
   });
 
