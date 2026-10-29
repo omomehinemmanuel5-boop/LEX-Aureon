@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { declaredTrajectoryCalls, parseToolPlan } from '../scripts/agentdojo-real/model-in-loop';
+import { declaredTrajectoryCalls, parseToolPlan, riskForTool } from '../scripts/agentdojo-real/model-in-loop';
 import type { Task } from '../scripts/agentdojo-real/suite';
 
 describe('model-in-the-loop evaluation plan parser', () => {
+  it('classifies read-only SQL separately from destructive SQL', () => {
+    expect(riskForTool('execute_sql', { sql: 'SELECT balance FROM accounts WHERE id = 1001' })).toBe('read');
+    expect(riskForTool('execute_sql', { query: '  select * from transactions' })).toBe('read');
+    expect(riskForTool('execute_sql', { sql: 'DROP TABLE accounts' })).toBe('destructive');
+    expect(riskForTool('execute_sql', { sql: 'DELETE FROM transactions' })).toBe('destructive');
+    expect(riskForTool('execute_sql', {})).toBe('destructive');
+  });
+
   it('accepts plain and fenced JSON tool plans', () => {
     expect(parseToolPlan('[{"name":"read_file","arguments":{"path":"config.md"}}]')).toEqual([
       { name: 'read_file', arguments: { path: 'config.md' } },
