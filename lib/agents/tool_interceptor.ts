@@ -30,7 +30,7 @@ import { ToolCallInput, ToolCallDecision, ToolCRSState, ToolSessionState } from 
 import { measureToolCRS } from './tool_crs';
 import { getClient } from '../db';
 import crypto from 'crypto';
-import { KERNEL_GATED_WRITE_TOOLS } from './tool_policy';
+import { KERNEL_GATED_WRITE_TOOLS, NON_MUTATING_GOVERNANCE_TOOLS } from './tool_policy';
 import {
   commitGovernanceDecision,
   GovernanceCommitConflict,
@@ -50,13 +50,18 @@ const KERNEL_CRITICAL  = 0.05;  // deny ALL tool calls
 const KERNEL_STRESSED  = 0.15;  // deny write operations, allow reads only
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const KERNEL_ALERT     = 0.22;  // stricter HIGH threshold
-async function getKernelM(session_id: string): Promise<number | null> {
+type KernelStateRead =
+  | { kind: 'present'; m: number }
+  | { kind: 'uninitialized' }
+  | { kind: 'unavailable' };
+
+async function getKernelM(session_id: string): Promise<KernelStateRead> {
   // Test-only benchmark adapter. It is opt-in, namespaced, and unavailable in
   // production so local/CI agent replays can measure utility without a live
   // Turso database or receipt writes. It must never be used as a production
   // outage fallback.
   if (process.env.NODE_ENV !== 'production' && process.env.LEX_AGENTDOJO_SYNTHETIC_STATE === '1') {
-    return 1.0;
+    return { kind: 'present', m: 1.0 };
   }
   try {
     const db = getClient();
@@ -64,15 +69,16 @@ async function getKernelM(session_id: string): Promise<number | null> {
       sql: 'SELECT last_m FROM z_traj WHERE session_id = ? LIMIT 1',
       args: [session_id],
     });
-    // A missing trajectory is uninitialized, not evidence of a healthy session.
-    // The canonical MCP route initializes it before dispatch; direct callers
-    // must fail closed rather than synthesize a stable state.
-    if (!res.rows.length) return null;
+    // Distinguish an absent row from a failed or malformed state read. Only the
+    // former may be inspected by the explicit non-mutating diagnostic allowlist.
+    if (!res.rows.length) return { kind: 'uninitialized' };
     const lastM = Number(res.rows[0].last_m);
-    return Number.isFinite(lastM) ? lastM : null;
+    return Number.isFinite(lastM)
+      ? { kind: 'present', m: lastM }
+      : { kind: 'unavailable' };
   } catch {
-    // An unavailable or malformed state store must never synthesize a clean session.
-    return null;
+    // A storage outage must never be mistaken for a harmless uninitialized row.
+    return { kind: 'unavailable' };
   }
 }
 
@@ -182,27 +188,36 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     .digest('hex')
     .slice(0, 32);
 
-  // Step 0: Kernel-informed check — kernel M gates tool execution
-  const kernelM = await getKernelM(tool.session_id);
+  // Step 0: Kernel-informed check — kernel M gates tool execution.
+  // Read-only inspection is permitted for a genuinely absent trajectory, because
+  // the canonical gate returns an explicit UNINITIALIZED diagnostic for that
+  // case. Storage errors and malformed rows remain fail-closed for every tool.
+  const kernelState = await getKernelM(tool.session_id);
+  const kernelM = kernelState.kind === 'present' ? kernelState.m : null;
+  const uninitializedReadOnly = kernelState.kind === 'uninitialized'
+    && NON_MUTATING_GOVERNANCE_TOOLS.has(tool.name);
   const kernelCRS = { C: kernelM ?? 0, R: kernelM ?? 0, S: kernelM ?? 0, M: kernelM ?? 0, risk_level: 'BLOCKED' as const };
 
-  if (kernelM === null) {
+  if (kernelState.kind === 'unavailable' || (kernelState.kind === 'uninitialized' && !uninitializedReadOnly)) {
+    const reason = kernelState.kind === 'uninitialized'
+      ? 'Canonical trajectory state is uninitialized — only explicitly classified read-only diagnostics may proceed; tool execution denied by fail-closed policy'
+      : 'Constitutional state unavailable — tool execution denied by fail-closed policy';
     const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_STATE_UNAVAILABLE', crs: kernelCRS,
-      reason: 'Constitutional state unavailable — tool execution denied by fail-closed policy', sigma_viol: 1 });
+      reason, sigma_viol: 1 });
     return {
       approved: false,
       decision: 'DENIED_BLOCKED' as const,
       receipt_id,
       crs: kernelCRS,
       health_band: 'CRITICAL' as const,
-      reason: 'Constitutional state unavailable — tool execution denied by fail-closed policy',
+      reason,
       sigma_viol: 1,
-      warning: ['Governance state unavailable; execution denied by fail-closed policy.', receiptWarning].filter(Boolean).join(' '),
+      warning: ['Governance state unavailable or uninitialized; execution denied by fail-closed policy.', receiptWarning].filter(Boolean).join(' '),
     };
   }
 
-  if (kernelM < KERNEL_CRITICAL) {
+  if (kernelM !== null && kernelM < KERNEL_CRITICAL) {
     const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_CRITICAL',
       crs: kernelCRS,
@@ -220,7 +235,7 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     };
   }
 
-  if (kernelM < KERNEL_STRESSED && KERNEL_GATED_WRITE_TOOLS.has(tool.name)) {
+  if (kernelM !== null && kernelM < KERNEL_STRESSED && KERNEL_GATED_WRITE_TOOLS.has(tool.name)) {
     const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_STRESSED',
       crs: kernelCRS,
