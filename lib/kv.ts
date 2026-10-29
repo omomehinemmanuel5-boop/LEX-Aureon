@@ -280,7 +280,7 @@ export async function getZTraj(sessionId: string): Promise<ZTraj | null> {
   };
 }
 
-export type ExpectedZTrajSample = Pick<ZTraj, 'last_c' | 'last_r' | 'last_s' | 'updated_at'>;
+export type ExpectedZTrajSample = Pick<ZTraj, 'last_c' | 'last_r' | 'last_s' | 'sigma_viol' | 'updated_at'>;
 
 /**
  * Record one already-executed governed-tool observation only if the trajectory
@@ -302,6 +302,8 @@ export async function recordZTrajObservation(
     + (measured.s - expectedPrevious.last_s) ** 2,
   );
   const M = Math.min(measured.c, measured.r, measured.s);
+  const currentViolation = M < TAU_LYP ? TAU_LYP - M : 0;
+  const sigmaViol = nextSigmaViolation(expectedPrevious.sigma_viol, currentViolation, SIGMA_WINDOW);
   const timestampNow = new Date();
   const timestamp = timestampNow.toISOString();
   // Ensure the version changes even if this observation occurs in the same
@@ -312,18 +314,20 @@ export async function recordZTrajObservation(
 
   const result = await getClient().execute({
     sql: `UPDATE z_traj
-          SET velocity = ?,
+          SET sigma_viol = ?,
+              velocity = ?,
               n_stable = CASE WHEN ? = 1 AND ? < ? AND ? >= ? THEN n_stable + 1 ELSE 0 END,
               last_m = ?, last_c = ?, last_r = ?, last_s = ?, updated_at = ?
-          WHERE session_id = ? AND last_c = ? AND last_r = ? AND last_s = ? AND updated_at = ?`,
+          WHERE session_id = ? AND last_c = ? AND last_r = ? AND last_s = ? AND updated_at = ? AND sigma_viol = ?`,
     args: [
+      sigmaViol,
       velocity,
       countStableObservation ? 1 : 0,
       velocity, STABILITY_VELOCITY, M, CONSTITUTION.TAU_RECOVERY,
       M, measured.c, measured.r, measured.s, updatedAt,
       sessionId,
       expectedPrevious.last_c, expectedPrevious.last_r, expectedPrevious.last_s,
-      expectedPrevious.updated_at,
+      expectedPrevious.updated_at, expectedPrevious.sigma_viol,
     ],
   });
 
