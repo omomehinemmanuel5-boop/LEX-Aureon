@@ -93,6 +93,30 @@ describe('operator recovery canary probe', () => {
     expect(readCanonicalGovernanceState).toHaveBeenCalledTimes(1);
   });
 
+  it('blocks canary preflight when velocity is at or above the stability threshold', async () => {
+    readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, { velocity: 0.02 }));
+
+    const result = JSON.parse(await run_recovery_canary({ session_id: sessionId }));
+
+    expect(result.status).toBe('not_run');
+    expect(result.reason).toContain('velocity 0.02');
+    expect(result.reason).toContain('must be finite and < 0.02');
+    expect(readCanonicalGovernanceState).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports velocity stability as the next step when sigma is zero but velocity is too high', async () => {
+    readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, {
+      sigmaViol: 0,
+      velocity: 0.02,
+      nStable: 3,
+    }));
+
+    const result = JSON.parse(await get_constitutional_state({ session_id: sessionId }));
+
+    expect(result.next_step).toContain('Canonical velocity must be finite');
+    expect(result.next_step).toContain('continue safe governed observations');
+  });
+
   it('blocks canary preflight when sigma is positive but below the old threshold', async () => {
     readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, { sigmaViol: 0.1 }));
 

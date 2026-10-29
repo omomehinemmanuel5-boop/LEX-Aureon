@@ -513,8 +513,10 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
             ? 'Continue bounded recovery-plane observations until M reaches the recovery threshold.'
             : state.sigmaViol !== 0
               ? 'Canonical sigma_viol must be exactly 0 before canary verification; continue healthy observations until residual stress decays to zero.'
-              : state.nStable < CONSTITUTION.N_MIN
-                ? `Continue safe governed observations (${state.nStable}/${CONSTITUTION.N_MIN}) before canary verification.`
+              : !Number.isFinite(state.velocity) || (state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD
+                ? `Canonical velocity must be finite and < ${RECOVERY_STABILITY_THRESHOLD}; continue safe governed observations until stable.`
+                : state.nStable < CONSTITUTION.N_MIN
+                  ? `Continue safe governed observations (${state.nStable}/${CONSTITUTION.N_MIN}) before canary verification.`
                 : state.canaryPassed
                   ? 'Exact-snapshot canary is current; each consequential action still requires its ordinary authorization.'
                   : 'Call operator-only run_recovery_canary for this exact session and state snapshot; this probe does not authorize a write.';
@@ -655,6 +657,8 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
     M: state.M,
     n_stable: state.nStable,
     sigma_viol: state.sigmaViol,
+    velocity: state.velocity,
+    stability_threshold: RECOVERY_STABILITY_THRESHOLD,
   };
   const unmet: string[] = [];
   if (state.M < CONSTITUTION.TAU_RECOVERY) unmet.push(`M ${state.M.toFixed(3)} < τ_recovery ${CONSTITUTION.TAU_RECOVERY}`);
@@ -662,6 +666,9 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
   // Evidence validation requires exact zero; a looser threshold here can report a
   // canary as eligible even though its evidence will immediately be rejected.
   if (state.sigmaViol !== 0) unmet.push(`sigma_viol ${String(state.sigmaViol)} !== 0 (exact zero required before canary verification)`);
+  if (!Number.isFinite(state.velocity) || (state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD) {
+    unmet.push(`velocity ${String(state.velocity)} must be finite and < ${RECOVERY_STABILITY_THRESHOLD}`);
+  }
   if (unmet.length) {
     return response({
       status: 'not_run',
@@ -682,6 +689,8 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
     diagnostic.available !== true ||
     diagnostic.trajectory_available !== true ||
     (process.env.CANARY_MODE !== 'invariant' && diagnostic.state_fingerprint !== state.stateFingerprint) ||
+    !Number.isFinite(Number(diagnostic.velocity)) ||
+    Number(diagnostic.velocity) >= RECOVERY_STABILITY_THRESHOLD ||
     (process.env.CANARY_MODE === 'invariant' && (diagnostic.state_version !== state.version || Number(diagnostic.M) < CONSTITUTION.TAU_RECOVERY || Number(diagnostic.sigma_viol) !== 0 || Number(diagnostic.n_stable) < CONSTITUTION.N_MIN))
   ) {
     return response({ status: 'failed', reason: 'The diagnostic probe did not return the requested exact canonical snapshot.', ...snapshot });
@@ -692,7 +701,13 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
     actorId: 'recovery-canary-probe',
     capability: 'read',
   });
-  if (!after.available || (process.env.CANARY_MODE !== 'invariant' && after.state.stateFingerprint !== state.stateFingerprint) || (process.env.CANARY_MODE === 'invariant' && (after.state.version !== state.version || after.state.M < CONSTITUTION.TAU_RECOVERY || after.state.sigmaViol !== 0 || after.state.nStable < CONSTITUTION.N_MIN))) {
+  if (
+    !after.available ||
+    !Number.isFinite(after.state.velocity) ||
+    (after.state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD ||
+    (process.env.CANARY_MODE !== 'invariant' && after.state.stateFingerprint !== state.stateFingerprint) ||
+    (process.env.CANARY_MODE === 'invariant' && (after.state.version !== state.version || after.state.M < CONSTITUTION.TAU_RECOVERY || after.state.sigmaViol !== 0 || after.state.nStable < CONSTITUTION.N_MIN))
+  ) {
     return response({ status: 'failed', reason: 'Canonical state changed during the probe; no evidence will be accepted.', ...snapshot });
   }
 

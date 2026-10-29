@@ -144,6 +144,45 @@ describe('canonical governance state', () => {
     expect(canonicalExecutionAllowed(result.state).allowed).toBe(false);
   });
 
+  it('does not classify recovery as verified when sigma is positive below the old threshold', () => {
+    const state = deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
+    const gate = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
+
+    expect(state).toBe('RESTORING');
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('must be exactly 0');
+  });
+
+  it.each([
+    { label: 'above threshold', velocity: 0.021 },
+    { label: 'at threshold', velocity: 0.02 },
+    { label: 'missing', velocity: undefined },
+    { label: 'non-finite', velocity: Number.NaN },
+  ])('fails closed at the canonical execution gate when a claimed passing canary has velocity $label', ({ velocity }) => {
+    const gate = canonicalExecutionAllowed({
+      sessionId: 'velocity-defense', actorId: 'agent-a',
+      C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+      healthBand: 'OPTIMAL', recoveryState: 'NORMAL', sigmaViol: 0,
+      velocity, toolCalls: 1, trajectoryAvailable: true, nStable: 3,
+      canaryPassed: true, authorization: 'authorized', policyRisk: 'write',
+      version: 'test', observedAt: new Date().toISOString(),
+    });
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('Canonical recovery velocity is not stable');
+  });
+
+  it('does not apply the ordinary velocity proof gate to bounded recovery probes', () => {
+    const gate = canonicalExecutionAllowed({
+      sessionId: 'recovery-probe', actorId: 'operator',
+      C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
+      healthBand: 'OPTIMAL', recoveryState: 'NORMAL', sigmaViol: 0,
+      velocity: 0.5, toolCalls: 1, trajectoryAvailable: true, nStable: 3,
+      canaryPassed: true, authorization: 'authorized', policyRisk: 'recovery_probe',
+      version: 'test', observedAt: new Date().toISOString(),
+    });
+    expect(gate.allowed).toBe(true);
+  });
+
   it('allows recovery reads below 0.15', () => {
     const gate = canonicalExecutionAllowed({
       sessionId: 's', actorId: 'a', C: 0.20, R: 0.07, S: 0.30, M: 0.07,
