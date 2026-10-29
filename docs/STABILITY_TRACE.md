@@ -156,3 +156,10 @@ Focused helper tests live in `__tests__/sigma-decay.spec.ts`, and the compare-an
 The operator canary preflight and the diagnostic `next_step` now require canonical `sigma_viol === 0`, matching the recovery-evidence validators. The older `SIGMA_THRESHOLD` remains a separate stress/classification threshold; it is not sufficient for canary eligibility. A positive residual must decay through healthy observations before the canary is attempted. This is guidance and preflight alignment only: no recovery threshold, evidence binding, operator restriction, or authority rule is relaxed.
 
 Regression coverage in `__tests__/recovery-canary-tool.spec.ts` verifies that a positive sigma value below the former threshold is rejected before the probe and that the diagnostic tells the operator how to proceed.
+
+
+## Canonical recovery execution invariants
+
+Canary evidence requires canonical velocity to be finite and strictly below `RECOVERY_STABILITY_THRESHOLD` (0.02). The exported `canonicalExecutionAllowed()` gate repeats that invariant for ordinary non-read capabilities when a state claims a passing canary, protecting against stale or caller-assembled state objects. Bounded `recovery` and `recovery_probe` capabilities remain outside this additional ordinary-execution check.
+
+Recovery-state classification also requires exact-zero sigma for VERIFIED/NORMAL. The general `SIGMA_THRESHOLD` remains a separate diagnostic/classification constant; it does not define canary validity. This prevents a caller-assembled state with `canaryPassed: true` and positive residual sigma from being classified as recovered. Neither change grants authority or replaces ordinary authorization/approval checks.
