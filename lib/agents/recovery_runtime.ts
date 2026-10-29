@@ -214,8 +214,8 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
   const recoveryReason = state === 'RESTORING' && canonical.available
     ? canonical.state.nStable < CONSTITUTION.N_MIN
       ? `Recovery observation ${canonical.state.nStable}/${CONSTITUTION.N_MIN}; continue safe governed observations before canary verification.`
-      : canonical.state.sigmaViol > CONSTITUTION.SIGMA_THRESHOLD
-        ? `Sigma violations ${canonical.state.sigmaViol.toFixed(3)} exceed ${CONSTITUTION.SIGMA_THRESHOLD}; investigate before canary verification.`
+      : canonical.state.sigmaViol !== 0
+        ? `Canonical sigma_viol=${String(canonical.state.sigmaViol)} must be exactly 0 before canary verification; continue healthy observations until residual stress decays to zero.`
         : 'Stability thresholds are met, but no passing canary is persisted for this exact state snapshot; run the operator-only run_recovery_canary probe.'
     : reason;
 
