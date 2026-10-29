@@ -26,19 +26,19 @@ describe('tool interceptor dependency failures', () => {
     expect(decision.warning).toContain('fail-closed');
   });
 
-  it('fails closed when the canonical trajectory row is missing', async () => {
+  it('fails closed for consequential tools when the canonical trajectory row is missing', async () => {
     dbExecute.mockResolvedValue({ rows: [] });
 
     const decision = await interceptToolCall({
       id: 'missing-kernel-state',
-      name: 'read_file',
-      arguments: { path: 'README.md' },
+      name: 'write_file',
+      arguments: { path: 'README.md', content: 'blocked' },
       session_id: 'missing-kernel-state',
     });
 
     expect(decision.approved).toBe(false);
     expect(decision.decision).toBe('DENIED_BLOCKED');
-    expect(decision.reason).toContain('Constitutional state unavailable');
+    expect(decision.reason).toContain('uninitialized');
     expect(decision.warning).toContain('fail-closed');
   });
 
