@@ -100,3 +100,18 @@ Source ranges inspected (line numbers refer to the checked-out source cited abov
 - `lib/agents/trajectory_executor.ts:85-220`
 - `lib/agents/governance_commit.ts:1-180`
 - `lib/agents/tool_interceptor.ts:80-455`
+
+
+## 7. Canonical sigma finite-time decay policy
+
+`updateZTraj()` now delegates the canonical sigma accumulator calculation to `lib/agents/sigma_decay.ts`. The rolling-window recurrence remains unchanged:
+
+```ts
+next = previousSigma * ((window - 1) / window) + currentViolation / window;
+```
+
+When the current observation has **no** Lyapunov stress (`currentViolation === 0`), a finite, non-negative residual at or below `SIGMA_ZERO_TOLERANCE = 1e-6` is normalized to exact zero. This provides a finite-time path to the existing exact-zero canary predicate without changing the canary predicate or recovery thresholds.
+
+A positive current stress contribution is never rounded away, even when the resulting accumulator is below the tolerance. Non-finite and negative accumulator values are not normalized into healthy zero. The policy changes only residual-sigma numerical cleanup; it does not grant authority, bypass the exact-snapshot evidence binding, or change `M >= 0.15`, `n_stable >= 3`, velocity, evidence-expiry, or approval requirements.
+
+Focused unit coverage is in `__tests__/sigma-decay.spec.ts`. These are source-level tests; CI results and production behavior must be verified separately. No production database was queried as part of this change.
