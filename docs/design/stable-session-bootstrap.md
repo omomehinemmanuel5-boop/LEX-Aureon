@@ -10,7 +10,7 @@ In `app/api/mcp/route.ts`, `defaultMcpSessionId(actorId)` derives a fallback ses
 return `mcp-${day}-${actorHash}`;
 ```
 
-Because the UTC date is included, stateless MCP clients that omit `session_id` receive a different default session each UTC day. For non-operator callers, `canonicalMcpSessionId` prefixes the authenticated owner ID unless the supplied session already begins with that owner's prefix. Explicit session IDs take precedence over the date-derived default. **Do not change `defaultMcpSessionId`.**
+Because the UTC date is included, stateless MCP clients that omit `session_id` receive a different default session each UTC day. For non-operator callers, `canonicalMcpSessionId` prefixes the authenticated owner ID unless the supplied session already begins with that owner's prefix. Explicit session IDs take precedence over the date-derived default. The `fix/stable-mcp-session-id` branch proposes removing the date component so fallback IDs remain stable across UTC rollovers. Do not merge this change until the live trajectory selected by the new ID, its current M/health band, and any collision or history-carry-forward implications have been inspected through an authorized read-only production data path.
 
 ## Observed result for a new stable session ID
 
