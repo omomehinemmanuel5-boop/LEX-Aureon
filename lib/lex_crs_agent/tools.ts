@@ -666,7 +666,7 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
   // Evidence validation requires exact zero; a looser threshold here can report a
   // canary as eligible even though its evidence will immediately be rejected.
   if (state.sigmaViol !== 0) unmet.push(`sigma_viol ${String(state.sigmaViol)} !== 0 (exact zero required before canary verification)`);
-  if (!Number.isFinite(state.velocity) || state.velocity >= RECOVERY_STABILITY_THRESHOLD) {
+  if (!Number.isFinite(state.velocity) || (state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD) {
     unmet.push(`velocity ${String(state.velocity)} must be finite and < ${RECOVERY_STABILITY_THRESHOLD}`);
   }
   if (unmet.length) {
