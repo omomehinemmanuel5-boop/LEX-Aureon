@@ -154,11 +154,11 @@ describe('canonical governance state', () => {
   });
 
   it.each([
-    ['above threshold', 0.021],
-    ['at threshold', 0.02],
-    ['missing', undefined],
-    ['non-finite', Number.NaN],
-  ])('fails closed at the canonical execution gate when a claimed passing canary has velocity %s', (_label, velocity) => {
+    { label: 'above threshold', velocity: 0.021 },
+    { label: 'at threshold', velocity: 0.02 },
+    { label: 'missing', velocity: undefined },
+    { label: 'non-finite', velocity: Number.NaN },
+  ])('fails closed at the canonical execution gate when a claimed passing canary has velocity $label', ({ velocity }) => {
     const gate = canonicalExecutionAllowed({
       sessionId: 'velocity-defense', actorId: 'agent-a',
       C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
