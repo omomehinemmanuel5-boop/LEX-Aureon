@@ -50,6 +50,15 @@ describe('constitutional recovery policy', () => {
     expect(destructiveNormal.state).toBe('NORMAL');
   });
 
+  it('does not classify recovery as verified when sigma is positive below the old threshold', () => {
+    const state = deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
+    const gate = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
+
+    expect(state).toBe('RESTORING');
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('must be exactly 0');
+  });
+
   it('reaches NORMAL only at or above the optimal boundary with verified evidence', () => {
     expect(deriveRecoveryState(0.24, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('VERIFIED');
     expect(deriveRecoveryState(0.25, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('NORMAL');
