@@ -10,7 +10,8 @@ import {
 const validEvidence = {
   canaryPassed: true,
   nStable: CONSTITUTION.N_MIN,
-  sigmaViol: CONSTITUTION.SIGMA_THRESHOLD,
+  // A passing canary is valid only with exact-zero canonical sigma.
+  sigmaViol: 0,
 };
 
 describe('security invariant harness', () => {
