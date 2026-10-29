@@ -34,6 +34,7 @@ function call(name: string) {
 describe('tool interceptor with an uninitialized canonical trajectory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('LEX_AGENTDOJO_SYNTHETIC_STATE', '0');
     dbExecute.mockImplementation(async (query: string | { sql: string }) => {
       const sql = typeof query === 'string' ? query : query.sql;
       if (sql.includes('SELECT last_m FROM z_traj')) return { rows: [] };
