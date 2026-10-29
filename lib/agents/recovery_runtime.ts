@@ -101,6 +101,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
         last_c: current.last_c,
         last_r: current.last_r,
         last_s: current.last_s,
+        sigma_viol: current.sigma_viol,
         updated_at: current.updated_at,
       },
       { c: current.last_c, r: current.last_r, s: current.last_s },
