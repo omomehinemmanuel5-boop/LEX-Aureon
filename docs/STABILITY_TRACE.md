@@ -138,7 +138,7 @@ This source trace identifies a liveness mismatch: the canary asks for exact zero
 
 ## Canonical sigma finite-time decay policy
 
-`updateZTraj()` delegates the canonical sigma accumulator calculation to `lib/agents/sigma_decay.ts`. The rolling-window recurrence remains unchanged:
+`updateZTraj()` and the compare-and-set `recordZTrajObservation()` path both delegate the canonical sigma accumulator calculation to `lib/agents/sigma_decay.ts`. This is important because the recovery plane uses `recordZTrajObservation()` to collect safe stability samples. Both paths preserve the rolling-window recurrence:
 
 ```ts
 next = previousSigma * ((window - 1) / window) + currentViolation / window;
@@ -148,4 +148,4 @@ When the current observation has **no** Lyapunov stress (`currentViolation === 0
 
 A positive current-stress contribution is never rounded away, even if the result is below tolerance. Non-finite and negative accumulator values are not normalized to healthy zero. This numerical cleanup does not grant authority, bypass snapshot/evidence binding, or change `M >= 0.15`, `n_stable >= 3`, velocity, evidence expiry, operator restrictions, or approval requirements.
 
-Focused tests live in `__tests__/sigma-decay.spec.ts`. Passing CI validates the branch's configured checks; it does not establish live production recovery. No production database is queried by this change.
+Focused helper tests live in `__tests__/sigma-decay.spec.ts`, and the compare-and-set path is covered in `__tests__/governed-tool-observation.spec.ts`. Passing CI validates the branch's configured checks; it does not establish live production recovery. No production database is queried by this change.
