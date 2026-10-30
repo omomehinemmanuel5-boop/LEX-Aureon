@@ -125,7 +125,7 @@ The canary eligibility predicate in `lib/agents/recovery_canary_evidence.ts` req
 - `writeKernelReceipt()` calls `updateZTraj()` for successful non-simulation turns through the Lex governance/kernel HTTP paths.
 - `advanceRecoveryPlane()` calls `updateZTraj()` only for an existing trajectory in the recovery interval `0.05 <= M < 0.15`. At `M >= 0.15`, its stable-observation path uses `recordZTrajObservation()`, which updates CRS/velocity/stability count but does not update sigma.
 - Ordinary MCP governance commits update `tool_sessions` through `governance_commit.ts`; this is separate from canonical `z_traj`. The `tool_interceptor.ts` LOW/ULTRA_LOW branch that subtracts 0.05 from `tool_sessions.sigma_viol` does not by itself reduce the canonical `z_traj.sigma_viol` consumed by the recovery gate.
-- The recovery state currently accepts `sigmaViol <= SIGMA_THRESHOLD` for state derivation, while canary evidence requires exact zero. These are distinct conditions and should not be conflated.
+- Recovery-state classification and canary evidence now both require canonical `sigma_viol === 0` before VERIFIED/NORMAL recovery is accepted. `SIGMA_THRESHOLD` remains a separate diagnostic constant and does not make positive sigma eligible for a canary.
 
 ### Regression-test and policy implications
 
