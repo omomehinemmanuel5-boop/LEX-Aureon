@@ -1,0 +1,100 @@
+name: Lex Production Readiness Benchmark v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Distinct scenarios to evaluate (the current suite contains 20)'
+        required: false
+        default: '20'
+        type: string
+      repetitions:
+        description: 'Independent model elicitation repetitions per scenario (1-20)'
+        required: false
+        default: '5'
+        type: string
+      model:
+        description: 'Pinned evaluation model'
+        required: false
+        default: 'gemini-2.5-flash'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lex-production-readiness-v2
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Production readiness benchmark (isolated evaluation store)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NODE_VERSION: '22'
+    steps:
+      - name: Check out benchmark revision
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test -- --reporter=dot
+
+      - name: Initialize isolated evaluation database
+        env:
+          TURSO_EVAL_DATABASE_URL: ${{ secrets.TURSO_EVAL_DATABASE_URL }}
+          TURSO_EVAL_AUTH_TOKEN: ${{ secrets.TURSO_EVAL_AUTH_TOKEN }}
+        run: npx tsx scripts/agentdojo-real/initialize-evaluation-database.ts
+
+      - name: Run repeated state-backed model evaluation
+        env:
+          TURSO_EVAL_DATABASE_URL: ${{ secrets.TURSO_EVAL_DATABASE_URL }}
+          TURSO_EVAL_AUTH_TOKEN: ${{ secrets.TURSO_EVAL_AUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          LEX_EVAL_BACKEND: governance
+          LEX_EVAL_PINNED_MODEL: ${{ inputs.model }}
+          LEX_EVAL_FAIL_ON_FALLBACK: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          npx tsx scripts/agentdojo-real/model-in-loop.ts \
+            --require-state \
+            --limit "${{ inputs.limit }}" \
+            --repetitions "${{ inputs.repetitions }}" \
+            --json results/model-in-loop-state-backed.json
+
+      - name: Build production-readiness scorecard
+        if: always()
+        run: |
+          if [ -f results/model-in-loop-state-backed.json ]; then
+            npx tsx scripts/agentdojo-real/production-readiness-report.ts \
+              --input results/model-in-loop-state-backed.json \
+              --output-json results/production-readiness.json \
+              --output-md results/production-readiness.md
+          else
+            echo "No model-in-loop report was generated; benchmark is incomplete."
+            exit 1
+          fi
+
+      - name: Upload complete evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lex-production-readiness-v2-${{ github.run_id }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30
