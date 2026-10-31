@@ -187,14 +187,14 @@ function baselineArm(task: Task, calls: ToolCall[]): ArmResult {
   return { utility: task.utilityAchieved(world), securityBreached: task.securityBreached(world), blocked, decisions, infrastructureFailure: false };
 }
 
-async function lexArm(task: Task, calls: ToolCall[]): Promise<ArmResult> {
+async function lexArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResult> {
   const world = freshWorld(task.seedFiles);
   const approvalReplayWorld = freshWorld(task.seedFiles);
   let blocked = 0;
   const decisions: string[] = [];
   let infrastructureFailure = false;
   let approvalPending = 0;
-  const sessionId = `model-eval-tool-${task.id}`;
+  const sessionId = `model-eval-tool-${task.id}-r${runId}`;
   const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
   if (!bootstrap.verified) {
     return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
@@ -225,10 +225,10 @@ async function lexArm(task: Task, calls: ToolCall[]): Promise<ArmResult> {
   };
 }
 
-async function trajectoryArm(task: Task, calls: ToolCall[]): Promise<ArmResult> {
+async function trajectoryArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResult> {
   const world = freshWorld(task.seedFiles);
   const approvalReplayWorld = freshWorld(task.seedFiles);
-  const sessionId = `model-eval-trajectory-${task.id}`;
+  const sessionId = `model-eval-trajectory-${task.id}-r${runId}`;
   if (!await ensureCanonicalTrajectoryState(sessionId)) {
     return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
   }
@@ -290,6 +290,7 @@ async function main() {
   const get = (key: string) => { const i = args.indexOf(key); return i >= 0 ? args[i + 1] : undefined; };
   const suite = get('--suite');
   const limit = Number(get('--limit') ?? '0');
+  const repetitions = Math.max(1, Math.min(20, Number(get('--repetitions') ?? '1') || 1));
   const json = get('--json');
   const requireState = args.includes('--require-state');
   if (requireState) {
@@ -304,27 +305,29 @@ async function main() {
   let tasks = SUITE.filter(task => !suite || task.suite === suite);
   if (limit > 0) tasks = tasks.slice(0, limit);
   const rows: Record<string, unknown>[] = [];
-  console.log(`Model-in-the-loop Lex evaluation — ${tasks.length} task(s), backend=${process.env.LEX_EVAL_BACKEND ?? 'governance'}`);
+  console.log(`Model-in-the-loop Lex evaluation — ${tasks.length} task(s) x ${repetitions} repetition(s), backend=${process.env.LEX_EVAL_BACKEND ?? 'governance'}`);
   console.log('task | provider/model | parse | bare | baseline | lex/tool | lex/trajectory');
   for (const task of tasks) {
+    for (let repetition = 1; repetition <= repetitions; repetition++) {
     let decision: ModelDecision;
     try { decision = await elicit(task); } catch (error) {
       decision = { calls: [], provider: 'error', model: 'none', attempts: 1, parseFailed: true, fallbackUsed: false, raw: String(error) };
     }
     if (decision.parseFailed) {
       console.log(`${task.id} | ${decision.provider}/${decision.model} | EXCLUDED(parse or model failure)`);
-      rows.push({ task: task.id, suite: task.suite, layer: task.layer, decision, excluded: 'model_or_parse_failure' });
+      rows.push({ task: task.id, suite: task.suite, layer: task.layer, repetition, decision, excluded: 'model_or_parse_failure' });
       await sleep(300);
       continue;
     }
     const bare = bareArm(task, decision.calls);
     const baseline = baselineArm(task, decision.calls);
-    const tool = await lexArm(task, decision.calls);
-    const trajectory = await trajectoryArm(task, decision.calls);
+    const tool = await lexArm(task, decision.calls, repetition);
+    const trajectory = await trajectoryArm(task, decision.calls, repetition);
     const marker = (arm: ArmResult) => `${arm.securityBreached ? 'BREACH' : 'safe'}/${arm.utility ? 'useful' : 'miss'}${arm.infrastructureFailure ? '/INFRA' : ''}`;
     console.log(`${task.id} | ${decision.provider}/${decision.model} | ok | ${marker(bare)} | ${marker(baseline)} | ${marker(tool)} | ${marker(trajectory)}`);
-    rows.push({ task: task.id, suite: task.suite, layer: task.layer, decision: { ...decision, raw: undefined }, bare, baseline, lex_tool: tool, lex_trajectory: trajectory });
+    rows.push({ task: task.id, suite: task.suite, layer: task.layer, repetition, decision: { ...decision, raw: undefined }, bare, baseline, lex_tool: tool, lex_trajectory: trajectory });
     await sleep(300);
+    }
   }
   const eligible = (key: string) => rows.filter(row => !row.excluded && !(row[key] as ArmResult).infrastructureFailure);
   console.log('\nSummary (infrastructure and model failures excluded):');
