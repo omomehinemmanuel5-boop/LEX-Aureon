@@ -115,6 +115,24 @@ describe('bounded recovery plane', () => {
     expect(Math.min(measured.c, measured.r, measured.s)).toBeGreaterThanOrEqual(0.05 - 1e-9);
   });
 
+  it('rejects a stale concurrent correction when compare-and-set loses', async () => {
+    mocks.getZTraj.mockResolvedValue({
+      session_id: 's', velocity: 0.03, n_stable: 0, drift_dir: 'away_R',
+      sigma_viol: 0.01, last_m: 0.08, last_c: 0.46, last_r: 0.08, last_s: 0.46,
+      z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3, attack_pressure: 0,
+      updated_at: new Date(Date.now() - 10_000).toISOString(),
+    });
+    mocks.recordZTrajObservation.mockResolvedValue(false);
+
+    const result = await advanceRecoveryPlane('s');
+
+    expect(result.advanced).toBe(false);
+    expect(result.reason).toContain('compare-and-set rejected the stale pulse');
+    expect(mocks.recordZTrajObservation).toHaveBeenCalledTimes(1);
+    expect(mocks.getZTraj).toHaveBeenCalledTimes(1);
+    expect(mocks.readCanonicalGovernanceState).not.toHaveBeenCalled();
+  });
+
   it('counts stable no-op observations toward recovery once M reaches 0.15', async () => {
     mocks.recordZTrajObservation.mockResolvedValue(true);
     mocks.getZTraj.mockResolvedValue({
