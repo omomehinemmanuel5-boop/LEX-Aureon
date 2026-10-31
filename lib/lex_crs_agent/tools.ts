@@ -71,6 +71,7 @@ import { CONSTITUTION } from '../constitution';
 import { readCanonicalGovernanceState } from '../agents/canonical_governance_state';
 import { advanceRecoveryPlane } from '../agents/recovery_runtime';
 import { requestClientRecoveryPulse } from '../agents/client_recovery_service';
+import { requestClientRecoveryPulse } from '../agents/client_recovery_service';
 import { deriveRecoveryState, recoveryCapabilityAllowed, RECOVERY_STABILITY_THRESHOLD } from '../agents/recovery_state';
 import { validateTargetBranch, validateBaseBranch } from './tools/github_branch_validation';
 
@@ -1455,6 +1456,7 @@ export const TOOL_REGISTRY: Record<string, (args: Record<string, unknown>, signa
   get_workflow_artifact:    (a) => get_workflow_artifact(a as { run_id: number; repo?: string }),
   check_github_token_scope: () => check_github_token_scope(),
   get_constitutional_state: (a) => get_constitutional_state(a as { session_id?: string }),
+  request_recovery_pulse: async (a) => JSON.stringify(await requestClientRecoveryPulse(typeof a.session_id === 'string' ? a.session_id : '')),
   run_recovery_canary:     (a) => run_recovery_canary(a as { session_id?: string }),
   // Recovery mutation is a control-plane operation; the authenticated MCP route
   // dispatches it after operator authorization. Never expose the mutating handler
@@ -1612,6 +1614,11 @@ export const TOOL_DEFINITIONS = [
     name: 'get_constitutional_state',
     description: 'Get this session’s live canonical CRS, recovery state, stability/sigma thresholds, exact state fingerprint, canary status, and the next recovery step.',
     parameters: { type: 'object', properties: { session_id: { type: 'string', description: 'Governance session to inspect.' } } },
+  },
+  {
+    name: 'request_recovery_pulse',
+    description: 'Request one bounded server-side recovery pulse for the authenticated caller session. The server binds the session; caller-supplied session IDs are ignored. Returns recovery diagnostics and never grants write authority. Quarantine remains enforced; operator canary and privileged recovery controls are not exposed.',
+    parameters: { type: 'object', properties: {} },
   },
   {
     name: 'advance_recovery_plane',
