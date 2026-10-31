@@ -1217,7 +1217,7 @@ async function handlePost(req: Request) {
       // so authentication, capability, and constitutional checks are intact;
       // they simply do not consume or require a plan step.
       const TRAJECTORY_DIAGNOSTIC_TOOLS = new Set([
-        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary', 'advance_recovery_plane',
+        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary', 'advance_recovery_plane', 'request_recovery_pulse',
       ]);
       const trajectoryBypass = TRAJECTORY_META_TOOLS.has(toolName)
         || TRAJECTORY_DIAGNOSTIC_TOOLS.has(dispatchToolName);
