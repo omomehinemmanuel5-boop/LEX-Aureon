@@ -912,6 +912,15 @@ async function handlePost(req: Request) {
       return invalidParams(id ?? null, 'session_id must belong to the authenticated caller');
     }
     const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
+    if (dispatchToolName === 'request_recovery_pulse') {
+      const pulseRate = await checkRateLimit(`recovery-pulse:${ownerId}`, 6, 60);
+      if (pulseRate.storageError) {
+        return NextResponse.json({ jsonrpc: '2.0', error: { code: -32003, message: 'Recovery control temporarily unavailable; no pulse was requested' }, id }, { status: 503 });
+      }
+      if (!pulseRate.allowed) {
+        return NextResponse.json({ jsonrpc: '2.0', error: { code: -32029, message: 'Recovery pulse rate limit reached; wait before requesting another pulse' }, id }, { status: 429, headers: { 'Retry-After': String(pulseRate.retryAfter) } });
+      }
+    }
     try {
       await runZTrajMigrations();
       if (!isNonMutatingInspectionTool(dispatchToolName, args)) {
