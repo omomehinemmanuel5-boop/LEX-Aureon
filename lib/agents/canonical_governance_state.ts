@@ -47,28 +47,45 @@ export interface CanonicalGovernanceReadInput {
 }
 const STATE_VERSION = 'canonical-governance-2026-10-10.1';
 
-export async function ensureCanonicalTrajectoryState(sessionId: string): Promise<boolean> {
+export type CanonicalTrajectoryBootstrapResult =
+  | { status: 'created' | 'existing'; sessionId: string; verified: true }
+  | { status: 'unverified'; sessionId: string; verified: false; reason: string };
+
+function isVerifiedCanonicalTrajectory(
+  trajectory: Awaited<ReturnType<typeof getZTraj>>,
+  sessionId: string,
+): boolean {
+  if (!trajectory || trajectory.session_id !== sessionId) return false;
+  return [trajectory.velocity, trajectory.n_stable, trajectory.sigma_viol,
+    trajectory.last_m, trajectory.last_c, trajectory.last_r, trajectory.last_s,
+    trajectory.updated_at].every(value => value !== null && value !== undefined
+      && (typeof value === 'string' ? value.length > 0 : Number.isFinite(value)));
+}
+
+export async function ensureCanonicalTrajectoryState(
+  sessionId: string,
+): Promise<CanonicalTrajectoryBootstrapResult> {
   try {
-    await getClient().execute({
+    const insert = await getClient().execute({
       sql: `INSERT INTO z_traj
         (session_id, velocity, n_stable, drift_dir, sigma_viol,
          last_m, last_c, last_r, last_s,
          z_c, z_r, z_s, attack_pressure, updated_at)
        VALUES (?, 0, 0, 'bootstrap', 0, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-       ON CONFLICT(session_id) DO NOTHING`,
-      args: [
-        sessionId,
-        1 / 3, 1 / 3, 1 / 3, 1 / 3,
-        1 / 3, 1 / 3, 1 / 3,
-        new Date().toISOString(),
-      ],
+       ON CONFLICT(session_id) DO NOTHING
+       RETURNING session_id`,
+      args: [sessionId, 1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3, new Date().toISOString()],
     });
-    return true;
+    const trajectory = await getZTraj(sessionId);
+    if (!isVerifiedCanonicalTrajectory(trajectory, sessionId)) {
+      return { status: 'unverified', sessionId, verified: false, reason: 'Canonical trajectory insert/read-back did not produce a valid row for the requested session.' };
+    }
+    const created = insert.rows.some(row => row.session_id === sessionId);
+    return { status: created ? 'created' : 'existing', sessionId, verified: true };
   } catch {
-    return false;
+    return { status: 'unverified', sessionId, verified: false, reason: 'Canonical trajectory storage or read-back failed.' };
   }
 }
-
 async function getToolSession(sessionId: string): Promise<{ sigmaViol: number; toolCalls: number }> {
   const result = await getClient().execute({
     sql: 'SELECT sigma_viol, tool_calls FROM tool_sessions WHERE session_id = ? LIMIT 1',
