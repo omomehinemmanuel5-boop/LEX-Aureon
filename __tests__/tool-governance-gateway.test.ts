@@ -19,6 +19,8 @@ describe('central tool governance gateway', () => {
     // run_governance evaluates a request but has no side effect itself.
     expect(classifyGovernanceRisk('run_governance')).toBe('read');
     expect(classifyGovernanceRisk('query_database', { sql: 'SELECT 1' })).toBe('read');
+    expect(classifyGovernanceRisk('execute_sql', { sql: 'SELECT 1;' })).toBe('read');
+    expect(classifyGovernanceRisk('execute_sql', { sql: 'DROP TABLE accounts' })).toBe('destructive');
   });
 
   it('treats query_database as a read-only SELECT capability', () => {
@@ -36,6 +38,7 @@ describe('central tool governance gateway', () => {
     expect(classifyGovernanceRisk('query_database', { sql: 'UPDATE users SET x = 1' })).toBe('write');
     expect(classifyGovernanceRisk('query_database', { sql: 'SELECT 1; DELETE FROM users' })).toBe('destructive');
     expect(classifyDatabaseOperation('  /* comment */ SELECT 1')).toBe('read');
+    expect(classifyDatabaseOperation('SELECT 1;')).toBe('read');
     expect(classifyDatabaseOperation('UPDATE users SET x = 1')).toBe('write');
     expect(classifyDatabaseOperation('SELECT 1; DELETE FROM users')).toBe('invalid');
   });

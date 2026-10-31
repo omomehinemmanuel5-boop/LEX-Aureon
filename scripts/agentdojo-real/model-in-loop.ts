@@ -24,6 +24,7 @@ import { generateGoverned, generateGovernedPinned, type LLMResult } from '../../
 import { interceptToolCall } from '../../lib/agents/tool_interceptor';
 import { deterministicScan } from '../../lib/agents/tool_crs';
 import { executeGovernedTrajectoryAction } from '../../lib/agents/trajectory_executor';
+import { classifyDatabaseOperation } from '../../lib/agents/sql_policy';
 import { ensureCanonicalTrajectoryState } from '../../lib/agents/canonical_governance_state';
 import {
   createTrajectoryPlan, createTrajectoryState, type TrajectoryAction, type TrajectoryRisk,
@@ -93,9 +94,7 @@ export function riskForTool(name: string, args: Record<string, unknown> = {}): T
   if (['send_email', 'run_command'].includes(name)) return 'external';
   if (name === 'execute_sql') {
     const sql = typeof args.sql === 'string' ? args.sql : typeof args.query === 'string' ? args.query : '';
-    // A leading SELECT is the only SQL form treated as read-only. Unknown,
-    // empty, and all mutating statements remain destructive by default.
-    return /^\s*SELECT\b/i.test(sql) ? 'read' : 'destructive';
+    return classifyDatabaseOperation(sql) === 'read' ? 'read' : 'destructive';
   }
   if (['delete_file', 'change_access'].includes(name)) return 'destructive';
   return 'write';

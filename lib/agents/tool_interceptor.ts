@@ -30,7 +30,7 @@ import { ToolCallInput, ToolCallDecision, ToolCRSState, ToolSessionState } from 
 import { measureToolCRS } from './tool_crs';
 import { getClient } from '../db';
 import crypto from 'crypto';
-import { KERNEL_GATED_WRITE_TOOLS, NON_MUTATING_GOVERNANCE_TOOLS } from './tool_policy';
+import { isKernelGatedWriteTool, isReadOnlyGovernanceTool } from './tool_policy';
 import {
   commitGovernanceDecision,
   GovernanceCommitConflict,
@@ -195,7 +195,7 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
   const kernelState = await getKernelM(tool.session_id);
   const kernelM = kernelState.kind === 'present' ? kernelState.m : null;
   const uninitializedReadOnly = kernelState.kind === 'uninitialized'
-    && NON_MUTATING_GOVERNANCE_TOOLS.has(tool.name);
+    && isReadOnlyGovernanceTool(tool.name, tool.arguments);
   const kernelCRS = { C: kernelM ?? 0, R: kernelM ?? 0, S: kernelM ?? 0, M: kernelM ?? 0, risk_level: 'BLOCKED' as const };
 
   if (kernelState.kind === 'unavailable' || (kernelState.kind === 'uninitialized' && !uninitializedReadOnly)) {
@@ -235,7 +235,7 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     };
   }
 
-  if (kernelM !== null && kernelM < KERNEL_STRESSED && KERNEL_GATED_WRITE_TOOLS.has(tool.name)) {
+  if (kernelM !== null && kernelM < KERNEL_STRESSED && isKernelGatedWriteTool(tool.name, tool.arguments)) {
     const receiptWarning = await persistDenialReceipt({ receipt_id, session_id: tool.session_id, actor_id: tool.actor_id, tool_name: tool.name,
       args_hash, decision: 'DENIED_KERNEL_STRESSED',
       crs: kernelCRS,

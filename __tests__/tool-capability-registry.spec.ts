@@ -3,6 +3,7 @@ import {
   getToolCapability,
   isKnownGovernedTool,
   requireKnownToolCapability,
+  resolveToolCapability,
 } from '@/lib/agents/tool_capability_registry';
 import { TOOL_DEFINITIONS } from '@/lib/lex_crs_agent/tools';
 import {
@@ -23,6 +24,7 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('exec')?.capability).toBe('execute');
     expect(getToolCapability('query_database')?.capability).toBe('read');
     expect(getToolCapability('query_database')?.approvalRequired).toBe(false);
+    expect(getToolCapability('execute_sql')?.capability).toBe('destructive');
     expect(getToolCapability('run_recovery_canary')).toMatchObject({
       capability: 'recovery_probe', approvalRequired: false, reversible: false, source: 'mcp',
     });
@@ -72,6 +74,14 @@ describe('Lex reference monitor capability registry', () => {
     expect(getToolCapability('run_command')?.approvalRequired).toBe(true);
     expect(getToolCapability('transfer')?.approvalRequired).toBe(true);
     expect(getToolCapability('read_file')?.approvalRequired).toBe(false);
+  });
+
+  it('resolves execute_sql by statement effect without weakening the default', () => {
+    expect(resolveToolCapability('execute_sql', { sql: 'SELECT balance FROM accounts;' })).toMatchObject({
+      capability: 'read', approvalRequired: false,
+    });
+    expect(resolveToolCapability('execute_sql', { sql: 'DELETE FROM accounts WHERE id = 1' }).capability).toBe('destructive');
+    expect(resolveToolCapability('execute_sql', {}).capability).toBe('destructive');
   });
 
   it('keeps every CRS risk-manifest entry registered', () => {

@@ -8,7 +8,7 @@
 
 import crypto from 'crypto';
 import { interceptToolCall } from './tool_interceptor';
-import { requireKnownToolCapability, type ToolCapabilityRecord } from './tool_capability_registry';
+import { resolveToolCapability, type ToolCapabilityRecord } from './tool_capability_registry';
 import { canonicalExecutionAllowed, readCanonicalGovernanceState, type CanonicalGovernanceState } from './canonical_governance_state';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
 import { dependencyFailurePolicy } from './dependency_failure_policy';
@@ -39,8 +39,8 @@ import {
 } from './tool_governance_gateway';
 
 export function isNonMutatingGovernanceTool(toolName: string, args: Record<string, unknown> = {}): boolean {
-  if (toolName === 'query_database') {
-    return classifyDatabaseOperation(String(args.sql ?? '')) === 'read';
+  if (toolName === 'query_database' || toolName === 'execute_sql') {
+    return classifyDatabaseOperation(String(args.sql ?? args.query ?? '')) === 'read';
   }
   return NON_MUTATING_GOVERNANCE_TOOLS.has(toolName);
 }
@@ -345,7 +345,7 @@ export async function executeGovernedToolStructured(
   // Never infer authority from an unknown tool name or caller-supplied label.
   let capability: ToolCapabilityRecord;
   try {
-    capability = requireKnownToolCapability(toolName);
+    capability = resolveToolCapability(toolName, args);
   } catch (error) {
     // Environment discovery is advisory intelligence, never execution authority.
     // A discovered capability must be explicitly registered before the

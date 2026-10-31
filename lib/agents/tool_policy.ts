@@ -1,4 +1,5 @@
 import { TOOL_CAPABILITY_REGISTRY } from './tool_capability_registry';
+import { classifyDatabaseOperation } from './sql_policy';
 
 /**
  * Shared tool-risk policy manifest.
@@ -70,6 +71,18 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(READ_ONLY_TOOL_NAMES
 export const EXECUTOR_READ_TOOLS: ReadonlySet<string> = new Set(EXECUTOR_READ_TOOL_NAMES);
 export const NON_MUTATING_GOVERNANCE_TOOLS: ReadonlySet<string> = new Set(NON_MUTATING_GOVERNANCE_TOOL_NAMES);
 export const KERNEL_GATED_WRITE_TOOLS: ReadonlySet<string> = new Set(KERNEL_GATED_WRITE_TOOL_NAMES);
+
+export function isReadOnlyGovernanceTool(name: string, args: Record<string, unknown> = {}): boolean {
+  if (name === 'execute_sql') {
+    const sql = typeof args.sql === 'string' ? args.sql : typeof args.query === 'string' ? args.query : '';
+    return classifyDatabaseOperation(sql) === 'read';
+  }
+  return NON_MUTATING_GOVERNANCE_TOOLS.has(name);
+}
+
+export function isKernelGatedWriteTool(name: string, args: Record<string, unknown> = {}): boolean {
+  return KERNEL_GATED_WRITE_TOOLS.has(name) && !isReadOnlyGovernanceTool(name, args);
+}
 
 export const BUILD_FILE_PATTERNS: readonly RegExp[] = [
   /package\.json$/i,
