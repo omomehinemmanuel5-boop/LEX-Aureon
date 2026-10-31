@@ -95,7 +95,7 @@ type ToolHandler = (args: Record<string, unknown>, signal?: AbortSignal) => Prom
 
 function trajectoryRiskForCapability(capability: ToolCapability | undefined): TrajectoryAction['risk'] {
   if (capability === 'read' || capability === 'recovery_probe') return 'read';
-  if (capability === 'write') return 'write';
+  if (capability === 'recovery' || capability === 'write') return 'write';
   if (capability === 'external' || capability === 'network' || capability === 'delegate') return 'external';
   return 'destructive';
 }
@@ -900,8 +900,11 @@ async function handlePost(req: Request) {
       if (!canCallTool(profile, dispatchToolName)) return unauthorized(id);
     }
 
-    const clientSessionId = (args.session_id as string | undefined)
-      ?? defaultMcpSessionId(actorId);
+    // Recovery control never accepts a caller-selected session. Bind the pulse
+    // to the authenticated principal's default session for both client and operator callers.
+    const clientSessionId = dispatchToolName === 'request_recovery_pulse'
+      ? defaultMcpSessionId(actorId)
+      : (args.session_id as string | undefined) ?? defaultMcpSessionId(actorId);
     const ownerSessionPrefix = `${ownerId}:`;
     const diagnosticSessionTools = new Set([
       'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
@@ -912,6 +915,15 @@ async function handlePost(req: Request) {
       return invalidParams(id ?? null, 'session_id must belong to the authenticated caller');
     }
     const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
+    if (dispatchToolName === 'request_recovery_pulse') {
+      const pulseRate = await checkRateLimit(`recovery-pulse:${ownerId}`, 6, 60);
+      if (pulseRate.storageError) {
+        return NextResponse.json({ jsonrpc: '2.0', error: { code: -32003, message: 'Recovery control temporarily unavailable; no pulse was requested' }, id }, { status: 503 });
+      }
+      if (!pulseRate.allowed) {
+        return NextResponse.json({ jsonrpc: '2.0', error: { code: -32029, message: 'Recovery pulse rate limit reached; wait before requesting another pulse' }, id }, { status: 429, headers: { 'Retry-After': String(pulseRate.retryAfter) } });
+      }
+    }
     try {
       await runZTrajMigrations();
       if (!isNonMutatingInspectionTool(dispatchToolName, args)) {
@@ -1208,7 +1220,7 @@ async function handlePost(req: Request) {
       // so authentication, capability, and constitutional checks are intact;
       // they simply do not consume or require a plan step.
       const TRAJECTORY_DIAGNOSTIC_TOOLS = new Set([
-        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary', 'advance_recovery_plane',
+        'get_constitutional_state', 'get_recent_receipts', 'explain_denial', 'preview_patch_file', 'run_recovery_canary', 'advance_recovery_plane', 'request_recovery_pulse',
       ]);
       const trajectoryBypass = TRAJECTORY_META_TOOLS.has(toolName)
         || TRAJECTORY_DIAGNOSTIC_TOOLS.has(dispatchToolName);

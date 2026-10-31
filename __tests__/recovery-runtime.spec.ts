@@ -2,14 +2,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getZTraj: vi.fn(),
-  updateZTraj: vi.fn(),
   recordZTrajObservation: vi.fn(),
   readCanonicalGovernanceState: vi.fn(),
 }));
 
 vi.mock('../lib/kv', () => ({
   getZTraj: mocks.getZTraj,
-  updateZTraj: mocks.updateZTraj,
   recordZTrajObservation: mocks.recordZTrajObservation,
 }));
 
@@ -83,37 +81,56 @@ describe('bounded recovery plane', () => {
       z_r: 1 / 3,
       z_s: 1 / 3,
       attack_pressure: 0,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(Date.now() - 10_000).toISOString(),
     });
-    mocks.updateZTraj.mockImplementation(async (_session, next) => ({
+    mocks.recordZTrajObservation.mockResolvedValue(true);
+    const corrected = {
       session_id: 's',
-      velocity: Math.sqrt(
-        (next.c - 0.46) ** 2 +
-        (next.r - 0.08) ** 2 +
-        (next.s - 0.46) ** 2,
-      ),
+      velocity: 0.04,
       n_stable: 0,
       drift_dir: 'toward_R',
       sigma_viol: 0.01,
-      last_m: Math.min(next.c, next.r, next.s),
-      last_c: next.c,
-      last_r: next.r,
-      last_s: next.s,
-      z_c: 1 / 3,
-      z_r: 1 / 3,
-      z_s: 1 / 3,
+      last_m: 0.10,
+      last_c: 0.45,
+      last_r: 0.10,
+      last_s: 0.45,
+      z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3,
       attack_pressure: 0,
       updated_at: new Date().toISOString(),
-    }));
+    };
+    mocks.getZTraj.mockResolvedValueOnce({
+      session_id: 's', velocity: 0.04, n_stable: 0, drift_dir: 'away_R',
+      sigma_viol: 0.01, last_m: 0.08, last_c: 0.46, last_r: 0.08, last_s: 0.46,
+      z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3, attack_pressure: 0,
+      updated_at: new Date(Date.now() - 10_000).toISOString(),
+    }).mockResolvedValueOnce(corrected);
 
     const result = await advanceRecoveryPlane('s');
 
     expect(result.advanced).toBe(true);
     expect(result.M).toBeGreaterThanOrEqual(0.05);
-    expect(mocks.updateZTraj).toHaveBeenCalledTimes(1);
+    expect(mocks.recordZTrajObservation).toHaveBeenCalledTimes(1);
+    expect(mocks.recordZTrajObservation.mock.calls[0][3]).toBe(false);
+    const measured = mocks.recordZTrajObservation.mock.calls[0][2];
+    expect(Math.min(measured.c, measured.r, measured.s)).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
 
-    const [, next] = mocks.updateZTraj.mock.calls[0];
-    expect(Math.min(next.c, next.r, next.s)).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  it('rejects a stale concurrent correction when compare-and-set loses', async () => {
+    mocks.getZTraj.mockResolvedValue({
+      session_id: 's', velocity: 0.03, n_stable: 0, drift_dir: 'away_R',
+      sigma_viol: 0.01, last_m: 0.08, last_c: 0.46, last_r: 0.08, last_s: 0.46,
+      z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3, attack_pressure: 0,
+      updated_at: new Date(Date.now() - 10_000).toISOString(),
+    });
+    mocks.recordZTrajObservation.mockResolvedValue(false);
+
+    const result = await advanceRecoveryPlane('s');
+
+    expect(result.advanced).toBe(false);
+    expect(result.reason).toContain('compare-and-set rejected the stale pulse');
+    expect(mocks.recordZTrajObservation).toHaveBeenCalledTimes(1);
+    expect(mocks.getZTraj).toHaveBeenCalledTimes(1);
+    expect(mocks.readCanonicalGovernanceState).not.toHaveBeenCalled();
   });
 
   it('counts stable no-op observations toward recovery once M reaches 0.15', async () => {
@@ -289,6 +306,6 @@ describe('bounded recovery plane', () => {
 
     expect(result.advanced).toBe(false);
     expect(result.state).toBe('QUARANTINED');
-    expect(mocks.updateZTraj).not.toHaveBeenCalled();
+    expect(mocks.recordZTrajObservation).not.toHaveBeenCalled();
   });
 });

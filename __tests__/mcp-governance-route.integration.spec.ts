@@ -30,6 +30,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
     { name: 'request_approval', description: 'request', parameters: { type: 'object' } },
     { name: 'run_governance', description: 'govern', parameters: { type: 'object' } },
     { name: 'get_constitutional_state', description: 'state', parameters: { type: 'object' } },
+    { name: 'request_recovery_pulse', description: 'bounded client recovery', parameters: { type: 'object', properties: {} } },
     { name: 'run_recovery_canary', description: 'canary', parameters: { type: 'object' } },
     { name: 'advance_recovery_plane', description: 'recovery control', parameters: { type: 'object' } },
     { name: 'simulate_agent_plan', description: 'simulate', parameters: { type: 'object' } },
@@ -113,6 +114,7 @@ vi.mock('../lib/lex_crs_agent/tools', () => ({
     request_approval: toolFn,
     run_governance: toolFn,
     get_constitutional_state: toolFn,
+    request_recovery_pulse: toolFn,
     run_recovery_canary: toolFn,
     advance_recovery_plane: toolFn,
     simulate_agent_plan: toolFn,
@@ -485,6 +487,42 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(toolFn).not.toHaveBeenCalled();
   });
 
+  it('exposes a public recovery pulse and binds it to the authenticated caller session', async () => {
+    const listed = await POST(request({ jsonrpc: '2.0', method: 'tools/list', id: 'public-recovery-tool-list' }));
+    expect(listed.status).toBe(200);
+    const listedTools = (listed.body as unknown as { result: { tools: Array<{ name: string }> } }).result.tools;
+    expect(listedTools.map((tool) => tool.name)).toContain('request_recovery_pulse');
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'request_recovery_pulse', arguments: { session_id: 'spoofed:other-owner-session' } },
+      id: 'public-recovery-pulse',
+    }));
+    expect(response.status).toBe(200);
+    expect(executeGovernedTool).toHaveBeenCalledOnce();
+    expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('request_recovery_pulse');
+    expect(executeGovernedTool.mock.calls[0]?.[1]).toHaveProperty('session_id');
+    expect(executeGovernedTool.mock.calls[0]?.[1].session_id).not.toBe('spoofed:other-owner-session');
+    expect(checkRateLimit).toHaveBeenCalledWith(expect.stringMatching(/^recovery-pulse:/), 6, 60);
+  });
+
+  it('lets an authenticated operator use the same client recovery tool with a server-bound operator session', async () => {
+    isOperatorSecret.mockReturnValue(true);
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'request_recovery_pulse', arguments: { session_id: 'caller-selected-session' } },
+      id: 'operator-client-parity-pulse',
+    }));
+    expect(response.status).toBe(200);
+    expect(executeGovernedTool).toHaveBeenCalledOnce();
+    expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('request_recovery_pulse');
+    expect(executeGovernedTool.mock.calls[0]?.[1].session_id).not.toBe('caller-selected-session');
+    expect(executeGovernedTool.mock.calls[0]?.[1]).toHaveProperty('session_id');
+    expect(checkRateLimit).toHaveBeenCalledWith(expect.stringMatching(/^recovery-pulse:/), 6, 60);
+  });
+
   it('routes an authorized recovery pulse through the governed control-plane executor', async () => {
     isOperatorSecret.mockReturnValue(true);
     executeGovernedToolStructured.mockResolvedValueOnce({
@@ -699,6 +737,7 @@ describe('MCP constitutional dispatch boundary', () => {
       'request_approval',
       'run_governance',
       'get_constitutional_state',
+      'request_recovery_pulse',
       'simulate_agent_plan',
       'review_agent_action',
       'discover_external_tool',

@@ -1,4 +1,4 @@
-import { getZTraj, updateZTraj, recordZTrajObservation, type ZTraj } from '../kv';
+import { getZTraj, recordZTrajObservation } from '../kv';
 import {
   TARGET_MARGIN,
   calculateZAwareGovernorG,
@@ -71,6 +71,24 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
       nStable: 0,
       velocity: 0,
       reason: 'No canonical trajectory exists; recovery remains fail-closed.',
+    };
+  }
+
+  const elapsedSinceWriteMs = Date.now() - Date.parse(current.updated_at);
+  if (!Number.isFinite(elapsedSinceWriteMs)) {
+    return {
+      advanced: false, stabilized: false, state: 'RESTORING',
+      M: Math.min(current.last_c, current.last_r, current.last_s),
+      nStable: current.n_stable, velocity: current.velocity,
+      reason: 'Trajectory timestamp is invalid; recovery pulse was not applied.',
+    };
+  }
+  if (elapsedSinceWriteMs < RECOVERY_MIN_OBSERVATION_INTERVAL_MS) {
+    return {
+      advanced: false, stabilized: false, state: 'RESTORING',
+      M: Math.min(current.last_c, current.last_r, current.last_s),
+      nStable: current.n_stable, velocity: current.velocity,
+      reason: `Recovery pulse interval has not elapsed; wait ${Math.ceil((RECOVERY_MIN_OBSERVATION_INTERVAL_MS - elapsedSinceWriteMs) / 1000)} more second(s).`,
     };
   }
 
@@ -193,17 +211,48 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     reason = 'Bounded governor correction applied by the recovery plane; ordinary tool execution remains denied.';
   }
 
-  // Keep a warm serverless kernel aligned with the canonical persisted state.
-  // Other instances will hydrate from z_traj on their next governance turn.
-  const kernel = getCachedKernel(sessionId, { C: x[0], R: x[1], S: x[2] });
-  kernel.state = { C: next[0], R: next[1], S: next[2] };
-
-  const updated: ZTraj = await updateZTraj(
+  // Persist the bounded correction with compare-and-set against the exact
+  // trajectory sample read above. Concurrent pulses against the same sample
+  // cannot both win; a stale writer must re-read instead of overwriting newer CRS.
+  const committed = await recordZTrajObservation(
     sessionId,
+    {
+      last_c: current.last_c,
+      last_r: current.last_r,
+      last_s: current.last_s,
+      sigma_viol: current.sigma_viol,
+      updated_at: current.updated_at,
+    },
     { c: next[0], r: next[1], s: next[2] },
-    { c: x[0], r: x[1], s: x[2] },
-    current.attack_pressure,
+    false,
   );
+  if (!committed) {
+    return {
+      advanced: false,
+      stabilized: false,
+      state: 'RESTORING',
+      M,
+      nStable: current.n_stable,
+      velocity: current.velocity,
+      reason: 'Canonical trajectory changed during recovery correction; compare-and-set rejected the stale pulse. Re-read state before retrying.',
+    };
+  }
+
+  const updated = await getZTraj(sessionId);
+  if (!updated) {
+    return {
+      advanced: false,
+      stabilized: false,
+      state: 'RESTORING',
+      M,
+      nStable: current.n_stable,
+      velocity: current.velocity,
+      reason: 'Recovery correction committed but the canonical trajectory could not be re-read; execution remains fail-closed.',
+    };
+  }
+  // Update the warm cache only after the canonical compare-and-set succeeds.
+  const kernel = getCachedKernel(sessionId, { C: updated.last_c, R: updated.last_r, S: updated.last_s });
+  kernel.state = { C: updated.last_c, R: updated.last_r, S: updated.last_s };
 
   const updatedM = Math.min(updated.last_c, updated.last_r, updated.last_s);
   const stabilized = updated.velocity < RECOVERY_STABILITY_THRESHOLD;

@@ -11,7 +11,7 @@ export function bindGovernanceToolSession(
   // Both the inner governance cycle and its canonical-state diagnostic must use
   // the same resolved session as the outer executor, including operator-secret
   // callers that did not explicitly supply session_id.
-  if (toolName === 'run_governance' || toolName === 'get_constitutional_state') {
+  if (toolName === 'run_governance' || toolName === 'get_constitutional_state' || toolName === 'request_recovery_pulse') {
     return { ...args, session_id: sessionId };
   }
   return args;
