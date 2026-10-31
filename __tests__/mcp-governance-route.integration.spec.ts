@@ -490,7 +490,7 @@ describe('MCP constitutional dispatch boundary', () => {
   it('exposes a public recovery pulse and binds it to the authenticated caller session', async () => {
     const listed = await POST(request({ jsonrpc: '2.0', method: 'tools/list', id: 'public-recovery-tool-list' }));
     expect(listed.status).toBe(200);
-    const listedTools = (listed.body as { result: { tools: Array<{ name: string }> } }).result.tools;
+    const listedTools = (listed.body as unknown as { result: { tools: Array<{ name: string }> } }).result.tools;
     expect(listedTools.map((tool) => tool.name)).toContain('request_recovery_pulse');
 
     const response = await POST(request({
@@ -737,6 +737,7 @@ describe('MCP constitutional dispatch boundary', () => {
       'request_approval',
       'run_governance',
       'get_constitutional_state',
+      'request_recovery_pulse',
       'simulate_agent_plan',
       'review_agent_action',
       'discover_external_tool',
