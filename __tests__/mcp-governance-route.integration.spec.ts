@@ -507,6 +507,22 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(checkRateLimit).toHaveBeenCalledWith(expect.stringMatching(/^recovery-pulse:/), 6, 60);
   });
 
+  it('lets an authenticated operator use the same client recovery tool with a server-bound operator session', async () => {
+    isOperatorSecret.mockReturnValue(true);
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'request_recovery_pulse', arguments: { session_id: 'caller-selected-session' } },
+      id: 'operator-client-parity-pulse',
+    }));
+    expect(response.status).toBe(200);
+    expect(executeGovernedTool).toHaveBeenCalledOnce();
+    expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('request_recovery_pulse');
+    expect(executeGovernedTool.mock.calls[0]?.[1].session_id).not.toBe('caller-selected-session');
+    expect(executeGovernedTool.mock.calls[0]?.[1]).toHaveProperty('session_id');
+    expect(checkRateLimit).toHaveBeenCalledWith(expect.stringMatching(/^recovery-pulse:/), 6, 60);
+  });
+
   it('routes an authorized recovery pulse through the governed control-plane executor', async () => {
     isOperatorSecret.mockReturnValue(true);
     executeGovernedToolStructured.mockResolvedValueOnce({
