@@ -71,7 +71,6 @@ import { CONSTITUTION } from '../constitution';
 import { readCanonicalGovernanceState } from '../agents/canonical_governance_state';
 import { advanceRecoveryPlane } from '../agents/recovery_runtime';
 import { requestClientRecoveryPulse } from '../agents/client_recovery_service';
-import { requestClientRecoveryPulse } from '../agents/client_recovery_service';
 import { deriveRecoveryState, recoveryCapabilityAllowed, RECOVERY_STABILITY_THRESHOLD } from '../agents/recovery_state';
 import { validateTargetBranch, validateBaseBranch } from './tools/github_branch_validation';
 
