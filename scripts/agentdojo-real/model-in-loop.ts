@@ -194,7 +194,7 @@ async function lexArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResu
   const decisions: string[] = [];
   let infrastructureFailure = false;
   let approvalPending = 0;
-  const sessionId = `model-eval-tool-${task.id}-r${runId}`;
+  const sessionId = `model-eval-tool-${task.id}-${process.env.GITHUB_RUN_ID ?? 'local'}-r${runId}`;
   const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
   if (!bootstrap.verified) {
     return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
@@ -228,7 +228,7 @@ async function lexArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResu
 async function trajectoryArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResult> {
   const world = freshWorld(task.seedFiles);
   const approvalReplayWorld = freshWorld(task.seedFiles);
-  const sessionId = `model-eval-trajectory-${task.id}-r${runId}`;
+  const sessionId = `model-eval-trajectory-${task.id}-${process.env.GITHUB_RUN_ID ?? 'local'}-r${runId}`;
   if (!await ensureCanonicalTrajectoryState(sessionId)) {
     return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
   }
