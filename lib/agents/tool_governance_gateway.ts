@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { getClient } from '../db';
-import { getToolCapability } from './tool_capability_registry';
+import { getToolCapability, resolveToolCapability } from './tool_capability_registry';
 import { classifyDatabaseOperation } from './sql_policy';
 export { classifyDatabaseOperation } from './sql_policy';
 export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
@@ -284,7 +284,10 @@ export function evaluateToolGovernance(input: {
   nowMs?: number;
 }): GovernancePolicyDecision {
   const risk = classifyGovernanceRisk(input.toolName, input.args);
-  const requiresApproval = risk !== 'read' || (getToolCapability(input.toolName)?.approvalRequired ?? false);
+  const resolvedCapability = (() => {
+    try { return resolveToolCapability(input.toolName, input.args); } catch { return undefined; }
+  })();
+  const requiresApproval = risk !== 'read' || (resolvedCapability?.approvalRequired ?? false);
   const reasons: string[] = [];
   if (!input.authorized) {
     reasons.push('Caller or capability scope does not authorize this tool.');

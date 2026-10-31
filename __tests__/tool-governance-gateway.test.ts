@@ -69,6 +69,30 @@ describe('central tool governance gateway', () => {
     expect(read.decision).toBe('allow');
   });
 
+  it('uses dynamic execute_sql capability resolution for approval decisions', () => {
+    const read = evaluateToolGovernance({
+      toolName: 'execute_sql',
+      args: { sql: 'SELECT balance FROM accounts;' },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+    });
+    expect(read.risk).toBe('read');
+    expect(read.requiresApproval).toBe(false);
+    expect(read.decision).toBe('allow');
+
+    const destructive = evaluateToolGovernance({
+      toolName: 'execute_sql',
+      args: { sql: 'DROP TABLE accounts' },
+      sessionId: 'session-1',
+      actorId: 'internal-agent',
+      authorized: true,
+    });
+    expect(destructive.risk).toBe('destructive');
+    expect(destructive.requiresApproval).toBe(true);
+    expect(destructive.decision).toBe('approval_required');
+  });
+
   it('allows non-effectful governance analysis without weakening normal write approval', () => {
     const result = evaluateToolGovernance({
       toolName: 'run_governance',
