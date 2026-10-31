@@ -95,7 +95,7 @@ type ToolHandler = (args: Record<string, unknown>, signal?: AbortSignal) => Prom
 
 function trajectoryRiskForCapability(capability: ToolCapability | undefined): TrajectoryAction['risk'] {
   if (capability === 'read' || capability === 'recovery_probe') return 'read';
-  if (capability === 'write') return 'write';
+  if (capability === 'recovery' || capability === 'write') return 'write';
   if (capability === 'external' || capability === 'network' || capability === 'delegate') return 'external';
   return 'destructive';
 }
