@@ -618,7 +618,7 @@ async function handlePost(req: Request) {
       try {
         await runZTrajMigrations();
         const bootstrap = await ensureCanonicalTrajectoryState(requestedSession);
-        if (!bootstrap.verified) {
+        if (!bootstrap.verified || bootstrap.sessionId !== requestedSession) {
           return NextResponse.json({
             jsonrpc: '2.0',
             error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
@@ -916,7 +916,7 @@ async function handlePost(req: Request) {
       await runZTrajMigrations();
       if (!isNonMutatingInspectionTool(dispatchToolName, args)) {
         const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
-        if (!bootstrap.verified) {
+        if (!bootstrap.verified || bootstrap.sessionId !== sessionId) {
           return NextResponse.json({
             jsonrpc: '2.0',
             error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
