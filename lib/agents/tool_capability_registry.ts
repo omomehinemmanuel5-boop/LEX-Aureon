@@ -8,6 +8,7 @@
  * foundation for governing tools Lex has never seen before: a new tool must
  * first be mapped to a capability class before execution is permitted.
  */
+import { classifyDatabaseOperation } from './sql_policy';
 export type ToolCapability =
   | 'read'
   | 'recovery' | 'recovery_probe'
@@ -54,7 +55,7 @@ const EXTERNAL_TOOLS = [
 const DESTRUCTIVE_TOOLS = [
   'delete_file','delete_directory','delete_repository','delete_branch',
   'revoke_key','change_access','change_billing','drop_table',
-  'execute_destructive_sql',
+  'execute_destructive_sql','execute_sql',
 ] as const;
 
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
@@ -129,6 +130,25 @@ export function requireKnownToolCapability(toolName: string): ToolCapabilityReco
     throw new Error(`Unknown tool capability: ${toolName}. Register its capability before execution.`);
   }
   return record;
+}
+
+/**
+ * Resolve capabilities whose effect depends on submitted arguments.
+ * execute_sql keeps a destructive default and narrows to read only for a
+ * valid single-statement SELECT/CTE.
+ */
+export function resolveToolCapability(
+  toolName: string,
+  args: Record<string, unknown> = {},
+): ToolCapabilityRecord {
+  const registered = requireKnownToolCapability(toolName);
+  if (toolName !== 'execute_sql') return registered;
+
+  const sql = typeof args.sql === 'string' ? args.sql : typeof args.query === 'string' ? args.query : '';
+  if (classifyDatabaseOperation(sql) === 'read') {
+    return { ...registered, capability: 'read', approvalRequired: false, reversible: true };
+  }
+  return registered;
 }
 
 export function capabilitySummary(): ToolCapabilityRecord[] {

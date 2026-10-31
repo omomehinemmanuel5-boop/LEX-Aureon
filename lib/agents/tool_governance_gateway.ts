@@ -1,19 +1,9 @@
 import crypto from 'crypto';
 import { getClient } from '../db';
 import { getToolCapability } from './tool_capability_registry';
-
+import { classifyDatabaseOperation } from './sql_policy';
+export { classifyDatabaseOperation } from './sql_policy';
 export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
-
-/** Classifies SQL by operation so database safety is governed by the statement, not the tool name. */
-export function classifyDatabaseOperation(sql: string): 'read' | 'write' | 'invalid' {
-  const normalized = sql
-    .replace(/^\s*(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/\s*)+/g, '')
-    .trim();
-  if (!normalized || normalized.includes(';')) return 'invalid';
-  if (/^with\b/i.test(normalized) && /\b(insert|update|delete|replace|drop|alter|create|pragma|attach|detach|vacuum)\b/i.test(normalized)) return 'write';
-  if (/^(?:select|with)\b/i.test(normalized)) return 'read';
-  return 'write';
-}
 
 export type VerificationStatus = 'verified' | 'unknown' | 'not_started' | 'failed';
 
@@ -248,9 +238,10 @@ export async function releaseConsumedGovernanceApprovalToken(input: {
 }
 
 export function classifyGovernanceRisk(toolName: string, args: Record<string, unknown> = {}): GovernanceRisk {
-  if (toolName === 'query_database') {
-    const operation = classifyDatabaseOperation(String(args.sql ?? ''));
+  if (toolName === 'query_database' || toolName === 'execute_sql') {
+    const operation = classifyDatabaseOperation(String(args.sql ?? args.query ?? ''));
     if (operation === 'invalid') return 'destructive';
+    if (toolName === 'execute_sql' && operation !== 'read') return 'destructive';
     return operation;
   }
   const registered = getToolCapability(toolName);

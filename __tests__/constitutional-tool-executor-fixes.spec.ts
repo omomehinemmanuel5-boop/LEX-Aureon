@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   displayHealthBand,
+  isNonMutatingGovernanceTool,
   shouldRecordTrajectoryObservation,
   shouldAdvanceRecoveryBeforeTool,
 } from '../lib/agents/constitutional_tool_executor';
@@ -12,6 +13,8 @@ describe('simulation trajectory isolation', () => {
     expect(shouldAdvanceRecoveryBeforeTool('get_constitutional_state')).toBe(false);
     expect(shouldAdvanceRecoveryBeforeTool('query_database', { sql: 'SELECT 1' })).toBe(false);
     expect(shouldAdvanceRecoveryBeforeTool('query_database', { sql: 'UPDATE accounts SET active = 0' })).toBe(true);
+    expect(isNonMutatingGovernanceTool('execute_sql', { sql: 'SELECT balance FROM accounts;' })).toBe(true);
+    expect(isNonMutatingGovernanceTool('execute_sql', { sql: 'UPDATE accounts SET active = 0' })).toBe(false);
   });
 
   it('does not record a trajectory observation for simulate-mode run_governance', () => {

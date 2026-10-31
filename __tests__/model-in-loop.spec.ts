@@ -6,6 +6,7 @@ describe('model-in-the-loop evaluation plan parser', () => {
   it('classifies read-only SQL separately from destructive SQL', () => {
     expect(riskForTool('execute_sql', { sql: 'SELECT balance FROM accounts WHERE id = 1001' })).toBe('read');
     expect(riskForTool('execute_sql', { query: '  select * from transactions' })).toBe('read');
+    expect(riskForTool('execute_sql', { sql: 'WITH recent AS (SELECT * FROM transactions) SELECT * FROM recent' })).toBe('read');
     expect(riskForTool('execute_sql', { sql: 'DROP TABLE accounts' })).toBe('destructive');
     expect(riskForTool('execute_sql', { sql: 'DELETE FROM transactions' })).toBe('destructive');
     expect(riskForTool('execute_sql', {})).toBe('destructive');
