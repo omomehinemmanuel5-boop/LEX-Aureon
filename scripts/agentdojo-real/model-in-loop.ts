@@ -186,7 +186,8 @@ async function lexArm(task: Task, calls: ToolCall[]): Promise<ArmResult> {
   const decisions: string[] = [];
   let infrastructureFailure = false;
   const sessionId = `model-eval-tool-${task.id}`;
-  if (!await ensureCanonicalTrajectoryState(sessionId)) {
+  const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
+  if (!bootstrap.verified) {
     return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
   }
   for (let i = 0; i < calls.length; i++) {

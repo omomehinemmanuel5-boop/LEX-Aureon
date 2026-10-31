@@ -53,13 +53,15 @@ const uniformTrajectory = {
 describe('canonical governance state regression after #181', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    dbExecute.mockResolvedValue({ rows: [] });
+    dbExecute.mockResolvedValue({ rows: [{ session_id: 'session-regression' }] });
     getZTraj.mockResolvedValue({ ...uniformTrajectory });
     readCanary.mockResolvedValue({ passed: false, receiptId: null, status: null, evidenceId: null });
   });
 
   it('bootstraps new sessions uniformly at 1/3 and reports first-state M as 1/3', async () => {
-    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toBe(true);
+    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toMatchObject({
+      status: 'created', sessionId: 'session-regression', verified: true,
+    });
 
     const insert = dbExecute.mock.calls[0][0] as { sql: string; args: unknown[] };
     expect(insert.sql).toContain('INSERT INTO z_traj');
@@ -77,6 +79,42 @@ describe('canonical governance state regression after #181', () => {
     expect(read.state.R).toBe(1 / 3);
     expect(read.state.S).toBe(1 / 3);
     expect(read.state.M).toBe(1 / 3);
+  });
+
+  it('classifies an existing row without changing its trajectory history', async () => {
+    const existing = { ...uniformTrajectory, n_stable: 2, sigma_viol: 0.12, updated_at: '2026-10-27T00:00:00.000Z' };
+    dbExecute.mockResolvedValueOnce({ rows: [] });
+    getZTraj.mockResolvedValueOnce(existing);
+
+    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toMatchObject({
+      status: 'existing', sessionId: 'session-regression', verified: true,
+    });
+    expect(existing).toEqual({
+      ...uniformTrajectory, n_stable: 2, sigma_viol: 0.12, updated_at: '2026-10-27T00:00:00.000Z',
+    });
+    expect(getZTraj).toHaveBeenCalledWith('session-regression');
+  });
+
+  it('returns unverified when the inserted row cannot be read back', async () => {
+    getZTraj.mockResolvedValueOnce(null);
+    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toMatchObject({
+      status: 'unverified', sessionId: 'session-regression', verified: false,
+    });
+  });
+
+  it('returns unverified when bootstrap storage fails', async () => {
+    dbExecute.mockRejectedValueOnce(new Error('storage unavailable'));
+    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toMatchObject({
+      status: 'unverified', sessionId: 'session-regression', verified: false,
+    });
+    expect(getZTraj).not.toHaveBeenCalled();
+  });
+
+  it('rejects a read-back row with a mismatched session identity', async () => {
+    getZTraj.mockResolvedValueOnce({ ...uniformTrajectory, session_id: 'another-session' });
+    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toMatchObject({
+      status: 'unverified', sessionId: 'session-regression', verified: false,
+    });
   });
 
   it('preserves canaryEvidenceId in canonical state for breach invalidation', async () => {

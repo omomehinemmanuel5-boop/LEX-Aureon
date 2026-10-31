@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
-  ensureCanonicalTrajectoryState: vi.fn(async () => true),
+  ensureCanonicalTrajectoryState: vi.fn(async (sessionId: string) => ({ status: 'created' as const, sessionId, verified: true as const })),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
   readCanonicalGovernanceState: vi.fn(),
   createCanonicalGovernanceStateReader: vi.fn(() => ({
