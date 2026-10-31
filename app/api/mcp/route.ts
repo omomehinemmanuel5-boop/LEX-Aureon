@@ -917,11 +917,11 @@ async function handlePost(req: Request) {
       if (!isNonMutatingInspectionTool(dispatchToolName, args)) {
         const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
         if (!bootstrap.verified) {
-        return NextResponse.json({
-          jsonrpc: '2.0',
-          error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
-          id,
-        }, { status: 503 });
+          return NextResponse.json({
+            jsonrpc: '2.0',
+            error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
+            id,
+          }, { status: 503 });
         }
       }
     } catch {
