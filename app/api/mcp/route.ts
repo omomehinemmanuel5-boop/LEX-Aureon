@@ -900,8 +900,11 @@ async function handlePost(req: Request) {
       if (!canCallTool(profile, dispatchToolName)) return unauthorized(id);
     }
 
-    const clientSessionId = (args.session_id as string | undefined)
-      ?? defaultMcpSessionId(actorId);
+    // Recovery control never accepts a caller-selected session. Bind the pulse
+    // to the authenticated principal's default session for both client and operator callers.
+    const clientSessionId = dispatchToolName === 'request_recovery_pulse'
+      ? defaultMcpSessionId(actorId)
+      : (args.session_id as string | undefined) ?? defaultMcpSessionId(actorId);
     const ownerSessionPrefix = `${ownerId}:`;
     const diagnosticSessionTools = new Set([
       'get_constitutional_state', 'get_recent_receipts', 'explain_denial',
