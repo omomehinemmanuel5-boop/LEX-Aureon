@@ -59,7 +59,9 @@ describe('canonical governance state regression after #181', () => {
   });
 
   it('bootstraps new sessions uniformly at 1/3 and reports first-state M as 1/3', async () => {
-    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toMatchObject({\n      status: 'created', sessionId: 'session-regression', verified: true,\n    });
+    await expect(ensureCanonicalTrajectoryState('session-regression')).resolves.toMatchObject({
+      status: 'created', sessionId: 'session-regression', verified: true,
+    });
 
     const insert = dbExecute.mock.calls[0][0] as { sql: string; args: unknown[] };
     expect(insert.sql).toContain('INSERT INTO z_traj');
