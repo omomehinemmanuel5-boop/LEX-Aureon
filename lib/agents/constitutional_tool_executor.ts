@@ -48,7 +48,7 @@ export function isNonMutatingGovernanceTool(toolName: string, args: Record<strin
 // This explicit control-plane action mutates only the recovery trajectory.
 // It must bypass automatic recovery advancement and post-tool trajectory
 // sampling, but it must never be cached as an ordinary read.
-const RECOVERY_CONTROL_TOOLS = new Set(['advance_recovery_plane']);
+const RECOVERY_CONTROL_TOOLS = new Set(['advance_recovery_plane', 'request_recovery_pulse']);
 
 /**
  * run_governance delegates to executeGovern(), which owns recovery advancement

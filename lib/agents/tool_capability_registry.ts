@@ -61,6 +61,8 @@ const DESTRUCTIVE_TOOLS = [
 const SPECIAL_TOOLS: ToolCapabilityRecord[] = [
   { name:'request_approval', capability:'read', approvalRequired:false, reversible:true, source:'mcp' },
   { name:'run_recovery_canary', capability:'recovery_probe', approvalRequired:false, reversible:false, source:'mcp' },
+  // Public clients can request one bounded pulse; privileged certification remains operator-only.
+  { name:'request_recovery_pulse', capability:'recovery', approvalRequired:false, reversible:false, source:'mcp' },
   { name:'advance_recovery_plane', capability:'recovery', approvalRequired:false, reversible:false, source:'mcp' },
   { name:'declare_trajectory_plan', capability:'write', approvalRequired:true, reversible:false, source:'mcp' },
   { name:'clear_trajectory_plan', capability:'write', approvalRequired:true, reversible:false, source:'mcp' },

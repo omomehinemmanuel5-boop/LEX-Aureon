@@ -14,6 +14,7 @@ export const PUBLIC_MCP_TOOLS = new Set([
   'run_governance',
   'request_approval',
   'get_constitutional_state',
+  'request_recovery_pulse',
   'declare_trajectory_plan',
   'get_trajectory_status',
   'clear_trajectory_plan',
