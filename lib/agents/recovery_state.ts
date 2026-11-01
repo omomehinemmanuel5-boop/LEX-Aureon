@@ -18,6 +18,8 @@ export interface RecoveryEvidence {
   nStable: number;
   sigmaViol: number;
   canaryPassed?: boolean;
+  /** Canonical trajectory velocity; omitted only by legacy pure-policy callers. */
+  velocity?: number;
 }
 
 export function deriveRecoveryState(M: number, evidence: RecoveryEvidence): RecoveryState {
@@ -55,6 +57,18 @@ export function recoveryCapabilityAllowed(
       allowed: false,
       state,
       reason: `Canonical M=${M.toFixed(3)} < τ_floor=${CONSTITUTION.TAU_FLOOR}; all governed execution remains suspended.`,
+    };
+  }
+
+  // Reads remain available regardless of trajectory velocity. Every non-read
+  // capability, including bounded recovery probes, must use a finite velocity
+  // strictly below the same stability threshold used by canary validation.
+  if (capability !== 'read' && evidence.velocity !== undefined
+    && (!Number.isFinite(evidence.velocity) || evidence.velocity >= RECOVERY_STABILITY_THRESHOLD)) {
+    return {
+      allowed: false,
+      state,
+      reason: `Canonical recovery velocity is not stable: velocity=${String(evidence.velocity)} must be finite and < ${RECOVERY_STABILITY_THRESHOLD} before non-read execution.`,
     };
   }
 

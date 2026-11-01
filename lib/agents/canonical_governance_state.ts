@@ -156,6 +156,7 @@ export async function readCanonicalGovernanceState(input: CanonicalGovernanceRea
       nStable,
       sigmaViol,
       canaryPassed: canary.passed,
+      velocity,
     });
 
     const state: CanonicalGovernanceState = {
@@ -283,6 +284,7 @@ export function canonicalExecutionAllowed(
     nStable: state.nStable,
     sigmaViol: state.sigmaViol,
     canaryPassed: state.canaryPassed === true,
+    velocity: state.velocity,
   });
 
   if (!recovery.allowed) {

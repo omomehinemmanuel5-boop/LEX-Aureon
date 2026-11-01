@@ -50,6 +50,25 @@ describe('constitutional recovery policy', () => {
     expect(destructiveNormal.state).toBe('NORMAL');
   });
 
+  it('denies non-read recovery capabilities at or above the velocity stability threshold', () => {
+    const gate = recoveryCapabilityAllowed(0.25, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true, velocity: 0.02 });
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('velocity is not stable');
+  });
+
+  it('denies non-read recovery capabilities when velocity is NaN', () => {
+    const gate = recoveryCapabilityAllowed(0.25, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true, velocity: Number.NaN });
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('velocity is not stable');
+  });
+
+  it('allows reads regardless of canonical velocity', () => {
+    for (const velocity of [0.02, 0.5, Number.NaN]) {
+      const gate = recoveryCapabilityAllowed(0.25, 'read', { nStable: 0, sigmaViol: 1, canaryPassed: false, velocity });
+      expect(gate.allowed).toBe(true);
+    }
+  });
+
   it('reaches NORMAL only at or above the optimal boundary with verified evidence', () => {
     expect(deriveRecoveryState(0.24, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('VERIFIED');
     expect(deriveRecoveryState(0.25, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('NORMAL');
@@ -171,7 +190,7 @@ describe('canonical governance state', () => {
     expect(gate.reason).toContain('Canonical recovery velocity is not stable');
   });
 
-  it('does not apply the ordinary velocity proof gate to bounded recovery probes', () => {
+  it('denies bounded recovery probes when canonical velocity is unstable', () => {
     const gate = canonicalExecutionAllowed({
       sessionId: 'recovery-probe', actorId: 'operator',
       C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
@@ -180,7 +199,8 @@ describe('canonical governance state', () => {
       canaryPassed: true, authorization: 'authorized', policyRisk: 'recovery_probe',
       version: 'test', observedAt: new Date().toISOString(),
     });
-    expect(gate.allowed).toBe(true);
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('velocity is not stable');
   });
 
   it('allows recovery reads below 0.15', () => {
