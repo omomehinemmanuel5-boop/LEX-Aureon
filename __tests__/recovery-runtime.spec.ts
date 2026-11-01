@@ -151,22 +151,6 @@ describe('bounded recovery plane', () => {
       attack_pressure: 0,
       updated_at: new Date(Date.now() - 10_000).toISOString(),
     });
-    mocks.updateZTraj.mockResolvedValue({
-      session_id: 's',
-      velocity: 0,
-      n_stable: 3,
-      drift_dir: 'stable',
-      sigma_viol: 0,
-      last_m: 0.20,
-      last_c: 0.20,
-      last_r: 0.40,
-      last_s: 0.40,
-      z_c: 1 / 3,
-      z_r: 1 / 3,
-      z_s: 1 / 3,
-      attack_pressure: 0,
-      updated_at: new Date().toISOString(),
-    });
 
     const result = await advanceRecoveryPlane('s');
 
@@ -200,22 +184,6 @@ describe('bounded recovery plane', () => {
       z_s: 1 / 3,
       attack_pressure: 0,
       updated_at: new Date(Date.now() - 10_000).toISOString(),
-    });
-    mocks.updateZTraj.mockResolvedValue({
-      session_id: 's',
-      velocity: 0,
-      n_stable: 0,
-      drift_dir: 'stable',
-      sigma_viol: 0,
-      last_m: 0.20,
-      last_c: 0.20,
-      last_r: 0.40,
-      last_s: 0.40,
-      z_c: 1 / 3,
-      z_r: 1 / 3,
-      z_s: 1 / 3,
-      attack_pressure: 0,
-      updated_at: new Date().toISOString(),
     });
 
     mocks.recordZTrajObservation.mockResolvedValue(true);
