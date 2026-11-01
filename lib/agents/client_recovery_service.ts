@@ -37,6 +37,19 @@ export async function requestClientRecoveryPulse(sessionId: string): Promise<Cli
     if (before.state.M < CONSTITUTION.TAU_FLOOR) {
       return { status: 'BLOCKED', recovery_state: before.state.recoveryState, M: before.state.M, reason: 'The quarantine floor is active; no recovery mutation is permitted.', grants_write_authority: false };
     }
+    // A passing canary certifies this canonical trajectory snapshot. A client
+    // pulse must not mutate the measured state and invalidate that evidence.
+    if (before.state.canaryPassed === true) {
+      return {
+        status: 'BLOCKED',
+        recovery_state: before.state.recoveryState,
+        C: before.state.C, R: before.state.R, S: before.state.S, M: before.state.M,
+        n_stable: before.state.nStable, velocity: before.state.velocity,
+        sigma_viol: before.state.sigmaViol, canary_passed: true,
+        reason: 'The current canonical snapshot already has passing canary evidence; no recovery pulse was issued.',
+        grants_write_authority: false,
+      };
+    }
     const pulse = await advanceRecoveryPlane(sessionId);
     const after = await readCanonicalGovernanceState({ sessionId, actorId: 'recovery-service', capability: 'read' });
     return {

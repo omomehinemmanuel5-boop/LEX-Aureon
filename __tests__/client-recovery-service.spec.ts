@@ -53,6 +53,23 @@ describe('client recovery service', () => {
     expect(advanceRecoveryPlane).not.toHaveBeenCalled();
   });
 
+  it('preserves a canary-certified snapshot without issuing a recovery mutation', async () => {
+    readCanonicalGovernanceState.mockResolvedValueOnce(canonical(0.2, {
+      recoveryState: 'VERIFIED',
+      nStable: 3,
+      canaryPassed: true,
+    }));
+    const result = await requestClientRecoveryPulse('owner:session');
+    expect(result).toMatchObject({
+      status: 'BLOCKED',
+      canary_passed: true,
+      grants_write_authority: false,
+      reason: 'The current canonical snapshot already has passing canary evidence; no recovery pulse was issued.',
+    });
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(readCanonicalGovernanceState).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed when canonical trajectory state is unavailable', async () => {
     readCanonicalGovernanceState.mockResolvedValueOnce({
       available: false,
