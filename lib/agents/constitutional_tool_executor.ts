@@ -291,7 +291,9 @@ async function recordRecoveryBandBreach(
   reason: string,
 ): Promise<boolean> {
   if (state.canaryEvidenceId == null) return false;
-  const recorded = await invalidateRecoveryCanaryIfPassed(state.canaryEvidenceId, reason);
+  const invalidatedAt = new Date().toISOString();
+  const persistedReason = `${reason} [invalidated_at=${invalidatedAt}]`;
+  const recorded = await invalidateRecoveryCanaryIfPassed(state.canaryEvidenceId, persistedReason);
   if (recorded) {
     try {
       await writeGovernanceReceipt({
@@ -873,7 +875,7 @@ export async function executeGovernedToolStructured(
   if (shouldRecordTrajectoryObservation(toolName, args, cached.cacheHit)) {
     try {
       const previous = await getZTraj(sessionId);
-      await recordZTrajObservation(
+      const observationRecorded = await recordZTrajObservation(
         sessionId,
         previous ? {
           last_c: previous.last_c,
@@ -888,6 +890,31 @@ export async function executeGovernedToolStructured(
           s: cached.decision.crs.S,
         },
       );
+      if (observationRecorded && canonicalRead.state.canaryPassed === true) {
+        const observed = await getZTraj(sessionId);
+        if (observed) {
+          // This append-only audit marker captures the post-observation state.
+          // Recovery episode reset detection therefore does not have to infer
+          // a final counted sample from a later request's pre-action receipt.
+          await writeGovernanceReceipt({
+            receipt_id: `recovery-observation-${crypto.randomUUID()}`,
+            session_id: sessionId,
+            actor_id: actorId,
+            tool_name: 'recovery_observation',
+            args_hash: hashGovernanceArguments({
+              session_id: sessionId,
+              observed_at: observed.updated_at,
+            }).slice(0, 32),
+            decision: 'OBSERVATION_RECORDED',
+            crs: {
+              C: observed.last_c, R: observed.last_r, S: observed.last_s,
+              M: observed.last_m, risk_level: 'LOW',
+            },
+            reason: 'Canonical trajectory observation persisted after governed action; no execution authority or approval state is changed.',
+            sigma_viol: observed.sigma_viol,
+          });
+        }
+      }
     } catch {
       // Observation is best-effort; never alter a verified tool result or
       // authorize/revoke execution because this non-authoritative write failed.
