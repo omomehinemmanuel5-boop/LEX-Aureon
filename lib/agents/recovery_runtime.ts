@@ -318,7 +318,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
         ? `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); canonical sigma_viol=${String(canonical.state.sigmaViol)} must be exactly 0 before canary verification. Continue healthy observations until residual stress decays to zero.`
         : canonical.available && canonical.state.canaryPassed
           ? 'Stable recovery observation recorded; exact-snapshot canary evidence is current.'
-          : `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); an operator canary is still required before consequential execution.`;
+          : `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); the server evaluates the canonical canary predicate automatically when all prerequisites pass. Consequential execution still requires ordinary authorization.`;
     return {
       advanced: true,
       stabilized: nextStable >= CONSTITUTION.N_MIN,

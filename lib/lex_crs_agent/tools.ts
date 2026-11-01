@@ -521,7 +521,7 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
                   ? `Continue safe governed observations (${state.nStable}/${CONSTITUTION.N_MIN}) before canary verification.`
                 : state.canaryPassed
                   ? 'Exact-snapshot canary is current; each consequential action still requires its ordinary authorization.'
-                  : 'Call operator-only run_recovery_canary for this exact session and state snapshot; this probe does not authorize a write.';
+                  : 'The server evaluates and persists canary evidence automatically from canonical storage once every predicate passes. If this session has existing operator-issued canary evidence, use run_recovery_canary for an explicit operator audit or re-evaluation; no canary authorizes a write.';
       return JSON.stringify({
         session_id: state.sessionId,
         available: canonical.available,
