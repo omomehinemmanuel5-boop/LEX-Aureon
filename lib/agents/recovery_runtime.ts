@@ -74,6 +74,21 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     };
   }
 
+  const M = Math.min(current.last_c, current.last_r, current.last_s);
+  // Quarantine is an immediate hard stop. Do not let the observation dwell
+  // timer mask a below-floor state as merely RESTORING.
+  if (M < CONSTITUTION.TAU_FLOOR) {
+    return {
+      advanced: false,
+      stabilized: false,
+      state: 'QUARANTINED',
+      M,
+      nStable: current.n_stable,
+      velocity: current.velocity,
+      reason: 'M is below the constitutional floor; no recovery mutation is permitted.',
+    };
+  }
+
   const elapsedSinceWriteMs = Date.now() - Date.parse(current.updated_at);
   if (!Number.isFinite(elapsedSinceWriteMs)) {
     return {
@@ -92,7 +107,6 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     };
   }
 
-  const M = Math.min(current.last_c, current.last_r, current.last_s);
   if (M >= CONSTITUTION.TAU_RECOVERY) {
     // A stationary sample is not evidence of stability if the preceding
     // trajectory was still moving. First write a zero-velocity baseline
@@ -163,18 +177,6 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
       reason,
     };
   }
-  if (M < CONSTITUTION.TAU_FLOOR) {
-    return {
-      advanced: false,
-      stabilized: false,
-      state: 'QUARANTINED',
-      M,
-      nStable: current.n_stable,
-      velocity: current.velocity,
-      reason: 'M is below the constitutional floor; no recovery mutation is permitted.',
-    };
-  }
-
   const x: [number, number, number] = [current.last_c, current.last_r, current.last_s];
   const z: [number, number, number] = [current.z_c, current.z_r, current.z_s];
 
