@@ -1,8 +1,9 @@
+import crypto from 'crypto';
 import { getClient } from '../db';
 import { deriveHealthBand, getZTraj } from '../kv';
 import { CONSTITUTION } from '../constitution';
-import { RECOVERY_STABILITY_THRESHOLD, recoveryCapabilityAllowed, type RecoveryState } from './recovery_state';
-import { readRecoveryCanaryEvidence, recoverySnapshotFingerprint } from './recovery_canary_evidence';
+import { RECOVERY_STABILITY_THRESHOLD, recoveryCapabilityAllowed, recoveryCanaryPredicateFailures, type RecoveryState } from './recovery_state';
+import { readRecoveryCanaryEvidence, recordRecoveryCanaryEvidence, recoverySnapshotFingerprint } from './recovery_canary_evidence';
 import type { ToolCapability } from './tool_capability_registry';
 
 export type CanonicalGovernanceBand = 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' | 'UNINITIALIZED';
@@ -151,7 +152,31 @@ export async function readCanonicalGovernanceState(input: CanonicalGovernanceRea
       C, R, S, nStable, sigmaViol,
       trajectoryUpdatedAt,
     });
-    const canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint, { sessionId: input.sessionId, stateVersion: STATE_VERSION, stateFingerprint, M, sigmaViol, nStable, velocity });
+    let canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint, { sessionId: input.sessionId, stateVersion: STATE_VERSION, stateFingerprint, M, sigmaViol, nStable, velocity });
+    const serverMayIssueCanary = input.capability !== 'recovery_probe'
+      && (input.actorId === 'operator' || input.actorId.startsWith('api_key:'));
+    if (serverMayIssueCanary && !canary.passed
+      && recoveryCanaryPredicateFailures({ trajectoryAvailable: true, M, nStable, sigmaViol, velocity }).length === 0) {
+      try {
+        await recordRecoveryCanaryEvidence({
+          sessionId: input.sessionId,
+          actorId: 'server:recovery-canary',
+          status: 'passed',
+          stateFingerprint,
+          policyVersion: STATE_VERSION,
+          probeTool: 'server_recovery_canary',
+          receiptId: `server-recovery-canary-${crypto.randomUUID()}`,
+          C, R, S, nStable, sigmaViol, velocity,
+          trajectoryUpdatedAt,
+          recoveryState: M >= CONSTITUTION.OPTIMAL_M_THRESHOLD ? 'NORMAL' : 'VERIFIED',
+          reason: 'Server-side canary predicate passed against the canonical storage snapshot.',
+        });
+        canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint, { sessionId: input.sessionId, stateVersion: STATE_VERSION, stateFingerprint, M, sigmaViol, nStable, velocity });
+      } catch {
+        // Canary issuance is evidence-only. Storage failure leaves the read
+        // available but keeps the recovery gate fail-closed.
+      }
+    }
     const recovery = recoveryCapabilityAllowed(M, input.capability, {
       nStable,
       sigmaViol,

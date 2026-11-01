@@ -235,6 +235,38 @@ describe('canonical governance state', () => {
     expect(gate.reason).toContain('τ_floor');
   });
 
+  it('does not issue a server canary for an uninitialized canonical trajectory', async () => {
+    dbExecute.mockResolvedValueOnce({ rows: [] });
+    const result = await readCanonicalGovernanceState({
+      sessionId: 'uninitialized-canary-session', actorId: 'agent-a', capability: 'read',
+    });
+    expect(result.available).toBe(true);
+    expect(result.state.trajectoryAvailable).toBe(false);
+    expect(dbExecute.mock.calls.some(([query]) => String((query as { sql?: string }).sql ?? query).includes('INSERT INTO recovery_canary_evidence'))).toBe(false);
+  });
+
+  it('ignores caller-supplied canary metrics and derives all recovery facts from z_traj', async () => {
+    dbExecute
+      .mockResolvedValueOnce({ rows: [{
+        last_c: 0.10, last_r: 0.40, last_s: 0.40, velocity: 0.03,
+        sigma_viol: 0.10, n_stable: 2, updated_at: '2026-10-10T00:00:00.000Z',
+      }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await readCanonicalGovernanceState({
+      sessionId: 'client-input-cannot-certify', actorId: 'api_key:owner-a', capability: 'read',
+      canaryPassed: true, nStable: 999, sigmaViol: 0, velocity: 0,
+    } as unknown as Parameters<typeof readCanonicalGovernanceState>[0]);
+
+    expect(result.state).toMatchObject({
+      M: 0.10, nStable: 2, sigmaViol: 0.10, velocity: 0.03,
+      canaryPassed: false, trajectoryAvailable: true,
+    });
+    expect(dbExecute.mock.calls.some(([query]) =>
+      String((query as { sql?: string }).sql ?? query).includes('INSERT INTO recovery_canary_evidence'),
+    )).toBe(false);
+  });
+
   it('fails closed when the canonical state store is unavailable', async () => {
     dbExecute.mockRejectedValue(new Error('state store unavailable'));
     const result = await readCanonicalGovernanceState({
