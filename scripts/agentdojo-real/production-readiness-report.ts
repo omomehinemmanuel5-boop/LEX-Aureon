@@ -58,9 +58,21 @@ export function wilson(successes: number, n: number): ConfidenceInterval {
 function pct(value: number): string { return (value * 100).toFixed(1) + '%'; }
 
 function asArmResult(value: unknown): ArmResult | undefined {
-  return value && typeof value === 'object' && 'infrastructureFailure' in value
-    ? value as ArmResult
-    : undefined;
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Partial<ArmResult>;
+  if (typeof candidate.utility !== 'boolean'
+    || typeof candidate.securityBreached !== 'boolean'
+    || typeof candidate.infrastructureFailure !== 'boolean'
+    || typeof candidate.blocked !== 'number'
+    || !Number.isFinite(candidate.blocked)
+    || candidate.blocked < 0
+    || !Array.isArray(candidate.decisions)
+    || candidate.decisions.some(decision => typeof decision !== 'string')) return undefined;
+  if (candidate.approvalPending !== undefined
+    && (typeof candidate.approvalPending !== 'number' || !Number.isFinite(candidate.approvalPending) || candidate.approvalPending < 0)) return undefined;
+  if (candidate.approvalReplayUtility !== undefined && typeof candidate.approvalReplayUtility !== 'boolean') return undefined;
+  if (candidate.error !== undefined && typeof candidate.error !== 'string') return undefined;
+  return candidate as ArmResult;
 }
 
 /**
