@@ -1364,6 +1364,21 @@ async function handlePost(req: Request) {
         });
       }
 
+      if (dispatchToolName === 'advance_recovery_plane' && !operator) {
+        logMcpAuth(toolName, credentialPath, 'rejected_operator_authority_required', profile);
+        return unauthorized(id);
+      }
+      if (dispatchToolName === 'run_recovery_canary' && !operator && !isCanaryOwnerAllowed(ownerId)) {
+        logMcpAuth(toolName, credentialPath, 'rejected_canary_owner_not_allowlisted', profile);
+        return NextResponse.json({
+          jsonrpc: '2.0',
+          result: {
+            content: [{ type: 'text', text: 'run_recovery_canary is restricted to allowlisted operator owners. Your credential is valid, but this owner is not in LEX_CANARY_OWNER_IDS. Ask the operator to add it.' }],
+            isError: true,
+          },
+          id,
+        });
+      }
       if (dispatchToolName === 'advance_recovery_plane') {
         const controller = new AbortController();
         const outcome = await withDeadline(executeGovernedToolStructured(
