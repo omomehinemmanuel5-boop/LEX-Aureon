@@ -69,9 +69,10 @@ import { THETA_0 } from '../aureonics_core';
 import { getDiscoveredToolCapability } from '../agents/tool_capability_discovery';
 import { CONSTITUTION } from '../constitution';
 import { readCanonicalGovernanceState } from '../agents/canonical_governance_state';
+
 import { advanceRecoveryPlane } from '../agents/recovery_runtime';
 import { requestClientRecoveryPulse } from '../agents/client_recovery_service';
-import { deriveRecoveryState, recoveryCapabilityAllowed, RECOVERY_STABILITY_THRESHOLD } from '../agents/recovery_state';
+import { deriveRecoveryState, recoveryCapabilityAllowed, recoveryCanaryPredicateFailures, RECOVERY_STABILITY_THRESHOLD } from '../agents/recovery_state';
 import { validateTargetBranch, validateBaseBranch } from './tools/github_branch_validation';
 
 const FRONTEND_REPO  = 'omomehinemmanuel5-boop/LEX-Aureon';
@@ -520,7 +521,7 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
                   ? `Continue safe governed observations (${state.nStable}/${CONSTITUTION.N_MIN}) before canary verification.`
                 : state.canaryPassed
                   ? 'Exact-snapshot canary is current; each consequential action still requires its ordinary authorization.'
-                  : 'Call operator-only run_recovery_canary for this exact session and state snapshot; this probe does not authorize a write.';
+                  : 'The server evaluates and persists canary evidence automatically from canonical storage once every predicate passes. If this session has existing operator-issued canary evidence, use run_recovery_canary for an explicit operator audit or re-evaluation; no canary authorizes a write.';
       return JSON.stringify({
         session_id: state.sessionId,
         available: canonical.available,
@@ -661,15 +662,15 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
     velocity: state.velocity,
     stability_threshold: RECOVERY_STABILITY_THRESHOLD,
   };
-  const unmet: string[] = [];
-  if (state.M < CONSTITUTION.TAU_RECOVERY) unmet.push(`M ${state.M.toFixed(3)} < τ_recovery ${CONSTITUTION.TAU_RECOVERY}`);
-  if (state.nStable < CONSTITUTION.N_MIN) unmet.push(`n_stable ${state.nStable} < N_MIN ${CONSTITUTION.N_MIN}`);
-  // Evidence validation requires exact zero; a looser threshold here can report a
-  // canary as eligible even though its evidence will immediately be rejected.
-  if (state.sigmaViol !== 0) unmet.push(`sigma_viol ${String(state.sigmaViol)} !== 0 (exact zero required before canary verification)`);
-  if (!Number.isFinite(state.velocity) || (state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD) {
-    unmet.push(`velocity ${String(state.velocity)} must be finite and < ${RECOVERY_STABILITY_THRESHOLD}`);
-  }
+  // Keep the operator audit probe on the exact same eligibility predicate as
+  // the automatic server issuer. Neither path accepts caller-supplied metrics.
+  const unmet = recoveryCanaryPredicateFailures({
+    trajectoryAvailable: state.trajectoryAvailable,
+    M: state.M,
+    nStable: state.nStable,
+    sigmaViol: state.sigmaViol,
+    velocity: state.velocity ?? Number.NaN,
+  });
   if (unmet.length) {
     return response({
       status: 'not_run',

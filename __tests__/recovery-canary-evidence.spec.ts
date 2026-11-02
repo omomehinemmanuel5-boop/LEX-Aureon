@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { recoveryCanaryPredicateFailures } from '../lib/agents/recovery_state';
 
 const { dbExecute } = vi.hoisted(() => ({ dbExecute: vi.fn() }));
+
+const { getZTrajMock } = vi.hoisted(() => ({ getZTrajMock: vi.fn() }));
+
+vi.mock('../lib/kv', () => ({ getZTraj: getZTrajMock }));
 
 vi.mock('../lib/db', () => ({
   getClient: () => ({ execute: dbExecute }),
@@ -74,6 +79,64 @@ describe('recovery canary evidence', () => {
       expect.any(String),
       expect.any(String),
     ]);
+  });
+
+  it('uses the same complete predicate for server and operator canary eligibility', () => {
+    expect(recoveryCanaryPredicateFailures({
+      trajectoryAvailable: true, M: 0.15, nStable: 3, sigmaViol: 0, velocity: 0.019,
+    })).toEqual([]);
+    expect(recoveryCanaryPredicateFailures({
+      trajectoryAvailable: false, M: 0.04, nStable: 2, sigmaViol: Number.MIN_VALUE, velocity: 0.02,
+    })).toHaveLength(6);
+  });
+
+  it('issues server evidence only after rereading the exact canonical row', async () => {
+    getZTrajMock.mockResolvedValueOnce({
+      session_id: snapshot.sessionId, velocity: 0, n_stable: 3, drift_dir: 'stable',
+      sigma_viol: 0, last_m: 1 / 3, last_c: snapshot.C, last_r: snapshot.R, last_s: snapshot.S,
+      z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3, attack_pressure: 0,
+      updated_at: snapshot.trajectoryUpdatedAt,
+    });
+    dbExecute.mockResolvedValueOnce({ rows: [{ id: 91 }] });
+    const fingerprint = recoverySnapshotFingerprint(snapshot);
+    await recordRecoveryCanaryEvidence({
+      ...snapshot, actorId: 'server:recovery-canary', status: 'passed',
+      stateFingerprint: fingerprint, receiptId: 'server-recovery-canary-test',
+      probeTool: 'server_recovery_canary', velocity: 0, recoveryState: 'VERIFIED',
+    });
+    expect(dbExecute).toHaveBeenCalledTimes(1);
+    const query = dbExecute.mock.calls[0][0] as { sql: string; args: unknown[] };
+    expect(query.sql).toContain("server:recovery-canary");
+    expect(query.sql).toContain("server_recovery_canary");
+    expect(query.sql).toContain("probe_tool = 'get_constitutional_state'");
+    expect(query.sql).toContain('RETURNING id');
+    expect(query.args).toContain('server-recovery-canary-test');
+  });
+
+  it('does not issue server evidence when any predicate term fails', async () => {
+    await recordRecoveryCanaryEvidence({
+      ...snapshot, actorId: 'server:recovery-canary', status: 'passed',
+      stateFingerprint: recoverySnapshotFingerprint(snapshot), receiptId: 'server-recovery-canary-denied',
+      probeTool: 'server_recovery_canary', velocity: 0, recoveryState: 'QUARANTINED',
+      C: 0.04, R: 0.48, S: 0.48,
+    });
+    expect(getZTrajMock).not.toHaveBeenCalled();
+    expect(dbExecute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale server snapshot when canonical storage changed before issuance', async () => {
+    getZTrajMock.mockResolvedValueOnce({
+      session_id: snapshot.sessionId, velocity: 0, n_stable: 3, drift_dir: 'stable',
+      sigma_viol: 0, last_m: 1 / 3, last_c: 0.32, last_r: snapshot.R, last_s: 1 / 3,
+      z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3, attack_pressure: 0,
+      updated_at: snapshot.trajectoryUpdatedAt,
+    });
+    await recordRecoveryCanaryEvidence({
+      ...snapshot, actorId: 'server:recovery-canary', status: 'passed',
+      stateFingerprint: recoverySnapshotFingerprint(snapshot), receiptId: 'server-recovery-canary-stale',
+      probeTool: 'server_recovery_canary', velocity: 0, recoveryState: 'VERIFIED',
+    });
+    expect(dbExecute).not.toHaveBeenCalled();
   });
 
   it('uses the latest exact-snapshot outcome and fails closed on missing or unavailable evidence', async () => {

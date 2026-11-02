@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { getClient } from '../db';
 import { CONSTITUTION } from '../constitution';
-import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
+import { RECOVERY_STABILITY_THRESHOLD, recoveryCanaryPredicateFailures } from './recovery_state';
+import { getZTraj } from '../kv';
 
 export type RecoveryCanaryStatus = 'passed' | 'failed' | 'invalidated';
 
@@ -26,6 +27,8 @@ export interface RecoveryCanaryEvidenceInput extends RecoverySnapshotFingerprint
   recoveryState?: string;
   issuedAt?: string;
   expiresAt?: string;
+  /** Server-only canonical velocity proof; never supplied by a client. */
+  velocity?: number;
 }
 
 export interface RecoveryCanaryCurrentState {
@@ -66,6 +69,10 @@ export function recoverySnapshotFingerprint(input: RecoverySnapshotFingerprintIn
 }
 
 export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidenceInput): Promise<void> {
+  if (input.actorId === 'server:recovery-canary') {
+    await persistServerRecoveryCanaryEvidence(input);
+    return;
+  }
   if (!input.sessionId || !input.actorId || !input.receiptId || !input.probeTool) {
     throw new Error('Recovery canary evidence requires session, actor, receipt, and probe identifiers.');
   }
@@ -89,6 +96,60 @@ export async function recordRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
   });
 }
 
+
+async function persistServerRecoveryCanaryEvidence(input: RecoveryCanaryEvidenceInput): Promise<void> {
+  const M = Math.min(input.C, input.R, input.S);
+  const unmet = recoveryCanaryPredicateFailures({
+    trajectoryAvailable: true, M, nStable: input.nStable,
+    sigmaViol: input.sigmaViol, velocity: input.velocity ?? Number.NaN,
+  });
+  if (unmet.length || input.status !== 'passed' || input.probeTool !== 'server_recovery_canary') return;
+  if (input.stateFingerprint !== recoverySnapshotFingerprint({
+    sessionId: input.sessionId, policyVersion: input.policyVersion,
+    C: input.C, R: input.R, S: input.S,
+    nStable: input.nStable, sigmaViol: input.sigmaViol,
+    trajectoryUpdatedAt: input.trajectoryUpdatedAt,
+  })) return;
+
+  const current = await getZTraj(input.sessionId);
+  if (!current
+    || current.last_c !== input.C || current.last_r !== input.R || current.last_s !== input.S
+    || current.n_stable !== input.nStable || current.sigma_viol !== input.sigmaViol
+    || current.velocity !== input.velocity || current.updated_at !== input.trajectoryUpdatedAt) return;
+
+  const issuedAt = input.issuedAt ?? new Date().toISOString();
+  const windowMs = Number(process.env.CANARY_WINDOW_MS ?? 60 * 60 * 1000);
+  const expiresAt = input.expiresAt ?? new Date(Date.parse(issuedAt) + windowMs).toISOString();
+  await getClient().execute({
+    sql: `INSERT INTO recovery_canary_evidence
+      (session_id, actor_id, canary_status, state_fingerprint, state_version,
+       probe_tool, receipt_id, c_value, r_value, s_value, m_value,
+       n_stable, sigma_viol, trajectory_updated_at, reason, recovery_state, issued_at, expires_at)
+      SELECT ?, 'server:recovery-canary', 'passed', ?, ?, 'server_recovery_canary',
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM z_traj
+        WHERE session_id = ? AND last_c = ? AND last_r = ? AND last_s = ?
+          AND n_stable = ? AND sigma_viol = ? AND velocity = ? AND updated_at = ?
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM recovery_canary_evidence WHERE session_id = ?
+          AND probe_tool = 'get_constitutional_state'
+      )
+      RETURNING id`,
+    args: [
+      input.sessionId, input.stateFingerprint, input.policyVersion, input.receiptId,
+      input.C, input.R, input.S, M, input.nStable, input.sigmaViol,
+      input.trajectoryUpdatedAt,
+      input.reason ?? 'Server-side canary predicate passed against the canonical storage snapshot.',
+      input.recoveryState ?? 'VERIFIED', issuedAt, expiresAt,
+      input.sessionId, input.C, input.R, input.S, input.nStable,
+      input.sigmaViol, input.velocity as number, input.trajectoryUpdatedAt,
+      input.sessionId,
+    ],
+  });
+}
+
 /** Apply the health-band validity rules to the latest session canary. */
 export async function readInvariantRecoveryCanaryEvidence(
   sessionId: string,
@@ -98,7 +159,7 @@ export async function readInvariantRecoveryCanaryEvidence(
     const result = await getClient().execute({
       sql: `SELECT e.*, (SELECT COUNT(*) FROM tool_receipts w WHERE w.session_id = e.session_id
             AND datetime(w.created_at) > datetime(e.issued_at) AND w.tool_name NOT IN
-            ('read_file','read_directory','list_directory','list_files','read_memory','search_memory','fetch_page','http_get','get_file','cat','head','tail','grep','find','ls','dir','glob','run_recovery_canary','get_constitutional_state','get_recent_receipts','explain_denial','search_code','get_build_status','get_workflow_run','get_workflow_log','get_workflow_artifact','get_vercel_logs','preview_patch_file','check_github_token_scope','get_trajectory_status','read_json','parse_csv','query_database','simulate_agent_plan','review_agent_action','run_self_test','self_reflect')) AS writes
+            ('read_file','read_directory','list_directory','list_files','read_memory','search_memory','fetch_page','http_get','get_file','cat','head','tail','grep','find','ls','dir','glob','run_recovery_canary','recovery_observation','get_constitutional_state','get_recent_receipts','explain_denial','search_code','get_build_status','get_workflow_run','get_workflow_log','get_workflow_artifact','get_vercel_logs','preview_patch_file','check_github_token_scope','get_trajectory_status','read_json','parse_csv','query_database','simulate_agent_plan','review_agent_action','run_self_test','self_reflect')) AS writes
             FROM recovery_canary_evidence e WHERE e.session_id = ?
             ORDER BY e.id DESC LIMIT 1`,
       args: [sessionId],

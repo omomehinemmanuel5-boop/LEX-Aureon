@@ -50,6 +50,25 @@ describe('constitutional recovery policy', () => {
     expect(destructiveNormal.state).toBe('NORMAL');
   });
 
+  it('denies non-read recovery capabilities at or above the velocity stability threshold', () => {
+    const gate = recoveryCapabilityAllowed(0.25, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true, velocity: 0.02 });
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('velocity is not stable');
+  });
+
+  it('denies non-read recovery capabilities when velocity is NaN', () => {
+    const gate = recoveryCapabilityAllowed(0.25, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true, velocity: Number.NaN });
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('velocity is not stable');
+  });
+
+  it('allows reads regardless of canonical velocity', () => {
+    for (const velocity of [0.02, 0.5, Number.NaN]) {
+      const gate = recoveryCapabilityAllowed(0.25, 'read', { nStable: 0, sigmaViol: 1, canaryPassed: false, velocity });
+      expect(gate.allowed).toBe(true);
+    }
+  });
+
   it('reaches NORMAL only at or above the optimal boundary with verified evidence', () => {
     expect(deriveRecoveryState(0.24, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('VERIFIED');
     expect(deriveRecoveryState(0.25, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('NORMAL');
@@ -171,7 +190,7 @@ describe('canonical governance state', () => {
     expect(gate.reason).toContain('Canonical recovery velocity is not stable');
   });
 
-  it('does not apply the ordinary velocity proof gate to bounded recovery probes', () => {
+  it('denies bounded recovery probes when canonical velocity is unstable', () => {
     const gate = canonicalExecutionAllowed({
       sessionId: 'recovery-probe', actorId: 'operator',
       C: 1 / 3, R: 1 / 3, S: 1 / 3, M: 1 / 3,
@@ -180,7 +199,8 @@ describe('canonical governance state', () => {
       canaryPassed: true, authorization: 'authorized', policyRisk: 'recovery_probe',
       version: 'test', observedAt: new Date().toISOString(),
     });
-    expect(gate.allowed).toBe(true);
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain('velocity is not stable');
   });
 
   it('allows recovery reads below 0.15', () => {
@@ -213,6 +233,38 @@ describe('canonical governance state', () => {
     });
     expect(gate.allowed).toBe(false);
     expect(gate.reason).toContain('τ_floor');
+  });
+
+  it('does not issue a server canary for an uninitialized canonical trajectory', async () => {
+    dbExecute.mockResolvedValueOnce({ rows: [] });
+    const result = await readCanonicalGovernanceState({
+      sessionId: 'uninitialized-canary-session', actorId: 'agent-a', capability: 'read',
+    });
+    expect(result.available).toBe(true);
+    expect(result.state.trajectoryAvailable).toBe(false);
+    expect(dbExecute.mock.calls.some(([query]) => String((query as { sql?: string }).sql ?? query).includes('INSERT INTO recovery_canary_evidence'))).toBe(false);
+  });
+
+  it('ignores caller-supplied canary metrics and derives all recovery facts from z_traj', async () => {
+    dbExecute
+      .mockResolvedValueOnce({ rows: [{
+        last_c: 0.10, last_r: 0.40, last_s: 0.40, velocity: 0.03,
+        sigma_viol: 0.10, n_stable: 2, updated_at: '2026-10-10T00:00:00.000Z',
+      }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await readCanonicalGovernanceState({
+      sessionId: 'client-input-cannot-certify', actorId: 'api_key:owner-a', capability: 'read',
+      canaryPassed: true, nStable: 999, sigmaViol: 0, velocity: 0,
+    } as unknown as Parameters<typeof readCanonicalGovernanceState>[0]);
+
+    expect(result.state).toMatchObject({
+      M: 0.10, nStable: 2, sigmaViol: 0.10, velocity: 0.03,
+      canaryPassed: false, trajectoryAvailable: true,
+    });
+    expect(dbExecute.mock.calls.some(([query]) =>
+      String((query as { sql?: string }).sql ?? query).includes('INSERT INTO recovery_canary_evidence'),
+    )).toBe(false);
   });
 
   it('fails closed when the canonical state store is unavailable', async () => {
