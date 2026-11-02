@@ -323,6 +323,21 @@ describe('governed tool stability observations', () => {
     )).toBe(false);
   });
 
+  it('runs the automatic recovery pulse only after the governed handler completes', async () => {
+    mocks.shouldAdvanceRecoveryPlane.mockReturnValueOnce(true);
+    const tool = vi.fn(async () => 'EXECUTED_WRITE');
+    const args = approvedArgs('write_file', { path: 'pulse-after-execution.ts', content: 'done' });
+
+    const result = await executeGovernedToolStructured('write_file', args, tool, SESSION);
+
+    expect(result.approved).toBe(true);
+    expect(tool).toHaveBeenCalledOnce();
+    expect(mocks.advanceRecoveryPlane).toHaveBeenCalledOnce();
+    expect(tool.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.advanceRecoveryPlane.mock.invocationCallOrder[0],
+    );
+  });
+
   it('records nothing for a cache hit', async () => {
     const tool = vi.fn(async () => 'CACHED_TOOL_OK');
     const args = { path: 'same-cache-key' };

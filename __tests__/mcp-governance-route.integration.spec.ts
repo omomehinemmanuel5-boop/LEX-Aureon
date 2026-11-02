@@ -510,6 +510,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('request_recovery_pulse');
     expect(executeGovernedTool.mock.calls[0]?.[1]).toHaveProperty('session_id');
     expect(executeGovernedTool.mock.calls[0]?.[1].session_id).not.toBe('spoofed:other-owner-session');
+    expect(ensureCanonicalTrajectoryState).toHaveBeenCalledTimes(1);
     expect(checkRateLimit).toHaveBeenCalledWith(expect.stringMatching(/^recovery-pulse:/), 6, 60);
   });
 

@@ -19,6 +19,7 @@ import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
 import { getClient } from '../db';
 import { healthBand } from '../health_band';
 import { getZTraj, recordZTrajObservation } from '../kv';
+import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
 import { approvalArgsHash, consumeApprovalRequest, releaseConsumedApprovalRequest } from '../approval_requests';
 import { consumeScopedGrant } from '../scoped_grants';
 import { withConsumedApproval } from './approval_execution_context';
@@ -146,6 +147,18 @@ export function shouldRecordTrajectoryObservation(
   if (toolName === 'run_governance' && args.governance_mode === 'simulate') return false;
   if (APPROVAL_CONTROL_TOOLS.has(toolName)) return false;
   return true;
+}
+
+/**
+ * Only a non-inspection, non-approval tool whose handler completed may trigger
+ * the existing automatic recovery rule. Explicit recovery controls own their
+ * pulse, and run_governance owns its pulse inside executeGovern().
+ */
+export function shouldAdvanceRecoveryAfterTool(toolName: string, args: Record<string, unknown> = {}): boolean {
+  return toolName !== 'run_governance'
+    && !isNonMutatingGovernanceTool(toolName, args)
+    && !RECOVERY_CONTROL_TOOLS.has(toolName)
+    && !APPROVAL_CONTROL_TOOLS.has(toolName);
 }
 
 /**
@@ -845,6 +858,16 @@ export async function executeGovernedToolStructured(
   });
 
   const verification = verifyToolResult(toolName, cached.value, policy.risk);
+  if (!cached.cacheHit && shouldAdvanceRecoveryAfterTool(toolName, args)
+    && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
+    try {
+      // The handler has completed. A failed preflight, pending approval,
+      // cancellation, or denied dispatch cannot reach this state-moving point.
+      await advanceRecoveryPlane(sessionId);
+    } catch {
+      // Recovery is best-effort and never changes the completed tool result.
+    }
+  }
   if (shouldRecordTrajectoryObservation(toolName, args, cached.cacheHit)) {
     try {
       const previous = await getZTraj(sessionId);
