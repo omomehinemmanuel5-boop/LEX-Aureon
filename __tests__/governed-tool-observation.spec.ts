@@ -338,6 +338,46 @@ describe('governed tool stability observations', () => {
     );
   });
 
+  it('continues recording trajectory after an executed read-capability governance turn', async () => {
+    const before = JSON.stringify(mocks.rows.get(SESSION));
+    const tool = vi.fn(async () => 'GOVERNANCE_TURN_COMPLETED');
+    const args = approvedArgs('run_governance', {
+      prompt: 'Evaluate this request under the current constitution.',
+      governance_mode: 'execute',
+    });
+
+    const result = await executeGovernedToolStructured('run_governance', args, tool, SESSION);
+
+    expect(result.approved).toBe(true);
+    expect(tool).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.rows.get(SESSION))).not.toBe(before);
+    const updates = mocks.dbExecute.mock.calls.filter(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    );
+    expect(updates).toHaveLength(1);
+  });
+
+  it('continues recording exactly one post-action observation for an executed consequential write', async () => {
+    const before = JSON.stringify(mocks.rows.get(SESSION));
+    const tool = vi.fn(async () => 'WRITE_COMPLETED');
+    const args = approvedArgs('write_file', {
+      path: 'executed-consequential-write.ts',
+      content: 'export const completed = true;',
+    });
+
+    const result = await executeGovernedToolStructured('write_file', args, tool, SESSION);
+
+    expect(result.approved).toBe(true);
+    expect(tool).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.rows.get(SESSION))).not.toBe(before);
+    const updates = mocks.dbExecute.mock.calls.filter(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    );
+    expect(updates).toHaveLength(1);
+  });
+
   it('records nothing for a cache hit', async () => {
     const tool = vi.fn(async () => 'CACHED_TOOL_OK');
     const args = { path: 'same-cache-key' };

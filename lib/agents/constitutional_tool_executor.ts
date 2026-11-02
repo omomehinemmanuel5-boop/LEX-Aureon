@@ -161,6 +161,11 @@ export function shouldAdvanceRecoveryAfterTool(toolName: string, args: Record<st
     && !APPROVAL_CONTROL_TOOLS.has(toolName);
 }
 
+/** @deprecated Eligibility only; automatic recovery is invoked after successful handler completion. */
+export function shouldAdvanceRecoveryBeforeTool(toolName: string, args: Record<string, unknown> = {}): boolean {
+  return shouldAdvanceRecoveryAfterTool(toolName, args);
+}
+
 /**
  * Health band printed next to the M it describes. The kernel band can disagree
  * with the printed M, so derive it from M except for the explicit LOCKED state.
@@ -396,7 +401,7 @@ export async function executeGovernedToolStructured(
     };
   }
 
-  let canonicalRead = await readCanonicalGovernanceState({
+  const canonicalRead = await readCanonicalGovernanceState({
     sessionId,
     actorId,
     capability: capability.capability,

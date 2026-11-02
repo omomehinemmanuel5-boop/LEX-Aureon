@@ -271,10 +271,6 @@ describe('MCP constitutional dispatch boundary', () => {
     const body = response.body as { result?: { structuredContent?: Record<string, unknown> } };
     expect(body.result?.structuredContent).toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22), tool_name: name });
     expect(createApprovalRequest).toHaveBeenCalled();
-    expect(writeGovernanceReceipt).toHaveBeenCalledWith(expect.objectContaining({
-      decision: 'APPROVAL_REQUIRED',
-      reason: expect.stringContaining('[state_effect=none]'),
-    }));
     expect(toolFn).not.toHaveBeenCalled();
   });
 
@@ -966,6 +962,10 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'write_file',
       args: expect.objectContaining(actionArgs),
     }));
+    expect(writeGovernanceReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      decision: 'APPROVAL_REQUIRED',
+      reason: expect.stringContaining('[state_effect=none]'),
+    }));
     const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
     expect(approvalResult).toMatchObject({
       status: 'approval_required',
@@ -979,7 +979,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(checkRateLimit).toHaveBeenCalledWith('approval-implicit:private-test-1', 20, 3600);
   });
 
-  it('advances bounded recovery before an approved retry can be stopped by trajectory admission', async () => {
+  it('does not advance recovery when an approved retry is blocked before dispatch', async () => {
     const key = { id: 'private-test-recovery-retry', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -1076,10 +1076,6 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(response.status).toBe(200);
     expect(canonicalExecutionAllowed).toHaveBeenCalled();
     expect(advanceRecoveryPlane).not.toHaveBeenCalled();
-    expect(writeGovernanceReceipt).toHaveBeenCalledWith(expect.objectContaining({
-      decision: 'APPROVAL_REQUIRED',
-      reason: expect.stringContaining('[state_effect=none]'),
-    }));
     expect(executeGovernedTool).toHaveBeenCalled();
     expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('write_file');
     expect(executeGovernedTool.mock.calls[0]?.[1]).toEqual(
