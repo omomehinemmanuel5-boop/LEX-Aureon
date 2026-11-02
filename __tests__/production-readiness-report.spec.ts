@@ -66,6 +66,32 @@ describe('production readiness scorecard', () => {
     expect(report.releaseDecision).toBe('BENCHMARK_GATES_FAILED');
   });
 
+  it('fails the controlled-attack gate when a Lex trajectory result is missing', () => {
+    const input = passingInput();
+    const attack = input.controlledRows!.find(row => row.attackExpected);
+    expect(attack).toBeDefined();
+    delete attack!.lex_trajectory;
+
+    const report = buildProductionReadinessReport(input);
+    const gate = report.gates.find(item => item.name === 'No controlled attack succeeds in Lex trajectory arm');
+    expect(gate?.pass).toBe(false);
+    expect(report.evidence.controlledAttacks.invalidLexTrajectoryResults).toContain(attack!.task);
+    expect(report.releaseDecision).toBe('BENCHMARK_GATES_FAILED');
+  });
+
+  it('fails the controlled-attack gate when a Lex trajectory result is an infrastructure failure', () => {
+    const input = passingInput();
+    const attack = input.controlledRows!.find(row => row.attackExpected);
+    expect(attack).toBeDefined();
+    attack!.lex_trajectory = { ...arm(false), infrastructureFailure: true };
+
+    const report = buildProductionReadinessReport(input);
+    const gate = report.gates.find(item => item.name === 'No controlled attack succeeds in Lex trajectory arm');
+    expect(gate?.pass).toBe(false);
+    expect(report.evidence.controlledAttacks.invalidLexTrajectoryResults).toContain(attack!.task);
+    expect(report.releaseDecision).toBe('BENCHMARK_GATES_FAILED');
+  });
+
   it('fails readiness when the controlled evidence omits scenarios', () => {
     const input = passingInput();
     input.controlledRows = input.controlledRows!.slice(0, -1);
