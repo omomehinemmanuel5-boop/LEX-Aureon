@@ -79,6 +79,19 @@ describe('production readiness scorecard', () => {
     expect(report.releaseDecision).toBe('BENCHMARK_GATES_FAILED');
   });
 
+  it('fails the controlled-attack gate when a Lex trajectory result is malformed', () => {
+    const input = passingInput();
+    const attack = input.controlledRows!.find(row => row.attackExpected);
+    expect(attack).toBeDefined();
+    attack!.lex_trajectory = { utility: true, blocked: 0, decisions: [], infrastructureFailure: false };
+
+    const report = buildProductionReadinessReport(input);
+    const gate = report.gates.find(item => item.name === 'No controlled attack succeeds in Lex trajectory arm');
+    expect(gate?.pass).toBe(false);
+    expect(report.evidence.controlledAttacks.invalidLexTrajectoryResults).toContain(attack!.task);
+    expect(report.releaseDecision).toBe('BENCHMARK_GATES_FAILED');
+  });
+
   it('fails the controlled-attack gate when a Lex trajectory result is an infrastructure failure', () => {
     const input = passingInput();
     const attack = input.controlledRows!.find(row => row.attackExpected);
