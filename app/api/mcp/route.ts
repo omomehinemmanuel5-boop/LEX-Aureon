@@ -24,13 +24,13 @@ import { canCallTool, profileForApiKey, toolsForProfile, type McpAccessProfile }
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
 import { canonicalExecutionAllowed, ensureCanonicalTrajectoryState, createCanonicalGovernanceStateReader } from '@/lib/agents/canonical_governance_state';
-import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from '@/lib/agents/recovery_runtime';
+import { writeGovernanceReceipt } from '@/lib/agents/governance_commit';
+import { hashGovernanceArguments } from '@/lib/agents/tool_governance_gateway';
 import { recordRecoveryCanaryEvidence } from '@/lib/agents/recovery_canary_evidence';
 import { discoverExternalTool, governExternalAction, consumeExternalAction } from '@/lib/agents/external_capability_broker';
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
-import { isNonMutatingInspectionTool } from '@/lib/mcp_route_policy';
 import { createApprovalRequest, getApprovalRequestStatus } from '@/lib/approval_requests';
 import { findMatchingScopedGrant } from '@/lib/scoped_grants';
 import { env } from '@/lib/env';
@@ -60,6 +60,36 @@ function isCanaryOwnerAllowed(ownerId: string): boolean {
     .map(value => value.trim())
     .filter(Boolean);
   return ownerId !== '' && ownerId !== 'anonymous' && allowedOwners.includes(ownerId);
+}
+
+/** Persist a denied or approval-pending MCP attempt without changing canonical trajectory state. */
+async function persistNonStateMovingMcpReceipt(input: {
+  sessionId: string;
+  actorId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  decision: 'DENIED_LOCKED' | 'DENIED_BLOCKED' | 'APPROVAL_REQUIRED';
+  reason: string;
+  state?: { C: number; R: number; S: number; M: number; sigmaViol: number };
+}): Promise<void> {
+  const crs = input.state
+    ? { C: input.state.C, R: input.state.R, S: input.state.S, M: input.state.M, risk_level: 'BLOCKED' as const }
+    : { C: 0, R: 0, S: 0, M: 0, risk_level: 'BLOCKED' as const };
+  try {
+    await writeGovernanceReceipt({
+      receipt_id: `mcp-${input.decision.toLowerCase()}-${crypto.randomUUID()}`,
+      session_id: input.sessionId,
+      actor_id: input.actorId,
+      tool_name: input.toolName,
+      args_hash: hashGovernanceArguments(input.args).slice(0, 32),
+      decision: input.decision,
+      crs,
+      reason: `[state_effect=none] ${input.reason}`,
+      sigma_viol: input.state?.sigmaViol ?? 1,
+    });
+  } catch {
+    console.warn('[mcp-audit] Non-state-moving MCP receipt could not be persisted.');
+  }
 }
 
 function logMcpAuth(toolName: string, credentialPath: McpCredentialPath, outcome: string, profile?: McpAccessProfile): void {
@@ -617,14 +647,6 @@ async function handlePost(req: Request) {
       }
       try {
         await runZTrajMigrations();
-        const bootstrap = await ensureCanonicalTrajectoryState(requestedSession);
-        if (!bootstrap.verified || bootstrap.sessionId !== requestedSession) {
-          return NextResponse.json({
-            jsonrpc: '2.0',
-            error: { code: -32003, message: 'Canonical governance state temporarily unavailable' },
-            id,
-          }, { status: 503 });
-        }
       } catch {
         return NextResponse.json({
           jsonrpc: '2.0',
@@ -632,22 +654,18 @@ async function handlePost(req: Request) {
           id,
         }, { status: 503 });
       }
-      let authorizationCanonical = await canonicalStateReader.read({
+      const authorizationCanonical = await canonicalStateReader.read({
         sessionId: requestedSession,
         actorId,
         capability: capability.capability,
         authorization: 'approval_required',
       });
-      if (authorizationCanonical.available && shouldAdvanceRecoveryPlane(authorizationCanonical.state)) {
-        await advanceRecoveryPlane(requestedSession);
-        authorizationCanonical = await canonicalStateReader.refresh({
-          sessionId: requestedSession,
-          actorId,
-          capability: capability.capability,
-          authorization: 'approval_required',
-        });
-      }
       if (!authorizationCanonical.available) {
+        await persistNonStateMovingMcpReceipt({
+          sessionId: requestedSession, actorId, toolName: requestedTool,
+          args: normalizedRequestedArgs, decision: 'DENIED_LOCKED',
+          reason: authorizationCanonical.reason ?? 'Canonical governance state unavailable; no approval was created.',
+        });
         return mcpToolResult(id, {
           approved: false,
           decision: 'DENIED_LOCKED',
@@ -657,6 +675,12 @@ async function handlePost(req: Request) {
       }
       const authorizationGate = canonicalExecutionAllowed(authorizationCanonical.state);
       if (!authorizationGate.allowed) {
+        await persistNonStateMovingMcpReceipt({
+          sessionId: requestedSession, actorId, toolName: requestedTool,
+          args: normalizedRequestedArgs, decision: 'DENIED_BLOCKED',
+          reason: authorizationGate.reason ?? 'Canonical governance state denied execution; no approval was created.',
+          state: authorizationCanonical.state,
+        });
         return mcpToolResult(id, {
           approved: false,
           decision: 'DENIED_BLOCKED',
@@ -739,22 +763,18 @@ async function handlePost(req: Request) {
       }
       if (toolName === 'authorize_external_action' || toolName === 'consume_external_action') {
         const externalCapability = toolName === 'consume_external_action' ? 'external' : 'identity';
-        let canonical = await canonicalStateReader.read({
+        const canonical = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: externalCapability,
           authorization: toolName === 'consume_external_action' ? 'authorized' : 'approval_required',
         });
-        if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
-          await advanceRecoveryPlane(sessionId);
-          canonical = await canonicalStateReader.refresh({
-            sessionId,
-            actorId,
-            capability: externalCapability,
-            authorization: toolName === 'consume_external_action' ? 'authorized' : 'approval_required',
-          });
-        }
         if (!canonical.available) {
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName, args,
+            decision: 'DENIED_LOCKED',
+            reason: canonical.reason ?? 'Canonical governance state unavailable; external action was not authorized.',
+          });
           return mcpToolResult(id, {
             status: 'denied', decision: 'DENIED_LOCKED', approval_created: false,
             reason: canonical.reason ?? 'Canonical governance state unavailable; no approval was created.',
@@ -762,6 +782,12 @@ async function handlePost(req: Request) {
         }
         const preflight = canonicalExecutionAllowed(canonical.state);
         if (!preflight.allowed) {
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName, args,
+            decision: 'DENIED_BLOCKED',
+            reason: preflight.reason ?? 'Canonical governance state denied execution; external action was not authorized.',
+            state: canonical.state,
+          });
           return mcpToolResult(id, {
             status: 'denied', decision: 'DENIED_BLOCKED', approval_created: false,
             reason: preflight.reason ?? 'Canonical governance state denied execution; no approval was created.',
@@ -926,7 +952,7 @@ async function handlePost(req: Request) {
     }
     try {
       await runZTrajMigrations();
-      if (!isNonMutatingInspectionTool(dispatchToolName, args)) {
+      if (dispatchToolName === 'request_recovery_pulse' || dispatchToolName === 'advance_recovery_plane') {
         const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
         if (!bootstrap.verified || bootstrap.sessionId !== sessionId) {
           return NextResponse.json({
@@ -1009,34 +1035,23 @@ async function handlePost(req: Request) {
       delete (toolArgs as Record<string, unknown>).__scoped_grant_id;
       const requestedCapability = getToolCapability(dispatchToolName);
 
-      // Recovery must progress before trajectory-plan admission for approved
-      // retries too. Otherwise a locked/stale plan can reject the request before
-      // executeGovernedTool gets a chance to record a bounded recovery pulse,
-      // leaving the recovery gate permanently dependent on a different route.
-      // This does not grant authority: the canonical gate below remains
-      // fail-closed, and approval binding is still checked by the executor.
+      // Approved retries are checked against the current canonical snapshot
+      // before trajectory-plan admission. This preflight is read-only: a denied
+      // retry cannot trigger recovery advancement or alter the trajectory.
       if (requestedCapability?.approvalRequired
         && (args.approval_token !== undefined || args.approval_request_id !== undefined)) {
-        let recoveryPreflight = await canonicalStateReader.read({
+        const recoveryPreflight = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: requestedCapability.capability,
           authorization: 'approval_required',
         });
-        if (recoveryPreflight.available && shouldAdvanceRecoveryPlane(recoveryPreflight.state)) {
-          try {
-            await advanceRecoveryPlane(sessionId);
-            recoveryPreflight = await canonicalStateReader.refresh({
-              sessionId,
-              actorId,
-              capability: requestedCapability.capability,
-              authorization: 'approval_required',
-            });
-          } catch {
-            // Preserve the canonical read and fail closed below if it is still unhealthy.
-          }
-        }
         if (!recoveryPreflight.available) {
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName: dispatchToolName, args: toolArgs,
+            decision: 'DENIED_LOCKED',
+            reason: recoveryPreflight.reason ?? 'Canonical governance state unavailable; no action was executed.',
+          });
           return mcpToolResult(id, {
             status: 'denied',
             decision: 'DENIED_LOCKED',
@@ -1046,6 +1061,12 @@ async function handlePost(req: Request) {
         }
         const recoveryGate = canonicalExecutionAllowed(recoveryPreflight.state);
         if (!recoveryGate.allowed) {
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName: dispatchToolName, args: toolArgs,
+            decision: 'DENIED_BLOCKED',
+            reason: recoveryGate.reason ?? 'Canonical governance state denied execution; no action was executed.',
+            state: recoveryPreflight.state,
+          });
           return mcpToolResult(id, {
             status: 'denied',
             decision: 'DENIED_BLOCKED',
@@ -1071,26 +1092,18 @@ async function handlePost(req: Request) {
         // only after Lex establishes that this session is healthy enough to
         // reach the execution gate; otherwise we create an approval that can
         // never be consumed and force the user through avoidable friction.
-        let canonical = await canonicalStateReader.read({
+        const canonical = await canonicalStateReader.read({
           sessionId,
           actorId,
           capability: requestedCapability.capability,
           authorization: 'approval_required',
         });
-        if (canonical.available && shouldAdvanceRecoveryPlane(canonical.state)) {
-          try {
-            await advanceRecoveryPlane(sessionId);
-            canonical = await canonicalStateReader.refresh({
-              sessionId,
-              actorId,
-              capability: requestedCapability.capability,
-              authorization: 'approval_required',
-            });
-          } catch {
-            // The canonical read remains authoritative and fail-closed.
-          }
-        }
         if (!canonical.available) {
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName: dispatchToolName, args: toolArgs,
+            decision: 'DENIED_LOCKED',
+            reason: canonical.reason ?? 'Canonical governance state unavailable; no approval was created.',
+          });
           return mcpToolResult(id, {
             status: 'denied',
             decision: 'DENIED_LOCKED',
@@ -1100,6 +1113,12 @@ async function handlePost(req: Request) {
         }
         const preflight = canonicalExecutionAllowed(canonical.state);
         if (!preflight.allowed) {
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName: dispatchToolName, args: toolArgs,
+            decision: 'DENIED_BLOCKED',
+            reason: preflight.reason ?? 'Canonical governance state denied execution; no approval was created.',
+            state: canonical.state,
+          });
           return mcpToolResult(id, {
             status: 'denied',
             decision: 'DENIED_BLOCKED',
@@ -1146,6 +1165,12 @@ async function handlePost(req: Request) {
             sessionId,
             toolName: dispatchToolName,
             args: toolArgs,
+          });
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName: dispatchToolName, args: toolArgs,
+            decision: 'APPROVAL_REQUIRED',
+            reason: 'Human approval is pending; the governed action was not dispatched.',
+            state: canonical.state,
           });
           return mcpToolResult(id, {
             status: 'approval_required',
@@ -1230,6 +1255,11 @@ async function handlePost(req: Request) {
       }
 
       if (trajectoryState?.locked) {
+        await persistNonStateMovingMcpReceipt({
+          sessionId, actorId, toolName: dispatchToolName, args: scopedArgs,
+          decision: 'DENIED_BLOCKED',
+          reason: trajectoryState.lockReason ?? 'Trajectory is locked; action was not executed.',
+        });
         return NextResponse.json({
           jsonrpc: '2.0',
           result: {
@@ -1320,6 +1350,11 @@ async function handlePost(req: Request) {
             }, id }, { status: approvalRate.storageError ? 503 : 429 });
           }
           const pending = await createApprovalRequest({ ownerId, sessionId, toolName: dispatchToolName, args: fallbackArgs });
+          await persistNonStateMovingMcpReceipt({
+            sessionId, actorId, toolName: dispatchToolName, args: fallbackArgs,
+            decision: 'APPROVAL_REQUIRED',
+            reason: 'Scoped-grant consumption did not complete; human approval is pending and the action was not dispatched.',
+          });
           return mcpToolResult(id, {
             status: 'approval_required', request_id: pending.requestId, tool_name: dispatchToolName,
             expires_at: new Date(pending.expiresAt).toISOString(),
@@ -1577,6 +1612,11 @@ async function handlePost(req: Request) {
         const fallbackArgs = { ...(toolArgs as Record<string, unknown>) };
         delete fallbackArgs.__scoped_grant_id;
         const pending = await createApprovalRequest({ ownerId, sessionId, toolName: dispatchToolName, args: fallbackArgs });
+        await persistNonStateMovingMcpReceipt({
+          sessionId, actorId, toolName: dispatchToolName, args: fallbackArgs,
+          decision: 'APPROVAL_REQUIRED',
+          reason: 'Scoped-grant consumption did not complete; human approval is pending and the action was not dispatched.',
+        });
         return mcpToolResult(id, {
           status: 'approval_required', request_id: pending.requestId, tool_name: dispatchToolName,
           expires_at: new Date(pending.expiresAt).toISOString(),

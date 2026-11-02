@@ -19,7 +19,6 @@ import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
 import { getClient } from '../db';
 import { healthBand } from '../health_band';
 import { getZTraj, recordZTrajObservation } from '../kv';
-import { advanceRecoveryPlane, shouldAdvanceRecoveryPlane } from './recovery_runtime';
 import { approvalArgsHash, consumeApprovalRequest, releaseConsumedApprovalRequest } from '../approval_requests';
 import { consumeScopedGrant } from '../scoped_grants';
 import { withConsumedApproval } from './approval_execution_context';
@@ -49,6 +48,7 @@ export function isNonMutatingGovernanceTool(toolName: string, args: Record<strin
 // It must bypass automatic recovery advancement and post-tool trajectory
 // sampling, but it must never be cached as an ordinary read.
 const RECOVERY_CONTROL_TOOLS = new Set(['advance_recovery_plane', 'request_recovery_pulse']);
+const APPROVAL_CONTROL_TOOLS = new Set(['request_approval']);
 
 /**
  * run_governance delegates to executeGovern(), which owns recovery advancement
@@ -56,12 +56,6 @@ const RECOVERY_CONTROL_TOOLS = new Set(['advance_recovery_plane', 'request_recov
  * observations for one MCP request; executeGovern() also correctly skips
  * recovery mutations for governance_mode="simulate".
  */
-export function shouldAdvanceRecoveryBeforeTool(toolName: string, args: Record<string, unknown> = {}): boolean {
-  return toolName !== 'run_governance'
-    && !isNonMutatingGovernanceTool(toolName, args)
-    && !RECOVERY_CONTROL_TOOLS.has(toolName);
-}
-
 const KERNEL_CRITICAL = 0.05;
 
 async function persistExecutorDenialReceipt(input: {
@@ -84,7 +78,7 @@ async function persistExecutorDenialReceipt(input: {
       args_hash: hashGovernanceArguments(input.args).slice(0, 32),
       decision: input.decision,
       crs: input.crs,
-      reason: input.reason,
+      reason: `[state_effect=none] ${input.reason}`,
       sigma_viol: input.sigmaViol,
     });
     return undefined;
@@ -150,6 +144,7 @@ export function shouldRecordTrajectoryObservation(
   if (cacheHit) return false;
   if (isNonMutatingGovernanceTool(toolName, args) || RECOVERY_CONTROL_TOOLS.has(toolName)) return false;
   if (toolName === 'run_governance' && args.governance_mode === 'simulate') return false;
+  if (APPROVAL_CONTROL_TOOLS.has(toolName)) return false;
   return true;
 }
 
@@ -395,28 +390,6 @@ export async function executeGovernedToolStructured(
     authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
   });
 
-  // Advance recovery at most once per request, only when thresholds are
-  // unmet and no passing canary is bound to this state. Never invalidate
-  // verified evidence as a side effect of an approval attempt or a retry.
-  let recoveryNote = '';
-  if (shouldAdvanceRecoveryBeforeTool(toolName, args)
-    && canonicalRead.available
-    && shouldAdvanceRecoveryPlane(canonicalRead.state)) {
-    try {
-      const recovery = await advanceRecoveryPlane(sessionId);
-      recoveryNote = ` Recovery plane: ${recovery.state}; M=${recovery.M.toFixed(3)}; n_stable=${recovery.nStable}; velocity=${recovery.velocity.toFixed(4)}.`;
-      canonicalRead = await readCanonicalGovernanceState({
-        sessionId,
-        actorId,
-        capability: capability.capability,
-        authorization: capability.approvalRequired ? 'approval_required' : 'authorized',
-      });
-    } catch (error) {
-      recoveryNote = ` Recovery plane unavailable (non-fatal): ${String(error).slice(0, 120)}.`;
-      // The last successfully read canonical state remains authoritative.
-    }
-  }
-
   if (!canonicalRead.available) {
     const unavailableDecision: ToolCallDecision = {
       approved: false,
@@ -465,7 +438,7 @@ export async function executeGovernedToolStructured(
     const canonicalDecision: ToolCallDecision = {
       approved: false,
       decision: 'DENIED_BLOCKED',
-      reason: `${canonicalGate.reason ?? 'Canonical governance state denied execution.'}${recoveryNote}`,
+      reason: canonicalGate.reason ?? 'Canonical governance state denied execution.',
       crs: {
         C: canonicalRead.state.C,
         R: canonicalRead.state.R,

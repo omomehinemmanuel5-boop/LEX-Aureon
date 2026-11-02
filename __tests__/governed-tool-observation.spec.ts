@@ -255,6 +255,74 @@ describe('governed tool stability observations', () => {
     )).toBe(false);
   });
 
+  it('leaves the canonical trajectory byte-identical when the interceptor denies before dispatch', async () => {
+    const original = JSON.stringify(mocks.rows.get(SESSION));
+    mocks.shouldAdvanceRecoveryPlane.mockReturnValueOnce(true);
+    mocks.interceptToolCall.mockResolvedValueOnce({
+      ...successDecision(), approved: false, decision: 'DENY',
+    });
+    const tool = vi.fn(async () => 'MUST_NOT_RUN');
+
+    const result = await executeGovernedToolStructured('read_file', { path: 'denied' }, tool, SESSION);
+
+    expect(result.approved).toBe(false);
+    expect(tool).not.toHaveBeenCalled();
+    expect(mocks.advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(JSON.stringify(mocks.rows.get(SESSION))).toBe(original);
+    expect(mocks.dbExecute.mock.calls.some(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    )).toBe(false);
+  });
+
+  it('leaves the canonical trajectory byte-identical while an action awaits human approval', async () => {
+    const original = JSON.stringify(mocks.rows.get(SESSION));
+    mocks.shouldAdvanceRecoveryPlane.mockReturnValueOnce(true);
+    const tool = vi.fn(async () => 'MUST_NOT_RUN');
+
+    const result = await executeGovernedToolStructured(
+      'write_file', { path: 'pending.ts', content: 'pending' }, tool, SESSION,
+    );
+
+    expect(result.approved).toBe(false);
+    expect(result.policy).toMatchObject({ decision: 'approval_required' });
+    expect(tool).not.toHaveBeenCalled();
+    expect(mocks.advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(JSON.stringify(mocks.rows.get(SESSION))).toBe(original);
+    expect(mocks.dbExecute.mock.calls.some(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    )).toBe(false);
+  });
+
+  it('leaves a below-floor trajectory byte-identical and still writes a denial receipt', async () => {
+    mocks.rows.set(SESSION, row({
+      last_m: 0.04, last_c: 0.04, last_r: 0.48, last_s: 0.48, n_stable: 0,
+    }));
+    const original = JSON.stringify(mocks.rows.get(SESSION));
+    mocks.shouldAdvanceRecoveryPlane.mockReturnValueOnce(true);
+    mocks.canonicalExecutionAllowed.mockReturnValueOnce({ allowed: false, reason: 'M is below the quarantine floor.' });
+    const tool = vi.fn(async () => 'MUST_NOT_RUN');
+
+    const result = await executeGovernedToolStructured(
+      'write_file', { path: 'blocked-by-floor.ts', content: 'blocked' }, tool, SESSION,
+    );
+
+    expect(result.approved).toBe(false);
+    expect(result.decision).toBe('DENIED_BLOCKED');
+    expect(tool).not.toHaveBeenCalled();
+    expect(mocks.advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(JSON.stringify(mocks.rows.get(SESSION))).toBe(original);
+    expect(mocks.dbExecute.mock.calls.some(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('INSERT INTO tool_receipts'),
+    )).toBe(true);
+    expect(mocks.dbExecute.mock.calls.some(([query]) =>
+      typeof query === 'object' && query !== null && 'sql' in query
+      && String((query as { sql: unknown }).sql).startsWith('UPDATE z_traj'),
+    )).toBe(false);
+  });
+
   it('records nothing for a cache hit', async () => {
     const tool = vi.fn(async () => 'CACHED_TOOL_OK');
     const args = { path: 'same-cache-key' };
