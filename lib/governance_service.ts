@@ -124,6 +124,38 @@ export function isEvalSession(sid: string): boolean {
   return /^(lexbench-|synthetic_|bench-|jbb_|adv_|hb_)/.test(sid);
 }
 
+/**
+ * Recovery advancement is a post-decision effect: a refused governance turn
+ * must not earn a recovery pulse. Keep the canonical predicate identical to
+ * the MCP recovery gate and invoke this only after the turn's decision exists.
+ */
+export async function advanceRecoveryAfterGovernanceDecision(
+  sessionId: string,
+  ownerId: string,
+  decision: Pick<RefusalDecision, 'refused'>,
+): Promise<RecoveryPulseResult | null> {
+  if (decision.refused) return null;
+  try {
+    const canonical = await readCanonicalGovernanceState({
+      sessionId,
+      actorId: ownerId ? `api_key:${ownerId}` : 'governance-service',
+      capability: 'read',
+    });
+    if (canonical.available && shouldAdvanceRecoveryPlane({
+      trajectoryAvailable: canonical.state.trajectoryAvailable,
+      M: canonical.state.M,
+      nStable: canonical.state.nStable,
+      velocity: canonical.state.velocity,
+      canaryPassed: canonical.state.canaryPassed,
+    })) {
+      return await advanceRecoveryPlane(sessionId);
+    }
+  } catch (e) {
+    logger.warn('govern.recovery', 'recovery pulse unavailable; continuing with canonical state', errorFields(e));
+  }
+  return null;
+}
+
 // ── Core Governance Service ────────────────────────────────────────────────────
 
 /**
@@ -180,30 +212,6 @@ export async function executeGovern(
   let sessionZ: [number, number, number] | undefined;
   let recoveryPulse: RecoveryPulseResult | null = null;
   if (!simulation) {
-    // Keep the direct governance proxy on the same recovery plane as MCP.
-    // A safe request is a stabilization observation; recovery must not wait
-    // for a denied tool write before n_stable can advance.
-    try {
-      // Recovery prerequisites include stability observations and exact-snapshot
-      // canary status, not only a low CRS margin. Always consult canonical state:
-      // otherwise M >= 0.25 with nStable < N_MIN can remain RESTORING forever.
-      const canonical = await readCanonicalGovernanceState({
-        sessionId: session_id,
-        actorId: ownerId ? `api_key:${ownerId}` : 'governance-service',
-        capability: 'read',
-      });
-      if (canonical.available && shouldAdvanceRecoveryPlane({
-        trajectoryAvailable: canonical.state.trajectoryAvailable,
-        M: canonical.state.M,
-        nStable: canonical.state.nStable,
-        velocity: canonical.state.velocity,
-        canaryPassed: canonical.state.canaryPassed,
-      })) {
-        recoveryPulse = await advanceRecoveryPlane(session_id);
-      }
-    } catch (e) {
-      logger.warn('govern.recovery', 'recovery pulse unavailable; continuing with canonical state', errorFields(e));
-    }
     [savedState, sessionZ] = await Promise.all([
       loadKernelState(session_id),
       loadKernelZ(session_id),
@@ -420,17 +428,6 @@ export async function executeGovern(
   const reportedBand  = decision.forced_critical ? 'CRITICAL' : healthBand(reportedM);
   result.health_band  = reportedBand;
 
-  const reportedRecoveryState: GovernResponse['recovery_state'] = recoveryPulse?.state === 'UNINITIALIZED'
-    ? 'QUARANTINED'
-    : recoveryPulse?.state
-    ?? (reportedM < TAU ? 'QUARANTINED'
-      : reportedM < 0.15 ? 'RECOVERING'
-        : reportedM < 0.25 ? 'RESTORING' : 'NORMAL');
-  const reportedStable = recoveryPulse?.nStable ?? 0;
-  const recoveryReason = recoveryPulse?.reason
-    ?? (floorBreached ? 'Constitutional hard floor enforced; ordinary governance output was refused.'
-      : recoveryClamped ? 'Recovery monotonicity guard retained the pre-turn recovery state.' : null);
-
   const govDetail = governorState(reportedState.C, reportedState.R, reportedState.S);
 
   // ── Persist receipt ───────────────────────────────────────────────────────
@@ -453,6 +450,24 @@ export async function executeGovern(
       governed_response:      result.governed_output,
     }) : Promise.resolve(),
   ]);
+
+  // The turn has now completed and its receipt/state transition has persisted.
+  // Run the recovery pulse afterward so the kernel receipt cannot overwrite
+  // the pulse's trajectory observation. Refused and simulated turns do not pulse.
+  if (!simulation) {
+    recoveryPulse = await advanceRecoveryAfterGovernanceDecision(session_id, ownerId, decision);
+  }
+
+  const reportedRecoveryState: GovernResponse['recovery_state'] = recoveryPulse?.state === 'UNINITIALIZED'
+    ? 'QUARANTINED'
+    : recoveryPulse?.state
+    ?? (reportedM < TAU ? 'QUARANTINED'
+      : reportedM < 0.15 ? 'RECOVERING'
+        : reportedM < 0.25 ? 'RESTORING' : 'NORMAL');
+  const reportedStable = recoveryPulse?.nStable ?? 0;
+  const recoveryReason = recoveryPulse?.reason
+    ?? (floorBreached ? 'Constitutional hard floor enforced; ordinary governance output was refused.'
+      : recoveryClamped ? 'Recovery monotonicity guard retained the pre-turn recovery state.' : null);
 
   // ── Assemble response ─────────────────────────────────────────────────────
   return {
