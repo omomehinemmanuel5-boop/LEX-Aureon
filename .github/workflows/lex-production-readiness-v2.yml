@@ -1,0 +1,138 @@
+name: Lex Production Readiness Benchmark v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Optional smoke-test cap; 0 runs the full suite (required for a passing readiness gate)'
+        required: false
+        default: 0
+        type: number
+      repetitions:
+        description: 'Independent model elicitation repetitions per scenario (1-20)'
+        required: false
+        default: 5
+        type: number
+      model:
+        description: 'Pinned evaluation model (provider credential must already be configured as a repository secret)'
+        required: false
+        default: 'gemini-2.5-flash'
+        type: choice
+        options:
+          - gemini-3.1-flash-lite
+          - gemini-2.5-flash
+          - openai/gpt-oss-120b
+          - openai/gpt-oss-20b
+          - gpt-oss-120b
+          - open-mistral-7b
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lex-production-readiness-v2
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Production readiness benchmark (isolated evaluation store)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NODE_VERSION: '22'
+    steps:
+      - name: Check out benchmark revision
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Validate selected model credential
+        env:
+          EVAL_MODEL: ${{ inputs.model }}
+          EVAL_LIMIT: ${{ inputs.limit }}
+          EVAL_REPETITIONS: ${{ inputs.repetitions }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$EVAL_LIMIT" =~ ^[0-9]+$ ]] || ! [[ "$EVAL_REPETITIONS" =~ ^[0-9]+$ ]] || (( EVAL_REPETITIONS < 1 || EVAL_REPETITIONS > 20 )); then
+            echo "::error::Limit must be a non-negative integer and repetitions must be an integer from 1 to 20."
+            exit 1
+          fi
+          case "$EVAL_MODEL" in
+            gemini-3.1-flash-lite|gemini-2.5-flash) key="$GEMINI_API_KEY"; provider=Gemini ;;
+            openai/gpt-oss-120b|openai/gpt-oss-20b) key="$GROQ_API_KEY"; provider=Groq ;;
+            gpt-oss-120b) key="$CEREBRAS_API_KEY"; provider=Cerebras ;;
+            open-mistral-7b) key="$MISTRAL_API_KEY"; provider=Mistral ;;
+            *) echo "::error::Unsupported evaluation model selected."; exit 1 ;;
+          esac
+          if [ -z "$key" ]; then
+            echo "::error::The $provider API key secret is not configured; select a model with an available repository secret or configure it in GitHub Settings."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test -- --reporter=dot
+
+      - name: Initialize isolated evaluation database
+        env:
+          TURSO_EVAL_DATABASE_URL: ${{ secrets.TURSO_EVAL_DATABASE_URL }}
+          TURSO_EVAL_AUTH_TOKEN: ${{ secrets.TURSO_EVAL_AUTH_TOKEN }}
+        run: npx tsx scripts/agentdojo-real/initialize-evaluation-database.ts
+
+      - name: Run repeated state-backed model evaluation
+        env:
+          TURSO_EVAL_DATABASE_URL: ${{ secrets.TURSO_EVAL_DATABASE_URL }}
+          TURSO_EVAL_AUTH_TOKEN: ${{ secrets.TURSO_EVAL_AUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          EVAL_LIMIT: ${{ inputs.limit }}
+          EVAL_REPETITIONS: ${{ inputs.repetitions }}
+          LEX_EVAL_BACKEND: governance
+          LEX_EVAL_PINNED_MODEL: ${{ inputs.model }}
+          LEX_EVAL_FAIL_ON_FALLBACK: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          npx tsx scripts/agentdojo-real/model-in-loop.ts \
+            --require-state \
+            --limit "$EVAL_LIMIT" \
+            --repetitions "$EVAL_REPETITIONS" \
+            --json results/model-in-loop-state-backed.json
+
+      - name: Build production-readiness scorecard
+        if: always()
+        run: |
+          if [ -f results/model-in-loop-state-backed.json ]; then
+            npx tsx scripts/agentdojo-real/production-readiness-report.ts \
+              --input results/model-in-loop-state-backed.json \
+              --output-json results/production-readiness.json \
+              --output-md results/production-readiness.md
+          else
+            echo "No model-in-loop report was generated; benchmark is incomplete."
+            exit 1
+          fi
+
+      - name: Upload complete evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lex-production-readiness-v2-${{ github.run_id }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30
