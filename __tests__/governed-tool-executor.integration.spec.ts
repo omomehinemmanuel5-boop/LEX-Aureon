@@ -9,9 +9,7 @@ const { interceptToolCall, dbExecute } = vi.hoisted(() => ({
   dbExecute: vi.fn(),
 }));
 
-vi.mock('../lib/agents/tool_interceptor', () => ({
-  interceptToolCall,
-}));
+vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall, interceptToolCallDeferred: interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 
 vi.mock('../lib/db', () => ({
   getClient: () => ({ execute: dbExecute }),

@@ -11,7 +11,7 @@ const { dbExecute, getGitHubCredentialForApprovedAction, readCanonicalGovernance
 vi.mock('../lib/db', () => ({ getClient: () => ({ execute: dbExecute }) }));
 vi.mock('../lib/agents/credential_broker', () => ({ getGitHubCredentialForApprovedAction }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({ readCanonicalGovernanceState, canonicalExecutionAllowed }));
-vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall }));
+vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall, interceptToolCallDeferred: interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 
 import { createApprovalRequest, decideApprovalRequest } from '../lib/approval_requests';
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';

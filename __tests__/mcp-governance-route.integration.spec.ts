@@ -142,7 +142,7 @@ vi.mock('../lib/agents/constitutional_tool_executor', () => ({
   executeGovernedToolStructured,
 }));
 
-vi.mock('@/lib/agents/tool_interceptor', () => ({ interceptToolCall }));
+vi.mock('@/lib/agents/tool_interceptor', () => ({ interceptToolCall, interceptToolCallDeferred: interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 
 vi.mock('@/lib/agents/tool_governance_gateway', async () => {
   const actual = await vi.importActual<typeof import('../lib/agents/tool_governance_gateway')>(
