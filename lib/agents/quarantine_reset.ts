@@ -1,5 +1,6 @@
 import { getClient } from '../db';
 import { CONSTITUTION } from '../constitution';
+import { initAccountQuarantineSchema } from './account_quarantine';
 
 /**
  * Owner self-reset for quarantined sessions.
@@ -86,6 +87,7 @@ export async function resetQuarantinedSession(input: {
     return { ok: false, code: 'archive_failed', message: 'Atomic archive is unavailable; reset refused.' };
   }
 
+  await initAccountQuarantineSchema();
   const tx = await client.transaction('write');
   try {
     const current = await tx.execute({
@@ -134,6 +136,15 @@ export async function resetQuarantinedSession(input: {
       await tx.rollback();
       return { ok: false, code: 'conflict', message: 'Trajectory changed during reset; retry.' };
     }
+
+    // Clear the account-level flag in the same transaction, so a new key for this
+    // owner does not bootstrap quarantined once this session has been reset.
+    await tx.execute({
+      sql: `UPDATE account_quarantine SET cleared_at = ?
+            WHERE email = (SELECT email FROM api_keys WHERE id = ? LIMIT 1)
+              AND cleared_at IS NULL`,
+      args: [nowMs, input.ownerId],
+    });
 
     await tx.commit();
     console.info(`[quarantine-reset] ${resetId} session=${input.sessionId} prior_m=${priorM} prior_sigma=${priorSigma}`);

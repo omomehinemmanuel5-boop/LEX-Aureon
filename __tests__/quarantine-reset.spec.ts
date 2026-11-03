@@ -89,6 +89,14 @@ describe('owner self-reset of a quarantined session', () => {
     expect(fake.committed).toBe(true);
   });
 
+  it('clears the account-level flag inside the transaction, before commit', async () => {
+    await resetQuarantinedSession({ sessionId: SESSION, ownerId: OWNER });
+    const clearAt = fake.log.findIndex(l => l.startsWith('UPDATE account_quarantine'));
+    const commitAt = fake.log.indexOf('COMMIT');
+    expect(clearAt).toBeGreaterThan(-1);
+    expect(clearAt).toBeLessThan(commitAt);
+  });
+
   it('keeps the row and rolls back when the archive write fails', async () => {
     fake.archiveFails = true;
     const result = await resetQuarantinedSession({ sessionId: SESSION, ownerId: OWNER });
