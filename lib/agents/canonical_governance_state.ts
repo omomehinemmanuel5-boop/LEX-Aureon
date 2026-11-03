@@ -282,7 +282,7 @@ export function canonicalExecutionAllowed(
   if (state.M < CONSTITUTION.TAU_FLOOR) {
     return {
       allowed: false,
-      reason: `Canonical M=${state.M.toFixed(3)} < τ_floor=${CONSTITUTION.TAU_FLOOR}; all governed tool execution is suspended.`,
+      reason: `Canonical M=${state.M.toFixed(3)} < τ_floor=${CONSTITUTION.TAU_FLOOR}; all governed tool execution is suspended. Owner self-reset is available: POST /api/lex/session/reset with your API key.`,
     };
   }
 
