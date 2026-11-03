@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, writeGovernanceReceipt, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async (sessionId: string) => ({ status: 'created' as const, sessionId, verified: true as const })),
+  writeGovernanceReceipt: vi.fn(async () => {}),
   recordRecoveryCanaryEvidence: vi.fn(async () => {}),
   readCanonicalGovernanceState: vi.fn(),
   createCanonicalGovernanceStateReader: vi.fn(() => ({
@@ -104,6 +105,7 @@ vi.mock('../lib/agents/canonical_governance_state', () => ({
 }));
 
 vi.mock('../lib/agents/recovery_runtime', () => ({ advanceRecoveryPlane, shouldAdvanceRecoveryPlane }));
+vi.mock('../lib/agents/governance_commit', () => ({ writeGovernanceReceipt }));
 
 vi.mock('../lib/agents/recovery_canary_evidence', () => ({ recordRecoveryCanaryEvidence }));
 
@@ -409,7 +411,7 @@ describe('MCP constitutional dispatch boundary', () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(ensureCanonicalTrajectoryState).toHaveBeenCalledTimes(1);
+    expect(ensureCanonicalTrajectoryState).not.toHaveBeenCalled();
   });
 
   it('denies a private_test key from running the canary when its owner is not allowlisted', async () => {
@@ -504,6 +506,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(executeGovernedTool.mock.calls[0]?.[0]).toBe('request_recovery_pulse');
     expect(executeGovernedTool.mock.calls[0]?.[1]).toHaveProperty('session_id');
     expect(executeGovernedTool.mock.calls[0]?.[1].session_id).not.toBe('spoofed:other-owner-session');
+    expect(ensureCanonicalTrajectoryState).toHaveBeenCalledTimes(1);
     expect(checkRateLimit).toHaveBeenCalledWith(expect.stringMatching(/^recovery-pulse:/), 6, 60);
   });
 
@@ -959,6 +962,10 @@ describe('MCP constitutional dispatch boundary', () => {
       toolName: 'write_file',
       args: expect.objectContaining(actionArgs),
     }));
+    expect(writeGovernanceReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      decision: 'APPROVAL_REQUIRED',
+      reason: expect.stringContaining('[state_effect=none]'),
+    }));
     const approvalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
     expect(approvalResult).toMatchObject({
       status: 'approval_required',
@@ -972,7 +979,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(checkRateLimit).toHaveBeenCalledWith('approval-implicit:private-test-1', 20, 3600);
   });
 
-  it('advances bounded recovery before an approved retry can be stopped by trajectory admission', async () => {
+  it('does not advance recovery when an approved retry is blocked before dispatch', async () => {
     const key = { id: 'private-test-recovery-retry', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
@@ -1010,7 +1017,12 @@ describe('MCP constitutional dispatch boundary', () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(advanceRecoveryPlane).toHaveBeenCalledTimes(1);
+    expect(advanceRecoveryPlane).not.toHaveBeenCalled();
+    expect(ensureCanonicalTrajectoryState).not.toHaveBeenCalled();
+    expect(writeGovernanceReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      decision: 'DENIED_BLOCKED',
+      reason: expect.stringContaining('[state_effect=none]'),
+    }));
     expect(executeGovernedTool).not.toHaveBeenCalled();
     const result = (response.body as unknown as {
       result: { structuredContent: Record<string, unknown> };
