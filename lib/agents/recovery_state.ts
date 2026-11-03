@@ -78,7 +78,7 @@ export function recoveryCapabilityAllowed(
     return {
       allowed: false,
       state,
-      reason: `Canonical M=${M.toFixed(3)} < τ_floor=${CONSTITUTION.TAU_FLOOR}; all governed execution remains suspended.`,
+      reason: `Canonical M=${M.toFixed(3)} < τ_floor=${CONSTITUTION.TAU_FLOOR}; all governed execution remains suspended. Owner self-reset is available: POST /api/lex/session/reset with your API key.`,
     };
   }
 

@@ -34,6 +34,18 @@ Every governed request ends in one of three outcomes. The table is the rule; the
 
 Content refusals move the trajectory on purpose: probing with harmful requests should push state down, not cost the attacker nothing. Authorization denials say nothing about the content of a request, so they never move state. Refusals never earn recovery credit, so a refusal cannot help a session recover.
 
+## Owner self-reset of a quarantined session
+
+A session below the quarantine floor (M < 0.05) can be reset by its owner with `POST /api/lex/session/reset` and the owner's API key. The reset:
+
+- affects only the caller's own session. Session ownership is checked against the key ID;
+- is refused for any session that is not below the floor, so it cannot skip normal recovery;
+- archives the trajectory row into `quarantine_resets` and deletes the live row in one transaction. If the archive fails, nothing is deleted;
+- creates no authority. The next governed call creates a uniform row, and consequential actions still need recovery and per-action approval;
+- after 5 resets in 24 hours, pauses further resets for one hour and logs an alert. Normal use is not limited.
+
+Open item: ownership is tied to the key ID, so rotating a key still starts a new session. Binding quarantine to the account is a separate change.
+
 ## Recovery procedure
 
 1. Use the exact intended governance session. The recovery controller records compare-and-set observations through governed entry points; a denied or approval-pending action does not execute, does not move the trajectory, does not advance recovery, and creates no approval while the gate denies; only executed actions and non-refused governance turns move the trajectory. Do not try to call `advance_recovery_plane` as a standalone tool: `advanceRecoveryPlane` is an internal controller function, not a user-facing authorization path. Read the returned `n_stable` and current canonical state after each deliberate request. Recovery never grants write authority.
