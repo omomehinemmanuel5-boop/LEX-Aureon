@@ -10,7 +10,7 @@ const { readCanonicalGovernanceState, canonicalExecutionAllowed, interceptToolCa
   writeGovernanceReceipt: vi.fn(async () => undefined),
 }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({ readCanonicalGovernanceState, canonicalExecutionAllowed }));
-vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall }));
+vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall, interceptToolCallDeferred: interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 vi.mock('../lib/approval_requests', () => ({ consumeApprovalRequest, approvalArgsHash }));
 vi.mock('../lib/scoped_grants', () => ({ consumeScopedGrant }));
 vi.mock('../lib/agents/governance_commit', () => ({ writeGovernanceReceipt }));

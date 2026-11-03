@@ -18,7 +18,7 @@ const {
 
 vi.mock('../lib/agents/credential_broker', () => ({ getGitHubCredentialForApprovedAction }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({ readCanonicalGovernanceState, canonicalExecutionAllowed }));
-vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall }));
+vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall, interceptToolCallDeferred: interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 vi.mock('../lib/approval_requests', () => ({ consumeApprovalRequest, approvalArgsHash }));
 
 import { write_file, create_branch, open_pr, TOOL_DEFINITIONS } from '../lib/lex_crs_agent/tools';

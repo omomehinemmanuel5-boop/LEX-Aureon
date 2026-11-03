@@ -7,7 +7,7 @@
  */
 
 import crypto from 'crypto';
-import { interceptToolCall } from './tool_interceptor';
+import { interceptToolCall, interceptToolCallDeferred, commitDeferredInterceptorDecision } from './tool_interceptor';
 import { resolveToolCapability, type ToolCapabilityRecord } from './tool_capability_registry';
 import { canonicalExecutionAllowed, readCanonicalGovernanceState, type CanonicalGovernanceState } from './canonical_governance_state';
 import { ConstitutionalExecutionCache } from './constitutional_execution_cache';
@@ -498,7 +498,9 @@ export async function executeGovernedToolStructured(
   // the interceptor and centralized policy approve and execution is about to dispatch.
   const hasScopedGrantMatch = Boolean(scopedGrantId);
 
-  const decision = await interceptToolCall({
+  // Deferred: an approved result here is not yet committed. The telemetry
+  // write happens only after every later denial check has passed.
+  const decision = await interceptToolCallDeferred({
     id: crypto.randomUUID(),
     name: toolName,
     arguments: args,
@@ -793,11 +795,23 @@ export async function executeGovernedToolStructured(
         breachRecorded = await recordRecoveryBandBreach(dispatchState, sessionId, actorId, toolName, args, bandBreach);
       }
       const released = await releaseConsumedApproval();
+      const dispatchDenialReason = bandBreach ?? dispatchGate.reason ?? 'Canonical governance state denied execution before dispatch.';
+      await persistExecutorDenialReceipt({
+        receiptId: `EXEC-DENY-${crypto.randomUUID()}`,
+        sessionId,
+        actorId,
+        toolName,
+        args,
+        decision: 'DENIED_BLOCKED',
+        crs: decision.crs,
+        sigmaViol: dispatchState?.sigmaViol ?? 1,
+        reason: `Dispatch-time denial: ${dispatchDenialReason}`,
+      });
       const denial: ToolCallDecision = {
         ...decision,
         approved: false,
         decision: 'DENIED_BLOCKED',
-        reason: bandBreach ?? dispatchGate.reason ?? 'Canonical governance state denied execution before dispatch.',
+        reason: dispatchDenialReason,
         warning: released === false
           ? 'Consumed approval restoration failed; request a new approval.'
           : breachRecorded ? 'Recovery canary breach recorded and permanently invalidated.' : undefined,
@@ -813,6 +827,42 @@ export async function executeGovernedToolStructured(
         verification,
       };
     }
+  }
+
+  // Commit the approved interceptor telemetry only now. Every cancellation,
+  // approval, canonical, and dispatch check above has passed, so a denial
+  // earlier in this function left tool_sessions untouched.
+  const committedDecision = await commitDeferredInterceptorDecision(decision);
+  if (!committedDecision.approved) {
+    const released = await releaseConsumedApproval();
+    const commitReceiptWarning = await persistExecutorDenialReceipt({
+      receiptId: `EXEC-DENY-${crypto.randomUUID()}`,
+      sessionId,
+      actorId,
+      toolName,
+      args,
+      decision: committedDecision.decision,
+      crs: decision.crs,
+      sigmaViol: 1,
+      reason: `Approved interceptor decision was not committed: ${committedDecision.reason}`,
+    });
+    if (commitReceiptWarning) {
+      committedDecision.warning = [committedDecision.warning, commitReceiptWarning].filter(Boolean).join(' ');
+    }
+    return {
+      result: report(toolName, {
+        ...committedDecision,
+        warning: released === false
+          ? 'Consumed approval restoration failed; request a new approval.'
+          : committedDecision.warning,
+      }, undefined, false, policy, verifyToolResult(toolName, undefined, policy.risk), canonicalRead.state),
+      approved: false,
+      decision: committedDecision.decision,
+      receiptId: committedDecision.receipt_id ?? null,
+      risk: policy.risk,
+      policy,
+      verification: verifyToolResult(toolName, undefined, policy.risk),
+    };
   }
 
   // Spend the grant only after all canonical, interceptor, centralized-policy,

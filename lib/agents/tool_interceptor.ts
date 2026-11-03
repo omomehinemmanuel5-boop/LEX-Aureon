@@ -82,6 +82,11 @@ async function getKernelM(session_id: string): Promise<KernelStateRead> {
   }
 }
 
+// Approved decisions produced in deferred mode hold their telemetry commit here,
+// keyed by the returned decision object. Nothing is written until the caller
+// runs commitDeferredInterceptorDecision after every later denial check passed.
+const pendingInterceptorCommits = new WeakMap<ToolCallDecision, () => Promise<ToolCallDecision>>();
+
 // ── Session state — persisted in Turso ────────────────────────────────────
 async function getSessionState(session_id: string): Promise<ToolSessionState> {
   const db = getClient();
@@ -170,7 +175,7 @@ function toolHealthBand(sigma: number, locked: boolean): ToolCallDecision['healt
 }
 
 // ── Main interceptor ───────────────────────────────────────────────────────
-async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecision> {
+async function interceptToolCallOnce(tool: ToolCallInput, options: { deferCommit: boolean }): Promise<ToolCallDecision> {
   const t = Date.now();
 
   // Generate receipt ID
@@ -362,40 +367,65 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
     warning = warning ? `${warning} ${gapNote}` : gapNote;
   }
 
-  try {
-    newState = await commitGovernanceDecision(newState, session.state_version, {
-      receipt_id, session_id: tool.session_id, actor_id: tool.actor_id,
-      tool_name: tool.name, args_hash, decision,
-      crs,
-      reason: `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}${uninitializedReadOnly ? '; canonical_crs=UNINITIALIZED (read-only diagnostic; no z_traj row created)' : ''}`,
-      sigma_viol: newState.sigma_viol,
-    });
-  } catch (error) {
-    const reason = error instanceof GovernanceCommitConflict
-      ? 'Concurrent governance decision detected; tool execution denied and must be retried.'
-      : 'Governance commit unavailable; tool execution denied by fail-closed policy.';
-    return {
-      approved: false,
-      decision: 'DENIED_LOCKED',
-      reason,
+  const nextState = newState;
+  const stateVersion = session.state_version;
+  const approvalReason = `Approved: risk_level=${crs.risk_level}, M=${crs.M.toFixed(3)}${crs.unclassified ? ', unclassified=true' : ''}${uninitializedReadOnly ? '; canonical_crs=UNINITIALIZED (read-only diagnostic; no z_traj row created)' : ''}`;
+  const approvedReason = `Constitutional bounds satisfied. C=${crs.C.toFixed(3)} R=${crs.R.toFixed(3)} S=${crs.S.toFixed(3)} M=${crs.M.toFixed(3)}`;
+
+  // The commit is the only state write for an approved decision. In deferred
+  // mode it runs later, only after the caller has passed its remaining checks.
+  const commitApproval = async (): Promise<ToolCallDecision> => {
+    try {
+      const committed = await commitGovernanceDecision(nextState, stateVersion, {
+        receipt_id, session_id: tool.session_id, actor_id: tool.actor_id,
+        tool_name: tool.name, args_hash, decision,
+        crs,
+        reason: approvalReason,
+        sigma_viol: nextState.sigma_viol,
+      });
+      return {
+        approved:    true,
+        decision,
+        reason:      approvedReason,
+        crs,
+        receipt_id,
+        sigma_viol:  committed.sigma_viol,
+        health_band: toolHealthBand(committed.sigma_viol, false),
+        warning,
+      };
+    } catch (error) {
+      const reason = error instanceof GovernanceCommitConflict
+        ? 'Concurrent governance decision detected; tool execution denied and must be retried.'
+        : 'Governance commit unavailable; tool execution denied by fail-closed policy.';
+      return {
+        approved: false,
+        decision: 'DENIED_LOCKED',
+        reason,
+        crs,
+        receipt_id,
+        sigma_viol: session.sigma_viol,
+        health_band: 'CRITICAL',
+        warning: 'Governance state or receipt could not be committed atomically.',
+      };
+    }
+  };
+
+  if (options.deferCommit) {
+    const deferred: ToolCallDecision = {
+      approved:    true,
+      decision,
+      reason:      approvedReason,
       crs,
       receipt_id,
-      sigma_viol: session.sigma_viol,
-      health_band: 'CRITICAL',
-      warning: 'Governance state or receipt could not be committed atomically.',
+      sigma_viol:  nextState.sigma_viol,
+      health_band: toolHealthBand(nextState.sigma_viol, false),
+      warning,
     };
+    pendingInterceptorCommits.set(deferred, commitApproval);
+    return deferred;
   }
 
-  return {
-    approved:    true,
-    decision,
-    reason:      `Constitutional bounds satisfied. C=${crs.C.toFixed(3)} R=${crs.R.toFixed(3)} S=${crs.S.toFixed(3)} M=${crs.M.toFixed(3)}`,
-    crs,
-    receipt_id,
-    sigma_viol:  newState.sigma_viol,
-    health_band: toolHealthBand(newState.sigma_viol, false),
-    warning,
-  };
+  return commitApproval();
 }
 
 /**
@@ -405,13 +435,45 @@ async function interceptToolCallOnce(tool: ToolCallInput): Promise<ToolCallDecis
  * never a hard recovery lock or a storage/receipt failure. Bound the retries so
  * sustained contention still fails closed and remains visible to the caller.
  */
-export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDecision> {
+async function interceptWithConflictRetry(tool: ToolCallInput, deferCommit: boolean): Promise<ToolCallDecision> {
   let decision: ToolCallDecision | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
-    decision = await interceptToolCallOnce(tool);
+    decision = await interceptToolCallOnce(tool, { deferCommit });
     const conflict = decision.reason.startsWith('Concurrent governance decision detected;');
     if (!conflict || attempt === 2) return decision;
     await new Promise(resolve => setTimeout(resolve, 15 * (attempt + 1)));
   }
   return decision!;
+}
+
+export async function interceptToolCall(tool: ToolCallInput): Promise<ToolCallDecision> {
+  return interceptWithConflictRetry(tool, false);
+}
+
+/**
+ * Evaluate a tool call without writing its approved telemetry. An approved
+ * result is not final until commitDeferredInterceptorDecision succeeds. Any
+ * caller that denies afterwards simply drops the result, so nothing is written.
+ */
+export async function interceptToolCallDeferred(tool: ToolCallInput): Promise<ToolCallDecision> {
+  return interceptWithConflictRetry(tool, true);
+}
+
+/**
+ * Commit a deferred approval. Denied decisions pass through unchanged. An
+ * approved decision with no pending commit is refused rather than trusted.
+ */
+export async function commitDeferredInterceptorDecision(decision: ToolCallDecision): Promise<ToolCallDecision> {
+  if (!decision.approved) return decision;
+  const commit = pendingInterceptorCommits.get(decision);
+  if (!commit) {
+    return {
+      ...decision,
+      approved: false,
+      decision: 'DENIED_LOCKED',
+      reason: 'Approved decision has no pending governance commit; execution denied.',
+    };
+  }
+  pendingInterceptorCommits.delete(decision);
+  return commit();
 }

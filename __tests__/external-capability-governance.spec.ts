@@ -19,7 +19,7 @@ vi.mock('../lib/agents/tool_capability_discovery', async (importOriginal) => {
   };
 });
 
-vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall: mocks.interceptToolCall }));
+vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall: mocks.interceptToolCall, interceptToolCallDeferred: mocks.interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 vi.mock('../lib/approval_requests', () => ({ consumeApprovalRequest: mocks.consumeApprovalRequest }));
 
 vi.mock('../lib/agents/tool_governance_gateway', async (importOriginal) => {

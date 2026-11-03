@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../lib/db', () => ({ getClient: () => ({ execute: mocks.dbExecute }) }));
-vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall: mocks.interceptToolCall }));
+vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall: mocks.interceptToolCall, interceptToolCallDeferred: mocks.interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   readCanonicalGovernanceState: mocks.readCanonicalGovernanceState,
   canonicalExecutionAllowed: mocks.canonicalExecutionAllowed,
