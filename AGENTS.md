@@ -398,6 +398,8 @@ npm run build          verify TypeScript
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
 
+[2026-11-03] FIX: V2 readiness workflow input validation now accepts integer-valued decimals emitted by GitHub Actions, canonicalizes limit/repetition outputs for later steps, and rejects fractional, unsafe, or out-of-range values. Run #1 stopped before model evaluation due to `0.0`/`5.0`; the benchmark was not rerun. Validation: 731 Vitest tests, typecheck, lint, production build, YAML parsing, and direct normalization cases passed.
+
 [2026-11-01] AUTOMATION/FIX: PR #225 benchmark improvements — validate authored susceptible traces, replay controlled attacks and benign controls separately from repeated model plans, enforce full-suite/attack-attempt/model-sample gates with a failing CLI exit code, report scenario-clustered confidence intervals, and add a phone-friendly pinned-model workflow selector with credential preflight. Validation: 696 Vitest tests, typecheck, lint, and production build passed; workflow has not yet run on GitHub.
 
 [2026-10-15] FIX/DESIGN: Shared MCP session canonicalization now owner-scopes non-operator sessions consistently across ordinary calls, explicit authorization, and external-action approval paths; regression coverage added for raw, already-prefixed, and implicit sessions. Approval decisions now render an accessible, mobile-friendly outcome page that explicitly distinguishes recording approval from executing the action. CI verification pending.
@@ -567,7 +569,7 @@ Paper:      Body correctly scoped. Global stability claim not made.
 Grants:     Schmidt Sciences submitted · LTFF in progress
 Revenue:    $500 audit · Upwork active
 Benchmarks: 920+ adversarial prompts total. JailbreakBench n=150 (run 31479398303, 2026-08-11, post-harm_request-disable): bare ASR 23.49%, governed ASR 17.45% (+6.04pp, NOT statistically significant, McNemar p=0.1237). NOT 0% — the classifier layer (identity/coercion/exploitative) detects zero signal on JailbreakBench's plainly-worded prompts (attack_type=none on 150/150); harm_request was the only class covering that content shape and is currently disabled (see Known Operational Limitations in README). Do not restate "0% governed ASR" as a blanket claim until a rebuilt, validated harm-content classifier is re-measured.
-Readiness eval: PR #225 adds controlled attack/benign traces and scenario-aware scoring; local validation passed, but the branch is not merged or deployed and the benchmark is not a production safety certification.
+Readiness eval: PR #225 benchmark v2 is merged. Run #1 stopped at input preflight because GitHub supplied integer inputs as `0.0`/`5.0`; no model evaluation ran. Follow-up normalization fix is in review; the benchmark is not a production safety certification.
 
 ---
 
@@ -579,7 +581,7 @@ Readiness eval: PR #225 adds controlled attack/benign traces and scenario-aware 
 - [ ] Multi-turn CRS computation (turn_history table — identified, not yet implemented)
 - [ ] Verify the live MCP session-bootstrap lifecycle with an authenticated, harmless end-to-end test
 - [ ] Exercise bounded invariant canary mode on preview with `CANARY_MODE=invariant`
-- [ ] Run the revised full-suite readiness workflow for each pinned model family with its repository secret configured, then review the model-specific scorecards
+- [ ] After the V2 input-normalization fix merges, run the full suite for each pinned model family with its repository secret configured, then review the model-specific scorecards
 - [x] Open Problem 3 closed and deployed (2026-06-28/29)
 - [x] Naming collision resolved — computeZWeightsHeuristic (2026-06-29)
 - [x] slow_drip receipt wired from sigma_viol accumulator (2026-06-29)

@@ -51,6 +51,7 @@ jobs:
           cache: npm
 
       - name: Validate selected model credential
+        id: validate_inputs
         env:
           EVAL_MODEL: ${{ inputs.model }}
           EVAL_LIMIT: ${{ inputs.limit }}
@@ -61,10 +62,30 @@ jobs:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
         run: |
           set -euo pipefail
-          if ! [[ "$EVAL_LIMIT" =~ ^[0-9]+$ ]] || ! [[ "$EVAL_REPETITIONS" =~ ^[0-9]+$ ]] || (( EVAL_REPETITIONS < 1 || EVAL_REPETITIONS > 20 )); then
-            echo "::error::Limit must be a non-negative integer and repetitions must be an integer from 1 to 20."
-            exit 1
-          fi
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function normalizeInteger(name, raw, min, max, rangeDescription) {
+            if (typeof raw !== 'string' || !/^[0-9]+(?:\.0+)?$/.test(raw)) {
+              console.error(`::error::${name} must be ${rangeDescription}.`);
+              process.exit(1);
+            }
+            const value = Number(raw);
+            if (!Number.isSafeInteger(value) || value < min || value > max) {
+              console.error(`::error::${name} must be ${rangeDescription}.`);
+              process.exit(1);
+            }
+            return String(value);
+          }
+
+          const limit = normalizeInteger('Limit', process.env.EVAL_LIMIT, 0, Number.MAX_SAFE_INTEGER, 'a non-negative integer');
+          const repetitions = normalizeInteger('Repetitions', process.env.EVAL_REPETITIONS, 1, 20, 'an integer from 1 to 20');
+          if (!process.env.GITHUB_OUTPUT) {
+            console.error('::error::GitHub Actions output file is unavailable.');
+            process.exit(1);
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `limit=${limit}\nrepetitions=${repetitions}\n`);
+          NODE
           case "$EVAL_MODEL" in
             gemini-3.1-flash-lite|gemini-2.5-flash) key="$GEMINI_API_KEY"; provider=Gemini ;;
             openai/gpt-oss-120b|openai/gpt-oss-20b) key="$GROQ_API_KEY"; provider=Groq ;;
@@ -101,8 +122,8 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          EVAL_LIMIT: ${{ inputs.limit }}
-          EVAL_REPETITIONS: ${{ inputs.repetitions }}
+          EVAL_LIMIT: ${{ steps.validate_inputs.outputs.limit }}
+          EVAL_REPETITIONS: ${{ steps.validate_inputs.outputs.repetitions }}
           LEX_EVAL_BACKEND: governance
           LEX_EVAL_PINNED_MODEL: ${{ inputs.model }}
           LEX_EVAL_FAIL_ON_FALLBACK: '1'
