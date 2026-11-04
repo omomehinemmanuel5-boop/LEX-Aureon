@@ -398,6 +398,8 @@ npm run build          verify TypeScript
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
 
+[2026-11-04] FIX/AUTOMATION: Production Readiness Benchmark v2 now retries only bounded transient timeouts/network/selected 5xx errors on the selected model, records provider/quota/auth failures separately from malformed model output, and reports retry counts. Approval remains part of Lex governance; the benchmark now exercises explicit approved/rejected counterfactuals in isolated in-memory worlds only, with scorecard completeness gates and report tables. Quota/auth responses are not retried. Validation: 754 Vitest tests across 96 files, typecheck, lint, production build, workflow YAML parse, and diff checks passed. Benchmark not dispatched.
+
 [2026-11-03] FIX: V2 readiness workflow input validation now accepts integer-valued decimals emitted by GitHub Actions, canonicalizes limit/repetition outputs for later steps, and rejects fractional, unsafe, or out-of-range values. Run #1 stopped before model evaluation due to `0.0`/`5.0`; the benchmark was not rerun. Validation: 731 Vitest tests, typecheck, lint, production build, YAML parsing, and direct normalization cases passed.
 
 [2026-11-01] AUTOMATION/FIX: PR #225 benchmark improvements — validate authored susceptible traces, replay controlled attacks and benign controls separately from repeated model plans, enforce full-suite/attack-attempt/model-sample gates with a failing CLI exit code, report scenario-clustered confidence intervals, and add a phone-friendly pinned-model workflow selector with credential preflight. Validation: 696 Vitest tests, typecheck, lint, and production build passed; workflow has not yet run on GitHub.
@@ -569,7 +571,7 @@ Paper:      Body correctly scoped. Global stability claim not made.
 Grants:     Schmidt Sciences submitted · LTFF in progress
 Revenue:    $500 audit · Upwork active
 Benchmarks: 920+ adversarial prompts total. JailbreakBench n=150 (run 31479398303, 2026-08-11, post-harm_request-disable): bare ASR 23.49%, governed ASR 17.45% (+6.04pp, NOT statistically significant, McNemar p=0.1237). NOT 0% — the classifier layer (identity/coercion/exploitative) detects zero signal on JailbreakBench's plainly-worded prompts (attack_type=none on 150/150); harm_request was the only class covering that content shape and is currently disabled (see Known Operational Limitations in README). Do not restate "0% governed ASR" as a blanket claim until a rebuilt, validated harm-content classifier is re-measured.
-Readiness eval: PR #225 benchmark v2 is merged. Run #1 stopped at input preflight because GitHub supplied integer inputs as `0.0`/`5.0`; no model evaluation ran. Follow-up normalization fix is in review; the benchmark is not a production safety certification.
+Readiness eval: PR #225 benchmark v2 and PR #232 input normalization are merged. A dedicated V2 retry/approval-counterfactual fix is validated on its branch; no benchmark has been dispatched for it. Approval remains governed in production; benchmark approve/reject branches are isolated simulations. The benchmark is not a production safety certification.
 
 ---
 
@@ -581,7 +583,7 @@ Readiness eval: PR #225 benchmark v2 is merged. Run #1 stopped at input prefligh
 - [ ] Multi-turn CRS computation (turn_history table — identified, not yet implemented)
 - [ ] Verify the live MCP session-bootstrap lifecycle with an authenticated, harmless end-to-end test
 - [ ] Exercise bounded invariant canary mode on preview with `CANARY_MODE=invariant`
-- [ ] After the V2 input-normalization fix merges, run the full suite for each pinned model family with its repository secret configured, then review the model-specific scorecards
+- [ ] After the V2 retry/approval-counterfactual fix merges, run the full suite for each pinned model family with its repository secret configured, then review provider-failure and approval-branch evidence in each scorecard
 - [x] Open Problem 3 closed and deployed (2026-06-28/29)
 - [x] Naming collision resolved — computeZWeightsHeuristic (2026-06-29)
 - [x] slow_drip receipt wired from sigma_viol accumulator (2026-06-29)
