@@ -126,15 +126,69 @@ export interface LLMMessage {
   content: string;
 }
 
+export interface LLMProviderFailure {
+  category: 'timeout' | 'network_error' | 'http_5xx' | 'rate_limited' | 'quota_or_auth' | 'http_error' | 'provider_error' | 'empty_response' | 'missing_credentials' | 'cooldown' | 'unknown_model' | 'fallback_used';
+  retryable: boolean;
+  status?: number;
+}
+
 export interface LLMResult {
   text: string;
   provider: string;
   model: string;
   fallback_used: boolean;
   attempts: number;
+  failure?: LLMProviderFailure;
 }
 
 const TIMEOUT_MS = 25_000;
+// Benchmark-only retries: one initial call plus at most two same-model retries.
+// Request timeouts, transport failures, and selected transient 5xx responses
+// are retryable; quota/auth, client, empty-response, and model parse failures are not.
+const PINNED_MAX_ATTEMPTS = 3;
+const PINNED_RETRY_DELAYS_MS = [500, 1_000] as const;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolveSleep => setTimeout(resolveSleep, ms));
+}
+
+type FailureReporter = (failure: LLMProviderFailure) => void;
+
+export async function retryPinnedCall<T>(
+  call: (reportFailure: FailureReporter) => Promise<T | null>,
+  wait: (ms: number) => Promise<void> = sleep,
+): Promise<{ result: T | null; attempts: number; failure?: LLMProviderFailure }> {
+  let attempts = 0;
+  let lastFailure: LLMProviderFailure | undefined;
+  while (attempts < PINNED_MAX_ATTEMPTS) {
+    let attemptFailure: LLMProviderFailure | undefined;
+    attempts++;
+    const result = await call(failure => { attemptFailure = failure; });
+    if (result !== null && result !== '') return { result, attempts };
+    lastFailure = attemptFailure ?? { category: 'provider_error', retryable: false };
+    if (!lastFailure.retryable || attempts >= PINNED_MAX_ATTEMPTS) break;
+    await wait(PINNED_RETRY_DELAYS_MS[attempts - 1]);
+  }
+  return { result: null, attempts, failure: lastFailure ?? { category: 'provider_error', retryable: false } };
+}
+
+function httpFailure(status: number): LLMProviderFailure {
+  if ([500, 502, 503, 504].includes(status)) return { category: 'http_5xx', retryable: true, status };
+  if (status === 429) return { category: 'rate_limited', retryable: false, status };
+  if (status === 402 || status === 403) return { category: 'quota_or_auth', retryable: false, status };
+  return { category: 'http_error', retryable: false, status };
+}
+
+function exceptionFailure(error: unknown): LLMProviderFailure {
+  const name = error instanceof Error ? error.name : '';
+  const message = error instanceof Error ? error.message : String(error);
+  const timedOut = name === 'TimeoutError' || /timed?\s*out|timeout/i.test(message);
+  const networkFailure = error instanceof TypeError || /fetch failed|network|socket|ECONNRESET|EAI_AGAIN|ENOTFOUND/i.test(message);
+  return {
+    category: timedOut ? 'timeout' : networkFailure ? 'network_error' : 'provider_error',
+    retryable: timedOut || networkFailure,
+  };
+}
 
 // Max response length. Raised 800 → 4096 → 8192 (2026-07): 800 tokens (~600
 // words) cut off longer console/chat answers mid-thought; 4096 (~3k words) was
@@ -212,15 +266,18 @@ function markCooldownIfRateLimited(provider: string, model: string, status: numb
 
 // ── Provider implementations ─────────────────────────────────────────────────
 
-async function tryGroq(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (await isOnCooldown('groq', model)) return null; // no request sent — known-dead until cooldown expires
+async function tryGroq(messages: LLMMessage[], model: string, onFailure?: FailureReporter): Promise<string | null> {
+  if (await isOnCooldown('groq', model)) {
+    onFailure?.({ category: 'cooldown', retryable: false });
+    return null; // no request sent — known-dead until cooldown expires
+  }
   // NOTE: GROQ_API_KEY is REQUIRED in lib/env.ts (app refuses to start without
   // it), so env.GROQ_API_KEY throws rather than returning undefined if unset —
   // wrong semantics for this fallback chain, which must degrade gracefully to
   // the next provider instead of throwing mid-chain. Reads process.env directly
   // for that reason; see lib/env.ts's REQUIRED set for the enforcement point.
   const key = process.env.GROQ_API_KEY;
-  if (!key) { logProviderFailure('groq', 'GROQ_API_KEY not set'); return null; }
+  if (!key) { logProviderFailure('groq', 'GROQ_API_KEY not set'); onFailure?.({ category: 'missing_credentials', retryable: false }); return null; }
   try {
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -236,13 +293,21 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
       const body = await r.text().catch(() => '');
       logProviderFailure('groq', `HTTP ${r.status} model=${model} ${body.slice(0, 200)}`);
       markCooldownIfRateLimited('groq', model, r.status);
+      onFailure?.(httpFailure(r.status));
       return null;
     }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
     const text = d.choices?.[0]?.message?.content?.trim() ?? null;
-    if (!text) logProviderFailure('groq', `HTTP ${r.status} but no content in response, model=${model}`);
-    return text;
-  } catch (e) { logProviderFailure('groq', `exception: ${String(e).slice(0, 200)}`); return null; }
+    if (!text) {
+      logProviderFailure('groq', `HTTP ${r.status} but no content in response, model=${model}`);
+      onFailure?.({ category: 'empty_response', retryable: false, status: r.status });
+    }
+    return text || null;
+  } catch (e) {
+    logProviderFailure('groq', `exception: ${String(e).slice(0, 200)}`);
+    onFailure?.(exceptionFailure(e));
+    return null;
+  }
 }
 
 // fix (2026-07-10): Cerebras's API is OpenAI-compatible with the identical
@@ -254,10 +319,10 @@ async function tryGroq(messages: LLMMessage[], model: string): Promise<string | 
 // that). Kept as its own function (rather than parameterizing tryGroq with a
 // base URL) so each provider's own quirks/rate-limit handling can diverge
 // later without entangling the two.
-async function tryCerebras(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (await isOnCooldown('cerebras', model)) return null;
+async function tryCerebras(messages: LLMMessage[], model: string, onFailure?: FailureReporter): Promise<string | null> {
+  if (await isOnCooldown('cerebras', model)) { onFailure?.({ category: 'cooldown', retryable: false }); return null; }
   const key = env.CEREBRAS_API_KEY;
-  if (!key) { logProviderFailure('cerebras', 'CEREBRAS_API_KEY not set'); return null; }
+  if (!key) { logProviderFailure('cerebras', 'CEREBRAS_API_KEY not set'); onFailure?.({ category: 'missing_credentials', retryable: false }); return null; }
   try {
     const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
       method: 'POST',
@@ -273,19 +338,27 @@ async function tryCerebras(messages: LLMMessage[], model: string): Promise<strin
       const body = await r.text().catch(() => '');
       logProviderFailure('cerebras', `HTTP ${r.status} model=${model} ${body.slice(0, 200)}`);
       markCooldownIfRateLimited('cerebras', model, r.status);
+      onFailure?.(httpFailure(r.status));
       return null;
     }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
     const text = d.choices?.[0]?.message?.content?.trim() ?? null;
-    if (!text) logProviderFailure('cerebras', `HTTP ${r.status} but no content in response (reasoning-only?), model=${model}`);
-    return text;
-  } catch (e) { logProviderFailure('cerebras', `exception: ${String(e).slice(0, 200)}`); return null; }
+    if (!text) {
+      logProviderFailure('cerebras', `HTTP ${r.status} but no content in response (reasoning-only?), model=${model}`);
+      onFailure?.({ category: 'empty_response', retryable: false, status: r.status });
+    }
+    return text || null;
+  } catch (e) {
+    logProviderFailure('cerebras', `exception: ${String(e).slice(0, 200)}`);
+    onFailure?.(exceptionFailure(e));
+    return null;
+  }
 }
 
-async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
-  if (await isOnCooldown('mistral', MODELS.MISTRAL)) return null;
+async function tryMistral(messages: LLMMessage[], onFailure?: FailureReporter): Promise<string | null> {
+  if (await isOnCooldown('mistral', MODELS.MISTRAL)) { onFailure?.({ category: 'cooldown', retryable: false }); return null; }
   const key = env.MISTRAL_API_KEY;
-  if (!key) { logProviderFailure('mistral', 'MISTRAL_API_KEY not set'); return null; }
+  if (!key) { logProviderFailure('mistral', 'MISTRAL_API_KEY not set'); onFailure?.({ category: 'missing_credentials', retryable: false }); return null; }
   try {
     const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
@@ -300,19 +373,27 @@ async function tryMistral(messages: LLMMessage[]): Promise<string | null> {
       const body = await r.text().catch(() => '');
       logProviderFailure('mistral', `HTTP ${r.status} ${body.slice(0, 200)}`);
       markCooldownIfRateLimited('mistral', MODELS.MISTRAL, r.status);
+      onFailure?.(httpFailure(r.status));
       return null;
     }
     const d = await r.json() as { choices?: Array<{ message?: { content?: string } }> };
     const text = d.choices?.[0]?.message?.content?.trim() ?? null;
-    if (!text) logProviderFailure('mistral', `HTTP ${r.status} but no content in response`);
-    return text;
-  } catch (e) { logProviderFailure('mistral', `exception: ${String(e).slice(0, 200)}`); return null; }
+    if (!text) {
+      logProviderFailure('mistral', `HTTP ${r.status} but no content in response`);
+      onFailure?.({ category: 'empty_response', retryable: false, status: r.status });
+    }
+    return text || null;
+  } catch (e) {
+    logProviderFailure('mistral', `exception: ${String(e).slice(0, 200)}`);
+    onFailure?.(exceptionFailure(e));
+    return null;
+  }
 }
 
-async function tryGemini(messages: LLMMessage[], model: string): Promise<string | null> {
-  if (await isOnCooldown('gemini', model)) return null;
+async function tryGemini(messages: LLMMessage[], model: string, onFailure?: FailureReporter): Promise<string | null> {
+  if (await isOnCooldown('gemini', model)) { onFailure?.({ category: 'cooldown', retryable: false }); return null; }
   const key = env.GEMINI_API_KEY;
-  if (!key) { logProviderFailure('gemini', 'GEMINI_API_KEY not set'); return null; }
+  if (!key) { logProviderFailure('gemini', 'GEMINI_API_KEY not set'); onFailure?.({ category: 'missing_credentials', retryable: false }); return null; }
   try {
     // Convert to Gemini format
     const system = messages.find(m => m.role === 'system')?.content;
@@ -339,13 +420,21 @@ async function tryGemini(messages: LLMMessage[], model: string): Promise<string 
       const respBody = await r.text().catch(() => '');
       logProviderFailure('gemini', `HTTP ${r.status} model=${model} ${respBody.slice(0, 200)}`);
       markCooldownIfRateLimited('gemini', model, r.status);
+      onFailure?.(httpFailure(r.status));
       return null;
     }
     const d = await r.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const text = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
-    if (!text) logProviderFailure('gemini', `HTTP ${r.status} but no content in response, model=${model}`);
-    return text;
-  } catch (e) { logProviderFailure('gemini', `exception: ${String(e).slice(0, 200)}`); return null; }
+    if (!text) {
+      logProviderFailure('gemini', `HTTP ${r.status} but no content in response, model=${model}`);
+      onFailure?.({ category: 'empty_response', retryable: false, status: r.status });
+    }
+    return text || null;
+  } catch (e) {
+    logProviderFailure('gemini', `exception: ${String(e).slice(0, 200)}`);
+    onFailure?.(exceptionFailure(e));
+    return null;
+  }
 }
 
 // ── Main fallback chain ───────────────────────────────────────────────────────
@@ -432,21 +521,24 @@ export async function generateGovernedPinned(
   model: string,
   staticFallback?: string,
 ): Promise<LLMResult> {
-  const choices: Record<string, { provider: string; fn: () => Promise<string | null> }> = {
-    [MODELS.GEMINI_LITE]: { provider: 'gemini', fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
-    [MODELS.GEMINI_FULL]: { provider: 'gemini', fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
-    [MODELS.CEREBRAS]: { provider: 'cerebras', fn: () => tryCerebras(messages, MODELS.CEREBRAS) },
-    [MODELS.PRIMARY]: { provider: 'groq', fn: () => tryGroq(messages, MODELS.PRIMARY) },
-    [MODELS.FAST]: { provider: 'groq', fn: () => tryGroq(messages, MODELS.FAST) },
-    [MODELS.MISTRAL]: { provider: 'mistral', fn: () => tryMistral(messages) },
+  const choices: Record<string, { provider: string; fn: (onFailure?: FailureReporter) => Promise<string | null> }> = {
+    [MODELS.GEMINI_LITE]: { provider: 'gemini', fn: onFailure => tryGemini(messages, MODELS.GEMINI_LITE, onFailure) },
+    [MODELS.GEMINI_FULL]: { provider: 'gemini', fn: onFailure => tryGemini(messages, MODELS.GEMINI_FULL, onFailure) },
+    [MODELS.CEREBRAS]: { provider: 'cerebras', fn: onFailure => tryCerebras(messages, MODELS.CEREBRAS, onFailure) },
+    [MODELS.PRIMARY]: { provider: 'groq', fn: onFailure => tryGroq(messages, MODELS.PRIMARY, onFailure) },
+    [MODELS.FAST]: { provider: 'groq', fn: onFailure => tryGroq(messages, MODELS.FAST, onFailure) },
+    [MODELS.MISTRAL]: { provider: 'mistral', fn: onFailure => tryMistral(messages, onFailure) },
   };
   const choice = choices[model];
   if (!choice) {
-    return { text: staticFallback ?? '', provider: 'unknown', model, fallback_used: true, attempts: 0 };
+    return { text: staticFallback ?? '', provider: 'unknown', model, fallback_used: true, attempts: 0, failure: { category: 'unknown_model', retryable: false } };
   }
-  const result = await choice.fn();
-  if (result) return { text: result, provider: choice.provider, model, fallback_used: false, attempts: 1 };
-  return { text: staticFallback ?? '', provider: choice.provider, model, fallback_used: true, attempts: 1 };
+  const { result, attempts, failure } = await retryPinnedCall<string>(choice.fn);
+  if (result !== null) return { text: result, provider: choice.provider, model, fallback_used: false, attempts };
+  return {
+    text: staticFallback ?? '', provider: choice.provider, model, fallback_used: true, attempts,
+    failure: failure ?? { category: 'provider_error', retryable: false },
+  };
 }
 
 export async function generateGoverned(
