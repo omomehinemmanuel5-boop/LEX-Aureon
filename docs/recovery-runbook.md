@@ -46,6 +46,18 @@ A session below the quarantine floor (M < 0.05) can be reset by its owner with `
 
 Open item: ownership is tied to the key ID, so rotating a key still starts a new session. Binding quarantine to the account is a separate change.
 
+## For agents and clients: handling a quarantine denial
+
+A denied response for a quarantined session includes a structured block:
+
+- `quarantined: true`
+- `reset_available: true`
+- `reset`: the method, endpoint (`/api/lex/session/reset`), and header (`x-lex-api-key`)
+
+When an agent sees `quarantined: true` and holds the owner's API key, it can call the reset endpoint with that key and then retry the original request. No human step is needed. The reset is refused if the session is not below the floor, so an agent cannot use it to skip recovery. If the reset is paused, the response says so, and the agent should stop and report to the owner.
+
+A reset does not grant authority. After a reset, consequential actions still need recovery and per-action approval.
+
 ## Recovery procedure
 
 1. Use the exact intended governance session. The recovery controller records compare-and-set observations through governed entry points; a denied or approval-pending action does not execute, does not move the trajectory, does not advance recovery, and creates no approval while the gate denies; only executed actions and non-refused governance turns move the trajectory. Do not try to call `advance_recovery_plane` as a standalone tool: `advanceRecoveryPlane` is an internal controller function, not a user-facing authorization path. Read the returned `n_stable` and current canonical state after each deliberate request. Recovery never grants write authority.
