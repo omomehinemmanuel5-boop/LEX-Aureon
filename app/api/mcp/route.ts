@@ -37,6 +37,7 @@ import { env } from '@/lib/env';
 import { CONSTITUTION } from '@/lib/constitution';
 import { readBoundedBody } from '@/lib/http/bounded_body';
 import { canonicalMcpSessionId, credentialPathFor, defaultMcpSessionId, extractApiKey, extractSessionToken, ipHash, isOperatorRequest, mcpSessionError, mcpToolResult, oauthToolChallenge, unauthorized, type McpCredentialPath } from '@/lib/mcp_http';
+import { quarantineHint } from '@/lib/agents/quarantine_hint';
 
 
 // fix (2026-09-01): reuses the exact header convention already documented
@@ -1072,6 +1073,7 @@ async function handlePost(req: Request) {
             decision: 'DENIED_BLOCKED',
             reason: recoveryGate.reason ?? 'Canonical governance state denied execution; no action was executed.',
             recovery_state: recoveryPreflight.state.recoveryState,
+            ...quarantineHint(recoveryPreflight.state),
             M: recoveryPreflight.state.M,
             n_stable: recoveryPreflight.state.nStable,
             canary_passed: recoveryPreflight.state.canaryPassed === true,
@@ -1124,6 +1126,7 @@ async function handlePost(req: Request) {
             decision: 'DENIED_BLOCKED',
             reason: preflight.reason ?? 'Canonical governance state denied execution; no approval was created.',
             recovery_state: canonical.state.recoveryState,
+            ...quarantineHint(canonical.state),
             M: canonical.state.M,
             n_stable: canonical.state.nStable,
             canary_passed: canonical.state.canaryPassed === true,
@@ -1179,6 +1182,7 @@ async function handlePost(req: Request) {
             expires_at: new Date(pending.expiresAt).toISOString(),
             approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             recovery_state: canonical.state.recoveryState,
+            ...quarantineHint(canonical.state),
             M: canonical.state.M,
             n_stable: canonical.state.nStable,
             canary_passed: canonical.state.canaryPassed === true,
