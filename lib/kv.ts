@@ -9,6 +9,7 @@ import { getClient } from './db';
 import { projectCRSToConstitutionalSimplex } from './constitution';
 import { RECOVERY_STABILITY_THRESHOLD } from './agents/recovery_state';
 import { nextSigmaViolation } from './agents/sigma_decay';
+import { markAccountQuarantined } from './agents/account_quarantine';
 
 interface KvCRSState {
   C: number; R: number; S: number;
@@ -445,6 +446,9 @@ export async function updateZTraj(
         z.attack_pressure, z.updated_at,
       ],
     });
+    if (z.last_m < CONSTITUTION.TAU_FLOOR) {
+      await markAccountQuarantined(sessionId);
+    }
   } catch (e: unknown) {
     // If z_c/z_r/z_s columns don't exist yet, add them then retry.
     if (e instanceof Error && e.message.includes('no column')) {

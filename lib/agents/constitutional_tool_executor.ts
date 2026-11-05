@@ -600,6 +600,14 @@ export async function executeGovernedToolStructured(
   // Cancellation before consumption must not burn a single-use approval.
   if (signal?.aborted) {
     const released = await releaseConsumedApproval();
+    await persistExecutorDenialReceipt({
+      receiptId: `EXEC-DENY-${crypto.randomUUID()}`,
+      sessionId, actorId, toolName, args,
+      decision: 'DENIED_BLOCKED',
+      crs: decision.crs,
+      sigmaViol: canonicalRead.state.sigmaViol,
+      reason: 'Cancellation observed before dispatch; no action executed.',
+    });
     const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
     const cancellationDecision: ToolCallDecision = {
       ...decision,
@@ -639,6 +647,14 @@ export async function executeGovernedToolStructured(
         args,
       });
     if (!consumed.consumed) {
+      await persistExecutorDenialReceipt({
+        receiptId: `EXEC-DENY-${crypto.randomUUID()}`,
+        sessionId, actorId, toolName, args,
+        decision: 'DENIED_BLOCKED',
+        crs: decision.crs,
+        sigmaViol: canonicalRead.state.sigmaViol,
+        reason: `Approval could not be consumed exactly once: ${consumed.reason}`,
+      });
       const replayDecision: ToolCallDecision = {
         ...decision,
         approved: false,
@@ -673,6 +689,14 @@ export async function executeGovernedToolStructured(
     // flight. Restore the approval only if the action has not been dispatched.
     if (signal?.aborted) {
       const released = await releaseConsumedApproval();
+      await persistExecutorDenialReceipt({
+        receiptId: `EXEC-DENY-${crypto.randomUUID()}`,
+        sessionId, actorId, toolName, args,
+        decision: 'DENIED_BLOCKED',
+        crs: decision.crs,
+        sigmaViol: canonicalRead.state.sigmaViol,
+        reason: 'Cancellation observed before dispatch; no action executed.',
+      });
       const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
       const cancelledDecision: ToolCallDecision = {
         ...decision,
@@ -752,6 +776,14 @@ export async function executeGovernedToolStructured(
 
   if (signal?.aborted) {
     const released = await releaseConsumedApproval();
+    await persistExecutorDenialReceipt({
+      receiptId: `EXEC-DENY-${crypto.randomUUID()}`,
+      sessionId, actorId, toolName, args,
+      decision: 'DENIED_BLOCKED',
+      crs: decision.crs,
+      sigmaViol: canonicalRead.state.sigmaViol,
+      reason: 'Cancellation observed before dispatch; no action executed.',
+    });
     const releaseStatus = released === true ? 'restored' : released === false ? 'failed' : 'not_needed';
     const cancellationDecision: ToolCallDecision = {
       ...decision,
