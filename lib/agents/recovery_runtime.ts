@@ -139,24 +139,48 @@ export function recoveryObservationIntervalMs(breachCount: number): number {
   return RECOVERY_MIN_OBSERVATION_INTERVAL_MS;
 }
 
-async function readRecoveryEpisodeBreachCount(sessionId: string): Promise<number> {
+/**
+ * Breach count for the current recovery episode.
+ *
+ * All breach receipts are read, because breaches are rare and must never be
+ * dropped. Clean observations come from the newest RECEIPT_WINDOW receipts.
+ * A breach older than that window always has at least RECEIPT_WINDOW receipts
+ * after it, so any clean observations that reset the episode are still inside
+ * the window. This replaces the old oldest-first cap, which pinned long-lived
+ * sessions at the maximum spacing and hid recent resets.
+ */
+export const RECOVERY_RECEIPT_WINDOW = 10_000;
+
+export async function readRecoveryEpisodeBreachCount(sessionId: string): Promise<number> {
   try {
-    const [canaries, receipts] = await Promise.all([
-      getClient().execute({
+    const client = getClient();
+    const [canaries, breaches, recent] = await Promise.all([
+      client.execute({
         sql: 'SELECT canary_status, n_stable, issued_at, expires_at, created_at, reason FROM recovery_canary_evidence WHERE session_id = ? ORDER BY id ASC',
         args: [sessionId],
       }),
-      getClient().execute({
-        sql: 'SELECT receipt_id, created_at, state_snapshot FROM tool_receipts WHERE session_id = ? ORDER BY id ASC LIMIT 10000',
+      client.execute({
+        sql: "SELECT id, receipt_id, created_at, state_snapshot FROM tool_receipts WHERE session_id = ? AND receipt_id LIKE 'recovery-canary-breach-%' ORDER BY id ASC",
         args: [sessionId],
       }),
+      client.execute({
+        sql: 'SELECT id, receipt_id, created_at, state_snapshot FROM tool_receipts WHERE session_id = ? ORDER BY id DESC LIMIT ?',
+        args: [sessionId, RECOVERY_RECEIPT_WINDOW],
+      }),
     ]);
-    if (receipts.rows.length >= 10_000) return 2;
+    const byId = new Map<number, Record<string, unknown>>();
+    for (const row of [...breaches.rows, ...recent.rows] as Array<Record<string, unknown>>) {
+      byId.set(Number(row.id), row);
+    }
+    const receipts = [...byId.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, row]) => row);
     return deriveRecoveryBreachCount(
       canaries.rows as unknown as RecoveryEpisodeCanaryRow[],
-      receipts.rows as unknown as RecoveryEpisodeReceiptRow[],
+      receipts as unknown as RecoveryEpisodeReceiptRow[],
     );
   } catch {
+    // Fail safe: if the history cannot be read, use the maximum spacing.
     return 2;
   }
 }
@@ -421,7 +445,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
       ? `Recovery observation ${canonical.state.nStable}/${CONSTITUTION.N_MIN}; continue safe governed observations before canary verification.`
       : canonical.state.sigmaViol !== 0
         ? `Canonical sigma_viol=${String(canonical.state.sigmaViol)} must be exactly 0 before canary verification; continue healthy observations until residual stress decays to zero.`
-        : 'Stability thresholds are met, but no passing canary is persisted for this exact state snapshot; run the operator-only run_recovery_canary probe.'
+        : 'Stability thresholds are met, but no passing canary is persisted for this exact state snapshot; the server issues the recovery canary automatically on the next governed read; retry the action.'
     : reason;
 
   return {
