@@ -277,29 +277,28 @@ export default function ResearchPage() {
         {/* Empirical evidence */}
         <Section n={8} title="Empirical evidence">
           <p className="text-slate-400 text-sm leading-relaxed mb-4">
-            The governor is developed against a 550-vector internal adversarial suite (8 attack classes) and
-            evaluated on external public benchmarks under symmetric judging — the bare and governed arms
-            scored by the same external judge on their actual output text.
+            Lex is developed against an author-labelled internal adversarial suite and evaluated on external
+            benchmarks using benchmark-specific runs. External results are published separately by dataset,
+            metric, sample count and run date; they are not combined into a universal attack-success rate.
           </p>
           <div className="grid grid-cols-2 gap-3 mb-4">
             {[
-              ['920+', 'external adversarial prompts (HarmBench / JailbreakBench / AdvBench)'],
-              ['0%', 'governed attack-success rate reported on those runs'],
-              ['550', 'internal adversarial vectors, 8 attack classes'],
-              ['37,701', 'production turns with logged ΔV_z sign'],
+              ['920+', 'external prompts across separate benchmark runs; not one pooled cohort'],
+              ['550', 'author-labelled internal adversarial vectors'],
+              ['8', 'internal attack classes'],
+              ['No pooled ASR', 'each benchmark retains its own dataset, judge and metric'],
             ].map(([n, d]) => (
               <div key={n} className="rounded-xl border border-[var(--border)] p-4" style={{ background: 'var(--bg-hover)' }}>
-                <div className="text-2xl font-black font-mono" style={{ color: G.gold }}>{n}</div>
+                <div className="text-xl font-black font-mono" style={{ color: G.gold }}>{n}</div>
                 <div className="text-[11px] text-slate-500 mt-1 leading-snug">{d}</div>
               </div>
             ))}
           </div>
           <p className="text-slate-600 text-[11px] leading-relaxed">
-            Honest status: automated benchmark re-runs are currently paused to control free-tier provider
-            quota; the figures above are from published runs, and the harness is fully reproducible (see the
-            <Link href="/benchmarks" className="hover:opacity-80" style={{ color: G.gold }}> benchmarks page</Link> for
-            live, dated results as they publish). Attack-success is measured over harmful prompts only;
-            over-refusal on benign prompts is reported separately, never netted against it.
+            The internal suite is not an independent benchmark. External attack-success and benign over-refusal
+            results are reported separately. The benchmark dashboard is the canonical, dated source for the
+            latest published rows; historical runs remain historical and must not be read as current aggregate
+            performance. See the <Link href="/benchmarks" className="hover:opacity-80" style={{ color: G.gold }}>benchmarks page</Link>.
           </p>
 
           <div className="h-px bg-white/8 my-5" />

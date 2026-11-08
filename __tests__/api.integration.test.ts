@@ -3,10 +3,12 @@ import { MAX_PROMPT_CHARS } from '../lib/schemas';
 
 // ── Mock Turso DB ─────────────────────────────────────────────────────────────
 let receiptRows: Record<string, unknown>[] = [];
+let failReceiptReads = false;
 
 const mockClient = {
   async execute(arg: string | { sql: string; args?: unknown[] }) {
     const sql = typeof arg === 'string' ? arg : arg.sql;
+    if (failReceiptReads && sql.includes('FROM praxis_receipts')) throw new Error('receipt database unavailable');
     if (sql === 'SELECT 1') return { rows: [{ '1': 1 }] };
     if (sql.includes('FROM run_stats')) return { rows: [{ value: 1337 }] };
     if (sql.startsWith('UPDATE run_stats')) return { rows: [{ value: 1338 }] };
@@ -61,6 +63,7 @@ describe('API integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     receiptRows = [];
+    failReceiptReads = false;
   });
 
   it('GET /api/lex/govern exposes the versioned endpoint contract', async () => {
@@ -171,6 +174,39 @@ describe('API integration', () => {
     expect(res.status).toBe(200);
     const data = await res.json() as { receipts: unknown[] };
     expect(Array.isArray(data.receipts)).toBe(true);
+  });
+
+  it('GET /api/audits/recent distinguishes an unavailable receipt store from an empty store', async () => {
+    failReceiptReads = true;
+    const { GET } = await import('../app/api/audits/recent/route');
+    const res = await GET(new Request('http://localhost/api/audits/recent?limit=5'));
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: false,
+      status: 'UNAVAILABLE',
+      error: 'receipt_store_unavailable',
+      receipts: [],
+    });
+  });
+
+  it('GET /api/observatory/tool-receipts exposes an explicit empty state', async () => {
+    const { GET } = await import('../app/api/observatory/tool-receipts/route');
+    const res = await GET(new Request('http://localhost/api/observatory/tool-receipts?limit=5'));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ ok: true, status: 'EMPTY', receipts: [] });
+  });
+
+  it('GET /api/observatory/integrity reports text and agent receipt stores separately', async () => {
+    const { GET } = await import('../app/api/observatory/integrity/route');
+    const res = await GET();
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      sources: {
+        receipt_store: { status: 'EMPTY', count: 0 },
+        praxis_receipts: { status: 'EMPTY', count: 0 },
+        tool_receipt_store: { status: 'EMPTY', count: 0 },
+      },
+    });
   });
 
   it('exports the canonical signing-key provenance for a receipt', async () => {

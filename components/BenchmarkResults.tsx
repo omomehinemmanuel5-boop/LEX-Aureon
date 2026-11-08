@@ -173,10 +173,14 @@ export default function BenchmarkResults({
       if (timer) { clearInterval(timer); timer = null; }
     };
     start();
-    document.addEventListener('visibilitychange', () => {
+    const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') load();
-    });
-    return stop;
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [load, pollMs]);
 
   const published = Boolean(data?.published);

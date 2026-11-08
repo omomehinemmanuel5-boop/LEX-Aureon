@@ -306,7 +306,6 @@ Convention:
 
 | Agent | Started (UTC) | Scope (files / branch) | Task |
 |---|---|---|---|
-| ChatGPT | 2026-11-08 | Public evidence surfaces, benchmark publication, Observatory reporting, publication citations, status UI — `fix/public-evidence-consistency-2026-11` | Reconcile published claims and receipt visibility; preserve governance/security invariants |
 
 ---
 
@@ -398,6 +397,8 @@ npm run build          verify TypeScript
 ---
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
+
+[2026-11-08] FIX: Public evidence consistency — removed the stale blanket 0% benchmark claim and static score tables from research/peer-brief copy; server-rendered the canonical benchmark rows; labelled stale fallback data and excluded the estimated StrongREJECT fallback; split text and agent-tool receipt visibility with explicit EMPTY/UNAVAILABLE states; corrected runtime health badge semantics; standardized current public citations on paper v2 (10.5281/zenodo.20183807), retaining v1 (10.5281/zenodo.18944243) in publication history. No constitutional math, recovery thresholds, approval rules, receipt records, or production configuration changed. Validation pending PR CI.
 
 [2026-11-04] FIX/AUTOMATION: Production Readiness Benchmark v2 now retries only bounded transient timeouts/network/selected 5xx errors on the selected model, records provider/quota/auth failures separately from malformed model output, and reports retry counts. Approval remains part of Lex governance; the benchmark now exercises explicit approved/rejected counterfactuals in isolated in-memory worlds only, with scorecard completeness gates and report tables. Quota/auth responses are not retried. Validation: 754 Vitest tests across 96 files, typecheck, lint, production build, workflow YAML parse, and diff checks passed. Benchmark not dispatched.
 

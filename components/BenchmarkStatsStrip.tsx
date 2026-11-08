@@ -39,6 +39,18 @@ type Stat = {
   row: BenchmarkRow;
 };
 
+type BenchmarkApiResponse = {
+  results?: BenchmarkRow[];
+  stale?: boolean;
+  snapshot_at?: string;
+};
+
+type BenchmarkSnapshot = {
+  stats: Stat[];
+  stale: boolean;
+  snapshotAt: string | null;
+};
+
 const WANTED: Array<{ benchmark: string; metric_name: string; label: string; direction: "lower" | "higher" }> = [
   { benchmark: "HarmBench", metric_name: "ASR", label: "HarmBench attack success", direction: "lower" },
   { benchmark: "JailbreakBench", metric_name: "ASR", label: "JailbreakBench attack success", direction: "lower" },
@@ -46,14 +58,14 @@ const WANTED: Array<{ benchmark: string; metric_name: string; label: string; dir
 ];
 
 export default function BenchmarkStatsStrip() {
-  const [stats, setStats] = useState<Stat[] | null>(null);
+  const [snapshot, setSnapshot] = useState<BenchmarkSnapshot | null>(null);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
         const res = await fetch("/api/benchmarks");
-        const data = await res.json().catch(() => null);
+        const data = await res.json().catch(() => null) as BenchmarkApiResponse | null;
         const rows: BenchmarkRow[] = Array.isArray(data?.results) ? data.results : [];
         const found: Stat[] = WANTED
           .map((w) => {
@@ -61,29 +73,37 @@ export default function BenchmarkStatsStrip() {
             return row ? { label: w.label, direction: w.direction, row } : null;
           })
           .filter((s): s is Stat => s !== null);
-        if (active) setStats(found);
+        if (active) setSnapshot({ stats: found, stale: Boolean(data?.stale), snapshotAt: data?.snapshot_at ?? null });
       } catch {
-        if (active) setStats([]);
+        if (active) setSnapshot({ stats: [], stale: false, snapshotAt: null });
       }
     })();
     return () => { active = false; };
   }, []);
 
   // Still loading, or nothing published — say nothing rather than show a
-  // placeholder or a zero.
-  if (!stats || stats.length === 0) return null;
+  // placeholder or a zero. Stale fallback data is displayed only with its
+  // stale status and snapshot timestamp.
+  if (!snapshot || snapshot.stats.length === 0) return null;
+  const stats = snapshot.stats;
 
   return (
     <section aria-label="Live benchmark results" className="mt-6 rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-4 sm:mt-7 sm:p-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="text-xs font-mono uppercase tracking-[0.16em] font-bold text-[#e8c96d]">Live benchmark results</div>
+          <div className="text-xs font-mono uppercase tracking-[0.16em] font-bold text-[#e8c96d]">{snapshot.stale ? 'Last-known benchmark snapshot' : 'Live benchmark results'}</div>
           <p className="mt-1 text-xs leading-relaxed text-slate-400">Published comparisons · latest scored row for each metric</p>
         </div>
         <Link href="/benchmarks" className="inline-flex min-h-11 w-fit items-center gap-2 rounded-lg border border-[#c9a84c]/25 px-3 py-2 text-xs font-bold text-[#e8c96d] transition hover:border-[#e8c96d]/60 hover:bg-white/[0.03]">
           All eight benchmarks <span aria-hidden="true">→</span>
         </Link>
       </div>
+      {snapshot.stale && (
+        <p className="mb-3 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs text-amber-200">
+          Stale snapshot — the live benchmark database could not be reached.
+          {snapshot.snapshotAt ? ` Snapshot: ${new Date(snapshot.snapshotAt).toLocaleString()}.` : ''}
+        </p>
+      )}
       <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-400" aria-label="Score legend">
         <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-slate-500" /> Bare model</span>
         <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#e8c96d]" /> Lex-governed</span>
