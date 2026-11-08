@@ -44,7 +44,9 @@ A session below the quarantine floor (M < 0.05) can be reset by its owner with `
 - creates no authority. The next governed call creates a uniform row, and consequential actions still need recovery and per-action approval;
 - after 5 resets in 24 hours, pauses further resets for one hour and logs an alert. Normal use is not limited.
 
-Open item: ownership is tied to the key ID, so rotating a key still starts a new session. Binding quarantine to the account is a separate change.
+Account-level quarantine: quarantine follows the account (the API key's email), not the key. When any session owned by an email drops below the floor, the account is flagged. A new key for that account then starts below the floor instead of at the uniform state, so rotating keys does not clear quarantine. A reset clears the account flag in the same transaction as the archive.
+
+Denial receipts: cancellations observed before dispatch and approvals that cannot be consumed exactly once now write an `EXEC-DENY` receipt marked `state_effect=none`. None of these paths moves the trajectory.
 
 ## Recovery procedure
 

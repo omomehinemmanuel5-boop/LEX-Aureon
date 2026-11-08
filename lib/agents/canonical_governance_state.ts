@@ -5,6 +5,7 @@ import { CONSTITUTION } from '../constitution';
 import { RECOVERY_STABILITY_THRESHOLD, recoveryCapabilityAllowed, recoveryCanaryPredicateFailures, type RecoveryState } from './recovery_state';
 import { readRecoveryCanaryEvidence, recordRecoveryCanaryEvidence, recoverySnapshotFingerprint } from './recovery_canary_evidence';
 import type { ToolCapability } from './tool_capability_registry';
+import { isAccountQuarantined } from './account_quarantine';
 
 export type CanonicalGovernanceBand = 'OPTIMAL' | 'ALERT' | 'STRESSED' | 'CRITICAL' | 'UNINITIALIZED';
 
@@ -77,6 +78,18 @@ export async function ensureCanonicalTrajectoryState(
        RETURNING session_id`,
       args: [sessionId, 1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3, new Date().toISOString()],
     });
+    // An account flagged for quarantine starts below the floor, not at uniform.
+    // Applied only to a row this call created, so an existing row is never overwritten.
+    const createdNow = insert.rows.some(row => row.session_id === sessionId);
+    if (createdNow && await isAccountQuarantined(sessionId)) {
+      const low = CONSTITUTION.TAU_FLOOR - 0.001;
+      await getClient().execute({
+        sql: `UPDATE z_traj SET drift_dir = 'account_quarantine', sigma_viol = 1,
+                last_m = ?, last_c = ?, last_r = ?, last_s = ?, z_c = ?, z_r = ?, z_s = ?
+              WHERE session_id = ? AND drift_dir = 'bootstrap'`,
+        args: [low, low, low, low, low, low, low, sessionId],
+      });
+    }
     const trajectory = await getZTraj(sessionId);
     if (!isVerifiedCanonicalTrajectory(trajectory, sessionId)) {
       return { status: 'unverified', sessionId, verified: false, reason: 'Canonical trajectory insert/read-back did not produce a valid row for the requested session.' };
