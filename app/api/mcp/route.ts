@@ -1083,8 +1083,8 @@ async function handlePost(req: Request) {
             next_step: recoveryPreflight.state.M >= 0.15
               && recoveryPreflight.state.nStable >= 3
               && !recoveryPreflight.state.canaryPassed
-              ? 'Run the operator-only recovery canary for this exact session after verifying velocity is below the stability threshold, then retry the action.'
-              : 'Continue safe governed observations at least 5 seconds apart until the stability and velocity requirements are met; then run the operator-only recovery canary. See docs/recovery-runbook.md.',
+              ? 'The server issues the recovery canary automatically once velocity is below the stability threshold; retry the action after the next governed observation.'
+              : 'Continue safe governed observations, at least 5 seconds apart (10 to 15 seconds after a recent breach), until the stability and velocity requirements are met. The server then issues the recovery canary automatically. See docs/recovery-runbook.md.',
           });
         }
       }
@@ -1134,7 +1134,7 @@ async function handlePost(req: Request) {
             canary_passed: canonical.state.canaryPassed === true,
             approval_created: false,
             next_step: canonical.state.M >= 0.15 && canonical.state.nStable >= 3 && !canonical.state.canaryPassed
-              ? `Run the operator-only recovery canary for this exact session; n_stable is ${canonical.state.nStable}/3 and velocity must be below the stability threshold before the canary can pass, then retry the action.`
+              ? `The server issues the recovery canary automatically once the requirements are met; n_stable is ${canonical.state.nStable}/3 and velocity must be below the stability threshold before the canary can pass, then retry the action.`
               : `Continue safe governed observations, at least 5 seconds apart, until n_stable reaches 3/3 and velocity is below the stability threshold${canonical.state.canaryPassed ? '' : '; the recovery canary is still needed once those requirements are met'}, then retry the action. See docs/recovery-runbook.md.`,
           });
         }
