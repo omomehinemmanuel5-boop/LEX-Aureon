@@ -88,7 +88,7 @@ export default function BenchmarkStatsStrip() {
   const stats = snapshot.stats;
 
   return (
-    <section aria-label="Live benchmark results" className="mt-6 rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-4 sm:mt-7 sm:p-6">
+    <section aria-label={snapshot.stale ? "Stale benchmark snapshot" : "Live benchmark results"} className="mt-6 rounded-2xl border border-[#c9a84c]/20 bg-[#c9a84c]/[0.04] p-4 sm:mt-7 sm:p-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-xs font-mono uppercase tracking-[0.16em] font-bold text-[#e8c96d]">{snapshot.stale ? 'Last-known benchmark snapshot' : 'Live benchmark results'}</div>

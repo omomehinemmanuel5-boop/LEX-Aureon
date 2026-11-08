@@ -205,14 +205,14 @@ export default function BenchmarkResults({
         {/* header */}
         <div className="flex items-center justify-center gap-2 mb-4">
           <span
-            className={`w-1.5 h-1.5 rounded-full animate-pulse ${published ? 'bg-emerald-500' : 'bg-amber-500'}`}
+            className={`w-1.5 h-1.5 rounded-full animate-pulse ${published && !data?.stale ? 'bg-emerald-500' : 'bg-amber-500'}`}
           />
           <span
             className={`text-xs font-mono uppercase tracking-widest font-bold ${
-              published ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+              published && !data?.stale ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
             }`}
           >
-            {published ? 'Adversarial evaluation — live results' : 'Adversarial evaluation — in progress'}
+            {published ? (data?.stale ? 'Adversarial evaluation — last known snapshot' : 'Adversarial evaluation — live results') : 'Adversarial evaluation — in progress'}
           </span>
         </div>
 
