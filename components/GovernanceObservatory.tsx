@@ -7,7 +7,6 @@ type ReceiptFeedStatus = 'LOADING' | 'AVAILABLE' | 'EMPTY' | 'UNAVAILABLE';
 
 type ToolReceipt = {
   id: string;
-  session_id: string;
   tool_name: string;
   decision: string;
   m_score: number;
@@ -159,19 +158,26 @@ export default function GovernanceObservatory({ initialData }: { initialData?: O
       setReceipts(recent.value.receipts ?? []);
       setReceiptFeedStatus(recent.value.status ?? ((recent.value.receipts?.length ?? 0) ? 'AVAILABLE' : 'EMPTY'));
     } else {
+      setReceipts([]);
       setReceiptFeedStatus('UNAVAILABLE');
     }
     if (toolRecent.status === 'fulfilled') {
       setToolReceipts(toolRecent.value.receipts ?? []);
       setToolReceiptStatus(toolRecent.value.status ?? ((toolRecent.value.receipts?.length ?? 0) ? 'AVAILABLE' : 'EMPTY'));
     } else {
+      setToolReceipts([]);
       setToolReceiptStatus('UNAVAILABLE');
     }
     if (metricData.status === 'fulfilled') setMetrics(metricData.value);
+    else setMetrics(null);
     if (stateData.status === 'fulfilled') setState(stateData.value.state ?? null);
+    else setState(null);
     if (sessionData.status === 'fulfilled') setSessions(sessionData.value.sessions ?? []);
+    else setSessions([]);
     if (aggregateData.status === 'fulfilled') setAggregate(aggregateData.value);
+    else setAggregate(null);
     if (integrityData.status === 'fulfilled') setIntegrity(integrityData.value);
+    else setIntegrity(null);
     setError(results.some(result => result.status === 'rejected'));
     setLastUpdated(Date.now());
     setLoading(false);
@@ -240,7 +246,7 @@ export default function GovernanceObservatory({ initialData }: { initialData?: O
       </div>
 
       <SessionReplay sessions={sessions} />
-      <Panel title="Observatory integrity" eyebrow="Evidence infrastructure" className="mt-4"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{[['Receipt store', 'receipt_store'], ['Text receipts', 'praxis_receipts'], ['Agent tool receipts', 'tool_receipt_store'], ['Session telemetry', 'session_persistence'], ['Verification API', 'verification_api'], ['Live state', 'live_state'], ['Telemetry freshness', 'telemetry_freshness']].map(([label, key]) => { const source = integrity?.sources[key]; const status = source?.status ?? 'UNKNOWN'; return <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3"><span className="text-xs text-slate-400">{label}</span><span className={`font-mono text-[10px] font-bold ${status === 'HEALTHY' ? 'text-emerald-300' : 'text-slate-500'}`}>{key === 'telemetry_freshness' && source?.seconds != null ? `${source.seconds}s` : status}</span></div>; })}</div><p className="mt-3 text-[11px] text-slate-500">UNKNOWN means the backend did not establish health; NOT_CHECKED means the endpoint was listed but not actively probed. EMPTY is a successful query with no rows.</p></Panel>
+      <Panel title="Observatory integrity" eyebrow="Evidence infrastructure" className="mt-4"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{[['Receipt store', 'receipt_store'], ['Text receipts', 'praxis_receipts'], ['Agent tool receipts', 'tool_receipt_store'], ['Session telemetry', 'session_persistence'], ['Verification API', 'verification_api'], ['Live state', 'live_state'], ['Telemetry freshness', 'telemetry_freshness']].map(([label, key]) => { const source = integrity?.sources[key]; const status = source?.status ?? 'UNKNOWN'; return <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3"><span className="text-xs text-slate-400">{label}</span><span className={`font-mono text-[10px] font-bold ${status === 'HEALTHY' ? 'text-emerald-300' : ['UNAVAILABLE', 'CRITICAL', 'ERROR'].includes(status) ? 'text-red-300' : ['DEGRADED', 'STALE'].includes(status) ? 'text-amber-300' : 'text-slate-500'}`}>{key === 'telemetry_freshness' && source?.seconds != null ? `${source.seconds}s` : status}</span></div>; })}</div><p className="mt-3 text-[11px] text-slate-500">UNKNOWN means the backend did not establish health; NOT_CHECKED means the endpoint was listed but not actively probed. RECORDED means a receipt timestamp exists, not that it meets a freshness SLA. EMPTY is a successful query with no rows.</p></Panel>
       <Panel title="Governance Passport" eyebrow="Trust layer" className="mt-4"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Receipts · 30d</div><div className="mt-2 font-mono text-xl font-bold text-[#e8c96d]">{aggregate?.real ?? '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Sessions · 30d</div><div className="mt-2 font-mono text-xl font-bold text-emerald-300">{aggregate?.sessions ?? '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Today</div><div className="mt-2 font-mono text-xl font-bold text-white">{aggregate?.today ?? '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Issuance</div><div className="mt-2 font-mono text-xl font-bold text-amber-200">Planned</div></div></div><p className="mt-4 text-xs leading-5 text-slate-500">Counts are live from the Observatory aggregate. Signed bundles, policy provenance, and independently verifiable passport URLs remain the next backend milestone.</p></Panel>
       <Panel title="Event stream" eyebrow="Newest governance activity" className="mt-4"><div className="space-y-2">{receipts.slice(0, 5).map(receipt => <Link key={`event-${receipt.id}`} href={`/receipts/${encodeURIComponent(receipt.id)}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-black/15 px-3 py-3 transition hover:border-[#c9a84c]/30"><span className={`h-2 w-2 shrink-0 rounded-full ${receipt.intervention ? 'bg-amber-300' : 'bg-emerald-300'}`} /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-200">{receipt.intervention ? 'Governor intervention recorded' : 'Receipt generated and sealed'}</span><span className="mt-1 block truncate font-mono text-[10px] text-slate-500">{receipt.id} · {receipt.governor_mode ?? receipt.pre_eval_label ?? 'governance decision'}</span></span><span className="shrink-0 font-mono text-[10px] text-slate-500">{timeAgo(receipt.timestamp)}</span></Link>)}{receipts.length === 0 && <div className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-slate-500">{receiptFeedStatus === 'UNAVAILABLE' ? 'Recent text-governance events are unavailable because the receipt source could not be queried.' : receiptFeedStatus === 'EMPTY' ? 'No text-governance events were returned by the successful query.' : 'Loading text-governance events…'}</div>}</div><div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-500"><span>Live source: recent receipts</span><Link href="/observability" className="font-bold text-[#e8c96d]">Open session observability →</Link></div></Panel>
 

@@ -69,7 +69,11 @@ export default function BenchmarkStatsStrip() {
         const rows: BenchmarkRow[] = Array.isArray(data?.results) ? data.results : [];
         const found: Stat[] = WANTED
           .map((w) => {
-            const row = rows.find((r) => r.benchmark === w.benchmark && r.metric_name === w.metric_name);
+            const normalize = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            const row = rows.find((r) =>
+              normalize(r.benchmark) === normalize(w.benchmark) &&
+              normalize(r.metric_name) === normalize(w.metric_name)
+            );
             return row ? { label: w.label, direction: w.direction, row } : null;
           })
           .filter((s): s is Stat => s !== null);

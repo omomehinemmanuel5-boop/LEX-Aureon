@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   try {
     await initSchema();
     const result = await getClient().execute({
-      sql: `SELECT receipt_id, session_id, tool_name, decision, m_score,
+      sql: `SELECT receipt_id, tool_name, decision, m_score,
                    risk_level, reason, policy_version, created_at
             FROM tool_receipts
             ORDER BY created_at DESC
@@ -20,7 +20,6 @@ export async function GET(req: Request) {
     });
     const receipts = result.rows.map(row => ({
       id: String(row.receipt_id),
-      session_id: String(row.session_id),
       tool_name: String(row.tool_name),
       decision: String(row.decision),
       m_score: Number(row.m_score ?? 0),

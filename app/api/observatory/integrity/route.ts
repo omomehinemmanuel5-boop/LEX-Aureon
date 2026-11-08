@@ -41,7 +41,7 @@ export async function GET() {
         session_persistence: { status: sessionCount > 0 ? 'HEALTHY' : 'EMPTY', count: sessionCount },
         verification_api: { status: 'NOT_CHECKED', endpoint: '/api/audits/verify' },
         live_state: { status: 'NOT_CHECKED', endpoint: '/api/live-state' },
-        telemetry_freshness: { status: freshnessSeconds == null ? 'UNKNOWN' : 'HEALTHY', seconds: freshnessSeconds },
+        telemetry_freshness: { status: freshnessSeconds == null ? 'UNKNOWN' : 'RECORDED', seconds: freshnessSeconds },
       },
     }, { headers: { 'Cache-Control': 'private, max-age=15' } });
   } catch {
