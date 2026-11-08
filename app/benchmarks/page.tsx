@@ -129,7 +129,7 @@ export default async function BenchmarksPage() {
               <a href="https://github.com/omomehinemmanuel5-boop/Lexaureon-Benchmark" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors">
                 Benchmark repo ↗
               </a>
-              <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors">
+              <a href="https://doi.org/10.5281/zenodo.20183807" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors">
                 Read the paper ↗
               </a>
               <Link href="/console" className="text-amber-500 hover:text-amber-400 transition-colors">

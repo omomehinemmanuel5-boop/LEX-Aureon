@@ -123,7 +123,7 @@ export default function ResearchPage() {
 
           <div className="space-y-2 font-mono text-sm mb-6">
             {[
-              ['DOI', 'doi.org/10.5281/zenodo.18944242', 'https://doi.org/10.5281/zenodo.18944242'],
+              ['DOI', 'doi.org/10.5281/zenodo.20183807', 'https://doi.org/10.5281/zenodo.20183807'],
               ['ORCID', 'orcid.org/0009-0000-2986-4935', 'https://orcid.org/0009-0000-2986-4935'],
               ['Author', 'Emmanuel King · Lagos, Nigeria', null],
               ['Access', 'Open-access preprint · Zenodo', null],
@@ -141,7 +141,7 @@ export default function ResearchPage() {
             ))}
           </div>
 
-          <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer"
+          <a href="https://doi.org/10.5281/zenodo.20183807" target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
             style={{ background: `linear-gradient(135deg, ${G.gold}, ${G.goldL})`, color: '#07070d' }}>
             Read Full Paper ↗
@@ -387,8 +387,8 @@ export default function ResearchPage() {
             for Stable Adaptive Intelligence},
   author = {Emmanuel King},
   year   = {2026},
-  doi    = {10.5281/zenodo.18944242},
-  url    = {https://doi.org/10.5281/zenodo.18944242},
+  doi    = {10.5281/zenodo.20183807},
+  url    = {https://doi.org/10.5281/zenodo.20183807},
   note   = {Independent researcher, Nigeria.
             ORCID: 0009-0000-2986-4935}
 }`}
@@ -423,7 +423,7 @@ export default function ResearchPage() {
       <footer className="border-t border-[var(--border)] py-8 px-4 mt-8">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-700">
           <span>© 2026 Aureonics · Emmanuel King · Lagos, Nigeria</span>
-          <span className="font-mono">doi:10.5281/zenodo.18944242</span>
+          <span className="font-mono">doi:10.5281/zenodo.20183807</span>
         </div>
       </footer>
     </div>
