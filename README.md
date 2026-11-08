@@ -3,7 +3,7 @@
 > A live constitutional control layer for LLMs and agents: simplex state, PRAXIS governance, z-weighted Lyapunov receipts, and append-only auditability.
 
 [![CI](https://github.com/omomehinemmanuel5-boop/LEX-Aureon/actions/workflows/ci.yml/badge.svg)](https://github.com/omomehinemmanuel5-boop/LEX-Aureon/actions/workflows/ci.yml)
-[![Zenodo](https://img.shields.io/badge/paper-10.5281%2Fzenodo.18944242-blue)](https://doi.org/10.5281/zenodo.18944242)
+[![Zenodo](https://img.shields.io/badge/paper-10.5281%2Fzenodo.20183807-blue)](https://doi.org/10.5281/zenodo.20183807)
 [![Live](https://img.shields.io/badge/live-lexaureon.com-gold)](https://lexaureon.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 
@@ -15,7 +15,7 @@
 | Public audit trail | <https://lexaureon.com/audit> |
 | Benchmarks | <https://lexaureon.com/benchmarks> · `GET /api/benchmarks` |
 | Research page | <https://lexaureon.com/research> |
-| Paper | <https://doi.org/10.5281/zenodo.18944242> |
+| Paper | <https://doi.org/10.5281/zenodo.20183807> |
 | Author | Emmanuel King · [ORCID 0009-0000-2986-4935](https://orcid.org/0009-0000-2986-4935) |
 | Contact | lexaureon@gmail.com · [@lexAureon](https://x.com/lexAureon) |
 

@@ -65,6 +65,12 @@ const LAST_KNOWN_GOOD: Array<{
   { id: 141, benchmark: 'XSTest',         run_date: '2026-07-13', n_total: 243, metric_name: 'appropriate_pct',              bare_score: 98.35, governed_score: 97.20, delta_pp: -1.15, notes: 'Cached snapshot — live read unavailable (Turso quota).', created_at: '2026-07-13 14:59:24' },
 ];
 
+// The historical StrongREJECT fallback row was estimated from a retired metric
+// formula. Keep its provenance above, but never publish it as a scored result.
+const PUBLISHED_LAST_KNOWN_GOOD = LAST_KNOWN_GOOD.filter(
+  row => !row.notes.toLowerCase().includes('approx') && !row.notes.toLowerCase().includes('estimated'),
+);
+
 export async function GET() {
   try {
     const results = await getBenchmarkResults();
@@ -81,9 +87,9 @@ export async function GET() {
     return NextResponse.json(
       {
         ok: true,
-        count: LAST_KNOWN_GOOD.length,
+        count: PUBLISHED_LAST_KNOWN_GOOD.length,
         published: true,
-        results: LAST_KNOWN_GOOD,
+        results: PUBLISHED_LAST_KNOWN_GOOD,
         stale: true,
         snapshot_at: LAST_KNOWN_GOOD_SNAPSHOT_AT,
         fetched_at: new Date().toISOString(),

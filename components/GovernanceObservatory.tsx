@@ -3,6 +3,19 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+type ReceiptFeedStatus = 'LOADING' | 'AVAILABLE' | 'EMPTY' | 'UNAVAILABLE';
+
+type ToolReceipt = {
+  id: string;
+  tool_name: string;
+  decision: string;
+  m_score: number;
+  risk_level: string;
+  reason: string;
+  policy_version: string;
+  timestamp: number;
+};
+
 type Receipt = {
   id: string;
   session_id?: string;
@@ -114,6 +127,9 @@ function SessionReplay({ sessions }: { sessions: Session[] }) {
 
 export default function GovernanceObservatory({ initialData }: { initialData?: ObservatoryInitialData } = {}) {
   const [receipts, setReceipts] = useState<Receipt[]>(initialData?.receipts ?? []);
+  const [receiptFeedStatus, setReceiptFeedStatus] = useState<ReceiptFeedStatus>(initialData ? (initialData.receipts.length ? 'AVAILABLE' : 'EMPTY') : 'LOADING');
+  const [toolReceipts, setToolReceipts] = useState<ToolReceipt[]>([]);
+  const [toolReceiptStatus, setToolReceiptStatus] = useState<ReceiptFeedStatus>('LOADING');
   const [metrics, setMetrics] = useState<Metrics | null>(initialData?.metrics ?? null);
   const [state, setState] = useState<State | null>(initialData?.state ?? null);
   const [sessions, setSessions] = useState<Session[]>(initialData?.sessions ?? []);
@@ -129,20 +145,39 @@ export default function GovernanceObservatory({ initialData }: { initialData?: O
   const load = useCallback(async () => {
     setRefreshing(true);
     const results = await Promise.allSettled([
-      fetch('/api/audits/recent?limit=8').then(async response => response.ok ? await response.json() as { receipts?: Receipt[] } : Promise.reject()),
+      fetch('/api/audits/recent?limit=8').then(async response => response.ok ? await response.json() as { receipts?: Receipt[]; status?: ReceiptFeedStatus } : Promise.reject()),
+      fetch('/api/observatory/tool-receipts?limit=8').then(async response => response.ok ? await response.json() as { receipts?: ToolReceipt[]; status?: ReceiptFeedStatus } : Promise.reject()),
       fetch('/api/observability/metrics').then(async response => response.ok ? await response.json() as Metrics : Promise.reject()),
       fetch('/api/live-state').then(async response => response.ok ? await response.json() as { state?: State } : Promise.reject()),
       fetch('/api/observability/sessions?limit=6').then(async response => response.ok ? await response.json() as { sessions?: Session[] } : Promise.reject()),
       fetch('/api/observatory').then(async response => response.ok ? await response.json() as Aggregate : Promise.reject()),
       fetch('/api/observatory/integrity').then(async response => response.ok ? await response.json() as Integrity : Promise.reject()),
     ]);
-    const [recent, metricData, stateData, sessionData, aggregateData, integrityData] = results;
-    if (recent.status === 'fulfilled') setReceipts(recent.value.receipts ?? []);
+    const [recent, toolRecent, metricData, stateData, sessionData, aggregateData, integrityData] = results;
+    if (recent.status === 'fulfilled') {
+      setReceipts(recent.value.receipts ?? []);
+      setReceiptFeedStatus(recent.value.status ?? ((recent.value.receipts?.length ?? 0) ? 'AVAILABLE' : 'EMPTY'));
+    } else {
+      setReceipts([]);
+      setReceiptFeedStatus('UNAVAILABLE');
+    }
+    if (toolRecent.status === 'fulfilled') {
+      setToolReceipts(toolRecent.value.receipts ?? []);
+      setToolReceiptStatus(toolRecent.value.status ?? ((toolRecent.value.receipts?.length ?? 0) ? 'AVAILABLE' : 'EMPTY'));
+    } else {
+      setToolReceipts([]);
+      setToolReceiptStatus('UNAVAILABLE');
+    }
     if (metricData.status === 'fulfilled') setMetrics(metricData.value);
+    else setMetrics(null);
     if (stateData.status === 'fulfilled') setState(stateData.value.state ?? null);
+    else setState(null);
     if (sessionData.status === 'fulfilled') setSessions(sessionData.value.sessions ?? []);
+    else setSessions([]);
     if (aggregateData.status === 'fulfilled') setAggregate(aggregateData.value);
+    else setAggregate(null);
     if (integrityData.status === 'fulfilled') setIntegrity(integrityData.value);
+    else setIntegrity(null);
     setError(results.some(result => result.status === 'rejected'));
     setLastUpdated(Date.now());
     setLoading(false);
@@ -180,8 +215,25 @@ export default function GovernanceObservatory({ initialData }: { initialData?: O
         <Panel title="System pulse" eyebrow="Last 30 minutes"><div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Governed calls</div><div className="mt-2 font-mono text-2xl font-bold text-white">{loading ? <span className="inline-block h-7 w-16 animate-pulse rounded bg-white/10" /> : metrics?.system.total_calls ?? '—'}</div></div><div className="rounded-xl bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Interventions</div><div className="mt-2 font-mono text-2xl font-bold text-amber-300">{loading ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-white/10" /> : metrics?.system.total_interventions ?? '—'}</div></div></div><div className="mt-4 flex items-center justify-between border-t border-white/8 pt-3"><span className="text-xs text-slate-400">Health band</span><span className="font-mono text-xs font-bold" style={{ color: healthColor }}>{loading ? 'SYNCING' : health}</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-400">Intervention rate</span><span className="font-mono text-xs text-white">{metrics ? `${(metrics.system.intervention_rate * 100).toFixed(1)}%` : '—'}</span></div></Panel>
       </div>
 
+      <Panel title="Agent tool-call receipts" eyebrow="Action governance · separate receipt store" className="mt-4">
+        <div className="space-y-2">
+          {toolReceipts.map(receipt => (
+            <div key={receipt.id} className="flex min-w-0 flex-col gap-2 rounded-xl border border-white/8 bg-black/15 p-3 sm:flex-row sm:items-center">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-mono text-xs font-bold text-slate-200">{receipt.tool_name}</span>
+                <span className="mt-1 block truncate text-[11px] text-slate-500">{receipt.id} · {receipt.decision} · {receipt.risk_level} risk</span>
+                <span className="mt-1 block truncate text-[10px] text-slate-600">{receipt.reason || 'No reason recorded'} · policy {receipt.policy_version}</span>
+              </span>
+              <span className="shrink-0 font-mono text-xs text-[#e8c96d]">M {receipt.m_score.toFixed(3)}</span>
+              <span className="shrink-0 font-mono text-[10px] text-slate-500">{timeAgo(receipt.timestamp)}</span>
+            </div>
+          ))}
+          {toolReceipts.length === 0 && <div className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-slate-500">{toolReceiptStatus === 'UNAVAILABLE' ? 'The agent tool-receipt store could not be queried; its contents are unknown.' : toolReceiptStatus === 'EMPTY' ? 'The query succeeded and no agent tool-call receipts were found.' : 'Loading agent tool-call receipts…'}</div>}
+        </div>
+      </Panel>
+
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_.9fr]">
-        <Panel title="Receipt replay" eyebrow="Immutable execution history" className="min-w-0"><div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{receipts.length ? `${receipts.length} recent receipts` : 'No receipts returned'}</span><div className="flex items-center gap-3"><Link href="/audit" className="font-bold text-[#e8c96d] hover:text-white">Open audit index →</Link>{receipts[0] && <ReceiptActions receiptId={receipts[0].id} />}</div></div><div className="space-y-2">{receipts.length === 0 && <div className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-slate-500">No production receipts available yet. Run the console to create a real replay.</div>}{receipts.map((receipt) => <Link href={`/observatory?receipt=${encodeURIComponent(receipt.id)}`} key={receipt.id} className="group flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-black/15 p-3 transition hover:border-[#c9a84c]/40 hover:bg-[#c9a84c]/5"><span className={`h-2 w-2 shrink-0 rounded-full ${receipt.intervention ? 'bg-amber-300' : 'bg-emerald-300'}`} /><span className="min-w-0 flex-1"><span className="block truncate font-mono text-xs font-bold text-slate-200 group-hover:text-white">{receipt.id}</span><span className="mt-1 block text-[11px] text-slate-500">{receipt.intervention ? 'Governor intervention' : 'Constitutional pass'} · M {pct(receipt.m_after)}</span></span><span className="shrink-0 font-mono text-[10px] text-slate-500">{timeAgo(receipt.timestamp)} ↗</span></Link>)}</div></Panel>
+        <Panel title="Receipt replay" eyebrow="Immutable execution history" className="min-w-0"><div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{receiptFeedStatus === 'UNAVAILABLE' ? 'Receipt store unavailable' : receiptFeedStatus === 'EMPTY' ? 'No text receipts found' : receiptFeedStatus === 'LOADING' ? 'Loading receipts…' : `${receipts.length} recent text receipts`}</span><div className="flex items-center gap-3"><Link href="/audit" className="font-bold text-[#e8c96d] hover:text-white">Open audit index →</Link>{receipts[0] && <ReceiptActions receiptId={receipts[0].id} />}</div></div><div className="space-y-2">{receipts.length === 0 && <div className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-slate-500">{receiptFeedStatus === 'UNAVAILABLE' ? 'The text receipt store could not be queried. Receipt existence is unknown until the source is available.' : receiptFeedStatus === 'EMPTY' ? 'The query succeeded and returned no text-governance receipts.' : 'Loading persisted text-governance receipts…'}</div>}{receipts.map((receipt) => <Link href={`/observatory?receipt=${encodeURIComponent(receipt.id)}`} key={receipt.id} className="group flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-black/15 p-3 transition hover:border-[#c9a84c]/40 hover:bg-[#c9a84c]/5"><span className={`h-2 w-2 shrink-0 rounded-full ${receipt.intervention ? 'bg-amber-300' : 'bg-emerald-300'}`} /><span className="min-w-0 flex-1"><span className="block truncate font-mono text-xs font-bold text-slate-200 group-hover:text-white">{receipt.id}</span><span className="mt-1 block text-[11px] text-slate-500">{receipt.intervention ? 'Governor intervention' : 'Constitutional pass'} · M {pct(receipt.m_after)}</span></span><span className="shrink-0 font-mono text-[10px] text-slate-500">{timeAgo(receipt.timestamp)} ↗</span></Link>)}</div></Panel>
         <Panel title="Execution path" eyebrow="Topology / conceptual"><div className="relative flex min-h-[220px] items-center justify-center"><svg viewBox="0 0 360 210" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-label="Conceptual execution topology"><path d="M72 105H142M218 105H288" stroke="rgba(201,168,76,.5)" strokeWidth="2" strokeDasharray="5 5" className="animate-[shimmer_3s_linear_infinite]" /><path d="M180 66V32M180 144V178" stroke="rgba(16,185,129,.35)" strokeWidth="2" strokeDasharray="5 5" /></svg>{[{ label: 'User', left: '20%', top: '50%', translate: 'translate(0,-50%)', color: COLORS.amber }, { label: 'Lex', left: '50%', top: '50%', translate: 'translate(-50%,-50%)', color: COLORS.goldLight }, { label: 'Receipt', left: '80%', top: '50%', translate: 'translate(-100%,-50%)', color: COLORS.teal }, { label: 'MCP / tools', left: '50%', top: '15%', translate: 'translate(-50%,-50%)', color: '#94a3b8' }, { label: 'Replay', left: '50%', top: '85%', translate: 'translate(-50%,-50%)', color: COLORS.blue }].map((node) => <div key={node.label} className="absolute rounded-xl border border-white/10 bg-[#101126] px-3 py-2 text-center shadow-lg" style={{ left: node.left, top: node.top, transform: node.translate }}><div className="text-xs font-bold" style={{ color: node.color }}>{node.label}</div><div className="mt-0.5 font-mono text-[10px] text-slate-500">conceptual edge</div></div>)}</div><p className="text-xs leading-5 text-slate-500">This topology is illustrative. Current backend evidence establishes receipts and sessions, not every provider relationship or external-system call.</p></Panel>
       </div>
 
@@ -194,9 +246,9 @@ export default function GovernanceObservatory({ initialData }: { initialData?: O
       </div>
 
       <SessionReplay sessions={sessions} />
-      <Panel title="Observatory integrity" eyebrow="Evidence infrastructure" className="mt-4"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{[['Receipt store', 'receipt_store'], ['Session telemetry', 'session_persistence'], ['Verification API', 'verification_api'], ['Live state', 'live_state'], ['Telemetry freshness', 'telemetry_freshness']].map(([label, key]) => { const source = integrity?.sources[key]; const status = source?.status ?? 'UNKNOWN'; return <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3"><span className="text-xs text-slate-400">{label}</span><span className={`font-mono text-[10px] font-bold ${status === 'HEALTHY' ? 'text-emerald-300' : 'text-slate-500'}`}>{key === 'telemetry_freshness' && source?.seconds != null ? `${source.seconds}s` : status}</span></div>; })}</div><p className="mt-3 text-[11px] text-slate-500">UNKNOWN means the backend did not establish health; it is never presented as HEALTHY.</p></Panel>
-      <Panel title="Governance Passport" eyebrow="Trust layer" className="mt-4"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Receipts · 30d</div><div className="mt-2 font-mono text-xl font-bold text-[#e8c96d]">{aggregate?.real || '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Sessions · 30d</div><div className="mt-2 font-mono text-xl font-bold text-emerald-300">{aggregate?.sessions || '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Today</div><div className="mt-2 font-mono text-xl font-bold text-white">{aggregate?.today || '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Issuance</div><div className="mt-2 font-mono text-xl font-bold text-amber-200">Planned</div></div></div><p className="mt-4 text-xs leading-5 text-slate-500">Counts are live from the Observatory aggregate. Signed bundles, policy provenance, and independently verifiable passport URLs remain the next backend milestone.</p></Panel>
-      <Panel title="Event stream" eyebrow="Newest governance activity" className="mt-4"><div className="space-y-2">{receipts.slice(0, 5).map(receipt => <Link key={`event-${receipt.id}`} href={`/receipts/${encodeURIComponent(receipt.id)}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-black/15 px-3 py-3 transition hover:border-[#c9a84c]/30"><span className={`h-2 w-2 shrink-0 rounded-full ${receipt.intervention ? 'bg-amber-300' : 'bg-emerald-300'}`} /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-200">{receipt.intervention ? 'Governor intervention recorded' : 'Receipt generated and sealed'}</span><span className="mt-1 block truncate font-mono text-[10px] text-slate-500">{receipt.id} · {receipt.governor_mode ?? receipt.pre_eval_label ?? 'governance decision'}</span></span><span className="shrink-0 font-mono text-[10px] text-slate-500">{timeAgo(receipt.timestamp)}</span></Link>)}{receipts.length === 0 && <div className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-slate-500">No production events available. Demo events are intentionally not fabricated.</div>}</div><div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-500"><span>Live source: recent receipts</span><Link href="/observability" className="font-bold text-[#e8c96d]">Open session observability →</Link></div></Panel>
+      <Panel title="Observatory integrity" eyebrow="Evidence infrastructure" className="mt-4"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{[['Receipt store', 'receipt_store'], ['Text receipts', 'praxis_receipts'], ['Agent tool receipts', 'tool_receipt_store'], ['Session telemetry', 'session_persistence'], ['Verification API', 'verification_api'], ['Live state', 'live_state'], ['Telemetry freshness', 'telemetry_freshness']].map(([label, key]) => { const source = integrity?.sources[key]; const status = source?.status ?? 'UNKNOWN'; return <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3"><span className="text-xs text-slate-400">{label}</span><span className={`font-mono text-[10px] font-bold ${status === 'HEALTHY' ? 'text-emerald-300' : ['UNAVAILABLE', 'CRITICAL', 'ERROR'].includes(status) ? 'text-red-300' : ['DEGRADED', 'STALE'].includes(status) ? 'text-amber-300' : 'text-slate-500'}`}>{key === 'telemetry_freshness' && source?.seconds != null ? `${source.seconds}s` : status}</span></div>; })}</div><p className="mt-3 text-[11px] text-slate-500">UNKNOWN means the backend did not establish health; NOT_CHECKED means the endpoint was listed but not actively probed. RECORDED means a receipt timestamp exists, not that it meets a freshness SLA. EMPTY is a successful query with no rows.</p></Panel>
+      <Panel title="Governance Passport" eyebrow="Trust layer" className="mt-4"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Receipts · 30d</div><div className="mt-2 font-mono text-xl font-bold text-[#e8c96d]">{aggregate?.real ?? '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Sessions · 30d</div><div className="mt-2 font-mono text-xl font-bold text-emerald-300">{aggregate?.sessions ?? '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Today</div><div className="mt-2 font-mono text-xl font-bold text-white">{aggregate?.today ?? '—'}</div></div><div className="rounded-xl border border-white/10 bg-black/20 p-3"><div className="text-[10px] uppercase tracking-widest text-slate-500">Issuance</div><div className="mt-2 font-mono text-xl font-bold text-amber-200">Planned</div></div></div><p className="mt-4 text-xs leading-5 text-slate-500">Counts are live from the Observatory aggregate. Signed bundles, policy provenance, and independently verifiable passport URLs remain the next backend milestone.</p></Panel>
+      <Panel title="Event stream" eyebrow="Newest governance activity" className="mt-4"><div className="space-y-2">{receipts.slice(0, 5).map(receipt => <Link key={`event-${receipt.id}`} href={`/receipts/${encodeURIComponent(receipt.id)}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-black/15 px-3 py-3 transition hover:border-[#c9a84c]/30"><span className={`h-2 w-2 shrink-0 rounded-full ${receipt.intervention ? 'bg-amber-300' : 'bg-emerald-300'}`} /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-200">{receipt.intervention ? 'Governor intervention recorded' : 'Receipt generated and sealed'}</span><span className="mt-1 block truncate font-mono text-[10px] text-slate-500">{receipt.id} · {receipt.governor_mode ?? receipt.pre_eval_label ?? 'governance decision'}</span></span><span className="shrink-0 font-mono text-[10px] text-slate-500">{timeAgo(receipt.timestamp)}</span></Link>)}{receipts.length === 0 && <div className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-slate-500">{receiptFeedStatus === 'UNAVAILABLE' ? 'Recent text-governance events are unavailable because the receipt source could not be queried.' : receiptFeedStatus === 'EMPTY' ? 'No text-governance events were returned by the successful query.' : 'Loading text-governance events…'}</div>}</div><div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-500"><span>Live source: recent receipts</span><Link href="/observability" className="font-bold text-[#e8c96d]">Open session observability →</Link></div></Panel>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-3"><Link href="/api-docs" className="rounded-2xl border border-white/10 bg-white/[.025] p-4 transition hover:border-indigo-300/30"><div className="font-mono text-[10px] uppercase tracking-widest text-indigo-300">SDK</div><h3 className="mt-2 font-bold text-white">Integrate governance</h3><p className="mt-1 text-xs leading-5 text-slate-500">JavaScript, Python, and Rust installation paths.</p></Link><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="font-mono text-[10px] uppercase tracking-widest text-amber-200">Passport</div><h3 className="mt-2 font-bold text-white">Governance Passport</h3><p className="mt-1 text-xs leading-5 text-slate-500">Coming Soon · signed history and policy provenance.</p></div><Link href="/observability" className="rounded-2xl border border-white/10 bg-white/[.025] p-4 transition hover:border-teal-300/30"><div className="font-mono text-[10px] uppercase tracking-widest text-teal-300">Deep dive</div><h3 className="mt-2 font-bold text-white">Session observability</h3><p className="mt-1 text-xs leading-5 text-slate-500">Filter and replay persisted turns by session ID.</p></Link></div>
     </div>

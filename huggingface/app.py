@@ -43,8 +43,8 @@ with gr.Blocks(
         <h1 style='color:#c9a84c; font-size:2em; font-weight:900; margin:0;'>⚖ Lex Aureon</h1>
         <p style='color:#94a3b8; margin:4px 0;'>Constitutional AI Governance · C+R+S=1</p>
         <p style='color:#475569; font-size:0.8em;'>
-            Peer-reviewed research · 
-            <a href='https://doi.org/10.5281/zenodo.18944243' target='_blank' style='color:#c9a84c;'>DOI</a> ·
+            Open-access preprint · 
+            <a href='https://doi.org/10.5281/zenodo.20183807' target='_blank' style='color:#c9a84c;'>DOI</a> ·
             <a href='https://lexaureon.com' target='_blank' style='color:#c9a84c;'>Live System</a>
         </p>
     </div>

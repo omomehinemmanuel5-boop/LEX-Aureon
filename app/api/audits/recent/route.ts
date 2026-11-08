@@ -43,13 +43,14 @@ export async function GET(req: Request) {
       timestamp: new Date(row.created_at as string).getTime(),
     }));
 
-    return NextResponse.json({ receipts }, {
+    return NextResponse.json({ ok: true, status: receipts.length ? 'AVAILABLE' : 'EMPTY', receipts }, {
       headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=15' },
     });
   } catch (e) {
     logger.warn('audits.recent', 'query failed', errorFields(e));
-    return NextResponse.json({ receipts: [] }, {
-      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=15' },
+    return NextResponse.json({ ok: false, status: 'UNAVAILABLE', error: 'receipt_store_unavailable', receipts: [] }, {
+      status: 503,
+      headers: { 'Cache-Control': 'no-store' },
     });
   }
 }

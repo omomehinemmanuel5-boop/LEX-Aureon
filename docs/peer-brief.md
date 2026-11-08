@@ -1,7 +1,7 @@
 # Lex Aureon — Technical Brief for Peer Researchers
 **For: Mackenzie / Lycheetah collaboration discussions**  
 **Author: Emmanuel King — lexaureon@gmail.com**  
-**Live system: lexaureon.com · Paper: doi.org/10.5281/zenodo.18944242**  
+**Live system: lexaureon.com · Paper: doi.org/10.5281/zenodo.20183807**  
 **Repo: github.com/omomehinemmanuel5-boop/LEX-Aureon**
 
 ---
@@ -12,9 +12,9 @@ Lex Aureon is a **constitutional operating layer** for language models and agent
 
 It is not a prompt filter. It is not a classifier. It is not a fine-tuning approach.
 
-It is a real-time dynamical system that continuously measures the constitutional state of an AI interaction, detects drift and adversarial pressure, and applies mathematically guaranteed corrections when the system approaches constitutional failure — all without modifying the underlying model.
+It is a runtime governance layer that measures constitutional state, detects specified forms of drift and adversarial pressure, and applies configured interventions when the system approaches its declared boundaries — without modifying the underlying model.
 
-The core claim: **you can impose mathematical safety guarantees on any LLM without retraining it**, by governing its outputs through a constitutional layer that runs above it.
+The engineering proposition is model-independent governance when the relevant outputs and actions are routed through the governed boundary. Formal guarantees are limited to their stated assumptions and implementation scope; this is not a blanket safety guarantee for arbitrary models, tools, or execution paths.
 
 The system is live at lexaureon.com. The governance API (`POST /api/lex/govern`) is publicly accessible. The benchmark scripts are open in `/scripts`. Every claim in this document is testable.
 
@@ -45,25 +45,22 @@ These are not metaphors. They are operationalized through three measurable proxi
 
 ---
 
-## 3. The Governance Pipeline — 13 Agents (PRAXIS)
+## 3. The Governance Pipeline — PRAXIS
 
-The full pipeline runs on every prompt:
+The current public research page describes the operational path as eight stages:
 
 ```
-[01] Pre-Eval        PRAXIS classifier — attack taxonomy labeling + slow-drip detection
-[02] Memory          Jina embedding → semantic recall from lex_memory (Turso)
-[03] Generator       Dual-arm inference: bare LLM (no constitution) vs governed LLM
-[04] RawForge        Structural verification of bare output
-[05] CRS Extractor   Paper-exact CCP / IEC / ADV → constitutional state (C, R, S)
-[06] Governor        Log-Barrier Interior Point Dynamics — projects state to safe interior
-[07] Intervention    Vaulturex law selection → LLM constitutional rewrite
-[08] Neithra v1.0    Contextual jurisprudence — alignment verification
-[09] ClauseBank      Normative clause selection (20 Layer 1 clauses)
-[10] Vaulturex       Compliance gate — 50-law Sovereign Codex enforcement
-[11] Celeste         Sovereign output rendering
-[12] Self-Ref CRS    Output-to-constitutional-centroid semantic distance measurement
-[13] Auditor         HMAC-SHA256 signed audit receipt → Turso (praxis_receipts, immutable)
+[01] Pre-eval classification (CLEAR / HIGH)
+[02] Embedding and constitutional-memory recall
+[03] z-trajectory update using the deployed Banach rule
+[04] SovereignKernel computes C, R, S and preserves C+R+S=1
+[05] Dual inference compares bare and governed outputs from the same model
+[06] Governor applies the configured boundary intervention
+[07] SHA-256 receipt binds input, output and constitutional state
+[08] Constitutional output and receipt are returned
 ```
+
+This is a concise operational summary, not a claim that every named subsystem runs as an independent agent on every request. Tool-call governance has a separate MCP execution path and its own receipt store.
 
 **Critical architecture point**: the mathematics run first. Constitutional measurement, CRS extraction, Lyapunov tracking, CBF projection, and governor decisions all occur before any intervention logic. The intervention layer is downstream of the mathematics. The math determines whether intervention is necessary. Vaulturex determines how that intervention is constitutionally enacted.
 
@@ -76,12 +73,17 @@ The full pipeline runs on every prompt:
 The governor implements Log-Barrier Interior Point Dynamics:
 
 ```
-G_i(x, T) = k_i · (φ_i − φ̄)                     correction direction
-k_i(x, T) = k₀ · w_i(T) / (M(x) + ε_k)          stiffness (higher near boundary)
-B_i(x)    = −μ · log(x_i − τ)                     log-barrier (asymptotic push)
+τ_floor = 0.05;  τ_gov = 0.22
+φ_lin,i = max(0, τ_gov − x_i)
+φ_barrier,i = 1                         if x_i − τ_floor ≤ ε_barrier
+              min(1, μ_barrier/(x_i − τ_floor)) otherwise
+φ_i = φ_lin,i + φ_barrier,i
+G_i(x) = K · (φ_i − mean(φ))
 ```
 
-The Lyapunov stability certificate (z-weighted, active):
+The deployed `calculateGovernorG` implementation uses the bounded linear-plus-reciprocal-barrier form above (`K=4.0`, `μ_barrier=0.02`, `ε_barrier=10⁻⁴`). This is the implementation-level correction direction; the paper's potential function below is a separate analytical object, not a claim that every production path executes an identical continuous-time flow.
+
+The Lyapunov stability certificate (z-weighted, as defined in the research model):
 ```
 V_z(x) = −Σ zᵢ · log(xᵢ) + (μ/2) · Σ max(0, τ − xᵢ)²
 ```
@@ -103,11 +105,14 @@ The governor operates in four modes depending on M and trajectory:
 
 ```
 TAU_FLOOR       = 0.05   CBF hard floor — absolute lower bound
-TAU_RECOVERY    = 0.15   soft recovery threshold
-TAU_LYP         = 0.08   Lyapunov penalty accumulation threshold
+SOFT_FLOOR      = 0.08   pre-emptive suspension barrier (implementation)
+TAU_LYAPUNOV    = 0.08   Lyapunov penalty accumulation threshold (distinct role)
+TAU_RECOVERY    = 0.15   recovery threshold
+TAU_GOV         = 0.22   governor correction activation threshold
+TARGET_MARGIN   = 0.24   interior target margin
 SIGMA_THRESHOLD = 0.25   slow-drip detection sensitivity
 N_MIN           = 3      stability count before recovery
-K0              = 0.3    base governor stiffness
+K0              = 0.3    base stiffness in the constitutional parameter set
 ```
 
 ---
@@ -120,9 +125,9 @@ This is the implementation of equation (10) from the Aureonics paper:
 dx/dt = F(x, z) + G(x, z)
 ```
 
-**F(x,z)** — synchronous triadic dynamics. Hard floor M ≥ τ guaranteed. Output delivered immediately, no waiting.
+**F(x,z)** — synchronous triadic dynamics and the canonical CBF floor. The output path does not wait for background sensing.
 
-**G(x,z)** — asynchronous environmental sensing. Fires N parallel search queries in the background. Computes IEC signal reliability ρ(t) from result variance. Applies a lawful attractor basin correction at turn t+1 only if ρ(t) ≥ ρ_min = 0.75. If search results conflict (high variance = low IEC = low ρ), the correction is rejected and the state is left to F alone.
+**G(x,z)** — asynchronous environmental sensing. It fires parallel search queries and computes signal reliability ρ(t). The preferred signal is semantic agreement (mean pairwise cosine similarity of result embeddings); if embeddings are unavailable, it falls back to the entropy-variance IEC proxy. A bounded attractor-basin correction is eligible for turn t+1 only when ρ(t) ≥ ρ_min = 0.75. If sources disagree or the fallback reliability is below threshold, the correction is rejected.
 
 **Turn-lag architecture:**
 ```
@@ -130,7 +135,7 @@ Turn t:   F(x,z) runs sync → output delivered → G(x,z) fires async
 Turn t+1: G(x,z) correction consumed → F(x,z) runs with updated state
 ```
 
-**Hard guarantee**: G(x,z) can only shift attractor basin. It cannot violate the CBF floor. F(x,z) is always the authority. The IEC filter (paper §5.2) is repurposed here from measuring output quality to measuring environmental signal reliability — the same mathematical structure applied to sensing.
+**Enforcement boundary**: the proposed correction is checked against the hard floor before it is returned; rejected corrections leave the state unchanged. This protects the correction update itself and does not establish a blanket guarantee for arbitrary models, tools, or execution paths. Canonical authorization and the synchronous governance path remain authoritative. The IEC filter is used to assess environmental-signal reliability, not to grant execution authority.
 
 **Key files:**
 - `lib/governor_sensing.ts` — IEC computation, z(t) context vector, G(x,z) correction
@@ -210,7 +215,7 @@ Every governed decision — pass or intervene — produces an immutable HMAC-SHA
 }
 ```
 
-**8,860+ receipts** exist in the live system as of June 2026. They are immutable. The audit trail cannot be retroactively modified. Every claim about system behavior is verifiable against this record.
+Receipt totals are read from the live evidence stores, not copied into this brief. Text-governance receipts (`praxis_receipts`) and agent tool-call receipts (`tool_receipts`) are distinct immutable records and must be reported with their source and verification status.
 
 ---
 
@@ -220,18 +225,11 @@ Every governed decision — pass or intervene — produces an immutable HMAC-SHA
 
 **Judge**: dual-criterion LLM panel (Lin et al. 2022 T×I rubric for TruthfulQA; binary RESIST/FULFILL for adversarial benchmarks using Groq 8b with 3-vote consensus, validated against 70b on N-sample cross-checks).
 
-**Results (June 2026):**
+**Current reporting policy:** this brief does not duplicate mutable benchmark scores. The canonical dashboard at <https://lexaureon.com/benchmarks> reads the latest published row per benchmark and metric from the results store and shows run date, sample count and judge notes. Stale fallback rows are labelled; estimated metrics are excluded from current scored results.
 
-| Benchmark | N | Bare ASR | Governed ASR | Lift |
-|:---|:---:|:---:|:---:|:---:|
-| HarmBench | 200 | 50.5% | 0.0% | +50.5pp |
-| HarmBench R2 | 200 | 50.5% | 0.0% | +50.5pp |
-| JailbreakBench | 200 | 52.0% | 0.0% | +48.0pp |
-| AdvBench | 520 | 49.0% | 0.0% | +51.0pp |
-| AgentDojo | 200 | 95.0% | 0.0% | +95.0pp |
-| TruthfulQA | 817 | pending | pending | — |
+**Historical example — JailbreakBench, 2026-08-11:** run 31479398303 evaluated n=150 prompts; bare ASR was 23.49% and governed ASR was 17.45%. The paired McNemar test was not statistically significant (p=0.1237). This is one dated run, not a general or current safety guarantee.
 
-All scripts are open. All runs are reproducible. The methodology is documented in `/scripts`. Any researcher can rerun these on their own infrastructure.
+The runners, scorers and reproduce instructions are in `/scripts`. Reproduction also requires the corresponding dataset, provider access, model/judge versions and configuration; a script being open does not by itself make a run independently replicated.
 
 ---
 
@@ -277,7 +275,8 @@ Based on reading Mackenzie's work on AURA and Lycheetah, three concrete areas wh
 **API access**: `POST https://lexaureon.com/api/lex/govern`  
 **Repo**: github.com/omomehinemmanuel5-boop/LEX-Aureon (open)  
 **Benchmark scripts**: `/scripts` — harmbench, jailbreakbench, advbench, truthfulqa, agentdojo  
-**Paper**: doi.org/10.5281/zenodo.18944242
+**Current paper (v2)**: <https://doi.org/10.5281/zenodo.20183807>  
+**Earlier version (v1)**: <https://doi.org/10.5281/zenodo.18944243>
 
 ---
 

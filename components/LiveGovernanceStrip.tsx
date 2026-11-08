@@ -37,7 +37,17 @@ export default function LiveGovernanceStrip(){
     return()=>{active=false;window.clearInterval(timer)};
   },[]);
 
-  return (<section className="border-y border-[#c9a84c]/15 bg-[#07070d] px-4 py-6"><div className="mx-auto max-w-6xl rounded-2xl border border-[#c9a84c]/20 bg-[#0d0d1a] p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#e8c96d]">Live Governance · Canonical State</div><h3 className="mt-1 text-xl font-black text-white">Latest Runtime Trajectory</h3><p className="mt-1 text-xs text-white/45">This is the current governed state: C + R + S = 1, with M = min(C,R,S) as the canonical margin.</p></div><span className="w-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-mono text-emerald-300">{status}</span></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+  const healthy = ['HEALTHY', 'OPTIMAL', 'LIVE', 'NOMINAL'].includes(status);
+  const critical = ['CRITICAL', 'UNAVAILABLE', 'OFFLINE', 'ERROR'].includes(status);
+  const statusClass = healthy
+    ? 'bg-emerald-500/15 text-emerald-300'
+    : critical
+      ? 'bg-red-500/15 text-red-300'
+      : status === 'DEGRADED' || status === 'NO LIVE STATE' || status === 'CONNECTING'
+        ? 'bg-amber-500/15 text-amber-300'
+        : 'bg-slate-500/15 text-slate-300';
+
+  return (<section className="border-y border-[#c9a84c]/15 bg-[#07070d] px-4 py-6"><div className="mx-auto max-w-6xl rounded-2xl border border-[#c9a84c]/20 bg-[#0d0d1a] p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#e8c96d]">Live Governance · Canonical State</div><h3 className="mt-1 text-xl font-black text-white">Latest Runtime Trajectory</h3><p className="mt-1 text-xs text-white/45">This is the current governed state: C + R + S = 1, with M = min(C,R,S) as the canonical margin.</p></div><span role="status" className={`w-fit rounded-full px-3 py-1 text-xs font-mono ${statusClass}`}>{status}</span></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
   {([["C", state?.runtime_state?.C], ["R", state?.runtime_state?.R], ["S", state?.runtime_state?.S], ["M", state?.runtime_state?.M]] as const).map(([key, value]) => (
     <div key={key} className={`rounded-xl border p-3 ${key === "M" ? "border-[#e8c96d]/45 bg-[#c9a84c]/[0.08]" : "border-white/10 bg-black/20"}`}>
       <div className="flex items-center justify-between gap-2"><div className="text-[10px] font-mono text-white/40">{key}</div>{key === "M" && <span className="text-[8px] font-mono uppercase tracking-wider text-[#e8c96d]">canonical</span>}</div>

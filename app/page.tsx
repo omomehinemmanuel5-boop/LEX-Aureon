@@ -82,7 +82,7 @@ const JSON_LD = {
       sameAs: [
         'https://x.com/lexAureon',
         'https://github.com/omomehinemmanuel5-boop/LEX-Aureon',
-        'https://doi.org/10.5281/zenodo.18944242',
+        'https://doi.org/10.5281/zenodo.20183807',
       ],
     },
     {
@@ -109,18 +109,18 @@ const JSON_LD = {
         priceCurrency: 'USD',
         description: 'Free live demo console and public API access.',
       },
-      sameAs: ['https://doi.org/10.5281/zenodo.18944242'],
+      sameAs: ['https://doi.org/10.5281/zenodo.20183807'],
     },
     {
       '@type': 'ScholarlyArticle',
-      '@id': 'https://doi.org/10.5281/zenodo.18944242',
+      '@id': 'https://doi.org/10.5281/zenodo.20183807',
       name: 'Aureonics: Constitutional Triadic Framework for Stable Adaptive Intelligence',
       author: {
         '@type': 'Person',
         name: 'Emmanuel King',
         sameAs: 'https://orcid.org/0009-0000-2986-4935',
       },
-      url: 'https://doi.org/10.5281/zenodo.18944242',
+      url: 'https://doi.org/10.5281/zenodo.20183807',
       isPartOf: { '@id': 'https://www.lexaureon.com/#software' },
     },
   ],
@@ -234,7 +234,7 @@ async function Hero() {
             Run a governed decision — free
           </Link>
           <a
-            href="https://doi.org/10.5281/zenodo.18944242"
+            href="https://doi.org/10.5281/zenodo.20183807"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-bold text-slate-300 hover:text-white border border-white/10 hover:bg-white/5 transition-all text-center"
@@ -454,7 +454,7 @@ export default async function LandingPage() {
             <Link href="/audit" className="hover:text-white transition-colors">Audit</Link>
             <Link href="/observability" className="hover:text-white transition-colors">Observability</Link>
             <Link href="/verify" className="hover:text-white transition-colors">Verify</Link>
-            <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paper</a>
+            <a href="https://doi.org/10.5281/zenodo.20183807" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paper</a>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
           </div>
           <div className="flex items-center gap-3 text-xs font-mono text-slate-400 font-bold">

@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { Metadata } from 'next';
-import BenchmarkResults from '@/components/BenchmarkResults';
+import BenchmarkResults, { type ApiShape } from '@/components/BenchmarkResults';
+import { getBenchmarkResults } from '@/lib/benchmark_results';
 
 export const metadata: Metadata = {
   title: 'Benchmarks — Lex Aureon',
@@ -18,7 +19,22 @@ export const metadata: Metadata = {
 
 const G = { gold: '#c9a84c', goldL: '#e8c96d', goldD: '#a07830' };
 
-export default function BenchmarksPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function BenchmarksPage() {
+  let initialData: ApiShape | null = null;
+  try {
+    const results = await getBenchmarkResults();
+    initialData = {
+      ok: true,
+      count: results.length,
+      published: results.length > 0,
+      results,
+      fetched_at: new Date().toISOString(),
+    };
+  } catch {
+    initialData = null;
+  }
   return (
     <main className="min-h-screen selection:bg-amber-500/30" style={{ backgroundColor: '#07070d' }}>
       {/* Header */}
@@ -69,7 +85,7 @@ export default function BenchmarksPage() {
           fix note) since results only change in discrete jumps on publish,
           not continuously -- fast polling was never buying real freshness,
           just extra Turso row reads. */}
-      <BenchmarkResults pollMs={30000} />
+      <BenchmarkResults pollMs={30000} initialData={initialData} />
 
       {/* Methodology / reproduce */}
       <section className="px-5 py-14">
@@ -113,7 +129,7 @@ export default function BenchmarksPage() {
               <a href="https://github.com/omomehinemmanuel5-boop/Lexaureon-Benchmark" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors">
                 Benchmark repo ↗
               </a>
-              <a href="https://doi.org/10.5281/zenodo.18944242" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors">
+              <a href="https://doi.org/10.5281/zenodo.20183807" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:text-amber-400 transition-colors">
                 Read the paper ↗
               </a>
               <Link href="/console" className="text-amber-500 hover:text-amber-400 transition-colors">

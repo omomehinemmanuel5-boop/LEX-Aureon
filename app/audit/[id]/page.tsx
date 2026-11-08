@@ -412,7 +412,7 @@ export default async function AuditPage({ params }: Props) {
                 <div className="px-4 sm:px-8 py-3 text-center border-t" style={{ borderColor: '#d4b896', background: '#ede8dc' }}>
                   <div className="text-xs font-mono" style={{ color: '#a07830' }}>
                     © 2026 Lex Intelligence Systems · Emmanuel King · Lagos, Nigeria
-                    <br />doi.org/10.5281/zenodo.18944243 · PRAXIS v1.0 · C+R+S=1
+                    <br />doi.org/10.5281/zenodo.20183807 · PRAXIS v1.0 · C+R+S=1
                   </div>
                 </div>
               </div>
@@ -567,7 +567,7 @@ export default async function AuditPage({ params }: Props) {
                 <div className="px-4 sm:px-8 py-3 text-center border-t" style={{ borderColor: '#d4b896', background: '#ede8dc' }}>
                   <div className="text-xs font-mono" style={{ color: '#a07830' }}>
                     © 2026 Lex Intelligence Systems · Emmanuel King · Lagos, Nigeria
-                    <br />doi.org/10.5281/zenodo.18944243 · Agentic Governance Layer · C+R+S=1
+                    <br />doi.org/10.5281/zenodo.20183807 · Agentic Governance Layer · C+R+S=1
                   </div>
                 </div>
               </div>
