@@ -8,7 +8,9 @@ const input = (name: string) => ({
   arguments: {},
   session_id: 'owner:mcp-0123456789ab',
   actor_id: 'api_key:owner',
-  task_context: 'test',
+  // This classification test must stay network-free; a non-empty context
+  // would invoke the production embedding path in measureC.
+  task_context: '',
 });
 
 describe('recovery pulse tools are classified, not blocked as unclassified', () => {
