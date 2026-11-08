@@ -686,6 +686,7 @@ async function handlePost(req: Request) {
           approved: false,
           decision: 'DENIED_BLOCKED',
           reason: authorizationGate.reason ?? 'Canonical governance state denied execution; no approval was created.',
+          ...quarantineHint(authorizationCanonical.state),
           approval_created: false,
         });
       }
@@ -792,6 +793,7 @@ async function handlePost(req: Request) {
           return mcpToolResult(id, {
             status: 'denied', decision: 'DENIED_BLOCKED', approval_created: false,
             reason: preflight.reason ?? 'Canonical governance state denied execution; no approval was created.',
+            ...quarantineHint(canonical.state),
           });
         }
       }

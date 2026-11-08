@@ -12,4 +12,9 @@ describe('denial runbook links', () => {
     expect(recoveryDenial).toContain('docs/recovery-runbook.md');
     expect(approvals).toContain('Approval request is bound to different arguments. Retry with exactly the arguments shown on the approval screen; fields such as task_context are part of the binding and must be omitted unless they were approved. See docs/recovery-runbook.md.');
   });
+
+  it('includes structured quarantine reset guidance in every canonical MCP denial response', () => {
+    const route = readFileSync(resolve(process.cwd(), 'app/api/mcp/route.ts'), 'utf8');
+    expect(route.match(/\.\.\.quarantineHint\(/g)).toHaveLength(5);
+  });
 });
