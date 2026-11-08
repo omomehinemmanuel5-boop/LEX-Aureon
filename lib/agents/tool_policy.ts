@@ -68,6 +68,13 @@ export const KERNEL_GATED_WRITE_TOOL_NAMES = [...TOOL_CAPABILITY_REGISTRY.values
 export const HIGH_RISK_TOOLS: ReadonlySet<string> = new Set(HIGH_RISK_TOOL_NAMES);
 export const MEDIUM_RISK_TOOLS: ReadonlySet<string> = new Set(MEDIUM_RISK_TOOL_NAMES);
 export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(READ_ONLY_TOOL_NAMES);
+
+/**
+ * Bounded recovery pulses. Each records at most one time-separated observation
+ * or one bounded correction, and grants no write authority. They are classified
+ * explicitly so they are not treated as unclassified tools.
+ */
+export const RECOVERY_PULSE_TOOLS: ReadonlySet<string> = new Set(['request_recovery_pulse', 'advance_recovery_plane']);
 export const EXECUTOR_READ_TOOLS: ReadonlySet<string> = new Set(EXECUTOR_READ_TOOL_NAMES);
 export const NON_MUTATING_GOVERNANCE_TOOLS: ReadonlySet<string> = new Set(NON_MUTATING_GOVERNANCE_TOOL_NAMES);
 export const KERNEL_GATED_WRITE_TOOLS: ReadonlySet<string> = new Set(KERNEL_GATED_WRITE_TOOL_NAMES);

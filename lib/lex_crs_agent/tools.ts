@@ -1617,7 +1617,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'request_recovery_pulse',
-    description: 'Request one bounded server-side recovery pulse for the authenticated caller session. The server binds the session; caller-supplied session IDs are ignored. Returns recovery diagnostics and never grants write authority. Quarantine remains enforced; operator canary and privileged recovery controls are not exposed.',
+    description: 'Request one bounded server-side recovery pulse for the authenticated caller session. Procedure when recovery_state is RESTORING: call get_constitutional_state, then pulse at least 5 seconds apart (10 to 15 seconds after a breach) until n_stable reaches 3 of 3 and velocity is below 0.02; the server then issues the canary automatically. A pulse never grants write authority. Full guide: docs/agents/recovery-guide.md. The server binds the session; caller-supplied session IDs are ignored. Returns recovery diagnostics and never grants write authority. Quarantine remains enforced; operator canary and privileged recovery controls are not exposed.',
     parameters: { type: 'object', properties: {} },
   },
   {
