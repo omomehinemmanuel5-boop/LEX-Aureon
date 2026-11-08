@@ -306,6 +306,7 @@ Convention:
 
 | Agent | Started (UTC) | Scope (files / branch) | Task |
 |---|---|---|---|
+| ChatGPT | 2026-11-08 | Public evidence surfaces, benchmark publication, Observatory reporting, publication citations, status UI — `fix/public-evidence-consistency-2026-11` | Reconcile published claims and receipt visibility; preserve governance/security invariants |
 
 ---
 
