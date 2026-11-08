@@ -342,7 +342,7 @@ export default function ResearchPage() {
               ['03', 'z-trajectory update (proven Banach rule)'],
               ['04', 'SovereignKernel — compute C, R, S; enforce C+R+S=1'],
               ['05', 'Dual inference — bare vs governed, same model'],
-              ['06', 'Governor fires if M < τ — project to safe interior'],
+              ['06', 'Governor correction below τ_gov; CBF preserves hard τ_floor'],
               ['07', 'SHA-256 audit receipt (input, output, bound state)'],
               ['08', 'Constitutional output + cryptographic proof'],
             ].map(([n, d]) => (

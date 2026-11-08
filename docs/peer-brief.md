@@ -73,12 +73,17 @@ This is a concise operational summary, not a claim that every named subsystem ru
 The governor implements Log-Barrier Interior Point Dynamics:
 
 ```
-G_i(x, T) = k_i · (φ_i − φ̄)                     correction direction
-k_i(x, T) = k₀ · w_i(T) / (M(x) + ε_k)          stiffness (higher near boundary)
-B_i(x)    = −μ · log(x_i − τ)                     log-barrier (asymptotic push)
+τ_floor = 0.05;  τ_gov = 0.22
+φ_lin,i = max(0, τ_gov − x_i)
+φ_barrier,i = 1                         if x_i − τ_floor ≤ ε_barrier
+              min(1, μ_barrier/(x_i − τ_floor)) otherwise
+φ_i = φ_lin,i + φ_barrier,i
+G_i(x) = K · (φ_i − mean(φ))
 ```
 
-The Lyapunov stability certificate (z-weighted, active):
+The deployed `calculateGovernorG` implementation uses the bounded linear-plus-reciprocal-barrier form above (`K=4.0`, `μ_barrier=0.02`, `ε_barrier=10⁻⁴`). This is the implementation-level correction direction; the paper's potential function below is a separate analytical object, not a claim that every production path executes an identical continuous-time flow.
+
+The Lyapunov stability certificate (z-weighted, as defined in the research model):
 ```
 V_z(x) = −Σ zᵢ · log(xᵢ) + (μ/2) · Σ max(0, τ − xᵢ)²
 ```
@@ -100,11 +105,14 @@ The governor operates in four modes depending on M and trajectory:
 
 ```
 TAU_FLOOR       = 0.05   CBF hard floor — absolute lower bound
-TAU_RECOVERY    = 0.15   soft recovery threshold
-TAU_LYP         = 0.08   Lyapunov penalty accumulation threshold
+SOFT_FLOOR      = 0.08   pre-emptive suspension barrier (implementation)
+TAU_LYAPUNOV    = 0.08   Lyapunov penalty accumulation threshold (distinct role)
+TAU_RECOVERY    = 0.15   recovery threshold
+TAU_GOV         = 0.22   governor correction activation threshold
+TARGET_MARGIN   = 0.24   interior target margin
 SIGMA_THRESHOLD = 0.25   slow-drip detection sensitivity
 N_MIN           = 3      stability count before recovery
-K0              = 0.3    base governor stiffness
+K0              = 0.3    base stiffness in the constitutional parameter set
 ```
 
 ---
@@ -117,9 +125,9 @@ This is the implementation of equation (10) from the Aureonics paper:
 dx/dt = F(x, z) + G(x, z)
 ```
 
-**F(x,z)** — synchronous triadic dynamics. Hard floor M ≥ τ guaranteed. Output delivered immediately, no waiting.
+**F(x,z)** — synchronous triadic dynamics and the canonical CBF floor. The output path does not wait for background sensing.
 
-**G(x,z)** — asynchronous environmental sensing. Fires N parallel search queries in the background. Computes IEC signal reliability ρ(t) from result variance. Applies a lawful attractor basin correction at turn t+1 only if ρ(t) ≥ ρ_min = 0.75. If search results conflict (high variance = low IEC = low ρ), the correction is rejected and the state is left to F alone.
+**G(x,z)** — asynchronous environmental sensing. It fires parallel search queries and computes signal reliability ρ(t). The preferred signal is semantic agreement (mean pairwise cosine similarity of result embeddings); if embeddings are unavailable, it falls back to the entropy-variance IEC proxy. A bounded attractor-basin correction is eligible for turn t+1 only when ρ(t) ≥ ρ_min = 0.75. If sources disagree or the fallback reliability is below threshold, the correction is rejected.
 
 **Turn-lag architecture:**
 ```
@@ -127,7 +135,7 @@ Turn t:   F(x,z) runs sync → output delivered → G(x,z) fires async
 Turn t+1: G(x,z) correction consumed → F(x,z) runs with updated state
 ```
 
-**Hard guarantee**: G(x,z) can only shift attractor basin. It cannot violate the CBF floor. F(x,z) is always the authority. The IEC filter (paper §5.2) is repurposed here from measuring output quality to measuring environmental signal reliability — the same mathematical structure applied to sensing.
+**Enforcement boundary**: the proposed correction is checked against the hard floor before it is returned; rejected corrections leave the state unchanged. This protects the correction update itself and does not establish a blanket guarantee for arbitrary models, tools, or execution paths. Canonical authorization and the synchronous governance path remain authoritative. The IEC filter is used to assess environmental-signal reliability, not to grant execution authority.
 
 **Key files:**
 - `lib/governor_sensing.ts` — IEC computation, z(t) context vector, G(x,z) correction
