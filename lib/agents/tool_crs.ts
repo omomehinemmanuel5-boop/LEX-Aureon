@@ -87,7 +87,7 @@ import { ToolCallInput, ToolCRSState } from './types';
 import { projectToSimplex } from '../aureonics_math';
 import { embedTextResolved, embedTextWithProvider, EmbedProvider } from '../lex_memory';
 import { classifyDatabaseOperation } from './tool_governance_gateway';
-import { BUILD_FILE_PATTERNS, HIGH_RISK_TOOLS, MEDIUM_RISK_TOOLS, READ_ONLY_TOOLS } from './tool_policy';
+import { BUILD_FILE_PATTERNS, HIGH_RISK_TOOLS, MEDIUM_RISK_TOOLS, READ_ONLY_TOOLS, RECOVERY_PULSE_TOOLS } from './tool_policy';
 
 // The persistent embedding cache still provides cross-instance reuse, but a
 // hot serverless instance should not pay a Turso round trip for the same short
@@ -626,6 +626,12 @@ function measureS(tool: ToolCallInput): { score: number; risk: 'ULTRA_LOW' | 'LO
   // every naming heuristic below it, not depend on happening to match one.
   if (READ_ONLY_TOOLS.has(name)) {
     return { score: 0.98, risk: 'ULTRA_LOW' };
+  }
+
+  // Bounded recovery pulses: explicitly classified, so they are not blocked as
+  // unclassified. They grant no write authority; the recovery gate still decides.
+  if (RECOVERY_PULSE_TOOLS.has(name)) {
+    return { score: 0.90, risk: 'LOW' };
   }
 
   // HIGH risk tools — shell execution, anything that runs arbitrary code
