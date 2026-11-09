@@ -82,7 +82,7 @@ describe('Aureonics adaptive basin reference model (research-only)', () => {
   });
 
   it('returns the original state when no non-increasing step is accepted', () => {
-    const x: [number, number, number] = [0.4, 0.3, 0.3];
+    const x: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
     const q = taskTargetFromWeights([1 / 3, 1 / 3, 1 / 3], 0.08);
     const result = guardedTaskStep(x, q, { stepSize: 0.1 });
     expect(result.nextPotential).toBeLessThanOrEqual(result.previousPotential + 1e-12);
