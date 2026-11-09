@@ -30,8 +30,8 @@ export interface ContinuousTrackingCertificate {
 }
 
 /**
- * W(x,w)=V(x,w)-min_y V(y,w). For strictly positive weights, the constrained
- * minimizer is unique and W is a nonnegative tracking-error storage.
+ * W(x,w)=V(x,w)-min_y V(y,w). The constrained minimizer is unique on the
+ * floor-constrained simplex, and W is a nonnegative tracking-error storage.
  */
 export function taskTrackingErrorPotential(
   x: CRSVector,
@@ -54,7 +54,7 @@ export function taskTrackingErrorPotential(
  * Assumptions:
  * - x lies on the floor-constrained simplex;
  * - at least two task weights are positive (support size >= 2);
- * - sum(w)=1 and sum(wDot)=0, with feasible one-sided derivatives at zero weights;
+ * - sum(w)=1 and sum(wDot)=0, with the support of w fixed (zero-weight coordinates stay zero);
  * - eta>0 and the flow uses the Euclidean tangent-cone projection.
  *
  * Let m be the smallest positive task weight. On the simplex tangent plane,
@@ -94,8 +94,8 @@ export function continuousTaskTrackingCertificate(
     throw new RangeError('task-weight derivative must be tangent to the weight simplex');
   }
   if (weights.some((weight, index) => weight <= SIMPLEX_DERIVATIVE_TOLERANCE
-    && weightsDerivative[index] < -SIMPLEX_DERIVATIVE_TOLERANCE)) {
-    throw new RangeError('task-weight derivative must point into or along the simplex at zero weights');
+    && Math.abs(weightsDerivative[index]) > SIMPLEX_DERIVATIVE_TOLERANCE)) {
+    throw new RangeError('continuous tracking certificate requires zero-weight coordinates to remain zero');
   }
   if (!Number.isFinite(options.eta) || options.eta <= 0) {
     throw new RangeError('eta must be finite and positive');
