@@ -111,7 +111,8 @@ export function taskPotentialMinimizer(
   while (active.length > 0) {
     const activeWeight = active.reduce((sum, index) => sum + weights[index], 0);
     const lambda = activeWeight / (1 - (3 - active.length) * tauFloor);
-    const newlyClamped = active.filter(index => weights[index] / lambda <= tauFloor + SIMPLEX_SUM_TOLERANCE);
+    const clampTolerance = 16 * Number.EPSILON * Math.max(1, Math.abs(tauFloor));
+    const newlyClamped = active.filter(index => weights[index] / lambda <= tauFloor + clampTolerance);
     if (newlyClamped.length === 0) {
       const result: MutableCRSVector = [tauFloor, tauFloor, tauFloor];
       for (const index of active) result[index] = weights[index] / lambda;
