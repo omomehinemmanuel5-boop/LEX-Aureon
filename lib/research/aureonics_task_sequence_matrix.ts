@@ -61,11 +61,11 @@ function repeat<T>(items: readonly T[], count: number): T[] {
 
 function schedules(): Array<{ name: string; labels: Pillar[] }> {
   return [
-    { name: 'blocks-2', labels: repeat(['C', 'C', 'R', 'R', 'S', 'S'], 8) },
-    { name: 'blocks-5', labels: repeat(['C', 'C', 'C', 'C', 'C', 'R', 'R', 'R', 'R', 'R', 'S', 'S', 'S', 'S', 'S'], 4) },
+    { name: 'blocks-2', labels: repeat(['C', 'C', 'R', 'R', 'S', 'S'] as Pillar[], 8) },
+    { name: 'blocks-5', labels: repeat(['C', 'C', 'C', 'C', 'C', 'R', 'R', 'R', 'R', 'R', 'S', 'S', 'S', 'S', 'S'] as Pillar[], 4) },
     { name: 'blocks-12', labels: repeat([...Array(12).fill('C'), ...Array(12).fill('R'), ...Array(12).fill('S')] as Pillar[], 2) },
-    { name: 'fixed-amplitude-cycle', labels: repeat(['C', 'R', 'S'], 24) },
-    { name: 'noisy-labels', labels: repeat(['C', 'C', 'R', 'C', 'C', 'R', 'R', 'S', 'S'], 8) },
+    { name: 'fixed-amplitude-cycle', labels: repeat(['C', 'R', 'S'] as Pillar[], 24) },
+    { name: 'noisy-labels', labels: repeat(['C', 'C', 'R', 'C', 'C', 'R', 'R', 'S', 'S'] as Pillar[], 8) },
     { name: 'abrupt-one-hot', labels: [...Array(24).fill('C'), ...Array(24).fill('R'), ...Array(24).fill('S')] as Pillar[] },
   ];
 }
