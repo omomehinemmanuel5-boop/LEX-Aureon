@@ -18,7 +18,7 @@
 export type CRSVector = readonly [number, number, number];
 export type MutableCRSVector = [number, number, number];
 export type Pillar = 'C' | 'R' | 'S';
-export type OperatingRegion = 'analytical' | 'collaborative' | 'exploratory' | 'neutral' | 'boundary';
+export type OperatingRegion = 'analytical' | 'collaborative' | 'exploratory' | 'neutral' | 'boundary' | 'transition';
 
 export const AUREONICS_HARD_FLOOR = 0.05;
 export const SIMPLEX_SUM_TOLERANCE = 1e-9;
@@ -98,7 +98,8 @@ export function basinProfileForPillar(
 /**
  * Neutral-first, disjoint partition. Outside the neutral ball, M<=tau is
  * labeled boundary because the v4 directional basin conditions use M>tau.
- * Ties between dominant pillars resolve C, then R, then S.
+ * Exact ties are separatrices between strict dominance regions, not members of
+ * any one basin, and are labeled transition.
  */
 export function classifyOperatingRegion(
   x: CRSVector,
@@ -115,9 +116,12 @@ export function classifyOperatingRegion(
     (x[1] - CENTROID[1]) ** 2 +
     (x[2] - CENTROID[2]) ** 2,
   );
-  if (distance <= neutralRadius) return 'neutral';
+  if (distance < neutralRadius) return 'neutral';
   if (Math.min(...x) <= tauFloor + SIMPLEX_SUM_TOLERANCE) return 'boundary';
-  const dominantIndex = x.indexOf(Math.max(...x));
+  const maximum = Math.max(...x);
+  const dominant = x.filter(value => Math.abs(value - maximum) <= SIMPLEX_SUM_TOLERANCE).length;
+  if (dominant > 1) return 'transition';
+  const dominantIndex = x.indexOf(maximum);
   return (['analytical', 'collaborative', 'exploratory'] as const)[dominantIndex];
 }
 
