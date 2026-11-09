@@ -54,7 +54,7 @@ describe('Aureonics composite task-tracking storage', () => {
   it('bounds the additive tracking-storage jump at a task switch', () => {
     const before: [number, number, number] = [0.8, 0.1, 0.1];
     const after: [number, number, number] = [0.1, 0.8, 0.1];
-    const delta: [number, number, number] = [-0.7, 0.7, 0];
+    const delta: [number, number, number] = [-0.9, 0.8, 0.1];
     const jump = Math.abs(
       taskTrackingErrorPotential(before, after, 2)
       - taskTrackingErrorPotential(before, [1, 0, 0], 2),
