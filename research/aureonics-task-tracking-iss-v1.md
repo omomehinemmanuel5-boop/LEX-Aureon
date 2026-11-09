@@ -166,7 +166,57 @@ This is an additive jump budget, not an asymptotic stability theorem. If total
 variation grows without bound, this estimate alone gives no uniform long-run
 bound.
 
-## 5. Interpretation and proof boundary
+## 5. Hybrid switching with finite total task variation
+
+The fixed-mode estimates can be combined with the additive switch-jump bound.
+Restrict the admissible piecewise-constant task modes to:
+
+- one-hot vertices (e_1,e_2,e_3); or
+- modes with at least two positive coordinates, each at least (m_0>0).
+
+For every fixed mode, the tracking storage satisfies
+\[
+\dot W\le-\lambda W,\qquad
+\lambda=\min\left\{
+\frac{\eta}{2\log((1-2\tau)/\tau)},
+\frac{2\eta m_0}{3}
+\right\}.
+\]
+The first term is the one-hot fixed-mode rate; the second is the rate on
+multi-support modes. If a switch occurs at time (t_k), then
+\[
+W(t_k^+)\le W(t_k^-)+J_k,\qquad
+J_k=\log(1/\tau)\|w_k^+-w_k^-\|_1.
+\]
+Consequently, for any finite horizon (t\),
+\[
+\boxed{
+W(t)\le e^{-\lambda t}W(0)+
+\sum_{t_k\le t}e^{-\lambda(t-t_k)}J_k.
+}
+\]
+
+For an infinite, non-Zeno switching schedule with finite total task-weight
+variation
+\(\sum_k\|w_k^+-w_k^-\|_1<\infty\), the jump sequence is summable. The
+comparison bound then implies \(W(t)\to0\). Since finite total variation
+also makes (w(t)) converge and the unique constrained minimizer map
+(x^*(w)) is continuous, the state converges to the constrained optimum of
+the limiting task weights.
+
+This is a genuine **finite-variation hybrid tracking result**, but its
+conditions are restrictive and explicit. It does not cover endless C→R→S
+cycling with fixed-amplitude jumps, because that schedule has infinite total
+variation. It also does not cover task modes with two or more positive weights
+approaching zero without a uniform lower bound (m_0). Such schedules remain
+open; the theorem must not be advertised as arbitrary-switching stability.
+
+The research-only helper
+`finiteVariationHybridTrackingBound()` evaluates the finite-horizon
+comparison bound for a supplied switch schedule. It assumes the caller has
+verified that every intervening mode belongs to the admissible set above.
+
+## 6. Interpretation and proof boundary
 
 The composite storage improves on the raw active potential in three ways:
 
@@ -185,13 +235,13 @@ offset infinitely many switches with unbounded total variation. No common
 strict Lyapunov function for convergence to all distinct mode-specific
 equilibria has been asserted.
 
-## 6. Software evidence
+## 7. Software evidence
 
 The research-only module implements:
 - (W(x,w)), the constrained task-tracking objective gap;
 - a continuous-drift ISS certificate for task-weight support size at least two;
 - a one-hot fixed-mode sharp-error/decay certificate;
-- an additive switch-jump bound.
+- an additive switch-jump bound;\n- a finite-horizon hybrid comparison bound for finite-variation switching.
 
 Tests check nonnegativity, zero at the optimizer, the projected-gradient
 inequalities, the two-positive-coordinate edge case, one-hot sharp bounds,
