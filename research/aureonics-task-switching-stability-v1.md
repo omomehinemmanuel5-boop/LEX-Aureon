@@ -110,9 +110,19 @@ Lyapunov function for boundedness or invariance, or a common certificate for a
 different invariant set. It rules out assuming one common strict certificate
 for convergence to all distinct mode-specific optima.
 
-A multiple-Lyapunov / dwell-time route is plausible but still conditional. For
-each mode q, define a nonnegative shifted storage
-W_q(x)=V(x,w^(q))-V(x*_q,w^(q)). A valid dwell-time theorem would need:
+The usual multiplicative cross-mode comparison for these shifted storages
+also fails globally. At the equilibrium x*_q of mode q, W_q(x*_q)=0, while
+W_r(x*_q)>0 for a distinct mode r. Therefore no finite constant mu can satisfy
+W_r(x)<=mu W_q(x) over the whole feasible set at every q-to-r switch. A
+standard multiple-Lyapunov theorem cannot be applied with these unmodified
+mode-shifted potentials and unrestricted switching.
+
+A multiple-Lyapunov / dwell-time route may still be possible with a different
+storage construction, restricted switching surfaces, or additive jump bounds
+that yield a practical-stability result rather than asymptotic convergence to
+each instantaneous optimum. Any such route remains conditional. For each mode
+q, one candidate shifted storage is
+W_q(x)=V(x,w^(q))-V(x*_q,w^(q)). A valid theorem would need:
 
 1. a uniform within-mode decay estimate for (W_q) on the relevant invariant set;
 2. a cross-mode comparison bound (W_r(x)\le\mu W_q(x)) at every permitted switch;
