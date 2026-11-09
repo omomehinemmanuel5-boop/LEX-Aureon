@@ -85,6 +85,8 @@ describe('Aureonics adaptive basin reference model (research-only)', () => {
     const x: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
     const q = taskTargetFromWeights([1 / 3, 1 / 3, 1 / 3], 0.08);
     const result = guardedTaskStep(x, q, { stepSize: 0.1 });
+    expect(result.accepted).toBe(false);
+    expect(result.state).toEqual(x);
     expect(result.nextPotential).toBeLessThanOrEqual(result.previousPotential + 1e-12);
     expect(result.state.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 12);
   });
