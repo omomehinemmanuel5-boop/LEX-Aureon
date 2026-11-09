@@ -204,3 +204,87 @@ export function oneHotTaskModeCertificate(
     stateDistanceUpperBound: Math.SQRT2 * target * trackingPotential,
   };
 }
+
+
+export interface TaskWeightSwitch {
+  time: number;
+  deltaWeights: CRSVector;
+}
+
+export interface HybridFiniteVariationBound {
+  oneHotDecayRate: number;
+  multiSupportDecayRate: number;
+  uniformDecayRate: number;
+  totalTaskWeightVariation: number;
+  totalSwitchJumpBudget: number;
+  trackingPotentialUpperBound: number;
+}
+
+/**
+ * Finite-horizon comparison bound for piecewise-constant task weights.
+ *
+ * The caller must ensure that every mode is either one-hot or has at least
+ * two positive coordinates, each >= minimumPositiveActiveWeight. Between
+ * switches, W decays at least at uniformDecayRate. At each switch it can jump
+ * by at most log(1/tau)*||deltaWeights||_1.
+ */
+export function finiteVariationHybridTrackingBound(
+  initialTrackingPotential: number,
+  switches: readonly TaskWeightSwitch[],
+  horizon: number,
+  options: {
+    eta: number;
+    minimumPositiveActiveWeight: number;
+    tauFloor?: number;
+  },
+): HybridFiniteVariationBound {
+  const tauFloor = options.tauFloor ?? AUREONICS_HARD_FLOOR;
+  if (!Number.isFinite(initialTrackingPotential) || initialTrackingPotential < 0) {
+    throw new RangeError('initialTrackingPotential must be finite and non-negative');
+  }
+  if (!Number.isFinite(horizon) || horizon < 0) {
+    throw new RangeError('horizon must be finite and non-negative');
+  }
+  if (!Number.isFinite(options.eta) || options.eta <= 0) {
+    throw new RangeError('eta must be finite and positive');
+  }
+  if (!Number.isFinite(options.minimumPositiveActiveWeight)
+    || options.minimumPositiveActiveWeight <= 0
+    || options.minimumPositiveActiveWeight > 1) {
+    throw new RangeError('minimumPositiveActiveWeight must be in (0, 1]');
+  }
+  if (!Number.isFinite(tauFloor) || tauFloor <= 0 || tauFloor >= 1 / 3) {
+    throw new RangeError('tauFloor must be finite and in (0, 1/3)');
+  }
+
+  const maximumOneHotPotential = Math.log((1 - 2 * tauFloor) / tauFloor);
+  const oneHotDecayRate = options.eta / (2 * maximumOneHotPotential);
+  const multiSupportDecayRate = 2 * options.eta * options.minimumPositiveActiveWeight / 3;
+  const uniformDecayRate = Math.min(oneHotDecayRate, multiSupportDecayRate);
+
+  let previousTime = 0;
+  let totalTaskWeightVariation = 0;
+  let totalSwitchJumpBudget = 0;
+  let trackingPotentialUpperBound = initialTrackingPotential * Math.exp(-uniformDecayRate * horizon);
+
+  for (const change of switches) {
+    if (!Number.isFinite(change.time) || change.time < previousTime || change.time > horizon) {
+      throw new RangeError('switch times must be finite, ordered, and within the horizon');
+    }
+    const l1Change = change.deltaWeights.reduce((sum, value) => sum + Math.abs(value), 0);
+    const jumpBound = taskTrackingSwitchJumpBound(change.deltaWeights, tauFloor);
+    totalTaskWeightVariation += l1Change;
+    totalSwitchJumpBudget += jumpBound;
+    trackingPotentialUpperBound += jumpBound * Math.exp(-uniformDecayRate * (horizon - change.time));
+    previousTime = change.time;
+  }
+
+  return {
+    oneHotDecayRate,
+    multiSupportDecayRate,
+    uniformDecayRate,
+    totalTaskWeightVariation,
+    totalSwitchJumpBudget,
+    trackingPotentialUpperBound,
+  };
+}
