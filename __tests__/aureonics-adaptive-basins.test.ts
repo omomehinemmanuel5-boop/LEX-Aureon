@@ -63,11 +63,18 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
   });
 
   it('derives the constrained task-potential minimizer for pure and mixed task weights', () => {
-    expect(taskPotentialMinimizer([1, 0, 0])).toEqual([0.9, 0.05, 0.05]);
-    expect(taskPotentialMinimizer([0, 1, 0])).toEqual([0.05, 0.9, 0.05]);
-    expect(taskPotentialMinimizer([1 / 3, 1 / 3, 1 / 3])).toEqual([
-      1 / 3, 1 / 3, 1 / 3,
-    ]);
+    const analytical = taskPotentialMinimizer([1, 0, 0]);
+    const collaborative = taskPotentialMinimizer([0, 1, 0]);
+    const neutral = taskPotentialMinimizer([1 / 3, 1 / 3, 1 / 3]);
+    expect(analytical[0]).toBeCloseTo(0.9, 12);
+    expect(analytical[1]).toBeCloseTo(0.05, 12);
+    expect(analytical[2]).toBeCloseTo(0.05, 12);
+    expect(collaborative[0]).toBeCloseTo(0.05, 12);
+    expect(collaborative[1]).toBeCloseTo(0.9, 12);
+    expect(collaborative[2]).toBeCloseTo(0.05, 12);
+    expect(neutral[0]).toBeCloseTo(1 / 3, 12);
+    expect(neutral[1]).toBeCloseTo(1 / 3, 12);
+    expect(neutral[2]).toBeCloseTo(1 / 3, 12);
     const mixed = taskPotentialMinimizer([0.8, 0.15, 0.05]);
     expect(mixed[0] + mixed[1] + mixed[2]).toBeCloseTo(1, 12);
     expect(mixed[2]).toBeCloseTo(TAU, 12);
