@@ -217,6 +217,45 @@ export function projectToSimplexTangent(vector: CRSVector): MutableCRSVector {
 }
 
 /**
+ * Euclidean projection of a direction onto the tangent cone of the
+ * floor-constrained simplex at x. Coordinates already on the floor may not
+ * move downward; all coordinates remain coupled by the zero-sum constraint.
+ * In the strict interior this reduces to the ordinary simplex-tangent
+ * projection.
+ */
+export function projectToFloorSimplexTangent(
+  x: CRSVector,
+  direction: CRSVector,
+  floor = AUREONICS_HARD_FLOOR,
+): MutableCRSVector {
+  assertFloorSimplexState(x, floor);
+  assertFiniteVector(direction, 'direction');
+  const active = [0, 1, 2].filter(index => x[index] <= floor + 1e-12);
+  const free = [0, 1, 2].filter(index => !active.includes(index));
+  if (free.length === 0) throw new RangeError('floor-constrained simplex must have at least one free coordinate');
+
+  const magnitude = direction.reduce((sum, value) => sum + Math.abs(value), 0) + 1;
+  let low = Math.min(...direction) - magnitude;
+  let high = Math.max(...direction) + magnitude;
+  for (let iteration = 0; iteration < 80; iteration++) {
+    const lambda = (low + high) / 2;
+    const sum = direction.reduce((total, value, index) => {
+      return total + (active.includes(index) ? Math.max(value - lambda, 0) : value - lambda);
+    }, 0);
+    if (sum > 0) low = lambda;
+    else high = lambda;
+  }
+  const lambda = (low + high) / 2;
+  const projected = direction.map((value, index) =>
+    active.includes(index) ? Math.max(value - lambda, 0) : value - lambda,
+  ) as MutableCRSVector;
+  const residual = -(projected[0] + projected[1] + projected[2]);
+  const correctionIndex = free.reduce((best, index) => x[index] > x[best] ? index : best, free[0]);
+  projected[correctionIndex] += residual;
+  return projected;
+}
+
+/**
  * Negative projected gradient of the manuscript's V(x,T).
  * For fixed task weights, gain>0 gives Vdot=-gain||Π(∇V)||²<=0.
  */
@@ -229,8 +268,12 @@ export function taskConditionedDirection(
 ): MutableCRSVector {
   if (!Number.isFinite(gain) || gain <= 0) throw new RangeError('gain must be finite and positive');
   const gradient = constitutionalTaskPotentialGradient(x, weights, k0, tauFloor);
-  const tangentGradient = projectToSimplexTangent(gradient);
-  return tangentGradient.map(value => -gain * value) as MutableCRSVector;
+  const feasibleDirection = projectToFloorSimplexTangent(
+    x,
+    [-gradient[0], -gradient[1], -gradient[2]],
+    tauFloor,
+  );
+  return feasibleDirection.map(value => gain * value) as MutableCRSVector;
 }
 
 /**
@@ -245,8 +288,12 @@ export function projectedTaskPotentialEffort(
   tauFloor = AUREONICS_HARD_FLOOR,
 ): number {
   const gradient = constitutionalTaskPotentialGradient(x, weights, k0, tauFloor);
-  const tangentGradient = projectToSimplexTangent(gradient);
-  return Math.sqrt(tangentGradient.reduce((sum, value) => sum + value ** 2, 0));
+  const feasibleDirection = projectToFloorSimplexTangent(
+    x,
+    [-gradient[0], -gradient[1], -gradient[2]],
+    tauFloor,
+  );
+  return Math.sqrt(feasibleDirection.reduce((sum, value) => sum + value ** 2, 0));
 }
 
 /** Exact basin-sensitive stiffness from Section 12.1: k_i=k0*w_i/(M+epsilon). */
