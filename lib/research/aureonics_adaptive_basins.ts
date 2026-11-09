@@ -189,6 +189,9 @@ export function guardedTaskStep(
   },
 ): GuardedTaskStepResult {
   const floor = options.floor ?? AUREONICS_HARD_FLOOR;
+  if (floor < AUREONICS_HARD_FLOOR) {
+    throw new RangeError('reference steps cannot weaken the Aureonics hard floor');
+  }
   assertSimplexState(x, floor);
   if (!Number.isFinite(options.stepSize) || options.stepSize <= 0) throw new RangeError('stepSize must be finite and positive');
   const gain = options.gain ?? 1;
