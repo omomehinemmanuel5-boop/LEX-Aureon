@@ -96,15 +96,15 @@ Its exact ambient gradient is:
 ∂V/∂x_i = -w_i(T)/x_i - k_0 max(0, τ_floor-x_i)
 ```
 
-The reference model uses the tangent-projected negative gradient:
+The reference model uses the negative gradient projected onto the tangent cone of the floor-constrained simplex. Define:
 
 ```text
-Π(v)=v-mean(v)1
-ẋ = -η Π(∇V),  η>0
-V̇ = -η ||Π(∇V)||² ≤ 0
+K_F(x) = {d : Σ_i d_i=0 and d_i≥0 whenever x_i=τ_floor}
+ẋ = η P_{K_F(x)}(-∇V),  η>0
+V̇ = -η ||P_{K_F(x)}(-∇V)||² ≤ 0
 ```
 
-This result holds for fixed task weights `w(T)`, positive state coordinates, and the isolated projected-gradient flow. It does not prove that the manuscript's separate stiffness law in Section 4 is the same vector field. The paper must not describe Equation (13) as `-∇V` unless their equivalence is derived.
+At strict-interior states, this reduces to the ordinary simplex-tangent projection `Π(v)=v-mean(v)1`. At a floor-active coordinate, the tangent-cone projection prevents an outward (floor-violating) direction while preserving the zero-sum constraint. The non-increase result is for fixed task weights `w(T)`, positive state coordinates, and this isolated projected-gradient flow on the floor-constrained feasible set. It does not prove that the manuscript's separate stiffness law in Section 4 is the same vector field. The paper must not describe Equation (13) as `-∇V` unless their equivalence is derived.
 
 On the feasible set `x_i≥τ_floor`, the quadratic penalty is identically zero. The constrained minimizer is therefore the KKT water-filling solution `x_i*=max(τ_floor,w_i/λ)`, where `λ>0` is chosen so the coordinates sum to one. The reference module implements this exact three-coordinate active-set solution as `taskPotentialMinimizer()`. For one-hot weights it returns the paper's three boundary profiles; for mixed weights it returns a principled intermediate profile. Because the penalty is inactive on the feasible set, `k_0` does not change this constrained minimizer.
 
@@ -150,7 +150,7 @@ The isolated reference tests cover:
 - neutral-first region partition and deterministic tie-breaking;
 - Equation (18) task utility;
 - Equation (20) potential and exact gradient;
-- zero-sum tangent-projected direction and fixed-task directional descent;
+- zero-sum floor-tangent-cone direction, boundary non-outwardness, and fixed-task directional descent;
 - the literal basin-sensitive stiffness formula;
 - the nonzero mass drift of the raw stiffness equation for an unequal-stiffness example;
 - zero-sum behavior of the separately named tangent-projected candidate;
