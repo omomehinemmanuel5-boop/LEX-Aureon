@@ -152,6 +152,17 @@ The isolated reference tests cover:
 
 These are algebraic/software checks. They do not establish that the three regions are true attractor basins, that the full governed dynamics converge, or that task-conditioned modes improve model performance.
 
+
+
+## 8. Existing repository classification mismatch
+
+The current repository has two different signals that should not be described as interchangeable basin membership:
+
+- `identifyBasin(x)` in `lib/aureonics_core.ts` uses a hard-coded `max(x)>0.4` threshold and otherwise returns `Balanced`. It does not use the v4 neutral radius `δ`, the strict `M>τ` condition, or a separately represented `M=τ` boundary.
+- `applyGovernorCorrection()` in `lib/governor_sensing.ts` labels `basin_shift` by the largest absolute correction component. That is the dominant correction axis, not a classification of the current state or a measured transition into a basin.
+
+The isolated classifier in this branch formalizes the paper's geometry without changing either existing production/reporting path. A future integration should name these observables distinctly (for example, `current_region` versus `dominant_correction_axis`) and version any receipt schema change.
+
 ## 9. Required corrections before stronger paper claims
 
 1. Decide whether `x*` is a boundary-limit optimum or whether a positive interior margin is part of the model. Use the same convention in Tables C/D, Section 11, plots, code, and benchmark labels.
