@@ -163,7 +163,7 @@ These are algebraic/software checks. They do not establish that the three region
 
 
 
-## 8. Existing repository classification mismatch
+## 9. Existing repository classification mismatch
 
 The current repository has two different signals that should not be described as interchangeable basin membership:
 
@@ -172,7 +172,7 @@ The current repository has two different signals that should not be described as
 
 The isolated classifier in this branch formalizes the paper's geometry without changing either existing production/reporting path. A future integration should name these observables distinctly (for example, `current_region` versus `dominant_correction_axis`) and version any receipt schema change.
 
-## 9. Required corrections before stronger paper claims
+## 10. Required corrections before stronger paper claims
 
 1. Decide whether `x*` is a boundary-limit optimum or whether a positive interior margin is part of the model. Use the same convention in Tables C/D, Section 11, plots, code, and benchmark labels.
 2. Reconcile the Section 9.2 / 12.1 stiffness equation with the claimed mass conservation. The arithmetic-centred expression is not generally zero-sum for unequal `k_i`; also state the positive task-weight condition needed for restoration. Consider the separately specified weighted-centering plus task-independent floor-repair candidate.
@@ -181,13 +181,13 @@ The isolated classifier in this branch formalizes the paper's geometry without c
 5. Prove invariance and convergence for the complete closed-loop vector field before calling the three regions proven attractor basins.
 6. Evaluate P1–P6 under a preregistered protocol; v4 itself labels them falsifiable predictions, not established empirical findings.
 
-## 10. Safe future integration order
+## 11. Safe future integration order
 
 Any future shadow or production proposal must measure `x`, resolve and freeze `w(T)`, compute the research direction, combine it with separately defined constitutional-memory correction, and finally apply the task-independent CBF/hard-floor filter. It must verify simplex and floor invariants and emit a receipt containing state, task weights, stiffness, potential, step size, guard outcome, and final safety-filter outcome.
 
 Task preference must never weaken the task-independent safety filter or bypass human authority, approval, quarantine, or capability controls.
 
-## 11. Non-goals and protected files
+## 12. Non-goals and protected files
 
 This branch does not modify the production kernel, `lib/production_transition.ts`, `lib/sovereign_kernel.ts`, `lib/praxis.ts`, `lib/kv.ts`, or production routes. It makes no database, external API, LLM, or network calls. No production threshold, recovery behavior, approval rule, or quarantine behavior is changed.
 
