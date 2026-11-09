@@ -199,7 +199,8 @@ export function runTaskSequenceExperiment(
   let productionState = [...config.initialState] as MutableCRSVector;
   let productionZ = [...config.initialZ] as MutableCRSVector;
   const productionStates: MutableCRSVector[] = [];
-  const productionWeights: MutableCRSVector[] = [];
+  const productionTaskWeights: MutableCRSVector[] = [];
+  const productionZHistory: MutableCRSVector[] = [];
   let totalZVariation = 0;
 
   let oracleState = [...config.initialState] as MutableCRSVector;
@@ -232,10 +233,11 @@ export function runTaskSequenceExperiment(
     });
     productionState = asVector(productionResult.state);
     const nextZ = updateProductionZ(productionZ, productionState);
-    totalZVariation += distance(productionZ, nextZ) * Math.SQRT2;
+    totalZVariation += nextZ.reduce((sum, value, index) => sum + Math.abs(value - productionZ[index]), 0);
     productionZ = nextZ;
     productionStates.push([...productionState]);
-    productionWeights.push([...trueWeights]);
+    productionTaskWeights.push([...trueWeights]);
+    productionZHistory.push([...productionZ]);
 
     const oracleDirection = taskConditionedDirection(oracleState, trueWeights, 0, eta, tauFloor);
     oracleState = projectToFloorSimplex([
@@ -276,10 +278,8 @@ export function runTaskSequenceExperiment(
     labels: [...labels],
     productionZBaseline: {
       states: productionStates,
-      zWeights: Array.from({ length: labels.length }, (_, index) => index === 0
-        ? [...config.initialZ]
-        : [...productionZ]),
-      metrics: metrics(productionStates, productionWeights, labels, tauFloor),
+      zWeights: productionZHistory,
+      metrics: metrics(productionStates, productionTaskWeights, labels, tauFloor),
       totalZVariation,
     },
     oracleTaskPotential: {
