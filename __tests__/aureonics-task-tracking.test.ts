@@ -4,6 +4,7 @@ import {
   taskTrackingErrorPotential,
   taskTrackingSwitchJumpBound,
   oneHotTaskModeCertificate,
+  finiteVariationHybridTrackingBound,
 } from '../lib/research/aureonics_task_tracking';
 
 describe('Aureonics composite task-tracking storage', () => {
@@ -99,6 +100,37 @@ describe('Aureonics composite task-tracking storage', () => {
       - taskTrackingErrorPotential(before, [1, 0, 0], 2),
     );
     expect(jump).toBeLessThanOrEqual(taskTrackingSwitchJumpBound(delta) + 1e-10);
+  });
+
+  it('bounds piecewise-constant tracking with finite switch variation', () => {
+    const result = finiteVariationHybridTrackingBound(
+      0.2,
+      [
+        { time: 0.5, deltaWeights: [-0.2, 0.2, 0] },
+        { time: 0.75, deltaWeights: [-0.1, -0.1, 0.2] },
+      ],
+      1,
+      { eta: 1, minimumPositiveActiveWeight: 0.1 },
+    );
+    expect(result.uniformDecayRate).toBeCloseTo(2 / 30, 12);
+    expect(result.totalTaskWeightVariation).toBeCloseTo(0.8, 12);
+    expect(result.totalSwitchJumpBudget).toBeCloseTo(Math.log(20) * 0.8, 12);
+    expect(result.trackingPotentialUpperBound).toBeGreaterThan(0);
+    expect(result.trackingPotentialUpperBound).toBeLessThan(
+      0.2 + result.totalSwitchJumpBudget,
+    );
+  });
+
+  it('rejects unordered switch schedules in the hybrid bound', () => {
+    expect(() => finiteVariationHybridTrackingBound(
+      0.2,
+      [
+        { time: 0.8, deltaWeights: [-0.1, 0.1, 0] },
+        { time: 0.4, deltaWeights: [-0.1, 0, 0.1] },
+      ],
+      1,
+      { eta: 1, minimumPositiveActiveWeight: 0.1 },
+    )).toThrow(/ordered/);
   });
 
   it('rejects switch deltas that do not preserve total task weight', () => {
