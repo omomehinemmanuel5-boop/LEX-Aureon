@@ -245,7 +245,8 @@ The research-only module implements:
 - (W(x,w)), the constrained task-tracking objective gap;
 - a continuous-drift ISS certificate for task-weight support size at least two;
 - a one-hot fixed-mode sharp-error/decay certificate;
-- an additive switch-jump bound;\n- a finite-horizon hybrid comparison bound for finite-variation switching.
+- an additive switch-jump bound;
+- a finite-horizon hybrid comparison bound for finite-variation switching.
 
 Tests check nonnegativity, zero at the optimizer, the projected-gradient
 inequalities, the two-positive-coordinate edge case, one-hot sharp bounds,
