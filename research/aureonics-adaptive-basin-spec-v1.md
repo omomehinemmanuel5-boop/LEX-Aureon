@@ -108,6 +108,8 @@ This result holds for fixed task weights `w(T)`, positive state coordinates, and
 
 On the feasible set `x_i≥τ_floor`, the quadratic penalty is identically zero. The constrained minimizer is therefore the KKT water-filling solution `x_i*=max(τ_floor,w_i/λ)`, where `λ>0` is chosen so the coordinates sum to one. The reference module implements this exact three-coordinate active-set solution as `taskPotentialMinimizer()`. For one-hot weights it returns the paper's three boundary profiles; for mixed weights it returns a principled intermediate profile. Because the penalty is inactive on the feasible set, `k_0` does not change this constrained minimizer.
 
+There is also a measurement issue in Equation (19). The manuscript defines effort as the norm of `G=-∇V`, but the system state is constrained to the simplex. The component of the ambient gradient parallel to `(1,1,1)` cannot produce state motion. At the centroid with uniform task weights, the ambient gradient is `(-1,-1,-1)` (norm `√3`) while the tangent-projected gradient is exactly zero. The reference module therefore exposes `projectedTaskPotentialEffort()`; it measures the force that can actually move the state while preserving the simplex constraint. This is a proposed operational definition and should be distinguished from the manuscript's ambient-norm Equation (19).
+
 When task weights vary with time, the derivative contains an additional term:
 
 ```text
@@ -153,6 +155,7 @@ The isolated reference tests cover:
 - the nonzero mass drift of the raw stiffness equation for an unequal-stiffness example;
 - zero-sum behavior of the separately named tangent-projected candidate;
 - KKT task-potential minimizers for one-hot and mixed task weights;
+- tangent-projected task effort, including zero effort at the uniform centroid;
 - a mass-conserving floor-repair candidate that remains restorative when the weakest pillar has zero task weight;
 - floor-simplex projection and fixed-task discrete descent backtracking.
 
@@ -174,7 +177,7 @@ The isolated classifier in this branch formalizes the paper's geometry without c
 1. Decide whether `x*` is a boundary-limit optimum or whether a positive interior margin is part of the model. Use the same convention in Tables C/D, Section 11, plots, code, and benchmark labels.
 2. Reconcile the Section 9.2 / 12.1 stiffness equation with the claimed mass conservation. The arithmetic-centred expression is not generally zero-sum for unequal `k_i`; also state the positive task-weight condition needed for restoration. Consider the separately specified weighted-centering plus task-independent floor-repair candidate.
 3. Reconcile the statement `G=-∇V` with the distinct stiffness law. Section 9.3 also uses an unweighted logarithmic Lyapunov candidate, whereas Section 12.2 defines a task-weighted potential. Define distinct symbols for the Section 9.2 floor-restoration force and Section 12.2 task-potential force, then analyze their combination.
-4. State whether task weights are fixed per transition, piecewise constant, or continuously varying. Include the `-Σ ẇ_i log(x_i)` term for moving weights. Note that Section 12.2's `W(t)=||G||` reuses the same `G` symbol already assigned to the Section 9.2 stiffness correction.
+4. Revisit Equation (19): distinguish ambient gradient norm from tangent-projected effort on the simplex; the ambient norm can be nonzero at a constrained stationary point. Also state whether task weights are fixed per transition, piecewise constant, or continuously varying. Include the `-Σ ẇ_i log(x_i)` term for moving weights. Note that Section 12.2's `W(t)=||G||` reuses the same `G` symbol already assigned to the Section 9.2 stiffness correction.
 5. Prove invariance and convergence for the complete closed-loop vector field before calling the three regions proven attractor basins.
 6. Evaluate P1–P6 under a preregistered protocol; v4 itself labels them falsifiable predictions, not established empirical findings.
 
