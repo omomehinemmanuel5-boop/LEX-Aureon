@@ -12,6 +12,7 @@ import {
   guardedTaskStep,
   massConservingBasinCorrection,
   projectToFloorSimplex,
+  projectedTaskPotentialEffort,
   projectToSimplexTangent,
   taskConditionedDirection,
   taskUtility,
@@ -139,6 +140,14 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
     const derivative = gradient.reduce((sum, value, index) => sum + value * direction[index], 0);
     expect(derivative).toBeLessThanOrEqual(EPS);
     expect(direction.reduce((sum, value) => sum + value, 0)).toBeCloseTo(0, 12);
+  });
+
+  it('measures task effort on the simplex tangent, not the unusable normal direction', () => {
+    const centroid: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
+    const uniformWeights: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
+    const ambientGradient = constitutionalTaskPotentialGradient(centroid, uniformWeights, 2);
+    expect(Math.sqrt(ambientGradient.reduce((sum, value) => sum + value ** 2, 0))).toBeGreaterThan(1);
+    expect(projectedTaskPotentialEffort(centroid, uniformWeights, 2)).toBeCloseTo(0, 12);
   });
 
   it('computes the v4 basin-sensitive stiffness formula', () => {
