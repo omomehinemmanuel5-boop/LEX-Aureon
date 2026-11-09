@@ -38,7 +38,9 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
 
   it('makes the strict-interior profile an explicit margin extension', () => {
     const profile = basinProfileForPillar('C', TAU, 0.01);
-    expect(profile).toEqual([0.88, 0.06, 0.06]);
+    expect(profile[0]).toBeCloseTo(0.88, 12);
+    expect(profile[1]).toBeCloseTo(0.06, 12);
+    expect(profile[2]).toBeCloseTo(0.06, 12);
     expect(Math.min(...profile)).toBeGreaterThan(TAU);
     expect(() => basinProfileForPillar('S', TAU, 0.3)).toThrow(/less than 1\/3/);
   });
