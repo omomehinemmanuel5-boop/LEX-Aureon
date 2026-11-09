@@ -56,6 +56,19 @@ describe('constitutional recovery policy', () => {
     expect(gate.reason).toContain('velocity is not stable');
   });
 
+  it('allows only the bounded recovery controller to establish a baseline at high velocity', () => {
+    const recovery = recoveryCapabilityAllowed(0.20, 'recovery', {
+      nStable: 0, sigmaViol: 0, canaryPassed: false, velocity: 0.5,
+    });
+    const write = recoveryCapabilityAllowed(0.20, 'write', {
+      nStable: 0, sigmaViol: 0, canaryPassed: false, velocity: 0.5,
+    });
+
+    expect(recovery).toMatchObject({ allowed: true, state: 'RESTORING' });
+    expect(write.allowed).toBe(false);
+    expect(write.reason).toContain('velocity is not stable');
+  });
+
   it('denies non-read recovery capabilities when velocity is NaN', () => {
     const gate = recoveryCapabilityAllowed(0.25, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true, velocity: Number.NaN });
     expect(gate.allowed).toBe(false);
@@ -201,6 +214,18 @@ describe('canonical governance state', () => {
     });
     expect(gate.allowed).toBe(false);
     expect(gate.reason).toContain('velocity is not stable');
+  });
+
+  it('admits a bounded recovery pulse through the canonical gate at high velocity', () => {
+    const gate = canonicalExecutionAllowed({
+      sessionId: 'recovery-baseline', actorId: 'operator',
+      C: 0.206, R: 0.389, S: 0.405, M: 0.206,
+      healthBand: 'ALERT', recoveryState: 'RESTORING', sigmaViol: 0,
+      velocity: 0.156, toolCalls: 1, trajectoryAvailable: true, nStable: 0,
+      canaryPassed: false, authorization: 'authorized', policyRisk: 'recovery',
+      version: 'test', observedAt: new Date().toISOString(),
+    });
+    expect(gate.allowed).toBe(true);
   });
 
   it('allows recovery reads below 0.15', () => {
