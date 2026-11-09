@@ -1,25 +1,28 @@
 /**
- * Research-only reference model for Aureonics' three task-conditioned operating regions.
+ * Research-only reference model aligned to Aureonics v4, Sections 3.5, 11 and 12.
  *
  * This module is intentionally not imported by the production kernel, PRAXIS,
  * governor, recovery plane, or any approval/quarantine path.
  *
- * It separates:
- *   x: measured constitutional state on the floor-constrained simplex;
- *   w: task preference over C/R/S;
- *   q: strictly interior task target derived from w;
- *   z: adaptive constitutional-memory weights used by V_z elsewhere.
+ * It keeps the manuscript's distinct objects separate:
+ *   x: measured constitutional state on the CRS simplex;
+ *   w(T): task utility weights;
+ *   k_i(x,T): basin-sensitive stiffness;
+ *   z(t): trajectory/environmental context and adaptive memory elsewhere.
  *
- * The three named regions are operating classifications, not proven attractors.
+ * The module exposes the manuscript's stiffness equation and a separately
+ * named tangent-projected candidate because the raw equation is not generally
+ * mass-conserving when k_i differ.
  */
 
 export type CRSVector = readonly [number, number, number];
 export type MutableCRSVector = [number, number, number];
 export type Pillar = 'C' | 'R' | 'S';
-export type OperatingRegion = 'analytical' | 'collaborative' | 'exploratory' | 'neutral';
+export type OperatingRegion = 'analytical' | 'collaborative' | 'exploratory' | 'neutral' | 'boundary';
 
 export const AUREONICS_HARD_FLOOR = 0.05;
 export const SIMPLEX_SUM_TOLERANCE = 1e-9;
+const PILLAR_INDEX: Record<Pillar, number> = { C: 0, R: 1, S: 2 };
 const CENTROID: CRSVector = [1 / 3, 1 / 3, 1 / 3];
 const MAX_SIMPLEX_RADIUS = Math.sqrt(2 / 3);
 
@@ -35,58 +38,70 @@ function assertFloor(floor: number): void {
   }
 }
 
-export function assertSimplexState(
+export function assertPositiveSimplexState(x: CRSVector, tolerance = SIMPLEX_SUM_TOLERANCE): void {
+  assertFiniteVector(x, 'state');
+  if (!Number.isFinite(tolerance) || tolerance < 0) throw new RangeError('tolerance must be finite and non-negative');
+  if (Math.abs(x[0] + x[1] + x[2] - 1) > tolerance) throw new RangeError('state must sum to one');
+  if (x.some(value => value <= 0)) throw new RangeError('state must be strictly positive for logarithmic potential');
+}
+
+export function assertFloorSimplexState(
   x: CRSVector,
   floor = AUREONICS_HARD_FLOOR,
   tolerance = SIMPLEX_SUM_TOLERANCE,
 ): void {
-  assertFiniteVector(x, 'state');
+  assertPositiveSimplexState(x, tolerance);
   assertFloor(floor);
-  if (!Number.isFinite(tolerance) || tolerance < 0) throw new RangeError('tolerance must be finite and non-negative');
-  if (Math.abs(x[0] + x[1] + x[2] - 1) > tolerance) {
-    throw new RangeError('state must sum to one');
-  }
   if (x.some(value => value < floor - tolerance)) {
     throw new RangeError(`state must satisfy the coordinate floor ${floor}`);
   }
 }
 
-export function assertSimplexWeights(weights: CRSVector, name = 'weights'): void {
-  assertFiniteVector(weights, name);
-  if (weights.some(value => value < 0)) throw new RangeError(`${name} must be non-negative`);
+export function assertTaskWeights(weights: CRSVector): void {
+  assertFiniteVector(weights, 'task weights');
+  if (weights.some(value => value < 0)) throw new RangeError('task weights must be non-negative');
   if (Math.abs(weights[0] + weights[1] + weights[2] - 1) > SIMPLEX_SUM_TOLERANCE) {
-    throw new RangeError(`${name} must sum to one`);
+    throw new RangeError('task weights must sum to one');
   }
 }
 
 /**
- * Convert a task preference w into a strictly interior target q:
- * q_i = tauB + (1 - 3*tauB) * w_i.
+ * The manuscript's one-hot task profiles:
+ * Analytical -> (1-2τ, τ, τ); Collaborative -> (τ, 1-2τ, τ);
+ * Exploratory -> (τ, τ, 1-2τ).
  *
- * tauB is deliberately explicit: it must exceed the immutable hard floor,
- * and is not silently selected as a production default.
+ * With interiorMargin=0 these are boundary-limit optima M=τ, not points in
+ * the manuscript's strict M>τ stable region. A positive margin is an explicit
+ * regularized extension, not a value specified by v4.
  */
-export function taskTargetFromWeights(weights: CRSVector, tauB: number): MutableCRSVector {
-  assertSimplexWeights(weights, 'task weights');
-  if (!Number.isFinite(tauB) || tauB <= AUREONICS_HARD_FLOOR || tauB >= 1 / 3) {
-    throw new RangeError('basin target margin tauB must be greater than the hard floor and less than 1/3');
+export function basinProfileForPillar(
+  pillar: Pillar,
+  tauFloor = AUREONICS_HARD_FLOOR,
+  interiorMargin = 0,
+): MutableCRSVector {
+  assertFloor(tauFloor);
+  if (!Number.isFinite(interiorMargin) || interiorMargin < 0) {
+    throw new RangeError('interiorMargin must be finite and non-negative');
   }
-  const scale = 1 - 3 * tauB;
-  return [
-    tauB + scale * weights[0],
-    tauB + scale * weights[1],
-    tauB + scale * weights[2],
-  ];
+  const minimum = tauFloor + interiorMargin;
+  if (minimum >= 1 / 3) throw new RangeError('tauFloor + interiorMargin must be less than 1/3');
+  const result: MutableCRSVector = [minimum, minimum, minimum];
+  result[PILLAR_INDEX[pillar]] = 1 - 2 * minimum;
+  return result;
 }
 
 /**
- * Deterministic partition of the floor-simplex into one neutral region and
- * three directional operating regions. Neutral is tested first. Outside it,
- * the largest coordinate determines the region; exact ties resolve C, then R,
- * then S. This is a classification convention, not a convergence theorem.
+ * Neutral-first, disjoint partition. Outside the neutral ball, M<=tau is
+ * labeled boundary because the v4 directional basin conditions use M>tau.
+ * Ties between dominant pillars resolve C, then R, then S.
  */
-export function classifyOperatingRegion(x: CRSVector, neutralRadius: number): OperatingRegion {
-  assertSimplexState(x);
+export function classifyOperatingRegion(
+  x: CRSVector,
+  neutralRadius: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): OperatingRegion {
+  assertPositiveSimplexState(x);
+  assertFloor(tauFloor);
   if (!Number.isFinite(neutralRadius) || neutralRadius < 0 || neutralRadius >= MAX_SIMPLEX_RADIUS) {
     throw new RangeError(`neutralRadius must be in [0, ${MAX_SIMPLEX_RADIUS})`);
   }
@@ -96,8 +111,140 @@ export function classifyOperatingRegion(x: CRSVector, neutralRadius: number): Op
     (x[2] - CENTROID[2]) ** 2,
   );
   if (distance <= neutralRadius) return 'neutral';
+  if (Math.min(...x) <= tauFloor + SIMPLEX_SUM_TOLERANCE) return 'boundary';
   const dominantIndex = x.indexOf(Math.max(...x));
   return (['analytical', 'collaborative', 'exploratory'] as const)[dominantIndex];
+}
+
+/** Equation (18): task utility with a quadratic penalty below tauFloor. */
+export function taskUtility(
+  x: CRSVector,
+  weights: CRSVector,
+  lambda: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): number {
+  assertPositiveSimplexState(x);
+  assertTaskWeights(weights);
+  assertFloor(tauFloor);
+  if (!Number.isFinite(lambda) || lambda < 0) throw new RangeError('lambda must be finite and non-negative');
+  const weightedUtility = weights[0] * x[0] + weights[1] * x[1] + weights[2] * x[2];
+  const violation = Math.max(0, tauFloor - Math.min(...x));
+  return weightedUtility - lambda * violation ** 2;
+}
+
+/**
+ * Equation (20): V(x,T) = -Σ w_i(T) log(x_i)
+ *                  + (k0/2) Σ max(0, tauFloor-x_i)^2.
+ */
+export function constitutionalTaskPotential(
+  x: CRSVector,
+  weights: CRSVector,
+  k0: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): number {
+  assertPositiveSimplexState(x);
+  assertTaskWeights(weights);
+  assertFloor(tauFloor);
+  if (!Number.isFinite(k0) || k0 < 0) throw new RangeError('k0 must be finite and non-negative');
+  const logTerm = -weights.reduce((sum, weight, index) => sum + weight * Math.log(x[index]), 0);
+  const penalty = (k0 / 2) * x.reduce((sum, value) => sum + Math.max(0, tauFloor - value) ** 2, 0);
+  return logTerm + penalty;
+}
+
+/** Exact ambient gradient of Equation (20). */
+export function constitutionalTaskPotentialGradient(
+  x: CRSVector,
+  weights: CRSVector,
+  k0: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): MutableCRSVector {
+  assertPositiveSimplexState(x);
+  assertTaskWeights(weights);
+  assertFloor(tauFloor);
+  if (!Number.isFinite(k0) || k0 < 0) throw new RangeError('k0 must be finite and non-negative');
+  return [
+    -weights[0] / x[0] - k0 * Math.max(0, tauFloor - x[0]),
+    -weights[1] / x[1] - k0 * Math.max(0, tauFloor - x[1]),
+    -weights[2] / x[2] - k0 * Math.max(0, tauFloor - x[2]),
+  ];
+}
+
+/** Tangent projection Π(v)=v-mean(v)1, which guarantees a zero-sum direction. */
+export function projectToSimplexTangent(vector: CRSVector): MutableCRSVector {
+  assertFiniteVector(vector, 'vector');
+  const mean = (vector[0] + vector[1] + vector[2]) / 3;
+  return [vector[0] - mean, vector[1] - mean, vector[2] - mean];
+}
+
+/**
+ * Negative projected gradient of the manuscript's V(x,T).
+ * For fixed task weights, gain>0 gives Vdot=-gain||Π(∇V)||²<=0.
+ */
+export function taskConditionedDirection(
+  x: CRSVector,
+  weights: CRSVector,
+  k0: number,
+  gain = 1,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): MutableCRSVector {
+  if (!Number.isFinite(gain) || gain <= 0) throw new RangeError('gain must be finite and positive');
+  const gradient = constitutionalTaskPotentialGradient(x, weights, k0, tauFloor);
+  const tangentGradient = projectToSimplexTangent(gradient);
+  return tangentGradient.map(value => -gain * value) as MutableCRSVector;
+}
+
+/** Exact basin-sensitive stiffness from Section 12.1: k_i=k0*w_i/(M+epsilon). */
+export function basinSensitiveStiffness(
+  x: CRSVector,
+  weights: CRSVector,
+  k0: number,
+  epsilonK: number,
+): MutableCRSVector {
+  assertPositiveSimplexState(x);
+  assertTaskWeights(weights);
+  if (!Number.isFinite(k0) || k0 <= 0) throw new RangeError('k0 must be finite and positive');
+  if (!Number.isFinite(epsilonK) || epsilonK <= 0) throw new RangeError('epsilonK must be finite and positive');
+  const margin = Math.min(...x);
+  return weights.map(weight => k0 * weight / (margin + epsilonK)) as MutableCRSVector;
+}
+
+export interface BasinStiffnessCorrection {
+  phi: MutableCRSVector;
+  stiffness: MutableCRSVector;
+  raw: MutableCRSVector;
+  rawMassDrift: number;
+  projected: MutableCRSVector;
+}
+
+/**
+ * Returns both the manuscript's raw Eq. (13) correction and a candidate
+ * tangent-projected variant. The raw expression is not generally mass
+ * conserving when stiffness coordinates differ. The projected variant fixes
+ * the sum constraint but is a proposed modification, not the paper's equation
+ * and not automatically the gradient of Equation (20).
+ */
+export function basinStiffnessCorrection(
+  x: CRSVector,
+  weights: CRSVector,
+  k0: number,
+  epsilonK: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): BasinStiffnessCorrection {
+  assertPositiveSimplexState(x);
+  assertTaskWeights(weights);
+  assertFloor(tauFloor);
+  const stiffness = basinSensitiveStiffness(x, weights, k0, epsilonK);
+  const phi = x.map(value => Math.max(0, tauFloor - value)) as MutableCRSVector;
+  const meanPhi = (phi[0] + phi[1] + phi[2]) / 3;
+  const raw = stiffness.map((value, index) => value * (phi[index] - meanPhi)) as MutableCRSVector;
+  const rawMassDrift = raw[0] + raw[1] + raw[2];
+  return {
+    phi,
+    stiffness,
+    raw,
+    rawMassDrift,
+    projected: projectToSimplexTangent(raw),
+  };
 }
 
 /** Euclidean projection onto {x: sum(x)=1, x_i >= floor}. */
@@ -120,46 +267,10 @@ export function projectToFloorSimplex(input: CRSVector, floor = AUREONICS_HARD_F
   }
   if (activeCount === 0) throw new RangeError('unable to project input onto the requested simplex');
   const projected = shifted.map(value => Math.max(value - threshold, 0) + floor) as MutableCRSVector;
-  // Correct only floating-point summation residue; do not renormalize, which
-  // could move a coordinate below the requested floor.
   const residual = 1 - (projected[0] + projected[1] + projected[2]);
   const largest = projected.indexOf(Math.max(...projected));
   projected[largest] += residual;
   return projected;
-}
-
-/** Tangent projection onto the simplex hyperplane: v - mean(v) * 1. */
-export function projectToSimplexTangent(vector: CRSVector): MutableCRSVector {
-  assertFiniteVector(vector, 'vector');
-  const mean = (vector[0] + vector[1] + vector[2]) / 3;
-  return [vector[0] - mean, vector[1] - mean, vector[2] - mean];
-}
-
-/** Task potential V_T(x;q) = -sum_i q_i log(x_i), for fixed interior q. */
-export function taskPotential(x: CRSVector, q: CRSVector): number {
-  assertSimplexState(x);
-  assertSimplexWeights(q, 'task target');
-  if (q.some(value => value <= 0)) throw new RangeError('task target must be strictly interior');
-  return -q.reduce((sum, weight, index) => sum + weight * Math.log(x[index]), 0);
-}
-
-/** Ambient gradient dV_T/dx_i = -q_i/x_i. */
-export function taskPotentialGradient(x: CRSVector, q: CRSVector): MutableCRSVector {
-  assertSimplexState(x);
-  assertSimplexWeights(q, 'task target');
-  if (q.some(value => value <= 0)) throw new RangeError('task target must be strictly interior');
-  return [-q[0] / x[0], -q[1] / x[1], -q[2] / x[2]];
-}
-
-/**
- * Negative projected gradient. For fixed q and positive gain g:
- * grad(V_T) dot direction = -g * ||Pi(grad(V_T))||^2 <= 0.
- * This is a continuous-time directional result, not a discrete-step guarantee.
- */
-export function taskConditionedDirection(x: CRSVector, q: CRSVector, gain = 1): MutableCRSVector {
-  if (!Number.isFinite(gain) || gain <= 0) throw new RangeError('gain must be finite and positive');
-  const tangentGradient = projectToSimplexTangent(taskPotentialGradient(x, q));
-  return tangentGradient.map(value => -gain * value) as MutableCRSVector;
 }
 
 export interface GuardedTaskStepResult {
@@ -172,16 +283,16 @@ export interface GuardedTaskStepResult {
 }
 
 /**
- * Offline discrete reference step. Backtracks a projected-gradient proposal
- * until the fixed-q potential does not increase. If no acceptable move is
- * found, it returns the original state unchanged. A caller must still apply
- * the task-independent production CBF/safety filter before any real actuation.
+ * Offline discrete reference step. Backtracks projected-gradient proposals
+ * until the same fixed-task potential is non-increasing. No production
+ * actuation is performed; the task-independent CBF remains final authority.
  */
 export function guardedTaskStep(
   x: CRSVector,
-  q: CRSVector,
+  weights: CRSVector,
   options: {
     stepSize: number;
+    k0: number;
     gain?: number;
     floor?: number;
     maxBacktracks?: number;
@@ -189,10 +300,8 @@ export function guardedTaskStep(
   },
 ): GuardedTaskStepResult {
   const floor = options.floor ?? AUREONICS_HARD_FLOOR;
-  if (floor < AUREONICS_HARD_FLOOR) {
-    throw new RangeError('reference steps cannot weaken the Aureonics hard floor');
-  }
-  assertSimplexState(x, floor);
+  if (floor < AUREONICS_HARD_FLOOR) throw new RangeError('reference steps cannot weaken the Aureonics hard floor');
+  assertFloorSimplexState(x, floor);
   if (!Number.isFinite(options.stepSize) || options.stepSize <= 0) throw new RangeError('stepSize must be finite and positive');
   const gain = options.gain ?? 1;
   const maxBacktracks = options.maxBacktracks ?? 24;
@@ -202,8 +311,8 @@ export function guardedTaskStep(
   }
   if (!Number.isFinite(tolerance) || tolerance < 0) throw new RangeError('tolerance must be finite and non-negative');
 
-  const previousPotential = taskPotential(x, q);
-  const direction = taskConditionedDirection(x, q, gain);
+  const previousPotential = constitutionalTaskPotential(x, weights, options.k0, floor);
+  const direction = taskConditionedDirection(x, weights, options.k0, gain, floor);
   let step = options.stepSize;
   for (let backtracks = 0; backtracks <= maxBacktracks; backtracks++) {
     const candidate = projectToFloorSimplex([
@@ -211,7 +320,7 @@ export function guardedTaskStep(
       x[1] + step * direction[1],
       x[2] + step * direction[2],
     ], floor);
-    const nextPotential = taskPotential(candidate, q);
+    const nextPotential = constitutionalTaskPotential(candidate, weights, options.k0, floor);
     if (nextPotential <= previousPotential + tolerance) {
       const accepted = candidate.some((value, index) => Math.abs(value - x[index]) > 1e-14);
       return {
