@@ -21,7 +21,7 @@ The three task-conditioned operating basins in v4 are:
 
 The manuscript also identifies a neutral region around the centroid. Neutral is not a fourth directional basin; it is the general-purpose, approximately balanced regime.
 
-The manuscript's regional conditions are dominance plus constitutional viability. The reference classifier therefore tests the neutral region first, then labels states on the `M=τ_floor` boundary separately, and only classifies the remaining strict interior by dominant coordinate. Ties resolve C, then R, then S.
+The manuscript's regional conditions are dominance plus constitutional viability. The reference classifier therefore tests the neutral region first, then labels states on the `M=τ_floor` boundary separately, and only classifies the remaining strict interior by dominant coordinate. Exact ties are labeled `transition` (a separatrix) because the manuscript's basin inequalities are strict.
 
 ## 2. Important target-geometry inconsistency
 
