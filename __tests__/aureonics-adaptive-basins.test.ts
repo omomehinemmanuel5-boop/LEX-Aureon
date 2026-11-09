@@ -52,6 +52,12 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
     expect(classifyOperatingRegion([0.45, 0.45, 0.1], 0.01)).toBe('analytical');
   });
 
+  it('allows boundary simplex states in utility and region diagnostics', () => {
+    expect(taskUtility([1, 0, 0], [1, 0, 0], 2)).toBeCloseTo(1 - 2 * TAU ** 2, 12);
+    expect(classifyOperatingRegion([1, 0, 0], 0.01)).toBe('boundary');
+    expect(basinSensitiveStiffness([1, 0, 0], [1, 0, 0], 2, 0.01)).toEqual([200, 0, 0]);
+  });
+
   it('implements the task utility in v4 Equation (18)', () => {
     const x: [number, number, number] = [0.6, 0.25, 0.15];
     expect(taskUtility(x, [1, 0, 0], 2)).toBeCloseTo(0.6, 12);
