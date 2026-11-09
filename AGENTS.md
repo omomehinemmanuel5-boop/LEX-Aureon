@@ -398,6 +398,8 @@ npm run build          verify TypeScript
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
 
+[2026-11-09] FIX: On `fix/approval-during-recovery`, bounded recovery pulses can establish a zero-velocity baseline despite high velocity; ordinary writes and recovery probes remain gated. Internal and external approval flows initialize canonical state and may queue human review only for trajectory-backed RESTORING sessions at/above τ_recovery; approvals never bypass dispatch/consumption gates. Validation: 791 Vitest tests, typecheck, and changed-file lint passed; production build and live connector E2E pending.
+
 [2026-11-08] FIX: Public evidence consistency — removed the stale blanket 0% benchmark claim and static score tables from research/peer-brief copy; server-rendered the canonical benchmark rows; labelled stale fallback data and excluded the estimated StrongREJECT fallback; split text and agent-tool receipt visibility with explicit EMPTY/UNAVAILABLE states; corrected runtime health badge semantics; standardized current public citations on paper v2 (10.5281/zenodo.20183807), retaining v1 (10.5281/zenodo.18944243) in publication history. No constitutional math, recovery thresholds, approval rules, receipt records, or production configuration changed. Validation pending PR CI.
 
 [2026-11-04] FIX/AUTOMATION: Production Readiness Benchmark v2 now retries only bounded transient timeouts/network/selected 5xx errors on the selected model, records provider/quota/auth failures separately from malformed model output, and reports retry counts. Approval remains part of Lex governance; the benchmark now exercises explicit approved/rejected counterfactuals in isolated in-memory worlds only, with scorecard completeness gates and report tables. Quota/auth responses are not retried. Validation: 754 Vitest tests across 96 files, typecheck, lint, production build, workflow YAML parse, and diff checks passed. Benchmark not dispatched.
@@ -568,6 +570,8 @@ MCP bootstrap: run_governance is the explicit new-session bootstrapper;
             missing z_traj is reported UNINITIALIZED; other consequential tools
             remain fail-closed until state exists. Production deploy tracks main
             at 6605c038; live bootstrap execution still needs E2E verification.
+Recovery/approval integration: candidate fix is on `fix/approval-during-recovery`;
+            not deployed. Live connector E2E remains pending merge/deployment.
 z-weights:  Session-adaptive z_c/z_r/z_s live in z_traj, flowing into V_z receipts
 Lyapunov:   V_z(x, z_session) certified on every governed turn since 2026-06-29
 Open Probs: Problem 3 CLOSED. Problem 2 CLOSED. Problem 1 single-pillar CLOSED, multi-pillar OPEN.
@@ -581,6 +585,7 @@ Readiness eval: PR #225 benchmark v2 and PR #232 input normalization are merged.
 
 ## NEXT ACTIONS
 
+- [ ] Merge/deploy `fix/approval-during-recovery`, then verify high-velocity bounded recovery and RESTORING approval preparation through the live MCP connector; confirm dispatch stays blocked until recovery is VERIFIED/NORMAL
 - [ ] LTFF grant completion
 - [ ] First paying client
 - [ ] Multi-pillar global Lyapunov proof (Open Problem 1 residual)

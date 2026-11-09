@@ -655,6 +655,21 @@ async function handlePost(req: Request) {
           id,
         }, { status: 503 });
       }
+      try {
+        const bootstrap = await ensureCanonicalTrajectoryState(requestedSession);
+        if (!bootstrap.verified || bootstrap.sessionId !== requestedSession) {
+          return mcpToolResult(id, {
+            approved: false,
+            decision: 'DENIED_LOCKED',
+            reason: 'Canonical trajectory could not be safely initialized; no approval was created.',
+            approval_created: false,
+          });
+        }
+      } catch {
+        return NextResponse.json({
+          jsonrpc: '2.0', error: { code: -32003, message: 'Governance storage temporarily unavailable' }, id,
+        }, { status: 503 });
+      }
       const authorizationCanonical = await canonicalStateReader.read({
         sessionId: requestedSession,
         actorId,
@@ -675,7 +690,10 @@ async function handlePost(req: Request) {
         });
       }
       const authorizationGate = canonicalExecutionAllowed(authorizationCanonical.state);
-      if (!authorizationGate.allowed) {
+      const canPrepareWhileRestoring = authorizationCanonical.state.trajectoryAvailable
+        && authorizationCanonical.state.M >= CONSTITUTION.TAU_RECOVERY
+        && authorizationCanonical.state.recoveryState === 'RESTORING';
+      if (!authorizationGate.allowed && !canPrepareWhileRestoring) {
         await persistNonStateMovingMcpReceipt({
           sessionId: requestedSession, actorId, toolName: requestedTool,
           args: normalizedRequestedArgs, decision: 'DENIED_BLOCKED',
@@ -720,7 +738,14 @@ async function handlePost(req: Request) {
           expires_at: new Date(pending.expiresAt).toISOString(),
           approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           receipt_id: review.receipt_id ?? null,
-          next_step: 'A human approver must review and approve this exact action. Then call the same tool with approval_request_id and unchanged arguments.',
+          execution_granted: false,
+          recovery_state: authorizationCanonical.state.recoveryState,
+          M: authorizationCanonical.state.M,
+          n_stable: authorizationCanonical.state.nStable,
+          canary_passed: authorizationCanonical.state.canaryPassed === true,
+          next_step: canPrepareWhileRestoring
+            ? 'This request is only for human review of the exact action. Approval does not bypass recovery: execution remains blocked while the session is RESTORING. After recovery reaches VERIFIED or NORMAL, retry the target tool with approval_request_id and unchanged arguments; the request may expire first.'
+            : 'A human approver must review and approve this exact action. Then call the same tool with approval_request_id and unchanged arguments.',
         });
       } catch {
         return NextResponse.json({
@@ -760,8 +785,26 @@ async function handlePost(req: Request) {
         ? args.session_id.trim()
         : defaultMcpSessionId(actorId);
       const sessionId = canonicalMcpSessionId(ownerId, clientSessionId, operator);
+      let externalApprovalCanPrepareWhileRestoring = false;
+      let externalApprovalRecovery: { recoveryState: string; M: number; nStable: number; canaryPassed: boolean } | undefined;
       if (!environmentId || !manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) {
         return invalidParams(id ?? null, 'environment_id and manifest.name are required');
+      }
+      if (toolName === 'authorize_external_action') {
+        try {
+          await runZTrajMigrations();
+          const bootstrap = await ensureCanonicalTrajectoryState(sessionId);
+          if (!bootstrap.verified || bootstrap.sessionId !== sessionId) {
+            return mcpToolResult(id, {
+              status: 'denied', decision: 'DENIED_LOCKED', approval_created: false,
+              reason: 'Canonical trajectory could not be safely initialized; no approval was created.',
+            });
+          }
+        } catch {
+          return NextResponse.json({
+            jsonrpc: '2.0', error: { code: -32003, message: 'Governance storage temporarily unavailable' }, id,
+          }, { status: 503 });
+        }
       }
       if (toolName === 'authorize_external_action' || toolName === 'consume_external_action') {
         const externalCapability = toolName === 'consume_external_action' ? 'external' : 'identity';
@@ -783,7 +826,18 @@ async function handlePost(req: Request) {
           });
         }
         const preflight = canonicalExecutionAllowed(canonical.state);
-        if (!preflight.allowed) {
+        const canPrepareWhileRestoring = toolName === 'authorize_external_action'
+          && canonical.state.trajectoryAvailable
+          && canonical.state.M >= CONSTITUTION.TAU_RECOVERY
+          && canonical.state.recoveryState === 'RESTORING';
+        externalApprovalCanPrepareWhileRestoring = canPrepareWhileRestoring;
+        externalApprovalRecovery = {
+          recoveryState: canonical.state.recoveryState,
+          M: canonical.state.M,
+          nStable: canonical.state.nStable,
+          canaryPassed: canonical.state.canaryPassed === true,
+        };
+        if (!preflight.allowed && !canPrepareWhileRestoring) {
           await persistNonStateMovingMcpReceipt({
             sessionId, actorId, toolName, args,
             decision: 'DENIED_BLOCKED',
@@ -845,7 +899,14 @@ async function handlePost(req: Request) {
             expires_at: new Date(pending.expiresAt).toISOString(),
             approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             receipt_id: review.receiptId ?? null,
-            next_step: 'A human approver must review this exact external action. After approval, call consume_external_action with the same manifest and arguments plus approval_request_id. The client adapter must act only if granted is true.',
+            execution_granted: false,
+            recovery_state: externalApprovalRecovery?.recoveryState,
+            M: externalApprovalRecovery?.M,
+            n_stable: externalApprovalRecovery?.nStable,
+            canary_passed: externalApprovalRecovery?.canaryPassed,
+            next_step: externalApprovalCanPrepareWhileRestoring
+              ? 'This request is only for human review of the exact external action. Approval does not bypass recovery: consumption remains blocked while the session is RESTORING. After recovery reaches VERIFIED or NORMAL, call consume_external_action with the same manifest and arguments plus approval_request_id; the client adapter must act only if granted is true. The request may expire first.'
+              : 'A human approver must review this exact external action. After approval, call consume_external_action with the same manifest and arguments plus approval_request_id. The client adapter must act only if granted is true.',
           });
         }
         const approvalToken = typeof args.approval_token === 'string' ? args.approval_token : undefined;

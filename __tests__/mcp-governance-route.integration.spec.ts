@@ -1232,6 +1232,52 @@ describe('MCP constitutional dispatch boundary', () => {
     expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
       .toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
   });
+  it('allows approval preparation while RESTORING but never grants execution', async () => {
+    const key = { id: 'private-test-restoring-approval', plan: 'private_test' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+    readCanonicalGovernanceState.mockResolvedValue({
+      available: true,
+      state: {
+        sessionId: 'private-test-restoring-approval:recovering',
+        actorId: 'api_key:private-test-restoring-approval',
+        C: 0.206, R: 0.389, S: 0.405, M: 0.206,
+        healthBand: 'ALERT', recoveryState: 'RESTORING', sigmaViol: 0,
+        toolCalls: 0, trajectoryAvailable: true, nStable: 0, velocity: 0.156,
+        canaryPassed: false, stateFingerprint: 'e'.repeat(64),
+        trajectoryUpdatedAt: '2026-11-09T01:00:00.000Z',
+        authorization: 'approval_required', policyRisk: 'write',
+        version: 'test', observedAt: '2026-11-09T01:00:00.000Z',
+      },
+    });
+    canonicalExecutionAllowed.mockReturnValueOnce({ allowed: false });
+    const actionArgs = { path: 'README.md', content: 'review only', message: 'restoring approval test' };
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'authorize_tool_action',
+        arguments: { tool_name: 'write_file', arguments: actionArgs, session_id: 'recovering' },
+      },
+      id: 'restoring-approval-preparation',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(ensureCanonicalTrajectoryState).toHaveBeenCalledWith('private-test-restoring-approval:recovering');
+    expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'private-test-restoring-approval',
+      sessionId: 'private-test-restoring-approval:recovering',
+      toolName: 'write_file',
+    }));
+    expect(executeGovernedTool).not.toHaveBeenCalled();
+    const result = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
+    expect(result).toMatchObject({
+      status: 'approval_required', execution_granted: false,
+      recovery_state: 'RESTORING', M: 0.206, n_stable: 0, canary_passed: false,
+    });
+    expect(result.next_step).toContain('execution remains blocked while the session is RESTORING');
+  });
   it('does not double-prefix an already owner-scoped approval session', async () => {
     const key = { id: 'private-test-1', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });

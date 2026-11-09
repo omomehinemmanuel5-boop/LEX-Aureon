@@ -82,10 +82,10 @@ export function recoveryCapabilityAllowed(
     };
   }
 
-  // Reads remain available regardless of trajectory velocity. Every non-read
-  // capability, including bounded recovery probes, must use a finite velocity
-  // strictly below the same stability threshold used by canary validation.
-  if (capability !== 'read' && evidence.velocity !== undefined
+  // Reads remain available regardless of trajectory velocity. The bounded
+  // recovery controller must also run at high velocity so it can record a
+  // zero-velocity baseline; other non-read capabilities remain gated.
+  if (capability !== 'read' && capability !== 'recovery' && evidence.velocity !== undefined
     && (!Number.isFinite(evidence.velocity) || evidence.velocity >= RECOVERY_STABILITY_THRESHOLD)) {
     return {
       allowed: false,
