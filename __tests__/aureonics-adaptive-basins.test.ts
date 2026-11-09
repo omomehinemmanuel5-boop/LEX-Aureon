@@ -205,6 +205,49 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
     expect(Math.min(...result.state)).toBeGreaterThanOrEqual(TAU - EPS);
   });
 
+  it('numerically converges fixed-task trajectories toward their constrained KKT profiles', () => {
+    const taskCases: Array<[number, number, number]> = [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+      [0.8, 0.15, 0.05],
+      [0.55, 0.3, 0.15],
+    ];
+    const initialStates: Array<[number, number, number]> = [
+      [1 / 3, 1 / 3, 1 / 3],
+      [0.05, 0.5, 0.45],
+      [0.7, 0.2, 0.1],
+      [0.05, 0.05, 0.9],
+      [0.2, 0.4, 0.4],
+    ];
+
+    for (const weights of taskCases) {
+      const target = taskPotentialMinimizer(weights);
+      for (const initial of initialStates) {
+        let state = [...initial] as [number, number, number];
+        for (let iteration = 0; iteration < 500; iteration++) {
+          const result = guardedTaskStep(state, weights, {
+            stepSize: 0.5,
+            k0: 2,
+            gain: 1,
+            floor: TAU,
+          });
+          state = result.state;
+          const distance = Math.sqrt(
+            state.reduce((sum, value, index) => sum + (value - target[index]) ** 2, 0),
+          );
+          if (distance < 1e-7 || !result.accepted) break;
+        }
+        const finalDistance = Math.sqrt(
+          state.reduce((sum, value, index) => sum + (value - target[index]) ** 2, 0),
+        );
+        expect(finalDistance).toBeLessThan(1e-5);
+        expect(state.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 12);
+        expect(Math.min(...state)).toBeGreaterThanOrEqual(TAU - EPS);
+      }
+    }
+  });
+
   it('leaves a stationary centroid unchanged', () => {
     const x: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
     const weights: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
