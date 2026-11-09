@@ -45,8 +45,10 @@ describe('Aureonics task-sequence comparison harness', () => {
     )).toBe(true);
     expect(result.productionZBaseline.totalZVariation).toBeGreaterThanOrEqual(0);
     expect(result.oracleTaskPotential.metrics.totalTaskWeightVariation).toBeGreaterThan(0);
-    expect(result.hystereticTaskRouter.metrics.taskSwitches)
-      .toBeLessThan(result.oracleTaskPotential.metrics.taskSwitches);
+    const noisyLabels = ['C', 'C', 'R', 'C', 'C', 'R', 'R', 'S', 'S'] as const;
+    const noisy = runTaskSequenceExperiment(noisyLabels, { routerDwellSteps: 2 });
+    expect(noisy.hystereticTaskRouter.metrics.taskSwitches)
+      .toBeLessThan(noisy.oracleTaskPotential.metrics.taskSwitches);
   });
 
   it('rejects empty schedules and invalid router dwell settings', () => {
