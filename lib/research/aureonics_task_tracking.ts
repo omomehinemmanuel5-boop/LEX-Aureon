@@ -18,7 +18,8 @@ const SIMPLEX_DERIVATIVE_TOLERANCE = 1e-9;
 
 export interface ContinuousTrackingCertificate {
   trackingPotential: number;
-  minimumTaskWeight: number;
+  minimumPositiveTaskWeight: number;
+  strongConvexityModulus: number;
   projectedGradientNorm: number;
   taskWeightDerivativeNorm: number;
   decayLowerBound: number;
@@ -51,12 +52,14 @@ export function taskTrackingErrorPotential(
  *
  * Assumptions:
  * - x lies on the floor-constrained simplex;
- * - all task weights are strictly positive;
- * - sum(w)=1 and sum(wDot)=0;
+ * - at least two task weights are positive (support size >= 2);
+ * - sum(w)=1 and sum(wDot)=0, with feasible one-sided derivatives at zero weights;
  * - eta>0 and the flow uses the Euclidean tangent-cone projection.
  *
- * Let mu=min_i w_i. Since x_i<=1, Hessian(V)>=mu I. The projected-gradient
- * Polyak-Lojasiewicz bound gives ||P_K(-grad V)||^2 >= 2 mu W.
+ * Let m be the smallest positive task weight. On the simplex tangent plane,
+ * the Hessian quadratic form is bounded below by (m/3)||d||^2 whenever
+ * at least two weights are positive. The projected-gradient
+ * Polyak-Lojasiewicz bound gives ||P_K(-grad V)||^2 >= 2 mu W, with mu=m/3.
  * Also ||log(x)-log(x*)||_2 <= ||x-x*||_2/tau and
  * ||x-x*||_2 <= sqrt(2W/mu). Thus
  *
@@ -78,8 +81,9 @@ export function continuousTaskTrackingCertificate(
   const tauFloor = options.tauFloor ?? AUREONICS_HARD_FLOOR;
   assertFloorSimplexState(x, tauFloor);
   assertTaskWeights(weights);
-  if (weights.some(weight => weight <= 0)) {
-    throw new RangeError('continuous tracking certificate requires strictly positive task weights');
+  const positiveWeights = weights.filter(weight => weight > 0);
+  if (positiveWeights.length < 2) {
+    throw new RangeError('continuous tracking certificate requires at least two positive task weights; use the one-hot fixed-mode certificate otherwise');
   }
   if (weightsDerivative.some(value => !Number.isFinite(value))) {
     throw new RangeError('task-weight derivative must be finite');
@@ -88,29 +92,35 @@ export function continuousTaskTrackingCertificate(
   if (Math.abs(derivativeSum) > SIMPLEX_DERIVATIVE_TOLERANCE) {
     throw new RangeError('task-weight derivative must be tangent to the weight simplex');
   }
+  if (weights.some((weight, index) => weight <= SIMPLEX_DERIVATIVE_TOLERANCE
+    && weightsDerivative[index] < -SIMPLEX_DERIVATIVE_TOLERANCE)) {
+    throw new RangeError('task-weight derivative must point into or along the simplex at zero weights');
+  }
   if (!Number.isFinite(options.eta) || options.eta <= 0) {
     throw new RangeError('eta must be finite and positive');
   }
 
-  const minimumTaskWeight = Math.min(...weights);
+  const minimumPositiveTaskWeight = Math.min(...positiveWeights);
+  const strongConvexityModulus = minimumPositiveTaskWeight / 3;
   const trackingPotential = taskTrackingErrorPotential(x, weights, options.k0, tauFloor);
   const projectedGradientNorm = projectedTaskPotentialEffort(x, weights, options.k0, tauFloor);
   const taskWeightDerivativeNorm = Math.sqrt(
     weightsDerivative.reduce((sum, value) => sum + value ** 2, 0),
   );
-  const decayLowerBound = 2 * options.eta * minimumTaskWeight * trackingPotential;
+  const decayLowerBound = 2 * options.eta * strongConvexityModulus * trackingPotential;
   const driftUpperBound = (taskWeightDerivativeNorm / tauFloor)
-    * Math.sqrt(2 * trackingPotential / minimumTaskWeight);
+    * Math.sqrt(2 * trackingPotential / strongConvexityModulus);
 
   return {
     trackingPotential,
-    minimumTaskWeight,
+    minimumPositiveTaskWeight,
+    strongConvexityModulus,
     projectedGradientNorm,
     taskWeightDerivativeNorm,
     decayLowerBound,
     driftUpperBound,
     derivativeUpperBound: -decayLowerBound + driftUpperBound,
-    trackingDistanceUpperBound: Math.sqrt(2 * trackingPotential / minimumTaskWeight),
+    trackingDistanceUpperBound: Math.sqrt(2 * trackingPotential / strongConvexityModulus),
   };
 }
 
@@ -135,4 +145,61 @@ export function taskTrackingSwitchJumpBound(
   }
   const l1Change = deltaWeights.reduce((sumValue, value) => sumValue + Math.abs(value), 0);
   return Math.log(1 / tauFloor) * l1Change;
+}
+
+
+export interface OneHotTaskModeCertificate {
+  dominantIndex: 0 | 1 | 2;
+  trackingPotential: number;
+  maximumPotential: number;
+  projectedGradientNorm: number;
+  projectedGradientLowerBound: number;
+  decayRateLowerBound: number;
+  stateDistanceUpperBound: number;
+}
+
+/**
+ * Fixed-mode result for a one-hot task vector e_j. Its constrained optimizer
+ * is the simplex vertex with x_j=1-2*tau and the other coordinates at tau.
+ * The objective is not strongly convex on the full tangent plane, but the
+ * floor-constrained geometry supplies a sharp error bound and a PL bound:
+ *
+ *   ||x-x*|| <= sqrt(2)*(1-2*tau)*W
+ *   ||P_K(-grad V)||^2 >= W/(2*log((1-2*tau)/tau)).
+ *
+ * Hence W-dot <= -eta/(2*W_max) W for the fixed one-hot projected flow.
+ * This does not cover switching away from the one-hot mode.
+ */
+export function oneHotTaskModeCertificate(
+  x: CRSVector,
+  dominantIndex: 0 | 1 | 2,
+  eta: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): OneHotTaskModeCertificate {
+  assertFloorSimplexState(x, tauFloor);
+  if (dominantIndex !== 0 && dominantIndex !== 1 && dominantIndex !== 2) {
+    throw new RangeError('dominantIndex must be 0, 1, or 2');
+  }
+  if (!Number.isFinite(eta) || eta <= 0) throw new RangeError('eta must be finite and positive');
+
+  const target = 1 - 2 * tauFloor;
+  const coordinate = x[dominantIndex];
+  const trackingPotential = Math.max(0, Math.log(target / coordinate));
+  const maximumPotential = Math.log(target / tauFloor);
+  const weights: MutableCRSVector = [0, 0, 0];
+  weights[dominantIndex] = 1;
+  const projectedGradientNorm = projectedTaskPotentialEffort(x, weights, 0, tauFloor);
+  const projectedGradientLowerBound = trackingPotential > 0
+    ? 1 / (Math.sqrt(2) * coordinate)
+    : 0;
+
+  return {
+    dominantIndex,
+    trackingPotential,
+    maximumPotential,
+    projectedGradientNorm,
+    projectedGradientLowerBound,
+    decayRateLowerBound: eta / (2 * maximumPotential),
+    stateDistanceUpperBound: Math.SQRT2 * target * trackingPotential,
+  };
 }
