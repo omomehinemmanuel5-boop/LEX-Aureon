@@ -57,6 +57,15 @@ describe('Aureonics composite task-tracking storage', () => {
       .toBeGreaterThanOrEqual(2 * certificate.strongConvexityModulus * certificate.trackingPotential - 1e-10);
   });
 
+  it('rejects continuous task drift that changes the active simplex face', () => {
+    expect(() => continuousTaskTrackingCertificate(
+      [0.45, 0.35, 0.2],
+      [0.6, 0.4, 0],
+      [0.01, -0.02, 0.01],
+      { eta: 1, k0: 2 },
+    )).toThrow(/zero-weight coordinates to remain zero/);
+  });
+
   it('rejects a task-weight derivative that leaves the simplex tangent space', () => {
     expect(() => continuousTaskTrackingCertificate(
       [0.4, 0.3, 0.3],
