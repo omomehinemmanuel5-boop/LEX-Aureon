@@ -73,11 +73,13 @@ The regularizer `ε_k>0` bounds stiffness as the margin approaches zero. However
 
 This is not generally zero unless the stiffness coordinates satisfy an additional condition (for example, all `k_i` are equal, or a special state/weight relation holds). Centering `φ` before multiplying by unequal `k_i` is not equivalent to projecting the weighted vector afterward.
 
-The reference module returns both:
-- the literal raw Equation (13) correction and its measured mass drift; and
-- a separately named candidate `Π(G_raw)`, where `Π(v)=v-mean(v)1`.
+The reference module returns the literal raw Equation (13) correction and its measured mass drift. It also provides two explicitly modified candidates:
 
-The projected candidate restores zero-sum mass conservation, but it is a modified equation and is not automatically the gradient of Equation (20). It is not silently substituted for the manuscript formula.
+1. **Stiffness-weighted centering.** Replace the arithmetic mean with
+   `φ̄_k = (Σ_i k_i φ_i)/(Σ_i k_i)`, then set `G_i^k = k_i(φ_i-φ̄_k)`. This guarantees `Σ_i G_i^k=0` whenever `Σ_i k_i>0`. For a unique violated coordinate `m`, it gives `G_m^k=k_m δ_m(1-k_m/Σ_j k_j)`; it restores that coordinate only when `k_m>0` and some other stiffness is also positive.
+2. **Task-independent floor repair.** Because `k_i∝w_i`, task weights can make the weakest pillar's stiffness zero. A separate uniform term `H_i=κ(φ_i-φ̄)`, with `κ>0`, is zero-sum and gives `H_m=2κδ_m/3>0` for a unique violated minimum. The combined candidate `G^k+H` therefore retains a task-independent restorative component.
+
+These are research candidates, not the literal manuscript equation. The original arithmetic-centred Eq. (13) and the weighted-centred candidate are not interchangeable. Neither candidate is automatically the gradient of Equation (20).
 
 ## 5. Constitutional task potential — Equation (20)
 
@@ -104,6 +106,8 @@ V̇ = -η ||Π(∇V)||² ≤ 0
 
 This result holds for fixed task weights `w(T)`, positive state coordinates, and the isolated projected-gradient flow. It does not prove that the manuscript's separate stiffness law in Section 4 is the same vector field. The paper must not describe Equation (13) as `-∇V` unless their equivalence is derived.
 
+On the feasible set `x_i≥τ_floor`, the quadratic penalty is identically zero. The constrained minimizer is therefore the KKT water-filling solution `x_i*=max(τ_floor,w_i/λ)`, where `λ>0` is chosen so the coordinates sum to one. The reference module implements this exact three-coordinate active-set solution as `taskPotentialMinimizer()`. For one-hot weights it returns the paper's three boundary profiles; for mixed weights it returns a principled intermediate profile. Because the penalty is inactive on the feasible set, `k_0` does not change this constrained minimizer.
+
 When task weights vary with time, the derivative contains an additional term:
 
 ```text
@@ -123,7 +127,7 @@ Thus the fixed-task descent result does not imply unconditional descent under ar
 | `z_traj(t)` | Trajectory context | Velocity, dwell count, drift direction, cumulative violations |
 | `z(t)` | Combined context | Must not be conflated with task weights |
 
-The later session-adaptive z-weights used by the live `V_z) certificate are a separate implementation-level object; they must not be silently substituted for `w(T)`.
+The later session-adaptive z-weights used by the live `V_z` certificate are a separate implementation-level object; they must not be silently substituted for `w(T)`.
 
 ## 7. Hard-floor and recovery invariants
 
@@ -148,6 +152,8 @@ The isolated reference tests cover:
 - the literal basin-sensitive stiffness formula;
 - the nonzero mass drift of the raw stiffness equation for an unequal-stiffness example;
 - zero-sum behavior of the separately named tangent-projected candidate;
+- KKT task-potential minimizers for one-hot and mixed task weights;
+- a mass-conserving floor-repair candidate that remains restorative when the weakest pillar has zero task weight;
 - floor-simplex projection and fixed-task discrete descent backtracking.
 
 These are algebraic/software checks. They do not establish that the three regions are true attractor basins, that the full governed dynamics converge, or that task-conditioned modes improve model performance.
@@ -166,9 +172,9 @@ The isolated classifier in this branch formalizes the paper's geometry without c
 ## 9. Required corrections before stronger paper claims
 
 1. Decide whether `x*` is a boundary-limit optimum or whether a positive interior margin is part of the model. Use the same convention in Tables C/D, Section 11, plots, code, and benchmark labels.
-2. Reconcile the Section 12.1 stiffness equation with the claimed mass conservation. Either constrain `k_i), project the weighted correction, or derive a different mass-conserving law.
-3. Reconcile the statement `G=-∇V` with the distinct stiffness law. If they are different control components, define their combination and analyze it.
-4. State whether task weights are fixed per transition, piecewise constant, or continuously varying. Include the `-Σ ẇ_i log(x_i)` term for moving weights.
+2. Reconcile the Section 9.2 / 12.1 stiffness equation with the claimed mass conservation. The arithmetic-centred expression is not generally zero-sum for unequal `k_i`; also state the positive task-weight condition needed for restoration. Consider the separately specified weighted-centering plus task-independent floor-repair candidate.
+3. Reconcile the statement `G=-∇V` with the distinct stiffness law. Section 9.3 also uses an unweighted logarithmic Lyapunov candidate, whereas Section 12.2 defines a task-weighted potential. Define distinct symbols for the Section 9.2 floor-restoration force and Section 12.2 task-potential force, then analyze their combination.
+4. State whether task weights are fixed per transition, piecewise constant, or continuously varying. Include the `-Σ ẇ_i log(x_i)` term for moving weights. Note that Section 12.2's `W(t)=||G||` reuses the same `G` symbol already assigned to the Section 9.2 stiffness correction.
 5. Prove invariance and convergence for the complete closed-loop vector field before calling the three regions proven attractor basins.
 6. Evaluate P1–P6 under a preregistered protocol; v4 itself labels them falsifiable predictions, not established empirical findings.
 
