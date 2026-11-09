@@ -234,6 +234,22 @@ export function taskConditionedDirection(
   return tangentGradient.map(value => -gain * value) as MutableCRSVector;
 }
 
+/**
+ * Magnitude of the realizable task-potential force on the simplex tangent.
+ * The ambient gradient norm includes a normal component that cannot change x
+ * while sum(x)=1; this projected norm is zero at constrained stationary states.
+ */
+export function projectedTaskPotentialEffort(
+  x: CRSVector,
+  weights: CRSVector,
+  k0: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): number {
+  const gradient = constitutionalTaskPotentialGradient(x, weights, k0, tauFloor);
+  const tangentGradient = projectToSimplexTangent(gradient);
+  return Math.sqrt(tangentGradient.reduce((sum, value) => sum + value ** 2, 0));
+}
+
 /** Exact basin-sensitive stiffness from Section 12.1: k_i=k0*w_i/(M+epsilon). */
 export function basinSensitiveStiffness(
   x: CRSVector,
