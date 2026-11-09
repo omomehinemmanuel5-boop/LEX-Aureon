@@ -10,10 +10,12 @@ import {
   constitutionalTaskPotential,
   constitutionalTaskPotentialGradient,
   guardedTaskStep,
+  massConservingBasinCorrection,
   projectToFloorSimplex,
   projectToSimplexTangent,
   taskConditionedDirection,
   taskUtility,
+  taskPotentialMinimizer,
 } from '../lib/research/aureonics_adaptive_basins';
 
 const EPS = 1e-9;
@@ -58,6 +60,45 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
     expect(taskUtility([1, 0, 0], [1, 0, 0], 2)).toBeCloseTo(1 - 2 * TAU ** 2, 12);
     expect(classifyOperatingRegion([1, 0, 0], 0.01)).toBe('boundary');
     expect(basinSensitiveStiffness([1, 0, 0], [1, 0, 0], 2, 0.01)).toEqual([200, 0, 0]);
+  });
+
+  it('derives the constrained task-potential minimizer for pure and mixed task weights', () => {
+    expect(taskPotentialMinimizer([1, 0, 0])).toEqual([0.9, 0.05, 0.05]);
+    expect(taskPotentialMinimizer([0, 1, 0])).toEqual([0.05, 0.9, 0.05]);
+    expect(taskPotentialMinimizer([1 / 3, 1 / 3, 1 / 3])).toEqual([
+      1 / 3, 1 / 3, 1 / 3,
+    ]);
+    const mixed = taskPotentialMinimizer([0.8, 0.15, 0.05]);
+    expect(mixed[0] + mixed[1] + mixed[2]).toBeCloseTo(1, 12);
+    expect(mixed[2]).toBeCloseTo(TAU, 12);
+    expect(mixed[0]).toBeGreaterThan(mixed[1]);
+    expect(mixed[1]).toBeGreaterThan(mixed[2]);
+  });
+
+  it('keeps the constrained minimizer independent of the inactive floor penalty coefficient', () => {
+    const weights: [number, number, number] = [0.65, 0.25, 0.1];
+    const minimizer = taskPotentialMinimizer(weights);
+    expect(constitutionalTaskPotential(minimizer, weights, 0)).toBeCloseTo(
+      constitutionalTaskPotential(minimizer, weights, 1e6),
+      12,
+    );
+  });
+
+  it('provides zero-sum adaptive and task-independent repair when a weak pillar has zero task weight', () => {
+    const result = massConservingBasinCorrection(
+      [0.02, 0.3, 0.68],
+      [1, 0, 0],
+      1,
+      0.01,
+      2,
+    );
+    expect(result.stiffness).toEqual([1 / 0.03, 0, 0]);
+    expect(result.adaptiveMassDrift).toBeCloseTo(0, 12);
+    expect(result.repairMassDrift).toBeCloseTo(0, 12);
+    expect(result.combinedMassDrift).toBeCloseTo(0, 12);
+    expect(result.combined[0]).toBeGreaterThan(0);
+    expect(result.combined[1]).toBeLessThan(0);
+    expect(result.combined[2]).toBeLessThan(0);
   });
 
   it('implements the task utility in v4 Equation (18)', () => {
