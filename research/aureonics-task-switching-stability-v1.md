@@ -99,15 +99,20 @@ proof for the current model.
 A single task-specific potential (V(x,w)) is not a common Lyapunov function:
 its definition changes with (w), and its switch jump is sign-indefinite.
 
-A task-independent common strict Lyapunov function has not been identified. It
-cannot be assumed from the fact that each frozen mode has its own descending
-potential. In particular, the one-hot task modes have different constrained
-minimizers, so no single function can be asserted to certify convergence to all
-three distinct optima without a separate construction and proof.
+A task-independent common **strict** Lyapunov function for convergence to
+each mode's own equilibrium is ruled out when the frozen modes have distinct
+equilibria. If a common strict function W had to satisfy a strictly negative
+derivative along every mode away from one shared equilibrium, then at the
+equilibrium x*_q of mode q its derivative along that mode is zero because
+f_q(x*_q)=0. Distinct mode equilibria therefore contradict strict negativity
+away from one shared equilibrium. This does not rule out a common **non-strict**
+Lyapunov function for boundedness or invariance, or a common certificate for a
+different invariant set. It rules out assuming one common strict certificate
+for convergence to all distinct mode-specific optima.
 
 A multiple-Lyapunov / dwell-time route is plausible but still conditional. For
-each mode (q), define a nonnegative shifted storage
-(W_q(x)=V(x,w^{(q)})-V(x_q^*,w^{(q)})). A valid dwell-time theorem would need:
+each mode q, define a nonnegative shifted storage
+W_q(x)=V(x,w^(q))-V(x*_q,w^(q)). A valid dwell-time theorem would need:
 
 1. a uniform within-mode decay estimate for (W_q) on the relevant invariant set;
 2. a cross-mode comparison bound (W_r(x)\le\mu W_q(x)) at every permitted switch;
