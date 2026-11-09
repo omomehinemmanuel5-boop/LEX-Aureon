@@ -49,7 +49,7 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
     expect(classifyOperatingRegion([0.1, 0.8, 0.1], 0.01)).toBe('collaborative');
     expect(classifyOperatingRegion([0.1, 0.1, 0.8], 0.01)).toBe('exploratory');
     expect(classifyOperatingRegion([0.9, 0.05, 0.05], 0.01)).toBe('boundary');
-    expect(classifyOperatingRegion([0.45, 0.45, 0.1], 0.01)).toBe('analytical');
+    expect(classifyOperatingRegion([0.45, 0.45, 0.1], 0.01)).toBe('transition');
   });
 
   it('allows boundary simplex states in utility and region diagnostics', () => {
