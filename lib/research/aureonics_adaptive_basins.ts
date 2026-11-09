@@ -38,10 +38,15 @@ function assertFloor(floor: number): void {
   }
 }
 
-export function assertPositiveSimplexState(x: CRSVector, tolerance = SIMPLEX_SUM_TOLERANCE): void {
+export function assertNonnegativeSimplexState(x: CRSVector, tolerance = SIMPLEX_SUM_TOLERANCE): void {
   assertFiniteVector(x, 'state');
   if (!Number.isFinite(tolerance) || tolerance < 0) throw new RangeError('tolerance must be finite and non-negative');
   if (Math.abs(x[0] + x[1] + x[2] - 1) > tolerance) throw new RangeError('state must sum to one');
+  if (x.some(value => value < -tolerance)) throw new RangeError('state must be non-negative');
+}
+
+export function assertPositiveSimplexState(x: CRSVector, tolerance = SIMPLEX_SUM_TOLERANCE): void {
+  assertNonnegativeSimplexState(x, tolerance);
   if (x.some(value => value <= 0)) throw new RangeError('state must be strictly positive for logarithmic potential');
 }
 
@@ -100,7 +105,7 @@ export function classifyOperatingRegion(
   neutralRadius: number,
   tauFloor = AUREONICS_HARD_FLOOR,
 ): OperatingRegion {
-  assertPositiveSimplexState(x);
+  assertNonnegativeSimplexState(x);
   assertFloor(tauFloor);
   if (!Number.isFinite(neutralRadius) || neutralRadius < 0 || neutralRadius >= MAX_SIMPLEX_RADIUS) {
     throw new RangeError(`neutralRadius must be in [0, ${MAX_SIMPLEX_RADIUS})`);
@@ -123,7 +128,7 @@ export function taskUtility(
   lambda: number,
   tauFloor = AUREONICS_HARD_FLOOR,
 ): number {
-  assertPositiveSimplexState(x);
+  assertNonnegativeSimplexState(x);
   assertTaskWeights(weights);
   assertFloor(tauFloor);
   if (!Number.isFinite(lambda) || lambda < 0) throw new RangeError('lambda must be finite and non-negative');
@@ -200,7 +205,7 @@ export function basinSensitiveStiffness(
   k0: number,
   epsilonK: number,
 ): MutableCRSVector {
-  assertPositiveSimplexState(x);
+  assertNonnegativeSimplexState(x);
   assertTaskWeights(weights);
   if (!Number.isFinite(k0) || k0 <= 0) throw new RangeError('k0 must be finite and positive');
   if (!Number.isFinite(epsilonK) || epsilonK <= 0) throw new RangeError('epsilonK must be finite and positive');
@@ -230,7 +235,7 @@ export function basinStiffnessCorrection(
   epsilonK: number,
   tauFloor = AUREONICS_HARD_FLOOR,
 ): BasinStiffnessCorrection {
-  assertPositiveSimplexState(x);
+  assertNonnegativeSimplexState(x);
   assertTaskWeights(weights);
   assertFloor(tauFloor);
   const stiffness = basinSensitiveStiffness(x, weights, k0, epsilonK);
