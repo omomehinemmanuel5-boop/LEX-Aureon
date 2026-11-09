@@ -199,10 +199,14 @@ W(t)\le e^{-\lambda t}W(0)+
 For an infinite, non-Zeno switching schedule with finite total task-weight
 variation
 \(\sum_k\|w_k^+-w_k^-\|_1<\infty\), the jump sequence is summable. The
-comparison bound then implies \(W(t)\to0\). Since finite total variation
-also makes (w(t)) converge and the unique constrained minimizer map
-(x^*(w)) is continuous, the state converges to the constrained optimum of
-the limiting task weights.
+comparison bound then implies \(W(t)\to0\). The same mode restrictions give
+a uniform state-error bound: for multi-support modes,
+\(\|x-x^*(w)\|_2\le\sqrt{6W/m_0}\); for one-hot modes,
+\(\|x-x^*(w)\|_2\le\sqrt2(1-2\tau)W\). Thus the state tracks the
+instantaneous constrained optimum with error tending to zero. Finite total
+variation also makes (w(t)) converge, and the unique constrained minimizer
+map (x^*(w)) is continuous, so the state converges to the constrained
+optimum of the limiting task weights.
 
 This is a genuine **finite-variation hybrid tracking result**, but its
 conditions are restrictive and explicit. It does not cover endless C→R→S
