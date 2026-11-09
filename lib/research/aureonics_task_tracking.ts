@@ -1,8 +1,8 @@
 /**
  * Composite tracking-storage analysis for task-varying Aureonics dynamics.
  *
- * Research-only. The certificate is conditional on strictly positive task
- * weights and a continuous-time projected-gradient reference flow.
+ * Research-only. The continuous-drift certificate requires at least two
+ * positive task weights; one-hot modes have a separate fixed-mode result.
  */
 import {
   AUREONICS_HARD_FLOOR,
