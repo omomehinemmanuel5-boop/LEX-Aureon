@@ -14,6 +14,7 @@ describe('central tool governance gateway', () => {
   it('classifies tools by effect rather than trusting a caller label', () => {
     expect(classifyGovernanceRisk('read_file')).toBe('read');
     expect(classifyGovernanceRisk('patch_file')).toBe('write');
+    expect(classifyGovernanceRisk('request_recovery_pulse')).toBe('recovery');
     expect(classifyGovernanceRisk('dispatch_workflow')).toBe('external');
     expect(classifyGovernanceRisk('delete_repository')).toBe('destructive');
     // run_governance evaluates a request but has no side effect itself.
@@ -104,6 +105,37 @@ describe('central tool governance gateway', () => {
     expect(result.risk).toBe('read');
     expect(result.requiresApproval).toBe(false);
     expect(result.decision).toBe('allow');
+  });
+
+  it('allows a bounded recovery pulse without the write approval secret', () => {
+    vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', '');
+    const result = evaluateToolGovernance({
+      toolName: 'request_recovery_pulse',
+      args: {},
+      sessionId: 'client-session-1',
+      actorId: 'api_key:client-1',
+      authorized: true,
+    });
+    expect(result.risk).toBe('recovery');
+    expect(result.requiresApproval).toBe(false);
+    expect(result.decision).toBe('allow');
+    vi.unstubAllEnvs();
+  });
+
+  it('keeps ordinary writes approval-gated when the signing secret is absent', () => {
+    vi.stubEnv('LEX_APPROVAL_SIGNING_SECRET', '');
+    const result = evaluateToolGovernance({
+      toolName: 'patch_file',
+      args: { path: 'notes.txt', old_str: 'old', new_str: 'new' },
+      sessionId: 'client-session-1',
+      actorId: 'api_key:client-1',
+      authorized: true,
+    });
+    expect(result.risk).toBe('write');
+    expect(result.requiresApproval).toBe(true);
+    expect(result.decision).toBe('approval_required');
+    expect(result.reasons.join(' ')).toContain('Approval signing secret is not configured');
+    vi.unstubAllEnvs();
   });
 
   it('requires a valid signed approval bound to the exact action', () => {

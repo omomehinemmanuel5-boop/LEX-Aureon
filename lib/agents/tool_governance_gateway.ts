@@ -3,7 +3,7 @@ import { getClient } from '../db';
 import { getToolCapability, resolveToolCapability } from './tool_capability_registry';
 import { classifyDatabaseOperation } from './sql_policy';
 export { classifyDatabaseOperation } from './sql_policy';
-export type GovernanceRisk = 'read' | 'write' | 'external' | 'destructive';
+export type GovernanceRisk = 'read' | 'recovery' | 'write' | 'external' | 'destructive';
 
 export type VerificationStatus = 'verified' | 'unknown' | 'not_started' | 'failed';
 
@@ -249,6 +249,7 @@ export function classifyGovernanceRisk(toolName: string, args: Record<string, un
     switch (registered.capability) {
       case 'read':
       case 'recovery_probe': return 'read';
+      case 'recovery': return 'recovery';
       case 'write': return 'write';
       case 'external':
       case 'network':
@@ -287,7 +288,12 @@ export function evaluateToolGovernance(input: {
   const resolvedCapability = (() => {
     try { return resolveToolCapability(input.toolName, input.args); } catch { return undefined; }
   })();
-  const requiresApproval = risk !== 'read' || (resolvedCapability?.approvalRequired ?? false);
+  // Bounded recovery is a distinct control-plane capability. It may mutate
+  // only the caller's own recovery trajectory and never grants write authority,
+  // so it must remain usable while a session is below N_MIN. Ordinary writes,
+  // external actions, and destructive actions remain approval-gated.
+  const requiresApproval = (risk !== 'read' && risk !== 'recovery')
+    || (resolvedCapability?.approvalRequired ?? false);
   const reasons: string[] = [];
   if (!input.authorized) {
     reasons.push('Caller or capability scope does not authorize this tool.');

@@ -48,6 +48,7 @@ type EnvShape = {
   MCP_OPERATOR_SECRET:          string | undefined;
   LEX_CANARY_OWNER_IDS:          string | undefined;
   LEX_APPROVAL_IMPLICIT_LIMIT:   string | undefined;
+  LEX_APPROVAL_SIGNING_SECRET:    string | undefined;
 };
 
 const REQUIRED = new Set<keyof EnvShape>([
