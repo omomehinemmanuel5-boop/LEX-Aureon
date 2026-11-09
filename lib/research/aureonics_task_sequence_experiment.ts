@@ -166,6 +166,9 @@ function validateOptions(options: TaskSequenceExperimentOptions): Required<TaskS
     || tauFloor <= 0 || tauFloor >= 1 / 3 || eta <= 0 || challengeMagnitude < 0) {
     throw new RangeError('invalid floor, gain, or challenge magnitude');
   }
+  if (Math.abs(tauFloor - AUREONICS_HARD_FLOOR) > 1e-12) {
+    throw new RangeError('this comparison harness requires the production hard floor of 0.05');
+  }
   if (!Number.isInteger(routerDwellSteps) || routerDwellSteps < 1) {
     throw new RangeError('routerDwellSteps must be a positive integer');
   }
