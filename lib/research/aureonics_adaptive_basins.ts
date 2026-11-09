@@ -96,6 +96,37 @@ export function basinProfileForPillar(
 }
 
 /**
+ * Exact KKT minimizer of Equation (20) on the floor-constrained simplex.
+ * Since max(0, tauFloor-x_i)=0 throughout this feasible set, k0 does not
+ * affect the constrained minimizer. The solution is x_i=max(tauFloor,w_i/lambda)
+ * with lambda chosen so the coordinates sum to one.
+ */
+export function taskPotentialMinimizer(
+  weights: CRSVector,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): MutableCRSVector {
+  assertTaskWeights(weights);
+  assertFloor(tauFloor);
+  let active = [0, 1, 2].filter(index => weights[index] > 0);
+  while (active.length > 0) {
+    const activeWeight = active.reduce((sum, index) => sum + weights[index], 0);
+    const lambda = activeWeight / (1 - (3 - active.length) * tauFloor);
+    const newlyClamped = active.filter(index => weights[index] / lambda <= tauFloor + SIMPLEX_SUM_TOLERANCE);
+    if (newlyClamped.length === 0) {
+      const result: MutableCRSVector = [tauFloor, tauFloor, tauFloor];
+      for (const index of active) result[index] = weights[index] / lambda;
+      const residual = 1 - (result[0] + result[1] + result[2]);
+      const largest = active.reduce((best, index) => result[index] > result[best] ? index : best, active[0]);
+      result[largest] += residual;
+      return result;
+    }
+    active = active.filter(index => !newlyClamped.includes(index));
+  }
+  throw new RangeError('task weights do not define a feasible minimizer');
+}
+
+
+/**
  * Neutral-first, disjoint partition. Outside the neutral ball, M<=tau is
  * labeled boundary because the v4 directional basin conditions use M>tau.
  * Exact ties are separatrices between strict dominance regions, not members of
@@ -280,6 +311,69 @@ export function projectToFloorSimplex(input: CRSVector, floor = AUREONICS_HARD_F
   const largest = projected.indexOf(Math.max(...projected));
   projected[largest] += residual;
   return projected;
+}
+
+/**
+ * Research candidate correcting the Section 9.2 mass-conservation mismatch.
+ *
+ * The manuscript's arithmetic-centred Eq. (13) is not zero-sum when k_i differ.
+ * Replacing the arithmetic mean by a stiffness-weighted mean restores zero-sum
+ * for the adaptive component. A separate task-independent repair term is
+ * necessary because k_i=0 whenever w_i=0; otherwise a zero-weight weak pillar
+ * receives no direct restorative force. Neither modification is silently
+ * substituted for the manuscript equation.
+ */
+export interface MassConservingBasinCorrection {
+  stiffness: MutableCRSVector;
+  deficit: MutableCRSVector;
+  adaptive: MutableCRSVector;
+  taskIndependentRepair: MutableCRSVector;
+  combined: MutableCRSVector;
+  adaptiveMassDrift: number;
+  repairMassDrift: number;
+  combinedMassDrift: number;
+}
+
+export function massConservingBasinCorrection(
+  x: CRSVector,
+  weights: CRSVector,
+  k0: number,
+  epsilonK: number,
+  floorRepairGain: number,
+  tauFloor = AUREONICS_HARD_FLOOR,
+): MassConservingBasinCorrection {
+  assertNonnegativeSimplexState(x);
+  assertTaskWeights(weights);
+  assertFloor(tauFloor);
+  if (!Number.isFinite(floorRepairGain) || floorRepairGain <= 0) {
+    throw new RangeError('floorRepairGain must be finite and positive');
+  }
+  const stiffness = basinSensitiveStiffness(x, weights, k0, epsilonK);
+  const deficit = x.map(value => Math.max(0, tauFloor - value)) as MutableCRSVector;
+  const totalStiffness = stiffness[0] + stiffness[1] + stiffness[2];
+  if (totalStiffness <= 0) throw new RangeError('task stiffness must have positive total mass');
+  const weightedDeficitMean =
+    (stiffness[0] * deficit[0] + stiffness[1] * deficit[1] + stiffness[2] * deficit[2]) /
+    totalStiffness;
+  const adaptive = stiffness.map((value, index) =>
+    value * (deficit[index] - weightedDeficitMean),
+  ) as MutableCRSVector;
+  const meanDeficit = (deficit[0] + deficit[1] + deficit[2]) / 3;
+  const taskIndependentRepair = deficit.map(value =>
+    floorRepairGain * (value - meanDeficit),
+  ) as MutableCRSVector;
+  const combined = adaptive.map((value, index) => value + taskIndependentRepair[index]) as MutableCRSVector;
+  const mass = (value: CRSVector) => value[0] + value[1] + value[2];
+  return {
+    stiffness,
+    deficit,
+    adaptive,
+    taskIndependentRepair,
+    combined,
+    adaptiveMassDrift: mass(adaptive),
+    repairMassDrift: mass(taskIndependentRepair),
+    combinedMassDrift: mass(combined),
+  };
 }
 
 export interface GuardedTaskStepResult {
