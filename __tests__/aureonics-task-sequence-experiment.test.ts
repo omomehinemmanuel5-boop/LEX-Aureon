@@ -54,5 +54,6 @@ describe('Aureonics task-sequence comparison harness', () => {
   it('rejects empty schedules and invalid router dwell settings', () => {
     expect(() => runTaskSequenceExperiment([])).toThrow(/non-empty/);
     expect(() => runTaskSequenceExperiment(labels, { routerDwellSteps: 0 })).toThrow(/positive integer/);
+    expect(() => runTaskSequenceExperiment(labels, { tauFloor: 0.06 })).toThrow(/production hard floor/);
   });
 });
