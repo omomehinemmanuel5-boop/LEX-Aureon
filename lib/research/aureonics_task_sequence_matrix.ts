@@ -45,7 +45,6 @@ export interface TaskSequenceMatrixResult {
   summary: TaskSequenceMatrixSummary;
 }
 
-const PILLARS: readonly Pillar[] = ['C', 'R', 'S'];
 const INITIAL_STATES: readonly (readonly [number, number, number])[] = [
   [1 / 3, 1 / 3, 1 / 3],
   [0.9, 0.05, 0.05],
@@ -71,7 +70,7 @@ function schedules(): Array<{ name: string; labels: Pillar[] }> {
   ];
 }
 
-/** Build the full, deterministic Cartesian parameter matrix. */
+/** Build the full, deterministic Cartesian parameter matrix (270 cases). */
 export function buildTaskSequenceExperimentMatrix(): TaskSequenceMatrixCase[] {
   const cases: TaskSequenceMatrixCase[] = [];
   for (const schedule of schedules()) {
@@ -95,7 +94,7 @@ export function buildTaskSequenceExperimentMatrix(): TaskSequenceMatrixCase[] {
   return cases;
 }
 
-/** Execute all cases locally/offline; each case uses identical inputs for all three controllers. */
+/** Execute all cases offline; every case sends identical inputs to all three controllers. */
 export function runTaskSequenceExperimentMatrix(): TaskSequenceMatrixResult {
   const cases = buildTaskSequenceExperimentMatrix();
   const rows: TaskSequenceMatrixRow[] = cases.map((experimentCase) => {
