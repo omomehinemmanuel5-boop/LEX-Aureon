@@ -159,6 +159,24 @@ segments and records each switch's pre/post potential. The tests verify that
 within-mode accepted steps are non-increasing while allowing a switch jump to be
 positive. This is intentionally not an automatic task scheduler.
 
+### Exploratory numerical check
+
+A deterministic replay of the same projected-gradient and floor-simplex
+backtracking equations illustrates the tracking-rate effect:
+
+- **Rapid cycle:** 20 repeats of C→R→S, one update per mode, step size 0.01.
+  Final state was approximately (0.32447, 0.33327, 0.34226), only 0.01258
+  Euclidean distance from the centroid. The system did not track each mode's
+  one-hot optimum during these short dwell intervals.
+- **Long dwell:** C→R→S with 100 updates per mode, step size 0.05.
+  The final state reached (0.05, 0.05, 0.90), the exploratory constrained
+  optimum, to numerical precision.
+
+These are finite-horizon, deterministic examples, not a general theorem. They
+show why reporting only the final state or fixed-task convergence is misleading:
+dwell duration relative to the state-adjustment rate changes the observed
+behavior. The new tests encode these two cases as reproducible software checks.
+
 The next offline experiment should preregister:
 
 - task modes: C-, R-, and S-dominant plus at least two mixed profiles;
