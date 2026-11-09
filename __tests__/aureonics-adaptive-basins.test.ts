@@ -89,6 +89,12 @@ describe('Aureonics adaptive basin reference model (research-only)', () => {
     expect(result.state.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 12);
   });
 
+  it('does not allow a reference step to weaken the hard floor', () => {
+    const x: [number, number, number] = [0.4, 0.3, 0.3];
+    const q = taskTargetFromWeights([1, 0, 0], 0.08);
+    expect(() => guardedTaskStep(x, q, { stepSize: 0.01, floor: 0.01 })).toThrow(/cannot weaken the Aureonics hard floor/);
+  });
+
   it('rejects non-simplex states and invalid task weights', () => {
     expect(() => assertSimplexState([0.2, 0.2, 0.2])).toThrow(/sum to one/);
     expect(() => taskTargetFromWeights([0.5, 0.5, 0.5], 0.08)).toThrow(/sum to one/);
