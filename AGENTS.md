@@ -545,6 +545,7 @@ npm run build          verify TypeScript
 [2026-09-29] FIX: MCP governance bootstrap is present in the main code path — `run_governance` is registered as the explicit new-session bootstrapper, missing `z_traj` is represented as `UNINITIALIZED`, and other consequential tools remain fail-closed until state exists; normal writes remain approval-bound. The former branch-specific deployment note was stale; live bootstrap behavior still requires end-to-end verification.
 [2026-10-15] DOC: Corrected the Constitution page's threshold explanation to distinguish the hard CBF floor, Lyapunov penalty threshold, and recovery threshold using canonical constants; replaced obsolete branch-specific bootstrap status with the verified main deployment revision and an explicit live-E2E verification task.
 [2026-10-17] FIX: Bounded invariant canary binding added behind `CANARY_MODE=invariant`; the default remains unchanged. Write-count expiry validated against real SQLite, and `run_governance` receipts count toward the write limit. Status: validated in CI, flag off in production, not yet exercised on preview.
+[2026-11-09] FIX: Recovery admission separated from ordinary write approval — `request_recovery_pulse` is classified as a bounded recovery capability and remains usable for authenticated client self-recovery below `N_MIN`; ordinary writes remain approval-gated. Added missing-secret regression coverage and documented `LEX_APPROVAL_SIGNING_SECRET` as a production deployment requirement.
 
 ---
 
@@ -556,7 +557,8 @@ Governor:   PRAXIS v1.0 — Turso hard-required. LLM generation runs a
             multi-provider fallback chain (Groq/Cerebras/Mistral/Gemini —
             see lib/llm_provider.ts); only GROQ_API_KEY and JINA_API_KEY
             are hard-required env vars, the rest degrade gracefully if unset
-Tool Gov:   MCP routes authenticate callers, fail closed on unavailable
+Tool Gov:   MCP routes authenticate callers, keep bounded recovery pulses
+            available for owner-bound self-recovery, fail closed on unavailable
             governance state, write actor-attributed receipts, and report
             remote outcomes as unknown when completion cannot be established;
             independent integrations remain outside these route guarantees
