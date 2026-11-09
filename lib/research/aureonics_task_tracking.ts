@@ -12,7 +12,6 @@ import {
   projectedTaskPotentialEffort,
   taskPotentialMinimizer,
   type CRSVector,
-  type MutableCRSVector,
 } from './aureonics_adaptive_basins';
 
 const SIMPLEX_DERIVATIVE_TOLERANCE = 1e-9;
