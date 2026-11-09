@@ -13,6 +13,7 @@ import {
   massConservingBasinCorrection,
   projectToFloorSimplex,
   projectedTaskPotentialEffort,
+  projectToFloorSimplexTangent,
   projectToSimplexTangent,
   taskConditionedDirection,
   taskUtility,
@@ -144,6 +145,21 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
     const derivative = gradient.reduce((sum, value, index) => sum + value * direction[index], 0);
     expect(derivative).toBeLessThanOrEqual(EPS);
     expect(direction.reduce((sum, value) => sum + value, 0)).toBeCloseTo(0, 12);
+  });
+
+  it('projects boundary directions into the floor-simplex tangent cone', () => {
+    const x: [number, number, number] = [TAU, 0.45, 0.5];
+    const weights: [number, number, number] = [0, 0.5, 0.5];
+    const gradient = constitutionalTaskPotentialGradient(x, weights, 2);
+    const unconstrained = taskConditionedDirection([0.2, 0.4, 0.4], weights, 2);
+    const direction = taskConditionedDirection(x, weights, 2);
+    const coneProjection = projectToFloorSimplexTangent(x, [0, 1.1111111111111112, 1]);
+    const derivative = gradient.reduce((sum, value, index) => sum + value * direction[index], 0);
+    expect(unconstrained[0]).toBeLessThan(0);
+    expect(coneProjection[0]).toBeGreaterThanOrEqual(-EPS);
+    expect(direction[0]).toBeGreaterThanOrEqual(-EPS);
+    expect(direction.reduce((sum, value) => sum + value, 0)).toBeCloseTo(0, 12);
+    expect(derivative).toBeLessThanOrEqual(EPS);
   });
 
   it('measures task effort on the simplex tangent, not the unusable normal direction', () => {
