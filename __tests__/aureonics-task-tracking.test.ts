@@ -32,7 +32,7 @@ describe('Aureonics composite task-tracking storage', () => {
     );
     expect(certificate.trackingDistanceUpperBound).toBeGreaterThan(0);
     expect(certificate.projectedGradientNorm ** 2)
-      .toBeGreaterThanOrEqual(2 * certificate.minimumTaskWeight * certificate.trackingPotential - 1e-10);
+      .toBeGreaterThanOrEqual(2 * certificate.strongConvexityModulus * certificate.trackingPotential - 1e-10);
   });
 
   it('rejects one-hot weights in the continuous-drift certificate', () => {
@@ -41,7 +41,7 @@ describe('Aureonics composite task-tracking storage', () => {
       [1, 0, 0],
       [0, 0, 0],
       { eta: 1, k0: 2 },
-    )).toThrow(/strictly positive task weights/);
+    )).toThrow(/at least two positive task weights/);
   });
 
   it('supports a task weight on a simplex edge with two positive coordinates', () => {
