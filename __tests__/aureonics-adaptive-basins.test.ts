@@ -80,6 +80,10 @@ describe('Aureonics v4 adaptive basin reference model (research-only)', () => {
     expect(nearDegenerateFloor[0]).toBeCloseTo(1 / 3, 12);
     expect(nearDegenerateFloor[1]).toBeCloseTo(1 / 3, 12);
     expect(nearDegenerateFloor[2]).toBeCloseTo(1 / 3, 12);
+    const almostDegenerateFloor = taskPotentialMinimizer([1 / 3, 1 / 3, 1 / 3], 1 / 3 - Number.EPSILON);
+    expect(almostDegenerateFloor[0]).toBeCloseTo(1 / 3, 12);
+    expect(almostDegenerateFloor[1]).toBeCloseTo(1 / 3, 12);
+    expect(almostDegenerateFloor[2]).toBeCloseTo(1 / 3, 12);
     const mixed = taskPotentialMinimizer([0.8, 0.15, 0.05]);
     expect(mixed[0] + mixed[1] + mixed[2]).toBeCloseTo(1, 12);
     expect(mixed[2]).toBeCloseTo(TAU, 12);
