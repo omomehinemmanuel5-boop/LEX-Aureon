@@ -253,8 +253,7 @@ rejection of unsupported one-hot continuous drift and invalid simplex
 derivatives, and the numerical switch-jump bound. These are implementation
 checks; they are not independent proof of the theorem.
 
-Next mathematical step: derive a hybrid certificate that combines the
-continuous ISS estimate on simplex faces, the one-hot fixed-mode estimate, and
-the additive jump budget when task weights cross between faces. Do not integrate
-this storage into production governance until that hybrid result and
-independent review are complete.
+Next mathematical step: relax the finite-variation and fixed-support restrictions,
+then determine whether the actual Aureonics task router enforces a schedule
+inside the proved admissible class. Do not integrate this storage into
+production governance until that analysis and independent review are complete.
