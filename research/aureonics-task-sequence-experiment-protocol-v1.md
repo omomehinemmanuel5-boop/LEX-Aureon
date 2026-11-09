@@ -1,6 +1,6 @@
 # Aureonics Task-Sequence Experiment — Protocol v1
 
-**Status:** Deterministic offline harness added; execution/CI evidence pending  
+**Status:** Deterministic offline harness and 270-case parameter matrix implemented; latest-head CI evidence pending  
 **Branch:** `research/aureonics-task-switching-stability`  
 **Production integration:** None
 
@@ -10,73 +10,63 @@ Under the same synthetic task-label sequence and the same declared per-task dist
 
 1. **Production-z baseline:** call the actual deterministic `productionStateTransition()` at every step, supplying session z-weights; update z with the no-law-event recurrence mirrored from `lib/kv.ts`.
 2. **Oracle task-potential reference:** use the true task label immediately as a one-hot task weight and take a projected-gradient reference step.
-3. **Hysteretic task-router reference:** use a separate research-only router that changes the one-hot task weight only after the new label persists for a configured dwell count; then take the same projected-gradient reference step.
+3. **Hysteretic task-router reference:** change the one-hot task weight only after the new label persists for a configured dwell count; then take the same projected-gradient reference step.
 
 This is a controlled mechanism comparison, not a benchmark of real Lex workloads.
 
-## 2. Workload protocol
+## 2. Workload and parameter matrix
 
-The harness accepts a deterministic sequence of task labels from `C`, `R`, and `S`. For each label, a zero-sum synthetic disturbance reduces the currently requested coordinate by `challengeMagnitude` and distributes the same total equally across the other two coordinates. All controllers receive exactly the same disturbance.
+The matrix executes 270 deterministic cases: six label schedules × five initial CRS states × three Euler gains × three disturbance magnitudes.
 
-Default settings:
-- initial CRS: centroid `(1/3,1/3,1/3)`;
-- initial z: centroid;
-- hard floor: `0.05`;
-- task-potential Euler gain: `0.004`;
-- disturbance magnitude: `0.001`;
-- hysteretic router dwell: 3 consecutive labels;
-- no law events, semantic attack, adversarial gain, or threat signal in the production transition.
+Schedules:
+- repeated C/R/S blocks of lengths 2, 5, and 12;
+- fixed-amplitude C→R→S cycling;
+- a deterministic noisy-label sequence;
+- abrupt one-hot blocks.
 
-These are experiment settings, not calibrated operational parameters. The synthetic disturbance is a declared stressor, not a claim about the causal effect of real analytical, collaborative, or exploratory work.
+Initial states:
+- simplex centroid;
+- each of the three one-hot floor-boundary profiles;
+- one asymmetric near-floor state.
+
+Euler gains: 0.002, 0.004, and 0.008.  
+Synthetic disturbance magnitudes: 0.0005, 0.001, and 0.005.  
+Router dwell: three consecutive labels.
+
+For each label, a zero-sum synthetic disturbance reduces the currently requested coordinate by the configured magnitude and distributes the same total equally across the other two coordinates. All three controllers receive exactly the same disturbance. These are experiment settings, not calibrated operational parameters or claims about real analytical, collaborative, or exploratory work.
+
+**Not included in this matrix:** mixed task-weight vectors, learned task classification, randomized seeds, stochastic confidence intervals, and live production traffic. The current harness is one-hot task-label research only; mixed-support theorem results remain a separate analytical result and are not being passed off as tested matrix coverage.
 
 ## 3. What is called directly and what is mirrored
 
 - The production state update is the repository's actual exported `productionStateTransition()` function.
 - The production z recurrence is mirrored from `lib/kv.ts` for the no-law-event case: \(z^+=\operatorname{normalize}(\operatorname{clamp}(0.85z+0.15x,0.025,0.95))\).
-- The oracle and routed task-potential controllers use the research-only `taskConditionedDirection()` and `projectToFloorSimplex()` functions.
-- The hysteretic router is new research code. It is not wired to PRAXIS, the kernel, or any production request path.
+- The oracle and routed task-potential controllers use research-only `taskConditionedDirection()` and `projectToFloorSimplex()`.
+- The hysteretic router is research-only. It is not wired to PRAXIS, the kernel, or any production request path.
 
 The z recurrence is reproduced locally because the production helper is private and coupled to persistence. This is a source-mirrored deterministic recurrence, not a live database-backed `updateZTraj()` call.
 
 ## 4. Recorded metrics
 
-For each controller the harness records:
-- full CRS state history;
-- mean and final Euclidean distance to the optimum for the true task label;
-- mean and final task-relative tracking potential;
-- task-weight total variation and switch count;
-- minimum observed coordinate and maximum simplex-sum residual.
+For each controller the harness records full CRS state history, mean and final Euclidean distance to the optimum for the true task label, mean and final task-relative tracking potential, task-weight total variation and switch count, minimum observed coordinate, and maximum simplex-sum residual. The production-z baseline additionally records z-weight history and total z variation.
 
-For the production-z baseline it additionally records the z-weight history and total z variation. Production z is **not** substituted for task weights in the controller; the task-relative metrics are computed separately against the known workload labels solely to make comparison possible.
+Matrix aggregation reports mean tracking distances, mean weight variations, the minimum coordinate across all runs, and the maximum simplex residual. Raw trajectories remain available in each matrix row. Production z is **not** substituted for task weights; task-relative metrics are computed separately against known workload labels solely for descriptive comparison.
 
 ## 5. Interpretation limits
 
-- A finite deterministic sequence cannot establish infinite-horizon stability.
+- A finite deterministic matrix cannot establish infinite-horizon stability or statistical generalization.
 - The task-potential controllers use explicit discrete Euler steps plus projection; the continuous-time finite-variation theorem is not automatically a theorem about this discretization.
-- The production transition has multiple forcing terms and a discrete z-potential descent guard. Calling it directly makes the state-map comparison more faithful, but this synthetic protocol still omits persistence, law-event attack signals, external model scoring, concurrent requests, and real task classification.
+- The production transition has multiple forcing terms and a discrete z-potential descent guard. Calling it directly makes the state-map comparison more faithful, but the synthetic protocol omits persistence, law-event attack signals, external model scoring, concurrent requests, and real task classification.
 - The hysteretic router receives ground-truth task labels. This isolates switching mechanics but does not test classifier accuracy, uncertainty, or adversarial misclassification.
-- Results should be interpreted descriptively. Do not declare one controller superior without pre-registered workloads, parameter sweeps, multiple initial states, uncertainty analysis, and independent review.
+- Fixed-amplitude cycling has unbounded total variation as the sequence is extended; the finite-variation hybrid theorem does not cover its infinite-horizon limit.
+- Results are descriptive. No controller should be declared superior without workload validity, independent review, and separate analysis of task-label quality and production effects.
 
 ## 6. Acceptance checks
 
-The test suite verifies:
-1. all three paths replay the same sequence length;
-2. all states remain on the floor-constrained simplex;
-3. the router respects the configured dwell delay;
-4. production z-weights remain normalized and distinct from task weights;
-5. hysteresis reduces switches on the test sequence;
-6. invalid schedules/options fail closed.
+Tests verify deterministic matrix construction (270 cases), coverage of all six schedule families and parameter levels, common sequence lengths across controllers, floor/simplex invariants, finite aggregate metrics, and per-case trajectory availability. The original harness tests continue to cover dwell behavior, z/task-weight separation, transient switch suppression, and fail-closed option validation.
 
-Passing these tests establishes implementation consistency only. It does not prove stability or empirical benefit.
+Passing these tests establishes implementation consistency only. It does not prove stability or empirical benefit. CI success is not a substitute for inspecting the numerical matrix output.
 
-## 7. Next experiment stage
+## 7. Follow-on work
 
-After CI passes, run a pre-registered matrix:
-- C/R/S block sequences with varied block lengths;
-- repeated C→R→S cycles with fixed-amplitude switches;
-- mixed task weights with controlled minimum active weight;
-- abrupt one-hot changes and noisy task labels;
-- multiple initial states, including near-floor and centroid states;
-- disturbance magnitudes and controller gains swept independently.
-
-Report both raw trajectories and aggregate metrics. In particular, check whether the production baseline preserves its own z-weighted discrete descent certificate on every step, and whether the task-potential models track their current task optima without violating the floor. Do not infer that the task profiles belong in production merely because a synthetic reference controller tracks them.
+After the matrix tests pass, inspect raw trajectories and aggregate metrics. Add mixed task-weight schedules only with explicit support-floor assumptions, and evaluate task-classifier uncertainty separately from the idealized ground-truth router. For the production baseline, verify the z-weighted discrete descent certificate at every step rather than inferring it from simplex invariants. Do not infer that task profiles belong in production merely because a synthetic reference controller tracks them.
