@@ -19,6 +19,10 @@ vi.mock('../lib/constitution', () => ({
   CONSTITUTION: { TAU_FLOOR: 0.05, TAU_RECOVERY: 0.15, N_MIN: 3 },
 }));
 
+vi.mock('../lib/agents/account_quarantine', () => ({
+  isAccountQuarantined: vi.fn(async () => false),
+}));
+
 vi.mock('../lib/agents/recovery_state', () => ({
   recoveryCapabilityAllowed: vi.fn(() => ({ allowed: true, state: 'NORMAL' })),
 }));
