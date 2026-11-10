@@ -292,6 +292,33 @@ describe('canonical governance state', () => {
     )).toBe(false);
   });
 
+
+  it('allows an authenticated diagnostic read to trigger server canary issuance when canonical predicates pass', async () => {
+    const canonicalRow = {
+      session_id: 'diagnostic-client-session', velocity: 0, n_stable: 3, drift_dir: 'stable',
+      sigma_viol: 0, last_m: 1 / 3, last_c: 1 / 3, last_r: 1 / 3, last_s: 1 / 3,
+      z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3, attack_pressure: 0,
+      updated_at: '2026-11-10T11:00:00.000Z',
+    };
+    dbExecute.mockImplementation(async (query: { sql: string }) => {
+      if (query.sql.includes('FROM z_traj')) return { rows: [canonicalRow] };
+      if (query.sql.includes('SELECT id, canary_status')) return { rows: [] };
+      if (query.sql.includes('INSERT INTO recovery_canary_evidence')) return { rows: [{ id: 92 }] };
+      return { rows: [] };
+    });
+
+    const result = await readCanonicalGovernanceState({
+      sessionId: canonicalRow.session_id,
+      actorId: 'constitutional-state-diagnostic',
+      capability: 'read',
+    });
+
+    expect(result.available).toBe(true);
+    expect(dbExecute.mock.calls.some(([query]) =>
+      String((query as { sql?: string }).sql ?? query).includes('INSERT INTO recovery_canary_evidence'),
+    )).toBe(true);
+  });
+
   it('fails closed when the canonical state store is unavailable', async () => {
     dbExecute.mockRejectedValue(new Error('state store unavailable'));
     const result = await readCanonicalGovernanceState({
