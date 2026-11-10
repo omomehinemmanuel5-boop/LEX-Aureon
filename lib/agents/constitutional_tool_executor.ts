@@ -283,8 +283,13 @@ function safeTaskContext(
     : derivedContext;
 }
 
-function recoveryBandBreachReason(state: CanonicalGovernanceState): string | null {
-  if (state.canaryEvidenceId == null && state.canaryPassed !== true) return null;
+/**
+ * Breach check for a session whose canary is currently passed. It applies only
+ * to a passed canary: an old, invalidated canary row must not keep a healthy
+ * session denied. Revocation on a real breach is unchanged.
+ */
+export function recoveryBandBreachReason(state: CanonicalGovernanceState): string | null {
+  if (state.canaryPassed !== true) return null;
   if (state.M < CONSTITUTION.TAU_RECOVERY) return `M=${state.M} is below TAU_RECOVERY=${CONSTITUTION.TAU_RECOVERY}`;
   if (state.sigmaViol !== 0) return `sigma_viol=${state.sigmaViol} is not zero`;
   if (state.velocity !== undefined && !Number.isFinite(state.velocity)) return 'velocity is not finite';
