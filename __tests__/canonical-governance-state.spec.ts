@@ -155,7 +155,10 @@ describe('canonical governance state', () => {
     expect(first.state.toolCalls).toBe(0);
     expect(dbExecute.mock.calls.filter(([query]) => String((query as { sql?: string })?.sql ?? query).includes('FROM tool_sessions'))).toHaveLength(0);
     await reader.refresh(input);
-    expect(dbExecute.mock.calls.filter(([query]) => String((query as { sql?: string })?.sql ?? query).includes('FROM z_traj'))).toHaveLength(2);
+    // Each canonical read performs the initial trajectory read, an exact
+    // canary snapshot re-read, and the atomic INSERT ... SELECT snapshot check.
+    // One cached read plus one explicit refresh therefore performs 3 + 3 reads.
+    expect(dbExecute.mock.calls.filter(([query]) => String((query as { sql?: string })?.sql ?? query).includes('FROM z_traj'))).toHaveLength(6);
   });
 
   it('does not infer a successful canary from M=0.333 and stable observations alone', async () => {
