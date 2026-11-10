@@ -166,8 +166,13 @@ export async function readCanonicalGovernanceState(input: CanonicalGovernanceRea
       trajectoryUpdatedAt,
     });
     let canary = await readRecoveryCanaryEvidence(input.sessionId, stateFingerprint, { sessionId: input.sessionId, stateVersion: STATE_VERSION, stateFingerprint, M, sigmaViol, nStable, velocity });
-    const serverMayIssueCanary = input.capability !== 'recovery_probe'
-      && (input.actorId === 'operator' || input.actorId.startsWith('api_key:'));
+    // This function is called only from authenticated/server-owned paths.
+    // actorId is audit attribution, not the authentication boundary: MCP
+    // diagnostic handlers use internal labels (for example,
+    // constitutional-state-diagnostic) after the transport has authenticated
+    // and owner-bound the session. Keep recovery probes excluded because they
+    // are evidence-inspection paths, not canary issuance triggers.
+    const serverMayIssueCanary = input.capability !== 'recovery_probe';
     if (serverMayIssueCanary && !canary.passed
       && recoveryCanaryPredicateFailures({ trajectoryAvailable: true, M, nStable, sigmaViol, velocity }).length === 0) {
       try {

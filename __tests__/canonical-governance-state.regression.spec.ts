@@ -19,7 +19,14 @@ vi.mock('../lib/constitution', () => ({
   CONSTITUTION: { TAU_FLOOR: 0.05, TAU_RECOVERY: 0.15, N_MIN: 3 },
 }));
 
+vi.mock('../lib/agents/account_quarantine', () => ({
+  isAccountQuarantined: vi.fn(async () => false),
+}));
+
 vi.mock('../lib/agents/recovery_state', () => ({
+  // This regression covers canonical metric hydration, not recovery-canary
+  // eligibility. Keep bootstrap's n_stable=0 state out of the canary path.
+  recoveryCanaryPredicateFailures: vi.fn(() => ['n_stable below canary threshold']),
   recoveryCapabilityAllowed: vi.fn(() => ({ allowed: true, state: 'NORMAL' })),
 }));
 
