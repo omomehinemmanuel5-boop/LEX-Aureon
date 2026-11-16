@@ -370,22 +370,19 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
       G[2] * scalar,
     ];
 
-    // Preserve the hard floor even if a future governor change produces a
-    // direction that would otherwise push a pillar below τ.
-    let scale = 1;
-    for (let i = 0; i < 3; i += 1) {
-      if (delta[i] < 0) {
-        const allowed = (x[i] - CONSTITUTION.TAU_FLOOR) / -delta[i];
-        scale = Math.min(scale, Math.max(0, allowed));
-      }
+    // Bound the correction by its L2 norm, not only the scalar. The -z/x term
+    // in gradVz grows without limit near the floor, so an unbounded vector
+    // overshoots (observed live: M fell from 0.070 to 0.050).
+    const correctionNorm = Math.hypot(delta[0], delta[1], delta[2]);
+    if (correctionNorm > MAX_RECOVERY_STEP) {
+      const k = MAX_RECOVERY_STEP / correctionNorm;
+      delta = [delta[0] * k, delta[1] * k, delta[2] * k];
     }
-    delta = [delta[0] * scale, delta[1] * scale, delta[2] * scale];
-    next = [x[0] + delta[0], x[1] + delta[1], x[2] + delta[2]];
-
-    const total = next[0] + next[1] + next[2];
-    if (total > 0) {
-      next = [next[0] / total, next[1] / total, next[2] / total];
-    }
+    // Project after the step so the floor holds on the returned state.
+    next = projectToSimplex(
+      [x[0] + delta[0], x[1] + delta[1], x[2] + delta[2]],
+      CONSTITUTION.TAU_FLOOR,
+    );
 
     reason = 'Bounded governor correction applied by the recovery plane; ordinary tool execution remains denied.';
   }
