@@ -2,6 +2,14 @@
   "name": "lexaureon-frontend",
   "version": "0.1.0",
   "private": true,
+  "description": "Constitutional AI governance layer: simplex state control, Lyapunov stability, and cryptographic audit receipts for LLMs and agents.",
+  "homepage": "https://www.lexaureon.com",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omomehinemmanuel5-boop/LEX-Aureon.git"
+  },
+  "keywords": ["ai-safety", "llm-governance", "control-barrier-function", "lyapunov", "audit-trail", "agent-security"],
   "workspaces": [
     "./sdk"
   ],
