@@ -3,6 +3,7 @@ import { getClient } from '../db';
 import {
   TARGET_MARGIN,
   calculateZAwareGovernorG,
+  projectToSimplex,
 } from '../aureonics_core';
 import { CONSTITUTION } from '../constitution';
 import { RECOVERY_STABILITY_THRESHOLD } from './recovery_state';
