@@ -133,8 +133,10 @@ async function persistServerRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
           AND n_stable = ? AND sigma_viol = ? AND velocity = ? AND updated_at = ?
       )
       AND NOT EXISTS (
-        SELECT 1 FROM recovery_canary_evidence WHERE session_id = ?
-          AND probe_tool = 'get_constitutional_state'
+        SELECT 1 FROM recovery_canary_evidence
+        WHERE session_id = ? AND state_fingerprint = ? AND state_version = ?
+          AND trajectory_updated_at = ? AND probe_tool = 'server_recovery_canary'
+          AND canary_status = 'passed' AND expires_at > ?
       )
       RETURNING id`,
     args: [
@@ -145,7 +147,8 @@ async function persistServerRecoveryCanaryEvidence(input: RecoveryCanaryEvidence
       input.recoveryState ?? 'VERIFIED', issuedAt, expiresAt,
       input.sessionId, input.C, input.R, input.S, input.nStable,
       input.sigmaViol, input.velocity as number, input.trajectoryUpdatedAt,
-      input.sessionId,
+      input.sessionId, input.stateFingerprint, input.policyVersion,
+      input.trajectoryUpdatedAt, issuedAt,
     ],
   });
 }

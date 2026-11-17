@@ -108,8 +108,12 @@ describe('recovery canary evidence', () => {
     const query = dbExecute.mock.calls[0][0] as { sql: string; args: unknown[] };
     expect(query.sql).toContain("server:recovery-canary");
     expect(query.sql).toContain("server_recovery_canary");
-    expect(query.sql).toContain("probe_tool = 'get_constitutional_state'");
+    expect(query.sql).toContain("probe_tool = 'server_recovery_canary'");
+    expect(query.sql).toContain('state_fingerprint = ?');
+    expect(query.sql).toContain('trajectory_updated_at = ?');
+    expect(query.sql).not.toContain("probe_tool = 'get_constitutional_state'");
     expect(query.sql).toContain('RETURNING id');
+    expect(query.args).toContain(snapshot.trajectoryUpdatedAt);
     expect(query.args).toContain('server-recovery-canary-test');
   });
 
