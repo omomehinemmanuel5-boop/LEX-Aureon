@@ -183,6 +183,10 @@ praxis_receipts    immutable audit receipts (never delete) — owner: lib/kv.ts
 governor_log       governor interventions — owner: lib/kv.ts
 law_impact         law impact scores — owner: lib/kv.ts
 sessions           session state (rate limiting, replaced @vercel/kv) — owner: lib/kv.ts
+api_keys           API credentials and nullable tenant binding — owner: lib/api_keys.ts
+tenants            tenant registry — owner: lib/db.ts
+tenant_members     tenant membership/roles — owner: lib/db.ts
+tenant_environments tenant-owned execution environments — owner: lib/db.ts
 audit_log          general audit trail — owner: lib/kv.ts
 run_stats          run counters (e.g. total_runs) — owner: lib/kv.ts
 benchmark_results  LexBench run results — owner: lib/benchmark_results.ts
@@ -398,6 +402,8 @@ npm run build          verify TypeScript
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
 
+[2026-11-17] SYSTEM/SECURITY (PR #249, pending review): R1b adds central tenant registry DDL in lib/db.ts, nullable api_keys.tenant_id, atomic personal-tenant provisioning for new credentials, and a guarded manual backfill for existing credentials. Every API key gets its own deterministic personal tenant; email is never used to group credentials. Backfill is not run by CI or application startup. Organization sharing and full tenant-scoped authorization remain future R1c/R2 work.
+
 [2026-11-09] FIX: On `fix/approval-during-recovery`, bounded recovery pulses can establish a zero-velocity baseline despite high velocity; ordinary writes and recovery probes remain gated. Internal and external approval flows initialize canonical state and may queue human review only for trajectory-backed RESTORING sessions at/above τ_recovery; approvals never bypass dispatch/consumption gates. Validation: 791 Vitest tests, typecheck, and changed-file lint passed; production build and live connector E2E pending.
 
 [2026-11-08] FIX: Public evidence consistency — removed the stale blanket 0% benchmark claim and static score tables from research/peer-brief copy; server-rendered the canonical benchmark rows; labelled stale fallback data and excluded the estimated StrongREJECT fallback; split text and agent-tool receipt visibility with explicit EMPTY/UNAVAILABLE states; corrected runtime health badge semantics; standardized current public citations on paper v2 (10.5281/zenodo.20183807), retaining v1 (10.5281/zenodo.18944243) in publication history. No constitutional math, recovery thresholds, approval rules, receipt records, or production configuration changed. Validation pending PR CI.
@@ -554,6 +560,7 @@ npm run build          verify TypeScript
 ## CURRENT STATUS
 
 System:     LIVE at lexaureon.com — real backend, zero demo, zero silent failures
+Tenant foundation: R1a environment ownership guard merged; R1b schema/provisioning/backfill is in PR #249 pending review. Existing-key backfill has NOT been run; organization sharing and complete tenant-scoped authorization are NOT enabled.
 Counter:    18,641+ audit receipts in Turso
 Governor:   PRAXIS v1.0 — Turso hard-required. LLM generation runs a
             multi-provider fallback chain (Groq/Cerebras/Mistral/Gemini —
@@ -586,6 +593,7 @@ Readiness eval: PR #225 benchmark v2 and PR #232 input normalization are merged.
 ## NEXT ACTIONS
 
 - [ ] Merge/deploy `fix/approval-during-recovery`, then verify high-velocity bounded recovery and RESTORING approval preparation through the live MCP connector; confirm dispatch stays blocked until recovery is VERIFIED/NORMAL
+- [ ] Review/merge PR #249, then run the R1b manual personal-tenant backfill against the intended Turso database and verify all key/tenant/owner/environment bindings before R1c
 - [ ] LTFF grant completion
 - [ ] First paying client
 - [ ] Multi-pillar global Lyapunov proof (Open Problem 1 residual)

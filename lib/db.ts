@@ -57,6 +57,77 @@
   // per lambda instance, then every subsequent call in that instance's
   // lifetime is a no-op. A cold start re-runs it once, which is correct
   // and cheap (every statement here is already idempotent/IF NOT EXISTS).
+  // Tenant registry DDL is owned by this central database module. API-key
+  // initialization calls this after ensuring api_keys exists; the one-off
+  // data backfill remains a separate reviewed migration script.
+  let _tenantSchemaReady = false;
+
+  export async function initTenantSchema(client?: Client): Promise<void> {
+    if (!client && _tenantSchemaReady) return;
+    const c = client ?? getClient();
+
+    await c.batch([
+      {
+        sql: `CREATE TABLE IF NOT EXISTS tenants (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK (kind IN ('personal', 'organization')),
+          display_name TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        args: [],
+      },
+      {
+        sql: `CREATE TABLE IF NOT EXISTS tenant_members (
+          tenant_id TEXT NOT NULL REFERENCES tenants(id),
+          actor_id TEXT NOT NULL,
+          role TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'invited', 'suspended')),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          PRIMARY KEY (tenant_id, actor_id)
+        )`,
+        args: [],
+      },
+      {
+        sql: `CREATE TABLE IF NOT EXISTS tenant_environments (
+          environment_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL REFERENCES tenants(id),
+          display_name TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        args: [],
+      },
+      {
+        sql: 'CREATE INDEX IF NOT EXISTS idx_tenant_members_actor ON tenant_members(actor_id)',
+        args: [],
+      },
+      {
+        sql: 'CREATE INDEX IF NOT EXISTS idx_tenant_environments_tenant ON tenant_environments(tenant_id)',
+        args: [],
+      },
+    ], 'write');
+
+    const columns = await c.execute({ sql: 'PRAGMA table_info(api_keys)', args: [] });
+    if (!columns.rows.some(row => String(row.name) === 'tenant_id')) {
+      try {
+        await c.execute({ sql: 'ALTER TABLE api_keys ADD COLUMN tenant_id TEXT', args: [] });
+      } catch (error) {
+        // Another cold-started instance may have added the column after this
+        // instance's PRAGMA read. Suppress only that verified duplicate race.
+        const refreshed = await c.execute({ sql: 'PRAGMA table_info(api_keys)', args: [] });
+        if (!refreshed.rows.some(row => String(row.name) === 'tenant_id')) throw error;
+      }
+    }
+    await c.execute({
+      sql: 'CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_id ON api_keys(tenant_id)',
+      args: [],
+    });
+
+    if (!client) _tenantSchemaReady = true;
+  }
+
   let _schemaReady = false;
 
   export async function initSchema(): Promise<void> {
