@@ -1,0 +1,12 @@
+# Lex Aureon
+
+> Constitutional AI governance layer for LLMs and agents. It models output as a point on a simplex (Continuity, Reciprocity, Sovereignty), enforces a stability margin with a control barrier function, and writes a signed audit receipt for every governed turn.
+
+## Key links
+
+- [Live system](https://www.lexaureon.com): product and demo
+- [Repository](https://github.com/omomehinemmanuel5-boop/LEX-Aureon): source code and README
+- [Paper](https://doi.org/10.5281/zenodo.20183807): theory and framework
+- [Benchmarks](https://www.lexaureon.com/benchmarks): bare vs. governed results
+- [Public audit trail](https://www.lexaureon.com/audit)
+- [Research](https://www.lexaureon.com/research)
