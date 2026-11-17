@@ -212,6 +212,32 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(body.error?.message).toContain('owned by the authenticated API credential');
   });
 
+  it('rejects external authorization when the requested environment belongs to another credential', async () => {
+    const key = { id: 'credential-owner-a', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'authorize_external_action',
+        arguments: {
+          environment_id: 'credential-owner-b',
+          manifest: { name: 'edit_record', description: 'Update a record' },
+          action_args: { record_id: 'cross-tenant' },
+        },
+      },
+      id: 'cross-environment-authorization',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(externalBrokerMocks.governExternalAction).not.toHaveBeenCalled();
+    expect(createApprovalRequest).not.toHaveBeenCalled();
+    const body = response.body as { error?: { message?: string } };
+    expect(body.error?.message).toContain('owned by the authenticated API credential');
+  });
+
   it('allows external capability discovery in the authenticated credential namespace', async () => {
     const key = { id: 'credential-owner-a', plan: 'free' };
     validateApiKey.mockResolvedValue({ valid: true, key });
@@ -1399,7 +1425,7 @@ describe('MCP constitutional dispatch boundary', () => {
       params: {
         name: 'authorize_external_action',
         arguments: {
-          environment_id: 'test-env',
+          environment_id: 'private-test-1',
           manifest,
           action_args: { record_id: 'synthetic-only' },
           target_actor_id: 'api_key:private-test-1',
@@ -1430,7 +1456,7 @@ describe('MCP constitutional dispatch boundary', () => {
       params: {
         name: 'consume_external_action',
         arguments: {
-          environment_id: 'test-env',
+          environment_id: 'private-test-1',
           manifest,
           action_args: { record_id: 'synthetic-only' },
           session_id: 'external-session',
@@ -1467,7 +1493,7 @@ describe('MCP constitutional dispatch boundary', () => {
       params: {
         name: 'authorize_external_action',
         arguments: {
-          environment_id: 'test-env',
+          environment_id: 'private-test-1',
           manifest: { name: 'edit_record', description: 'Update a record', inputSchema: { type: 'object' } },
           action_args: { record_id: 'blocked' },
           target_actor_id: 'api_key:private-test-1',
@@ -1496,7 +1522,7 @@ describe('MCP constitutional dispatch boundary', () => {
       params: {
         name: 'consume_external_action',
         arguments: {
-          environment_id: 'test-env',
+          environment_id: 'private-test-1',
           manifest: { name: 'edit_record', description: 'Update a record', inputSchema: { type: 'object' } },
           action_args: { record_id: 'blocked' },
           approval_request_id: 'a'.repeat(22),
