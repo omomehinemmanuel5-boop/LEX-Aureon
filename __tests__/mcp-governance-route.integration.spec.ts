@@ -186,6 +186,57 @@ function request(body: Record<string, unknown>, extraHeaders: Record<string, str
 describe('MCP constitutional dispatch boundary', () => {
   afterEach(() => vi.unstubAllEnvs());
 
+  it('rejects external capability discovery into another credential namespace', async () => {
+    const key = { id: 'credential-owner-a', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'discover_external_tool',
+        arguments: {
+          environment_id: 'credential-owner-b',
+          manifest: { name: 'read_customer', description: 'Read a customer record' },
+        },
+      },
+      id: 'cross-environment-discovery',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(externalBrokerMocks.discoverExternalTool).not.toHaveBeenCalled();
+    expect(externalBrokerMocks.governExternalAction).not.toHaveBeenCalled();
+    expect(externalBrokerMocks.consumeExternalAction).not.toHaveBeenCalled();
+    const body = response.body as { error?: { message?: string } };
+    expect(body.error?.message).toContain('owned by the authenticated API credential');
+  });
+
+  it('allows external capability discovery in the authenticated credential namespace', async () => {
+    const key = { id: 'credential-owner-a', plan: 'free' };
+    validateApiKey.mockResolvedValue({ valid: true, key });
+    validateAndConsumeKey.mockResolvedValue({ valid: true, key });
+
+    const response = await POST(request({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'discover_external_tool',
+        arguments: {
+          environment_id: 'credential-owner-a',
+          manifest: { name: 'read_customer', description: 'Read a customer record' },
+        },
+      },
+      id: 'same-environment-discovery',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(externalBrokerMocks.discoverExternalTool).toHaveBeenCalledWith(
+      'credential-owner-a',
+      expect.objectContaining({ name: 'read_customer' }),
+    );
+  });
+
   it('publishes approval_request_id for approval-gated tools without adding it to read-only tools', async () => {
     validateApiKey.mockResolvedValue({ valid: true, key: { id: 'private-test-1', plan: 'private_test' } });
     const response = await POST(request({
