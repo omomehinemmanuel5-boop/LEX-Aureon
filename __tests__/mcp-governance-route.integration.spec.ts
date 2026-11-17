@@ -213,7 +213,7 @@ describe('MCP constitutional dispatch boundary', () => {
   });
 
   it('rejects external authorization when the requested environment belongs to another credential', async () => {
-    const key = { id: 'credential-owner-a', plan: 'free' };
+    const key = { id: 'credential-owner-a', plan: 'private_test' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
 
