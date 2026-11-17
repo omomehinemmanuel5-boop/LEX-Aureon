@@ -59,13 +59,13 @@ jobs:
           TURSO_APP_AUTH_TOKEN: ${{ secrets.TURSO_APP_AUTH_TOKEN }}
         run: |
           if [ -z "$TURSO_APP_DATABASE_URL" ] || [ -z "$TURSO_APP_AUTH_TOKEN" ]; then
-            echo "::error::Missing TURSO_APP_DATABASE_URL or TURSO_APP_AUTH_TOKEN. Add both GitHub Actions secrets using the same TURSO_APP_DATABASE_URL and TURSO_APP_AUTH_TOKEN secrets as the production LexBench workflow."
+            echo "::error::Missing TURSO_APP_DATABASE_URL or TURSO_APP_AUTH_TOKEN. Configure the production GitHub Actions secrets used by the LexBench workflow."
             exit 1
           fi
 
       - name: Run migration script
         env:
           MIGRATION_SCRIPT: ${{ inputs.script_path }}
-          TURSO_APP_DATABASE_URL: ${{ secrets.TURSO_APP_DATABASE_URL }}
-          TURSO_APP_AUTH_TOKEN:   ${{ secrets.TURSO_APP_AUTH_TOKEN }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_APP_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:   ${{ secrets.TURSO_APP_AUTH_TOKEN }}
         run: npx tsx "$MIGRATION_SCRIPT"
