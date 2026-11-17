@@ -6,8 +6,9 @@
  * are migrated once per warm instance and remain accepted until rotated.
  */
 import crypto from 'crypto';
-import { getClient } from './db';
+import { getClient, initTenantSchema } from './db';
 import { FREE_AGENT_TOOL_RUN_LIMIT } from './pricing';
+import { personalTenantIdForApiKey } from './tenants/identity';
 
 function generateSecureRandom(bytes: number): string {
   const arr = new Uint8Array(bytes);
@@ -37,6 +38,7 @@ export interface ApiKey {
   created_at: number;
   last_used_at: number | null;
   expires_at: number | null;
+  tenant_id: string | null;
 }
 
 const PLANS = {
@@ -64,7 +66,8 @@ export async function initApiKeySchema(): Promise<void> {
       runs_limit INTEGER NOT NULL DEFAULT 1000,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       last_used_at INTEGER,
-      expires_at INTEGER
+      expires_at INTEGER,
+      tenant_id TEXT
     )`,
     args: [],
   });
@@ -72,6 +75,7 @@ export async function initApiKeySchema(): Promise<void> {
     try { await db.execute(`ALTER TABLE api_keys ADD COLUMN ${column}`); } catch { /* already migrated */ }
   }
   try { await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash) WHERE key_hash IS NOT NULL'); } catch { /* legacy duplicate data is handled below */ }
+  await initTenantSchema();
 
   if (!keyHashMigrated) {
     const legacy = await db.execute({
@@ -106,15 +110,37 @@ export async function generateApiKey(params: {
   const plan = params.plan ?? 'free';
   const limit = PLANS[plan].limit;
   const expiresAt = params.expiresAt ?? (plan === 'private_test' ? Date.now() + 2 * 60 * 60 * 1000 : null);
-  await db.execute({
-    sql: `INSERT INTO api_keys (id, key, key_hash, key_prefix, key_preview, name, email, plan, runs_limit, expires_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [id, `legacy_${id}`, hashApiKey(raw), raw.slice(0, 10), `${raw.slice(0, 10)}...${raw.slice(-4)}`, params.name ?? 'My Key', params.email, plan, limit, expiresAt],
-  });
+  const tenantId = personalTenantIdForApiKey(id);
+  const createdAt = Math.floor(Date.now() / 1000);
+  // Keep tenant creation, owner membership, default environment, and API-key
+  // binding atomic. A partially provisioned credential must never escape.
+  await db.batch([
+    {
+      sql: `INSERT INTO tenants (id, kind, display_name, created_at, updated_at)
+            VALUES (?, 'personal', 'Personal workspace', ?, ?)`,
+      args: [tenantId, createdAt, createdAt],
+    },
+    {
+      sql: `INSERT INTO tenant_members (tenant_id, actor_id, role, status, created_at)
+            VALUES (?, ?, 'owner', 'active', ?)`,
+      args: [tenantId, `api_key:${id}`, createdAt],
+    },
+    {
+      sql: `INSERT INTO tenant_environments (environment_id, tenant_id, display_name, status, created_at)
+            VALUES (?, ?, 'Default environment', 'active', ?)`,
+      args: [id, tenantId, createdAt],
+    },
+    {
+      sql: `INSERT INTO api_keys (id, key, key_hash, key_prefix, key_preview, name, email, plan, runs_limit, expires_at, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, `legacy_${id}`, hashApiKey(raw), raw.slice(0, 10), `${raw.slice(0, 10)}...${raw.slice(-4)}`, params.name ?? 'My Key', params.email, plan, limit, expiresAt, tenantId],
+    },
+  ], 'write');
   return {
     id, key: raw, key_preview: `${raw.slice(0, 10)}...${raw.slice(-4)}`,
     name: params.name ?? 'My Key', email: params.email, plan,
     runs_used: 0, runs_limit: limit, created_at: Date.now(), last_used_at: null, expires_at: expiresAt,
+    tenant_id: tenantId,
   };
 }
 
@@ -126,6 +152,7 @@ function rowToApiKey(row: Record<string, unknown>): ApiKey {
     runs_used: Number(row.runs_used), runs_limit: Number(row.runs_limit),
     created_at: Number(row.created_at), last_used_at: row.last_used_at == null ? null : Number(row.last_used_at),
     expires_at: row.expires_at == null ? null : Number(row.expires_at),
+    tenant_id: row.tenant_id == null ? null : String(row.tenant_id),
   };
 }
 

@@ -46,6 +46,14 @@ The safe migration sequence is:
 
 Do not migrate existing records by email equality alone. Do not change existing session identifiers until a compatibility migration and ownership mapping are proven.
 
+## R1b tenant schema and provisioning
+
+R1b introduces the additive `tenants`, `tenant_members`, and `tenant_environments` tables and a nullable `api_keys.tenant_id` binding. Each newly generated API key receives a distinct personal tenant, an owner membership (`api_key:<id>`), and a default environment whose ID preserves the existing API-key environment namespace. These four records are created in one database write batch so a partially provisioned key is not returned.
+
+Existing credentials are backfilled by the manual migration `scripts/migrations/2026-11-17-r1b-personal-tenant-backfill.ts`. It derives `tn_personal_<api-key-id>` independently for every credential, never groups by email, never changes session IDs, only fills null tenant bindings, and verifies tenant, owner-membership, and environment mappings after the write. The backfill script is not run by application startup or CI; it is available only through the explicitly dispatched migration workflow. The additive tables and nullable API-key column are initialized by `initApiKeySchema()` when API-key storage is initialized. Review and run it against the intended Turso database after the PR is reviewed and merged.
+
+This schema is a foundation, not complete multi-tenancy. Existing governance queries are not yet tenant-scoped by these tables, organization membership/invitations are not enabled, and tenant IDs must not be treated as authorization proof until R1c/R2 enforce ownership at every relevant boundary.
+
 ## Capability and enforcement contract
 
 REST and MCP must be adapters over the same underlying governance services, not separate policy engines.
@@ -84,4 +92,4 @@ Do not merge these by guesswork. First designate the supported package and prese
 - R4: customer administration UI, usage and billing.
 - Separate workstream: isolated workspace runner.
 
-This PR implements only R1a's immediate environment-ownership guard and its regression tests. It does not claim tenant tables, organization membership, shared tenant policies, or complete tenant isolation are implemented.
+R1a's environment-ownership guard and regression tests are merged. The R1b implementation is proposed separately and adds the tenant schema, atomic provisioning for newly created API keys, and a manual backfill script. Neither R1a nor R1b enables organization sharing or claims complete tenant isolation.

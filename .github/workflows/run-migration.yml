@@ -40,15 +40,22 @@ jobs:
         run: npm install
 
       - name: Verify script exists
+        env:
+          MIGRATION_SCRIPT: ${{ inputs.script_path }}
         run: |
-          if [ ! -f "${{ github.event.inputs.script_path }}" ]; then
-            echo "::error::Script not found: ${{ github.event.inputs.script_path }}"
+          if [[ ! "$MIGRATION_SCRIPT" =~ ^scripts/migrations/[A-Za-z0-9._-]+\.ts$ ]]; then
+            echo "::error::Only TypeScript files directly inside scripts/migrations/ may be run."
             exit 1
           fi
-          echo "Running: ${{ github.event.inputs.script_path }}"
+          if [ ! -f "$MIGRATION_SCRIPT" ]; then
+            echo "::error::Migration script not found."
+            exit 1
+          fi
+          echo "Running: $MIGRATION_SCRIPT"
 
       - name: Run migration script
-        run: npx tsx "${{ github.event.inputs.script_path }}"
         env:
+          MIGRATION_SCRIPT: ${{ inputs.script_path }}
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN:   ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: npx tsx "$MIGRATION_SCRIPT"

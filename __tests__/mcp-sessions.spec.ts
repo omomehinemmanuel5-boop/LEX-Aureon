@@ -17,7 +17,7 @@ import {
 
 const key = {
   id: 'key-1', key: '', key_preview: 'lex_sk_ab...wxyz', name: 'test', email: 'test@example.com',
-  plan: 'private_test' as const, runs_used: 0, runs_limit: 100, created_at: Date.now(), last_used_at: null, expires_at: null,
+  plan: 'private_test' as const, runs_used: 0, runs_limit: 100, created_at: Date.now(), last_used_at: null, expires_at: null, tenant_id: null,
 };
 
 describe('MCP sessions', () => {
