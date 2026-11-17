@@ -2,8 +2,8 @@ name: Run Migration Script
 
 # Phone-friendly, tap-to-run migration executor. Emmanuel works entirely from
 # mobile — no local shell to `npx tsx scripts/migrations/*.ts` from. This
-# uses existing TURSO_DATABASE_URL / TURSO_AUTH_TOKEN GitHub secrets
-# mapped from the Vercel Production application database (not the evaluation DB).
+# uses the production TURSO_APP_DATABASE_URL / TURSO_APP_AUTH_TOKEN GitHub
+# secrets, matching lexbench-prod.yml (never the isolated TURSO_EVAL_* secrets).
 # on demand, from the GitHub mobile app or mobile browser: repo -> Actions ->
 # "Run Migration Script" -> Run workflow -> (script path defaults to today's
 # AdvBench retirement) -> Run workflow (green button).
@@ -55,17 +55,17 @@ jobs:
 
       - name: Verify application database credentials
         env:
-          TURSO_APP_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_APP_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          TURSO_APP_DATABASE_URL: ${{ secrets.TURSO_APP_DATABASE_URL }}
+          TURSO_APP_AUTH_TOKEN: ${{ secrets.TURSO_APP_AUTH_TOKEN }}
         run: |
           if [ -z "$TURSO_APP_DATABASE_URL" ] || [ -z "$TURSO_APP_AUTH_TOKEN" ]; then
-            echo "::error::Missing TURSO_APP_DATABASE_URL or TURSO_APP_AUTH_TOKEN. Add both GitHub Actions secrets using the Vercel Production application database values."
+            echo "::error::Missing TURSO_APP_DATABASE_URL or TURSO_APP_AUTH_TOKEN. Add both GitHub Actions secrets using the same TURSO_APP_DATABASE_URL and TURSO_APP_AUTH_TOKEN secrets as the production LexBench workflow."
             exit 1
           fi
 
       - name: Run migration script
         env:
           MIGRATION_SCRIPT: ${{ inputs.script_path }}
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN:   ${{ secrets.TURSO_AUTH_TOKEN }}
+          TURSO_APP_DATABASE_URL: ${{ secrets.TURSO_APP_DATABASE_URL }}
+          TURSO_APP_AUTH_TOKEN:   ${{ secrets.TURSO_APP_AUTH_TOKEN }}
         run: npx tsx "$MIGRATION_SCRIPT"
