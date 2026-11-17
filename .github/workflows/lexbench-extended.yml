@@ -240,8 +240,8 @@ jobs:
           GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           MISTRAL_API_KEY:      ${{ secrets.MISTRAL_API_KEY }}
-          TURSO_DATABASE_URL:   ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_AUTH_TOKEN }}
+          TURSO_DATABASE_URL:   ${{ secrets.TURSO_APP_DATABASE_URL }}
+          TURSO_AUTH_TOKEN:     ${{ secrets.TURSO_APP_AUTH_TOKEN }}
           ADMIN_PASSWORD:       ${{ secrets.ADMIN_PASSWORD }}
           JINA_API_KEY:         ${{ secrets.JINA_API_KEY }}
           CRON_SECRET:          ${{ secrets.CRON_SECRET }}
