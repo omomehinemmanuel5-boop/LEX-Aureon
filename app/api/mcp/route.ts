@@ -790,6 +790,15 @@ async function handlePost(req: Request) {
       if (!environmentId || !manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) {
         return invalidParams(id ?? null, 'environment_id and manifest.name are required');
       }
+      // Until tenant-owned environment registration is introduced, each API
+      // credential owns exactly one external capability namespace: its key ID.
+      // Never let a caller select another credential's environment namespace.
+      if (!operator && environmentId !== ownerId) {
+        return invalidParams(
+          id ?? null,
+          'environment_id must identify an environment owned by the authenticated API credential',
+        );
+      }
       if (toolName === 'authorize_external_action') {
         try {
           await runZTrajMigrations();
