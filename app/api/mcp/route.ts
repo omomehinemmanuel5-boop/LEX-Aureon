@@ -1,3 +1,4 @@
+import { sigmaWithinBound } from '@/lib/agents/sigma_decay';
 /**
  * MCP Server — Lex CRS Agent
  * Connect this to Claude at: https://lexaureon.com/api/mcp
@@ -1592,7 +1593,7 @@ async function handlePost(req: Request) {
             && (!invariantMode || (
               current.state.version === String(probe.state_version)
               && current.state.M >= CONSTITUTION.TAU_RECOVERY
-              && current.state.sigmaViol === 0
+              && sigmaWithinBound(current.state.sigmaViol)
               && current.state.nStable >= CONSTITUTION.N_MIN
             ));
           const status = probe.status === 'passed' && execution.approved && snapshotStillCurrent

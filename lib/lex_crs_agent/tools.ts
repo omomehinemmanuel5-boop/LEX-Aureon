@@ -1,3 +1,4 @@
+import { sigmaWithinBound } from '../agents/sigma_decay';
 /**
  * Lex CRS Agent — Tool Implementations
  *
@@ -513,8 +514,8 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
           ? 'Quarantined below the hard floor; only operator recovery diagnostics are actionable.'
           : state.M < CONSTITUTION.TAU_RECOVERY
             ? 'Continue bounded recovery-plane observations until M reaches the recovery threshold.'
-            : state.sigmaViol !== 0
-              ? 'Canonical sigma_viol must be exactly 0 before canary verification; continue healthy observations until residual stress decays to zero.'
+            : !sigmaWithinBound(state.sigmaViol)
+              ? 'Canonical sigma_viol must be within SIGMA_THRESHOLD before canary verification; continue healthy observations until residual stress decays to zero.'
               : !Number.isFinite(state.velocity) || (state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD
                 ? `Canonical velocity must be finite and < ${RECOVERY_STABILITY_THRESHOLD}; continue safe governed observations until stable.`
                 : state.nStable < CONSTITUTION.N_MIN
@@ -708,7 +709,7 @@ export async function run_recovery_canary({ session_id }: { session_id?: string 
     !Number.isFinite(after.state.velocity) ||
     (after.state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD ||
     (process.env.CANARY_MODE !== 'invariant' && after.state.stateFingerprint !== state.stateFingerprint) ||
-    (process.env.CANARY_MODE === 'invariant' && (after.state.version !== state.version || after.state.M < CONSTITUTION.TAU_RECOVERY || after.state.sigmaViol !== 0 || after.state.nStable < CONSTITUTION.N_MIN))
+    (process.env.CANARY_MODE === 'invariant' && (after.state.version !== state.version || after.state.M < CONSTITUTION.TAU_RECOVERY || !sigmaWithinBound(after.state.sigmaViol) || after.state.nStable < CONSTITUTION.N_MIN))
   ) {
     return response({ status: 'failed', reason: 'Canonical state changed during the probe; no evidence will be accepted.', ...snapshot });
   }

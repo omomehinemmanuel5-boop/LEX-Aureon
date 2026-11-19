@@ -1,3 +1,4 @@
+import { sigmaWithinBound } from './sigma_decay';
 import crypto from 'crypto';
 import { getClient } from '../db';
 import { CONSTITUTION } from '../constitution';
@@ -177,7 +178,7 @@ export async function readInvariantRecoveryCanaryEvidence(
     const valid = status === 'passed'
       && (row.state_version === undefined || String(row.state_version) === current.stateVersion)
       && current.M >= CONSTITUTION.TAU_RECOVERY
-      && current.sigmaViol === 0
+      && sigmaWithinBound(current.sigmaViol)
       && current.nStable >= CONSTITUTION.N_MIN
       && Number.isFinite(current.velocity)
       && current.velocity < RECOVERY_STABILITY_THRESHOLD
@@ -227,7 +228,7 @@ export async function readRecoveryCanaryEvidence(
     const valid = status === 'passed'
       && (row.state_version === undefined || String(row.state_version) === current.stateVersion)
       && current.M >= CONSTITUTION.TAU_RECOVERY
-      && current.sigmaViol === 0
+      && sigmaWithinBound(current.sigmaViol)
       && current.nStable >= CONSTITUTION.N_MIN
       && Number.isFinite(current.velocity)
       && current.velocity < RECOVERY_STABILITY_THRESHOLD

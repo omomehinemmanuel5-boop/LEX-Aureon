@@ -1,3 +1,4 @@
+import { sigmaWithinBound } from './sigma_decay';
 import { CONSTITUTION } from '../constitution';
 
 type ToolCapability =
@@ -29,7 +30,7 @@ export function recoveryCanaryPredicateFailures(input: {
   if (input.M < CONSTITUTION.TAU_FLOOR) unmet.push(`M ${input.M.toFixed(3)} < τ_floor ${CONSTITUTION.TAU_FLOOR}`);
   if (input.M < CONSTITUTION.TAU_RECOVERY) unmet.push(`M ${input.M.toFixed(3)} < τ_recovery ${CONSTITUTION.TAU_RECOVERY}`);
   if (input.nStable < CONSTITUTION.N_MIN) unmet.push(`n_stable ${input.nStable} < N_MIN ${CONSTITUTION.N_MIN}`);
-  if (input.sigmaViol !== 0) unmet.push(`sigma_viol ${String(input.sigmaViol)} !== 0 (exact zero required before canary verification)`);
+  if (!sigmaWithinBound(input.sigmaViol)) unmet.push(`sigma_viol ${String(input.sigmaViol)} exceeds SIGMA_THRESHOLD (within SIGMA_THRESHOLD required before canary verification)`);
   if (!Number.isFinite(input.velocity) || input.velocity >= RECOVERY_STABILITY_THRESHOLD) {
     unmet.push(`velocity ${String(input.velocity)} must be finite and < ${RECOVERY_STABILITY_THRESHOLD}`);
   }
@@ -51,7 +52,7 @@ export function deriveRecoveryState(M: number, evidence: RecoveryEvidence): Reco
   const verified =
     evidence.canaryPassed === true &&
     evidence.nStable >= CONSTITUTION.N_MIN &&
-    evidence.sigmaViol === 0;
+    sigmaWithinBound(evidence.sigmaViol);
 
   if (!verified) return 'RESTORING';
   return M < CONSTITUTION.OPTIMAL_M_THRESHOLD ? 'VERIFIED' : 'NORMAL';
@@ -114,7 +115,7 @@ export function recoveryCapabilityAllowed(
       ? 'No passing canary is current for this session. The server evaluates and persists evidence from canonical storage once the full predicate passes; existing operator-issued evidence is preserved, and an operator may use run_recovery_canary for explicit audit or re-evaluation.'
       : evidence.nStable < CONSTITUTION.N_MIN
         ? `Stable observations ${evidence.nStable}/${CONSTITUTION.N_MIN} are insufficient; continue safe governed observations.`
-        : `sigmaViol=${String(evidence.sigmaViol)} must be exactly 0 before restoration.`;
+        : `sigmaViol=${String(evidence.sigmaViol)} must be within SIGMA_THRESHOLD before restoration.`;
     return {
       allowed: false,
       state,

@@ -1,3 +1,4 @@
+import { sigmaWithinBound } from './sigma_decay';
 import { getZTraj, recordZTrajObservation } from '../kv';
 import { getClient } from '../db';
 import {
@@ -116,7 +117,7 @@ export function deriveRecoveryBreachCount(
     const m = Number(event.snapshot.last_m
       ?? Math.min(Number(event.snapshot.last_c), Number(event.snapshot.last_r), Number(event.snapshot.last_s)));
     if (!Number.isFinite(nStable) || !Number.isFinite(sigma) || !Number.isFinite(m)
-      || sigma !== 0 || m < CONSTITUTION.TAU_RECOVERY || nStable < pending.lastN) {
+      || !sigmaWithinBound(sigma) || m < CONSTITUTION.TAU_RECOVERY || nStable < pending.lastN) {
       pending = null;
       continue;
     }
@@ -339,8 +340,8 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     const nextStable = wasMoving ? 0 : current.n_stable + 1;
     const reason = wasMoving
       ? `A zero-velocity baseline was recorded, but the prior velocity ${current.velocity.toFixed(4)} exceeded the stability threshold ${RECOVERY_STABILITY_THRESHOLD}; wait at least ${observationIntervalMs / 1000}s before counting the next observation.`
-      : canonical.available && canonical.state.sigmaViol !== 0
-        ? `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); canonical sigma_viol=${String(canonical.state.sigmaViol)} must be exactly 0 before canary verification. Continue healthy observations until residual stress decays to zero.`
+      : canonical.available && !sigmaWithinBound(canonical.state.sigmaViol)
+        ? `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); canonical sigma_viol=${String(canonical.state.sigmaViol)} must be within SIGMA_THRESHOLD before canary verification. Continue healthy observations until residual stress decays to zero.`
         : canonical.available && canonical.state.canaryPassed
           ? 'Stable recovery observation recorded; exact-snapshot canary evidence is current.'
           : `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); the server evaluates the canonical canary predicate automatically when all prerequisites pass. Consequential execution still requires ordinary authorization.`;
@@ -441,8 +442,8 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
   const recoveryReason = state === 'RESTORING' && canonical.available
     ? canonical.state.nStable < CONSTITUTION.N_MIN
       ? `Recovery observation ${canonical.state.nStable}/${CONSTITUTION.N_MIN}; continue safe governed observations before canary verification.`
-      : canonical.state.sigmaViol !== 0
-        ? `Canonical sigma_viol=${String(canonical.state.sigmaViol)} must be exactly 0 before canary verification; continue healthy observations until residual stress decays to zero.`
+      : !sigmaWithinBound(canonical.state.sigmaViol)
+        ? `Canonical sigma_viol=${String(canonical.state.sigmaViol)} must be within SIGMA_THRESHOLD before canary verification; continue healthy observations until residual stress decays to zero.`
         : 'Stability thresholds are met, but no passing canary is persisted for this exact state snapshot; the server issues the recovery canary automatically on the next governed read; retry the action.'
     : reason;
 
