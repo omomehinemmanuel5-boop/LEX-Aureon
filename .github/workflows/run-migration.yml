@@ -59,7 +59,7 @@ jobs:
           TURSO_APP_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
           if [ -z "$TURSO_APP_DATABASE_URL" ] || [ -z "$TURSO_APP_AUTH_TOKEN" ]; then
-            echo "::error::Missing TURSO_APP_DATABASE_URL or TURSO_APP_AUTH_TOKEN. Configure the production GitHub Actions secrets used by the LexBench workflow."
+            echo "::error::Missing TURSO_DATABASE_URL or TURSO_AUTH_TOKEN repository secret. Configure both application database secrets in Settings → Secrets and variables → Actions."
             exit 1
           fi
 
