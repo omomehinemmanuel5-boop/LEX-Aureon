@@ -1,3 +1,4 @@
+import { sigmaWithinBound } from './sigma_decay';
 /**
  * Constitutional tool executor.
  *
@@ -291,7 +292,7 @@ function safeTaskContext(
 export function recoveryBandBreachReason(state: CanonicalGovernanceState): string | null {
   if (state.canaryPassed !== true) return null;
   if (state.M < CONSTITUTION.TAU_RECOVERY) return `M=${state.M} is below TAU_RECOVERY=${CONSTITUTION.TAU_RECOVERY}`;
-  if (state.sigmaViol !== 0) return `sigma_viol=${state.sigmaViol} is not zero`;
+  if (!sigmaWithinBound(state.sigmaViol)) return `sigma_viol=${state.sigmaViol} is not zero`;
   if (state.velocity !== undefined && !Number.isFinite(state.velocity)) return 'velocity is not finite';
   if (state.velocity !== undefined && state.velocity >= RECOVERY_STABILITY_THRESHOLD) {
     return `velocity=${state.velocity} reached RECOVERY_STABILITY_THRESHOLD=${RECOVERY_STABILITY_THRESHOLD}`;

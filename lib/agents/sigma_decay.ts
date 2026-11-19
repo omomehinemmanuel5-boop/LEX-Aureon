@@ -1,3 +1,4 @@
+import { CONSTITUTION } from '../constitution';
 /**
  * Finite-time decay policy for the canonical constitutional stress accumulator.
  *
@@ -25,4 +26,15 @@ export function nextSigmaViolation(
   }
 
   return next;
+}
+
+
+/**
+ * Sigma is within bound when it is finite and at or below SIGMA_THRESHOLD.
+ * Residual sigma decays geometrically and only reaches exact zero after a very
+ * long run of healthy observations, so exact-zero checks block recovery for any
+ * session that has ever dipped. The threshold is the existing design bound.
+ */
+export function sigmaWithinBound(sigma: number): boolean {
+  return Number.isFinite(sigma) && sigma <= CONSTITUTION.SIGMA_THRESHOLD;
 }

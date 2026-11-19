@@ -107,9 +107,11 @@ describe('canonical governance state', () => {
       // The legacy tool-session row reports 0.12, but z_traj is authoritative.
       sigmaViol: 0.04, toolCalls: 7, healthBand: 'ALERT',
       trajectoryAvailable: true,
-      recoveryState: 'RESTORING',
-      canaryPassed: false,
-      canaryReceiptId: null,
+      // Sigma 0.04 is within SIGMA_THRESHOLD, and the other predicate terms hold,
+      // so the healthy trajectory is verified and the server issues its canary.
+      recoveryState: 'VERIFIED',
+      canaryPassed: true,
+      canaryReceiptId: expect.any(String),
     });
     expect(result.state.stateFingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
@@ -179,13 +181,16 @@ describe('canonical governance state', () => {
     expect(canonicalExecutionAllowed(result.state).allowed).toBe(false);
   });
 
-  it('does not classify recovery as verified when sigma is positive below the old threshold', () => {
-    const state = deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
+  it('classifies recovery as verified when sigma is within SIGMA_THRESHOLD, and not when above it', () => {
+    const within = deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
+    expect(within).toBe('VERIFIED');
+    const above = deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0.3, canaryPassed: true });
+    expect(above).toBe('RESTORING');
     const gate = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
-
-    expect(state).toBe('RESTORING');
-    expect(gate.allowed).toBe(false);
-    expect(gate.reason).toContain('must be exactly 0');
+    expect(gate.allowed).toBe(true);
+    const aboveGate = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0.3, canaryPassed: true });
+    expect(aboveGate.allowed).toBe(false);
+    expect(aboveGate.reason).toContain('SIGMA_THRESHOLD');
   });
 
   it.each([

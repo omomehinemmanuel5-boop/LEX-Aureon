@@ -346,10 +346,10 @@ describe('bounded recovery plane', () => {
     expect(mocks.recordZTrajObservation).not.toHaveBeenCalled();
   });
 
-  it('reports exact-zero sigma as the remaining recovery blocker', async () => {
+  it('reports sigma above SIGMA_THRESHOLD as the remaining recovery blocker', async () => {
     mocks.readCanonicalGovernanceState.mockResolvedValue({
       available: true,
-      state: { recoveryState: 'RESTORING', nStable: 3, sigmaViol: 0.1, canaryPassed: false },
+      state: { recoveryState: 'RESTORING', nStable: 3, sigmaViol: 0.3, canaryPassed: false },
     });
     mocks.recordZTrajObservation.mockResolvedValue(true);
     mocks.getZTraj.mockResolvedValue({
@@ -357,7 +357,7 @@ describe('bounded recovery plane', () => {
       velocity: 0,
       n_stable: 3,
       drift_dir: 'stable',
-      sigma_viol: 0.1,
+      sigma_viol: 0.3,
       last_m: 0.20,
       last_c: 0.20,
       last_r: 0.40,
@@ -373,7 +373,7 @@ describe('bounded recovery plane', () => {
 
     expect(result.advanced).toBe(true);
     expect(result.state).toBe('RESTORING');
-    expect(result.reason).toContain('sigma_viol=0.1 must be exactly 0');
+    expect(result.reason).toContain('sigma_viol=0.3 must be within SIGMA_THRESHOLD');
     expect(result.reason).toContain('healthy observations');
   });
 

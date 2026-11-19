@@ -86,7 +86,7 @@ describe('recovery canary evidence', () => {
       trajectoryAvailable: true, M: 0.15, nStable: 3, sigmaViol: 0, velocity: 0.019,
     })).toEqual([]);
     expect(recoveryCanaryPredicateFailures({
-      trajectoryAvailable: false, M: 0.04, nStable: 2, sigmaViol: Number.MIN_VALUE, velocity: 0.02,
+      trajectoryAvailable: false, M: 0.04, nStable: 2, sigmaViol: 0.3, velocity: 0.02,
     })).toHaveLength(6);
   });
 
@@ -248,9 +248,9 @@ describe('health-band recovery canary validity', () => {
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
-  it('rejects any positive sigma_viol, however small', async () => {
+  it('rejects sigma above SIGMA_THRESHOLD and accepts sigma within it', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
-    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: Number.MIN_VALUE }))
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0.3 }))
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
@@ -325,12 +325,12 @@ describe('health-band recovery canary validity', () => {
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
-  it('refuses a canary when state version changes or sigma is nonzero', async () => {
+  it('refuses a canary when state version changes or sigma is above SIGMA_THRESHOLD', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, stateVersion: 'canonical-v2' }))
       .resolves.toMatchObject({ passed: false });
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
-    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0.01 }))
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0.3 }))
       .resolves.toMatchObject({ passed: false });
   });
 });
