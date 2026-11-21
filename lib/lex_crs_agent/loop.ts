@@ -1,3 +1,4 @@
+import { runWithRunId } from '../agents/run_context';
 /**
  * Lex CRS Agent — Agentic Loop
  *
@@ -129,7 +130,17 @@ export function buildLoopTools(ctx: AgentRunContext): Record<string, (a: Record<
   };
 }
 
-export async function runAgentLoop(
+export function runAgentLoop(
+  task: string,
+  model: ModelId | undefined,
+  onStep: ((step: AgentStep) => void) | undefined,
+  context: AgentRunContext,
+): Promise<AgentResult> {
+  // Every receipt written during this run carries context.runId.
+  return runWithRunId(context.runId, () => runAgentLoopBody(task, model, onStep, context));
+}
+
+async function runAgentLoopBody(
   task: string,
   model: ModelId | undefined,
   onStep: ((step: AgentStep) => void) | undefined,

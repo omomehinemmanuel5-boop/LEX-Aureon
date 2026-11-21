@@ -1,3 +1,4 @@
+import { currentRunId } from './run_context';
 import { getClient } from '../db';
 import type { ToolCRSState, ToolSessionState } from './types';
 import { appendProvenanceEvent, hashProvenanceEvent } from './governance_provenance';
@@ -206,14 +207,15 @@ export async function writeGovernanceReceipt(receipt: GovernanceReceipt): Promis
     sql: `INSERT INTO tool_receipts
       (receipt_id, session_id, actor_id, tool_name, args_hash, decision,
        c_score, r_score, s_score, m_score, risk_level, reason, sigma_viol,
-       policy_version, previous_provenance_hash, provenance_hash, created_at, canary_receipt_id, state_snapshot)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       policy_version, previous_provenance_hash, provenance_hash, created_at, canary_receipt_id, state_snapshot, run_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       receipt.receipt_id, receipt.session_id, receipt.actor_id ?? 'internal-agent',
       receipt.tool_name, receipt.args_hash,
       receipt.decision, receipt.crs.C, receipt.crs.R, receipt.crs.S, receipt.crs.M,
       receipt.crs.risk_level, receipt.reason, receipt.sigma_viol,
       TOOL_GOVERNANCE_POLICY_VERSION, previousHash ?? null, provenanceHash, new Date().toISOString(), ...auditValues,
+      currentRunId(),
     ],
   });
 }
