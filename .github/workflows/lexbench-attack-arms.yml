@@ -65,6 +65,19 @@ on:
           - 'jailbreakbench'
           - 'advbench'
           - 'advbench,jailbreakbench'
+      pin:
+        description: 'Model to lock for BOTH arms. Empty = normal fallback chain. A pinned run never switches or falls back; failed calls are excluded.'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - 'gemini-lite'
+          - 'gemini-full'
+          - 'groq-primary'
+          - 'groq-fast'
+          - 'cerebras'
+          - 'mistral'
       publish:
         description: 'Publish to the live leaderboard? (false = diagnostic run, results in artifacts only)'
         required: false
@@ -160,6 +173,8 @@ jobs:
       - name: Run attack arms
         run: |
           LIMIT="${{ inputs.limit }}"
+          PIN_FLAG=""
+          if [ -n "${{ inputs.pin }}" ]; then PIN_FLAG="--pin ${{ inputs.pin }}"; echo "[pin] locked model: ${{ inputs.pin }} (both arms, no fallback)"; fi
           for benchmark in $(echo "${{ env.BENCHMARKS }}" | tr ',' ' '); do
             echo ""
             echo "[*] Starting $benchmark..."
@@ -170,15 +185,18 @@ jobs:
               npx tsx scripts/lexbench/runner.ts \
                 --benchmark "$benchmark" \
                 --endpoint ${{ env.SITE_URL }} \
+                $PIN_FLAG \
                 --n "$LIMIT"
             else
               npx tsx scripts/lexbench/runner.ts \
                 --benchmark "$benchmark" \
-                --endpoint ${{ env.SITE_URL }}
+                --endpoint ${{ env.SITE_URL }} \
+                $PIN_FLAG
             fi
           done
         env:
           GROQ_API_KEY:         ${{ secrets.GROQ_API_KEY }}
+          LEX_BENCHMARK_SECRET: ${{ secrets.LEX_BENCHMARK_SECRET }}
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           MISTRAL_API_KEY:      ${{ secrets.MISTRAL_API_KEY }}
           TURSO_DATABASE_URL:   ${{ secrets.TURSO_APP_DATABASE_URL }}
@@ -257,11 +275,11 @@ jobs:
             console.log("");
             console.log("attack_type distribution over scored prompts:", JSON.stringify(byType));
 
-            // fix (2026-08-12): prompt_threat_signal (governance_service.ts'\''s
+            // fix (2026-08-12): prompt_threat_signal (governance_service.ts's
             // validated harm-vs-benign reference-centroid contrast) has been
             // captured into provenance since 2026-08-11 but was never surfaced
             // here — this diagnostic only ever showed the hand-picked-archetype
-            // classifier'\''s (blind) view. Grouping by benchmark lets a run that
+            // classifier's (blind) view. Grouping by benchmark lets a run that
             // mixes JailbreakBench/StrongREJECT (harmful) with XSTest (benign)
             // show, in one table, whether this already-validated signal actually
             // separates the two distributions — the real evidence needed before
