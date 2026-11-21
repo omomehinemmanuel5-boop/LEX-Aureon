@@ -75,39 +75,61 @@ const SYSTEM = [
  * wrapper. This makes the internal agent loop subject to the same authorization
  * boundary as the public MCP dispatcher.
  */
-const LOOP_TOOLS: Record<string, (a: Record<string, unknown>) => Promise<string>> = {
-  ...Object.fromEntries(
-    Object.entries(TOOL_REGISTRY).map(([name, fn]) => [
-      name,
-      (args: Record<string, unknown>) => {
-        const sessionId = (args.session_id as string | undefined)
-          ?? `agent-${new Date().toISOString().slice(0, 10)}`;
-        return executeGovernedTool(
-          name,
-          bindGovernanceToolSession(name, args, sessionId),
-          fn as (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
-          sessionId,
-          args.task_context as string | undefined,
-          'internal-agent-loop',
-        );
-      },
-    ])
-  ),
-  patch_file: (args: Record<string, unknown>) => executeGovernedTool(
-    'patch_file',
-    args,
-    (a) => patch_file(a as unknown as Parameters<typeof patch_file>[0]),
-    (args.session_id as string | undefined) ?? `agent-${new Date().toISOString().slice(0, 10)}`,
-    args.task_context as string | undefined,
-    'internal-agent-loop',
-  ),
-};
+/** Identity for one agent run. Derived by the caller from authenticated state, never from model output. */
+export interface AgentRunContext {
+  sessionId: string;
+  actorId: string;
+}
+
+// Identity fields a model may try to supply. They are removed from tool arguments
+// and replaced by the run context, so model output cannot choose the session or actor.
+const IDENTITY_ARG_KEYS = ['session_id', 'actor_id', 'owner_id', 'workspace_id', 'run_id', 'execution_context'] as const;
+
+function sanitizeToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = { ...args };
+  for (const key of IDENTITY_ARG_KEYS) delete clean[key];
+  return clean;
+}
+
+export function buildLoopTools(ctx: AgentRunContext): Record<string, (a: Record<string, unknown>) => Promise<string>> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(TOOL_REGISTRY).map(([name, fn]) => [
+        name,
+        (args: Record<string, unknown>) => {
+          const clean = sanitizeToolArgs(args);
+          return executeGovernedTool(
+            name,
+            bindGovernanceToolSession(name, clean, ctx.sessionId),
+            fn as (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
+            ctx.sessionId,
+            args.task_context as string | undefined,
+            ctx.actorId,
+          );
+        },
+      ])
+    ),
+    patch_file: (args: Record<string, unknown>) => {
+      const clean = sanitizeToolArgs(args);
+      return executeGovernedTool(
+        'patch_file',
+        bindGovernanceToolSession('patch_file', clean, ctx.sessionId),
+        (a) => patch_file(a as unknown as Parameters<typeof patch_file>[0]),
+        ctx.sessionId,
+        args.task_context as string | undefined,
+        ctx.actorId,
+      );
+    },
+  };
+}
 
 export async function runAgentLoop(
   task: string,
-  model?: ModelId,
-  onStep?: (step: AgentStep) => void,
+  model: ModelId | undefined,
+  onStep: ((step: AgentStep) => void) | undefined,
+  context: AgentRunContext,
 ): Promise<AgentResult> {
+  const LOOP_TOOLS = buildLoopTools(context);
   await runZTrajMigrations();
   const messages: Message[] = [
     { role: 'system', content: SYSTEM },
