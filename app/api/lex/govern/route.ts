@@ -16,6 +16,7 @@ import type { IdentityMode } from '@/lib/sovereign_kernel';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { consumeApiKey, validateApiKey } from '@/lib/api_keys';
 import { FREE_TEXT_RUNS_PER_DAY } from '@/lib/pricing';
+import { parseBenchmarkPin, runWithBenchmarkPin } from '@/lib/benchmark_pin';
 
 let _dbReady = false;
 async function ensureDB() {
@@ -110,7 +111,17 @@ async function readBodyWithinLimit(req: Request): Promise<string | null> {
   return new TextDecoder().decode(bytes);
 }
 
+/**
+ * Benchmark pin: active only when the server's benchmark secret is configured and
+ * the request presents it. Otherwise the route is unchanged.
+ */
 export async function POST(req: Request) {
+  const pin = parseBenchmarkPin(req.headers, process.env.LEX_BENCHMARK_SECRET);
+  if (pin) return runWithBenchmarkPin(pin, () => handleGovernPost(req));
+  return handleGovernPost(req);
+}
+
+async function handleGovernPost(req: Request) {
   const contentLengthHeader = req.headers.get('content-length');
   const contentLength = contentLengthHeader ? Number(contentLengthHeader) : 0;
   if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
