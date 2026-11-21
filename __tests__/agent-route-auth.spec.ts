@@ -2,10 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
   validateApiKey: vi.fn(),
+  consumeApiKeyById: vi.fn(),
+  checkRateLimit: vi.fn(),
   runAgentLoop: vi.fn(),
 }));
 
-vi.mock('../lib/api_keys', () => ({ validateApiKey: h.validateApiKey }));
+vi.mock('../lib/api_keys', () => ({
+  validateApiKey: h.validateApiKey,
+  consumeApiKeyById: h.consumeApiKeyById,
+}));
+vi.mock('../lib/rate_limit', () => ({ checkRateLimit: h.checkRateLimit }));
 vi.mock('../lib/lex_crs_agent/loop', () => ({ runAgentLoop: h.runAgentLoop }));
 vi.mock('../lib/safe_error', () => ({ publicError: () => 'error' }));
 
@@ -24,6 +30,10 @@ describe('POST /api/agent authentication', () => {
     h.validateApiKey.mockReset();
     h.runAgentLoop.mockReset();
     h.runAgentLoop.mockResolvedValue({ answer: 'ok' });
+    h.consumeApiKeyById.mockReset();
+    h.consumeApiKeyById.mockResolvedValue({ valid: true });
+    h.checkRateLimit.mockReset();
+    h.checkRateLimit.mockResolvedValue({ allowed: true, remaining: 9, retryAfter: 0 });
   });
 
   it('rejects a request with no key and never runs the agent', async () => {
@@ -59,5 +69,39 @@ describe('POST /api/agent authentication', () => {
     expect(context.actorId).toBe('api_key:key_own');
     expect(context.sessionId.startsWith('key_own:')).toBe(true);
     expect(JSON.stringify(context)).not.toContain('key_victim');
+  });
+
+  it('returns 429 with Retry-After when the per-key rate limit is reached, without running the agent', async () => {
+    h.validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key_own' } });
+    h.checkRateLimit.mockResolvedValue({ allowed: false, remaining: 0, retryAfter: 42 });
+    const res = await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('42');
+    expect(h.runAgentLoop).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the rate limiter storage is unavailable', async () => {
+    h.validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key_own' } });
+    h.checkRateLimit.mockResolvedValue({ allowed: true, remaining: 0, retryAfter: 0, storageError: true });
+    const res = await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
+    expect(res.status).toBe(503);
+    expect(h.runAgentLoop).not.toHaveBeenCalled();
+  });
+
+  it('returns 429 when the key has no quota left, without running the agent', async () => {
+    h.validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key_own' } });
+    h.consumeApiKeyById.mockResolvedValue({ valid: false, error: 'quota' });
+    const res = await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
+    expect(res.status).toBe(429);
+    expect(h.runAgentLoop).not.toHaveBeenCalled();
+  });
+
+  it('consumes one run from the authenticated key before running the agent', async () => {
+    h.validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key_own' } });
+    const res = await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
+    expect(res.status).toBe(200);
+    expect(h.consumeApiKeyById).toHaveBeenCalledWith('key_own');
+    expect(h.checkRateLimit).toHaveBeenCalledWith('agent.run:key_own', 10, 60);
+    expect(h.runAgentLoop).toHaveBeenCalledTimes(1);
   });
 });
