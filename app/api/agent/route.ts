@@ -80,11 +80,11 @@ export async function POST(req: Request) {
   }
 
   // 4. Parse the body. Any identity field in it is ignored by design.
-  let body: { task?: string; model?: string; stream?: boolean };
+  let body: { task?: string; model?: string; stream?: boolean; profile?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
-  const { task, model, stream = false } = body;
+  const { task, model, stream = false, profile = 'standard' } = body as { task?: string; model?: string; stream?: boolean; profile?: string };
   if (!task?.trim()) return NextResponse.json({ error: 'task required' }, { status: 400 });
 
   const validModels: ModelId[] = ['groq-70b', 'groq-8b', 'gemini-flash'];
@@ -119,6 +119,25 @@ export async function POST(req: Request) {
   // Non-streaming — wait for full result
   try {
     const result = await runAgentLoop(task, selectedModel, undefined, context);
+    const governance = result.governance ?? [];
+    if (profile === 'compact') {
+      // Compact profile: status, governance per tool call, and next action. The full
+      // governance record stays in receipts, correlated by run_id.
+      const status = result.stop_reason === 'answer' ? 'completed' : result.stop_reason === 'cancelled' ? 'cancelled' : 'incomplete';
+      const denied = governance.filter(g => !g.approved);
+      return NextResponse.json({
+        run_id: context.runId,
+        status,
+        answer: result.answer,
+        turns: result.turns,
+        governance: governance.map(g => ({ tool: g.tool, approved: g.approved, decision: g.decision, receipt_id: g.receipt_id })),
+        next_action: status !== 'completed'
+          ? 'Run incomplete. Retry with a shorter task or check the run in receipts.'
+          : denied.length > 0
+            ? 'Some tool calls were denied. Check the denial reason in the receipt before retrying.'
+            : 'None.',
+      });
+    }
     return NextResponse.json({ ...result, run_id: context.runId });
   } catch (e) {
     return NextResponse.json({ error: publicError('agent.route', e) }, { status: 500 });

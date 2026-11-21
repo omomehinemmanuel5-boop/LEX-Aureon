@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  executeGovernedTool: vi.fn(),
+  executeGovernedToolStructured: vi.fn(),
   echo: vi.fn(),
 }));
 
@@ -10,7 +10,7 @@ vi.mock('../lib/db', () => ({
   runZTrajMigrations: async () => undefined,
 }));
 vi.mock('../lib/agents/constitutional_tool_executor', () => ({
-  executeGovernedTool: h.executeGovernedTool,
+  executeGovernedToolStructured: h.executeGovernedToolStructured,
 }));
 vi.mock('../lib/lex_crs_agent/tools', () => ({
   TOOL_REGISTRY: { echo: h.echo },
@@ -20,8 +20,8 @@ import { buildLoopTools } from '../lib/lex_crs_agent/loop';
 
 describe('agent loop tool identity', () => {
   beforeEach(() => {
-    h.executeGovernedTool.mockReset();
-    h.executeGovernedTool.mockResolvedValue('ok');
+    h.executeGovernedToolStructured.mockReset();
+    h.executeGovernedToolStructured.mockResolvedValue({ result: 'ok', approved: true, decision: 'APPROVED', receiptId: 'R1' });
     h.echo.mockReset();
   });
 
@@ -35,8 +35,8 @@ describe('agent loop tool identity', () => {
       task_context: 'ctx',
       msg: 'hi',
     });
-    expect(h.executeGovernedTool).toHaveBeenCalledTimes(1);
-    const [name, args, , sessionId, , actorId] = h.executeGovernedTool.mock.calls[0];
+    expect(h.executeGovernedToolStructured).toHaveBeenCalledTimes(1);
+    const [name, args, , sessionId, , actorId] = h.executeGovernedToolStructured.mock.calls[0];
     expect(name).toBe('echo');
     expect(sessionId).toBe('key_own:mcp-abc');
     expect(actorId).toBe('api_key:key_own');
@@ -59,6 +59,15 @@ describe('agent loop tool identity', () => {
     });
     expect(result.stop_reason).toBe('cancelled');
     expect(callLLM).not.toHaveBeenCalled();
-    expect(h.executeGovernedTool).not.toHaveBeenCalled();
+    expect(h.executeGovernedToolStructured).not.toHaveBeenCalled();
+  });
+
+  it('records a denied tool call with its decision and receipt, without changing the text the model sees', async () => {
+    h.executeGovernedToolStructured.mockResolvedValue({ result: 'denied by policy', approved: false, decision: 'DENIED_BLOCKED', receiptId: 'R2' });
+    const records: Array<Record<string, unknown>> = [];
+    const tools = buildLoopTools({ sessionId: 'key_own:mcp-abc', actorId: 'api_key:key_own', ownerId: 'key_own', runId: 'run-1' }, records as never);
+    const text = await tools.echo({ msg: 'hi' });
+    expect(text).toBe('denied by policy');
+    expect(records).toEqual([{ tool: 'echo', approved: false, decision: 'DENIED_BLOCKED', receipt_id: 'R2' }]);
   });
 });
