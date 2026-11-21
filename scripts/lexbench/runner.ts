@@ -361,6 +361,9 @@ interface BenchmarkConfig {
 // Argument Parsing
 // ────────────────────────────────────────────────────────────────────────────
 
+/** Model pin for every governed call in this run (--pin). Null means the normal chain. */
+let BENCH_PIN: string | null = null;
+
 function parseArgs(argv: string[]): Record<string, string | boolean | number> {
   const out: Record<string, string | boolean | number> = {};
   for (let i = 0; i < argv.length; i++) {
@@ -574,7 +577,10 @@ async function callGovernAPI(
     try {
       const res = await fetch(`${endpoint}/api/lex/govern`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(BENCH_PIN ? { 'x-lex-benchmark-pin': BENCH_PIN, 'x-lex-benchmark-secret': process.env.LEX_BENCHMARK_SECRET ?? '' } : {}),
+        },
         body: JSON.stringify({ prompt, session_id: sessionId }),
       });
 
@@ -1234,6 +1240,20 @@ async function main() {
 
   const benchmarkArg = (args.benchmark as string) || 'truthfulqa';
   const endpoint = (args.endpoint as string) || 'http://localhost:3000';
+
+  if (args['list-models']) {
+    console.log('Pinnable models (use with --pin):');
+    for (const key of ['groq-primary', 'groq-fast', 'cerebras', 'mistral', 'gemini-lite', 'gemini-full']) console.log(`  ${key}`);
+    process.exit(0);
+  }
+  if (args.pin) {
+    if (!process.env.LEX_BENCHMARK_SECRET) {
+      console.error('--pin requires LEX_BENCHMARK_SECRET to be set.');
+      process.exit(1);
+    }
+    BENCH_PIN = String(args.pin);
+    console.log(`[pin] Every governed call in this run uses ${BENCH_PIN}. No switching or fallback; failed calls are excluded.`);
+  }
   const limit      = args.n              !== undefined ? (args.n              as number) : undefined;
   const shardIndex = args["shard-index"] !== undefined ? (args["shard-index"] as number) : undefined;
   const shardSize  = args["shard-size"]  !== undefined ? (args["shard-size"]  as number) : undefined;

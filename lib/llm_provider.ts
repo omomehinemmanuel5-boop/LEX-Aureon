@@ -120,6 +120,7 @@
 
 import { isOnCooldown, markCooldown } from './provider_cooldown';
 import { env } from './env';
+import { currentBenchmarkPin, PIN_PROVIDERS, type BenchmarkPin } from './benchmark_pin';
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -437,12 +438,50 @@ async function tryGemini(messages: LLMMessage[], model: string, onFailure?: Fail
   }
 }
 
+// ── Benchmark pin (see lib/benchmark_pin.ts) ─────────────────────────────────
+// A pinned run never switches or falls back. A failed call returns provider
+// 'static' so the benchmark runner excludes it instead of scoring it.
+
+function pinnedCall(key: keyof typeof PIN_PROVIDERS, messages: LLMMessage[]): { provider: string; model: string; fn: () => Promise<string | null> } {
+  switch (key) {
+    case 'groq-primary': return { provider: 'groq', model: MODELS.PRIMARY, fn: () => tryGroq(messages, MODELS.PRIMARY) };
+    case 'groq-fast': return { provider: 'groq', model: MODELS.FAST, fn: () => tryGroq(messages, MODELS.FAST) };
+    case 'cerebras': return { provider: 'cerebras', model: MODELS.CEREBRAS, fn: () => tryCerebras(messages, MODELS.CEREBRAS) };
+    case 'mistral': return { provider: 'mistral', model: MODELS.MISTRAL, fn: () => tryMistral(messages) };
+    case 'gemini-lite': return { provider: 'gemini', model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) };
+    case 'gemini-full': return { provider: 'gemini', model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) };
+  }
+}
+
+export function listPinnableModels(): string[] {
+  return Object.keys(PIN_PROVIDERS);
+}
+
+async function generatePinned(messages: LLMMessage[], pin: BenchmarkPin, staticFallback?: string): Promise<LLMResult> {
+  const call = pinnedCall(pin.key, messages);
+  // Retries use the same pinned model only; the chain is never switched.
+  const attempt = await retryPinnedCall<string>(call.fn);
+  if (attempt.result !== null) {
+    return { text: attempt.result, provider: call.provider, model: call.model, fallback_used: false, attempts: attempt.attempts };
+  }
+  return {
+    text: staticFallback ?? '',
+    provider: 'static',
+    model: `pinned-failed:${pin.key}`,
+    fallback_used: true,
+    attempts: attempt.attempts,
+    failure: attempt.failure ?? { category: 'provider_error', retryable: false },
+  };
+}
+
 // ── Main fallback chain ───────────────────────────────────────────────────────
 
 export async function generateWithFallback(
   messages: LLMMessage[],
   staticFallback?: string,
 ): Promise<LLMResult> {
+  const pin = currentBenchmarkPin();
+  if (pin) return generatePinned(messages, pin, staticFallback);
 
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'groq',     model: MODELS.PRIMARY,     fn: () => tryGroq(messages, MODELS.PRIMARY) },
@@ -545,6 +584,8 @@ export async function generateGoverned(
   messages: LLMMessage[],
   staticFallback?: string,
 ): Promise<LLMResult> {
+  const pin = currentBenchmarkPin();
+  if (pin) return generatePinned(messages, pin, staticFallback);
   const chain: Array<{ provider: string; model: string; fn: () => Promise<string | null> }> = [
     { provider: 'gemini',   model: MODELS.GEMINI_LITE, fn: () => tryGemini(messages, MODELS.GEMINI_LITE) },
     { provider: 'gemini',   model: MODELS.GEMINI_FULL, fn: () => tryGemini(messages, MODELS.GEMINI_FULL) },
