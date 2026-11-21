@@ -15,7 +15,12 @@ import { NextResponse } from 'next/server';
 import { runAgentLoop } from '@/lib/lex_crs_agent/loop';
 import type { ModelId } from '@/lib/lex_crs_agent/router';
 import { extractApiKey, canonicalMcpSessionId, defaultMcpSessionId } from '@/lib/mcp_http';
-import { validateApiKey } from '@/lib/api_keys';
+import { validateApiKey, consumeApiKeyById } from '@/lib/api_keys';
+import { checkRateLimit } from '@/lib/rate_limit';
+
+// Per-key limit on agent runs. Each run also consumes one unit of the key's quota.
+const AGENT_RUNS_PER_WINDOW = 10;
+const AGENT_WINDOW_SECONDS = 60;
 
 export const maxDuration = 300; // 5 min for complex tasks
 
@@ -43,7 +48,35 @@ export async function POST(req: Request) {
     sessionId: canonicalMcpSessionId(ownerId, defaultMcpSessionId(actorId), false),
   };
 
-  // 3. Parse the body. Any identity field in it is ignored by design.
+  // 2. Rate limit per key. Fail closed if the limiter's storage is unavailable.
+  let rate;
+  try {
+    rate = await checkRateLimit(`agent.run:${ownerId}`, AGENT_RUNS_PER_WINDOW, AGENT_WINDOW_SECONDS);
+  } catch {
+    return NextResponse.json({ error: 'Rate limiter unavailable' }, { status: 503 });
+  }
+  if (rate.storageError) {
+    return NextResponse.json({ error: 'Rate limiter unavailable' }, { status: 503 });
+  }
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Agent run rate limit reached' },
+      { status: 429, headers: { 'Retry-After': String(rate.retryAfter) } },
+    );
+  }
+
+  // 3. Consume one run from the key's quota before any model call.
+  let consumption;
+  try {
+    consumption = await consumeApiKeyById(ownerId);
+  } catch {
+    return NextResponse.json({ error: 'Quota unavailable' }, { status: 503 });
+  }
+  if (!consumption.valid) {
+    return NextResponse.json({ error: 'Run quota exhausted for this key' }, { status: 429 });
+  }
+
+  // 4. Parse the body. Any identity field in it is ignored by design.
   let body: { task?: string; model?: string; stream?: boolean };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
