@@ -5,7 +5,10 @@ const h = vi.hoisted(() => ({
   echo: vi.fn(),
 }));
 
-vi.mock('../lib/db', () => ({ getClient: () => ({ execute: async () => ({ rows: [], rowsAffected: 0 }) }) }));
+vi.mock('../lib/db', () => ({
+  getClient: () => ({ execute: async () => ({ rows: [], rowsAffected: 0 }) }),
+  runZTrajMigrations: async () => undefined,
+}));
 vi.mock('../lib/agents/constitutional_tool_executor', () => ({
   executeGovernedTool: h.executeGovernedTool,
 }));
@@ -23,7 +26,7 @@ describe('agent loop tool identity', () => {
   });
 
   it('uses the run context for session and actor, not model-supplied values', async () => {
-    const tools = buildLoopTools({ sessionId: 'key_own:mcp-abc', actorId: 'api_key:key_own' });
+    const tools = buildLoopTools({ sessionId: 'key_own:mcp-abc', actorId: 'api_key:key_own', ownerId: 'key_own', runId: 'run-1' });
     await tools.echo({
       session_id: 'key_victim:mcp-x',
       actor_id: 'api_key:key_victim',
@@ -39,5 +42,23 @@ describe('agent loop tool identity', () => {
     expect(actorId).toBe('api_key:key_own');
     expect(JSON.stringify(args)).not.toContain('key_victim');
     expect(JSON.stringify(args)).not.toContain('forged');
+  });
+
+  it('stops a run without calling the model when the client has already aborted', async () => {
+    const callLLM = vi.fn();
+    vi.doMock('../lib/lex_crs_agent/router', () => ({ callLLM }));
+    const controller = new AbortController();
+    controller.abort();
+    const { runAgentLoop } = await import('../lib/lex_crs_agent/loop');
+    const result = await runAgentLoop('task', undefined, undefined, {
+      sessionId: 'key_own:mcp-abc',
+      actorId: 'api_key:key_own',
+      ownerId: 'key_own',
+      runId: 'run-1',
+      signal: controller.signal,
+    });
+    expect(result.stop_reason).toBe('cancelled');
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(h.executeGovernedTool).not.toHaveBeenCalled();
   });
 });

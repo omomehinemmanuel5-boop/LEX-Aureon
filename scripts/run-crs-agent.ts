@@ -12,7 +12,7 @@ async function main() {
   // Operator script: runs locally under an explicit operator identity, never a public one.
   const result = await runAgentLoop(task, 'groq-70b', (step) => {
     console.log(`[${step.type}] ${step.content.slice(0, 100)}${step.content.length > 100 ? '...' : ''}`);
-  }, { actorId: 'operator:run-crs-agent', sessionId: `operator-script-${new Date().toISOString().slice(0, 10)}` });
+  }, { actorId: 'operator:run-crs-agent', ownerId: 'operator', runId: crypto.randomUUID(), sessionId: `operator-script-${new Date().toISOString().slice(0, 10)}` });
 
   console.log('\n--- FINAL ANSWER ---');
   console.log(result.answer);
