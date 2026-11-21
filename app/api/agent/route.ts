@@ -45,7 +45,10 @@ export async function POST(req: Request) {
   const actorId = `api_key:${ownerId}`;
   const context = {
     actorId,
+    ownerId,
+    runId: crypto.randomUUID(),
     sessionId: canonicalMcpSessionId(ownerId, defaultMcpSessionId(actorId), false),
+    signal: req.signal,
   };
 
   // 2. Rate limit per key. Fail closed if the limiter's storage is unavailable.
@@ -116,7 +119,7 @@ export async function POST(req: Request) {
   // Non-streaming — wait for full result
   try {
     const result = await runAgentLoop(task, selectedModel, undefined, context);
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, run_id: context.runId });
   } catch (e) {
     return NextResponse.json({ error: publicError('agent.route', e) }, { status: 500 });
   }

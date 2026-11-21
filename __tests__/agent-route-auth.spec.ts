@@ -104,4 +104,23 @@ describe('POST /api/agent authentication', () => {
     expect(h.checkRateLimit).toHaveBeenCalledWith('agent.run:key_own', 10, 60);
     expect(h.runAgentLoop).toHaveBeenCalledTimes(1);
   });
+
+  it('gives each request its own run identity and returns it to the caller', async () => {
+    h.validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key_own' } });
+    const first = await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
+    const second = await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
+    const runA = h.runAgentLoop.mock.calls[0][3].runId;
+    const runB = h.runAgentLoop.mock.calls[1][3].runId;
+    expect(runA).toBeTruthy();
+    expect(runA).not.toBe(runB);
+    expect(h.runAgentLoop.mock.calls[0][3].ownerId).toBe('key_own');
+    expect((await first.json()).run_id).toBe(runA);
+    expect((await second.json()).run_id).toBe(runB);
+  });
+
+  it('passes the client abort signal into the run', async () => {
+    h.validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key_own' } });
+    await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
+    expect(h.runAgentLoop.mock.calls[0][3].signal).toBeDefined();
+  });
 });

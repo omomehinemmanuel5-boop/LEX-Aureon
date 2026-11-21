@@ -27,7 +27,7 @@ export interface AgentResult {
   steps: AgentStep[];
   model: ModelId;
   turns: number;
-  stop_reason?: 'answer' | 'max_turns' | 'repeated_tool_call';
+  stop_reason?: 'answer' | 'max_turns' | 'repeated_tool_call' | 'cancelled';
 }
 
 const TOOL_RESULT_BUDGET = 12_000;
@@ -79,6 +79,12 @@ const SYSTEM = [
 export interface AgentRunContext {
   sessionId: string;
   actorId: string;
+  /** Authenticated owner the run is authorized under. Set by the server, never by the model. */
+  ownerId: string;
+  /** Unique per execution attempt. Set by the server, one per request. */
+  runId: string;
+  /** Client disconnect or abort. Checked before every turn and tool call. */
+  signal?: AbortSignal;
 }
 
 // Identity fields a model may try to supply. They are removed from tool arguments
@@ -144,6 +150,9 @@ export async function runAgentLoop(
   let repeatCount = 0;
 
   while (turns < MAX_TURNS) {
+    if (context.signal?.aborted) {
+      return { answer: 'Run cancelled before completion.', steps, model: lastModel, turns, stop_reason: 'cancelled' };
+    }
     turns++;
     const response = await callLLM(messages, model);
     lastModel = response.model;
@@ -163,6 +172,9 @@ export async function runAgentLoop(
     });
 
     for (const tc of response.tool_calls) {
+      if (context.signal?.aborted) {
+        return { answer: 'Run cancelled before completion.', steps, model: lastModel, turns, stop_reason: 'cancelled' };
+      }
       const toolName = tc.function.name;
       let args: Record<string, unknown> = {};
       try {
