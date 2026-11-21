@@ -615,6 +615,7 @@
     await safeExec('ALTER TABLE tool_receipts ADD COLUMN state_snapshot TEXT');
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN actor_id TEXT NOT NULL DEFAULT 'unknown'`);
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN policy_version TEXT NOT NULL DEFAULT 'unknown'`);
+    await safeExec('ALTER TABLE tool_receipts ADD COLUMN run_id TEXT');
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN previous_provenance_hash TEXT`);
     await safeExec(`ALTER TABLE tool_receipts ADD COLUMN provenance_hash TEXT`);
 
