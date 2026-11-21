@@ -123,4 +123,19 @@ describe('POST /api/agent authentication', () => {
     await POST(req({ task: 'x' }, { 'x-lex-api-key': 'own' }));
     expect(h.runAgentLoop.mock.calls[0][3].signal).toBeDefined();
   });
+
+  it('compact profile returns status, per-call governance, and next action, without the full steps', async () => {
+    h.validateApiKey.mockResolvedValue({ valid: true, key: { id: 'key_own' } });
+    h.runAgentLoop.mockResolvedValue({
+      answer: 'ok', turns: 2, stop_reason: 'answer', steps: [{ type: 'thought', content: 'long' }],
+      governance: [{ tool: 'echo', approved: false, decision: 'DENIED_BLOCKED', receipt_id: 'R2' }],
+    });
+    const res = await POST(req({ task: 'x', profile: 'compact' }, { 'x-lex-api-key': 'own' }));
+    const body = await res.json();
+    expect(body.status).toBe('completed');
+    expect(body.governance).toEqual([{ tool: 'echo', approved: false, decision: 'DENIED_BLOCKED', receipt_id: 'R2' }]);
+    expect(body.next_action).toContain('denied');
+    expect(body.steps).toBeUndefined();
+    expect(body.run_id).toBeTruthy();
+  });
 });

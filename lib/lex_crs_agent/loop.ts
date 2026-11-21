@@ -11,7 +11,7 @@ import { runWithRunId } from '../agents/run_context';
 import { callLLM, Message, ModelId } from './router';
 import { TOOL_REGISTRY } from './tools';
 import { patch_file } from './tools/patch_file';
-import { executeGovernedTool } from '../agents/constitutional_tool_executor';
+import { executeGovernedToolStructured } from '../agents/constitutional_tool_executor';
 import { bindGovernanceToolSession } from '../agents/governance_tool_session';
 import { runZTrajMigrations } from '../db';
 
@@ -23,12 +23,21 @@ export interface AgentStep {
   truncated?: boolean;
 }
 
+export interface GovernanceRecord {
+  tool: string;
+  approved: boolean;
+  decision: string;
+  receipt_id: string | null;
+}
+
 export interface AgentResult {
   answer: string;
   steps: AgentStep[];
   model: ModelId;
   turns: number;
   stop_reason?: 'answer' | 'max_turns' | 'repeated_tool_call' | 'cancelled';
+  /** One structured governance record per tool call, in order. The full record stays in receipts. */
+  governance?: GovernanceRecord[];
 }
 
 const TOOL_RESULT_BUDGET = 12_000;
@@ -98,14 +107,17 @@ function sanitizeToolArgs(args: Record<string, unknown>): Record<string, unknown
   return clean;
 }
 
-export function buildLoopTools(ctx: AgentRunContext): Record<string, (a: Record<string, unknown>) => Promise<string>> {
+export function buildLoopTools(
+  ctx: AgentRunContext,
+  records: GovernanceRecord[] = [],
+): Record<string, (a: Record<string, unknown>) => Promise<string>> {
   return {
     ...Object.fromEntries(
       Object.entries(TOOL_REGISTRY).map(([name, fn]) => [
         name,
-        (args: Record<string, unknown>) => {
+        async (args: Record<string, unknown>) => {
           const clean = sanitizeToolArgs(args);
-          return executeGovernedTool(
+          const execution = await executeGovernedToolStructured(
             name,
             bindGovernanceToolSession(name, clean, ctx.sessionId),
             fn as (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>,
@@ -113,12 +125,14 @@ export function buildLoopTools(ctx: AgentRunContext): Record<string, (a: Record<
             args.task_context as string | undefined,
             ctx.actorId,
           );
+          records.push({ tool: name, approved: execution.approved, decision: execution.decision, receipt_id: execution.receiptId });
+          return execution.result;
         },
       ])
     ),
-    patch_file: (args: Record<string, unknown>) => {
+    patch_file: async (args: Record<string, unknown>) => {
       const clean = sanitizeToolArgs(args);
-      return executeGovernedTool(
+      const execution = await executeGovernedToolStructured(
         'patch_file',
         bindGovernanceToolSession('patch_file', clean, ctx.sessionId),
         (a) => patch_file(a as unknown as Parameters<typeof patch_file>[0]),
@@ -126,6 +140,8 @@ export function buildLoopTools(ctx: AgentRunContext): Record<string, (a: Record<
         args.task_context as string | undefined,
         ctx.actorId,
       );
+      records.push({ tool: 'patch_file', approved: execution.approved, decision: execution.decision, receipt_id: execution.receiptId });
+      return execution.result;
     },
   };
 }
@@ -137,7 +153,11 @@ export function runAgentLoop(
   context: AgentRunContext,
 ): Promise<AgentResult> {
   // Every receipt written during this run carries context.runId.
-  return runWithRunId(context.runId, () => runAgentLoopBody(task, model, onStep, context));
+  const governance: GovernanceRecord[] = [];
+  return runWithRunId(context.runId, async () => {
+    const result = await runAgentLoopBody(task, model, onStep, context, governance);
+    return { ...result, governance };
+  });
 }
 
 async function runAgentLoopBody(
@@ -145,8 +165,9 @@ async function runAgentLoopBody(
   model: ModelId | undefined,
   onStep: ((step: AgentStep) => void) | undefined,
   context: AgentRunContext,
+  governance: GovernanceRecord[],
 ): Promise<AgentResult> {
-  const LOOP_TOOLS = buildLoopTools(context);
+  const LOOP_TOOLS = buildLoopTools(context, governance);
   await runZTrajMigrations();
   const messages: Message[] = [
     { role: 'system', content: SYSTEM },
