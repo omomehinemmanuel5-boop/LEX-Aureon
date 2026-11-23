@@ -624,7 +624,7 @@ export async function generateRewrite(
     const result = await fn();
     if (result) return { text: result, provider, model, fallback_used: i > 0, attempts: i + 1 };
   }
-  return { text: staticFallback ?? 'Constitutional rewrite applied.', provider: 'static', model: 'constitutional-fallback', fallback_used: true, attempts: chain.length + 1 };
+  return { text: staticFallback ?? '', provider: 'static', model: 'constitutional-fallback', fallback_used: true, attempts: chain.length + 1 };
 }
 
 /**
