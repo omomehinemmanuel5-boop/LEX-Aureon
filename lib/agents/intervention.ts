@@ -130,6 +130,8 @@ async function llmConstitutionalRewrite(
       { role: 'system', content: system },
       { role: 'user',   content: prompt },
     ]);
+    // A static fallback is not a model rewrite and must never reach the user.
+    if (result.provider === 'static') return null;
     return result.text || null;
   } catch {
     return null;
