@@ -116,9 +116,9 @@ const prevSigma = existing?.sigma_viol ?? 0;
 const sigma_viol = prevSigma * ((SIGMA_WINDOW - 1) / SIGMA_WINDOW) + viol / SIGMA_WINDOW;
 ```
 
-With `SIGMA_WINDOW = 10`, when `M >= TAU_LYP` (currently 0.08), the update is `sigma_next = 0.9 * sigma_previous`. This is exponential decay, not a finite-time reset. For a positive starting value, repeated multiplication by 0.9 remains positive in ordinary floating-point arithmetic until it eventually underflows; it does not intentionally set the value to zero at a defined recovery boundary. When `M < 0.08`, the positive stress term also contributes to sigma, so the value can increase or settle above zero.
+With `SIGMA_WINDOW = 10`, when `M >= TAU_LYP` (currently 0.08), the recurrence decays prior sigma by a factor of 0.9. The shared `nextSigmaViolation()` helper then normalizes a finite, non-negative residual at or below `SIGMA_ZERO_TOLERANCE = 1e-6) to exact zero only when the current observation has no Lyapunov stress. A positive current-stress contribution is never rounded away. When `M < 0.08`, the positive stress term contributes to sigma and may increase it.
 
-The canary eligibility predicate in `lib/agents/recovery_canary_evidence.ts` requires `sigma_viol === 0`. Therefore, a session with positive canonical sigma can satisfy that predicate only after the persisted value reaches exactly zero through some other explicit reset path or floating-point underflow. The current `resetZTraj()` definition sets sigma to 1 (quarantine), and repository search on this revision found no direct caller. Its existence is not evidence of an active recovery reset mechanism.
+The canary eligibility predicate in `lib/agents/recovery_state.ts` and the evidence readers requires `sigma_viol === 0`. A positive residual can become exactly zero only through the explicit healthy-observation normalization in `nextSigmaViolation()`; positive current stress is preserved. The quarantine reset path is not a recovery shortcut and does not qualify a session for canary evidence.
 
 ### Important path distinction
 
@@ -129,7 +129,7 @@ The canary eligibility predicate in `lib/agents/recovery_canary_evidence.ts` req
 
 ### Regression-test and policy implications
 
-This source trace identifies a liveness mismatch: the canary asks for exact zero, while the canonical accumulator has no explicit finite-time zeroing rule for a positive value during healthy observations. Do **not** relax the canary predicate or change the sigma formula solely to make recovery pass. A runtime fix requires an explicit owner decision about what canonical evidence qualifies as zero (for example, a documented numerical tolerance and an auditable clamp, or a separate verified reset event), plus tests proving that active stress cannot be erased and that the canary remains bound to the exact current snapshot.
+The implementation now aligns the recovery gate with the intended exact-zero policy and provides a bounded, auditable normalization for sufficiently small residuals on healthy observations. Do **not** relax the canary predicate or recovery thresholds to make recovery pass. Regression tests must continue proving that active positive stress is never erased, every positive persisted residual blocks canary eligibility, and evidence remains bound to the exact current canonical snapshot.
 
 **Verified from source:** update equation, call paths, the separate `tool_sessions` counter, and exact-zero canary predicate.
 
