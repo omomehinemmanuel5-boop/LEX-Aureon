@@ -134,7 +134,7 @@ beforeEach(() => {
       return { rows: found ? [found] : [] };
     }
     if (sql.startsWith('UPDATE z_traj')) {
-      const [sigmaViol, velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
+      const [sigmaViol, velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, dwellElapsed, lastM, lastC, lastR, lastS,
         updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt, expectedSigmaViol] = args;
       const current = mocks.rows.get(String(sessionId));
       if (!current
@@ -147,11 +147,13 @@ beforeEach(() => {
       }
       current.sigma_viol = sigmaViol;
       current.velocity = velocity;
-      current.n_stable = Number(countStableObservation) === 1
-        && Number(testedVelocity) < Number(threshold)
-        && Number(M) >= Number(tauRecovery)
-        ? Number(current.n_stable) + 1
-        : 0;
+      current.n_stable = Number(countStableObservation) !== 1
+        || Number(testedVelocity) >= Number(threshold)
+        || Number(M) < Number(tauRecovery)
+        ? 0
+        : Number(dwellElapsed) === 1
+          ? Number(current.n_stable) + 1
+          : Number(current.n_stable);
       current.last_m = lastM;
       current.last_c = lastC;
       current.last_r = lastR;
@@ -470,6 +472,16 @@ describe('governed tool stability observations', () => {
       typeof query === 'object' && query !== null && 'sql' in query
       && /INSERT\s+INTO\s+z_traj/i.test(String((query as { sql: unknown }).sql)),
     )).toBe(false);
+  });
+
+  it('does not increment stable observations before the canonical dwell interval', async () => {
+    mocks.rows.set(SESSION, row({ n_stable: 2, updated_at: new Date().toISOString() }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.n_stable).toBe(2);
   });
 
   it('records a zero-velocity baseline without incrementing stable observations', async () => {
