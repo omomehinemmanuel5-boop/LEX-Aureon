@@ -116,9 +116,9 @@ const prevSigma = existing?.sigma_viol ?? 0;
 const sigma_viol = prevSigma * ((SIGMA_WINDOW - 1) / SIGMA_WINDOW) + viol / SIGMA_WINDOW;
 ```
 
-With `SIGMA_WINDOW = 10`, when `M >= TAU_LYP` (currently 0.08), the update is `sigma_next = 0.9 * sigma_previous`. This is exponential decay, not a finite-time reset. For a positive starting value, repeated multiplication by 0.9 remains positive in ordinary floating-point arithmetic until it eventually underflows; it does not intentionally set the value to zero at a defined recovery boundary. When `M < 0.08`, the positive stress term also contributes to sigma, so the value can increase or settle above zero.
+With `SIGMA_WINDOW = 10`, when `M >= TAU_LYP` (currently 0.08), the recurrence decays prior sigma by a factor of 0.9. The shared `nextSigmaViolation()` helper then normalizes a finite, non-negative residual at or below `SIGMA_ZERO_TOLERANCE = 1e-6` to exact zero only when the current observation has no Lyapunov stress. A positive current-stress contribution is never rounded away. When `M < 0.08`, the positive stress term contributes to sigma and may increase it.
 
-The canary eligibility predicate in `lib/agents/recovery_canary_evidence.ts` requires `sigma_viol === 0`. Therefore, a session with positive canonical sigma can satisfy that predicate only after the persisted value reaches exactly zero through some other explicit reset path or floating-point underflow. The current `resetZTraj()` definition sets sigma to 1 (quarantine), and repository search on this revision found no direct caller. Its existence is not evidence of an active recovery reset mechanism.
+The canary eligibility checks in `lib/agents/recovery_state.ts` and the evidence readers require `sigma_viol === 0`. A positive residual can become exactly zero only through the explicit healthy-observation normalization in `nextSigmaViolation()`; positive current stress is preserved. The quarantine reset path is not a recovery shortcut and does not qualify a session for canary evidence.
 
 ### Important path distinction
 
@@ -129,7 +129,7 @@ The canary eligibility predicate in `lib/agents/recovery_canary_evidence.ts` req
 
 ### Regression-test and policy implications
 
-This source trace identifies a liveness mismatch: the canary asks for exact zero, while the canonical accumulator has no explicit finite-time zeroing rule for a positive value during healthy observations. Do **not** relax the canary predicate or change the sigma formula solely to make recovery pass. A runtime fix requires an explicit owner decision about what canonical evidence qualifies as zero (for example, a documented numerical tolerance and an auditable clamp, or a separate verified reset event), plus tests proving that active stress cannot be erased and that the canary remains bound to the exact current snapshot.
+The implementation now aligns the recovery gate with the intended exact-zero policy and provides a bounded, auditable normalization for sufficiently small residuals on healthy observations. Do **not** relax the canary predicate or recovery thresholds to make recovery pass. Regression tests must continue proving that active positive stress is never erased, every positive persisted residual blocks canary eligibility, and evidence remains bound to the exact current canonical snapshot.
 
 **Verified from source:** update equation, call paths, the separate `tool_sessions` counter, and exact-zero canary predicate.
 
@@ -166,3 +166,26 @@ Recovery-state classification also requires exact-zero sigma for VERIFIED/NORMAL
 
 
 The operator canary preflight now also requires velocity to be finite and strictly below `RECOVERY_STABILITY_THRESHOLD` before starting the diagnostic probe, and rechecks velocity in the diagnostic and post-probe canonical state. This closes a second preflight/evidence mismatch: a canary must not be attempted when the evidence validator will reject it for unstable velocity.
+
+
+## Canonical stability dwell enforcement
+
+Both `recordZTrajObservation()` and `updateZTraj()` enforce a server-side
+minimum five-second dwell before incrementing canonical `z_traj.n_stable`.
+A healthy but too-early sample may update the measured trajectory, but it
+cannot earn another stability count. A genuine velocity or M-threshold failure
+still resets the count. The recovery-plane's persisted-breach escalation
+(10/15 seconds) remains an additional, stricter precondition for its own pulse
+path. The two-second candidate is not enabled by this change.
+
+
+## Concurrency and replay protection (PR #268)
+
+Canonical trajectory persistence now uses two complementary safeguards:
+
+- Governed-tool observations retain compare-and-set semantics against the exact prior CRS, sigma value, and timestamp. Their dwell calculation and next timestamp are evaluated by the Turso/SQLite clock, not an individual application instance's wall clock.
+- Kernel-turn updates execute inside a libSQL write transaction. The transaction reads the latest persisted CRS, computes velocity and the Banach z-weight update from that state, and commits the trajectory transition together with a unique `z_traj_observation_events(session_id, event_id)` record. A stable event identity derived from the governed turn, input/output hashes, and receipt hash makes a retry a no-op for trajectory state.
+
+The event ledger is intentionally separate from `praxis_receipts`: receipt persistence can be retried independently, while the trajectory transition is applied at most once for its logical governed turn. A transaction failure rolls back both the event marker and trajectory mutation. No threshold, recovery floor, dwell interval, or canary eligibility predicate is changed.
+
+Regression coverage includes duplicate governed-turn replay, transaction-backed trajectory updates, compare-and-set observation races, the five-second dwell, and stability reset conditions. CI status must be evaluated against the exact current PR head; these source changes alone do not establish passing validation or live production recovery.

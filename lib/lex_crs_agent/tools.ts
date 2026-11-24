@@ -515,7 +515,7 @@ export async function get_constitutional_state({ session_id }: { session_id?: st
           : state.M < CONSTITUTION.TAU_RECOVERY
             ? 'Continue bounded recovery-plane observations until M reaches the recovery threshold.'
             : !sigmaWithinBound(state.sigmaViol)
-              ? 'Canonical sigma_viol must be within SIGMA_THRESHOLD before canary verification; continue healthy observations until residual stress decays to zero.'
+              ? 'Canonical sigma_viol must equal exactly 0 before canary verification; continue healthy observations until the residual reaches exact zero.'
               : !Number.isFinite(state.velocity) || (state.velocity as number) >= RECOVERY_STABILITY_THRESHOLD
                 ? `Canonical velocity must be finite and < ${RECOVERY_STABILITY_THRESHOLD}; continue safe governed observations until stable.`
                 : state.nStable < CONSTITUTION.N_MIN

@@ -1,7 +1,7 @@
 /**
  * Kernel Bridge — connects SovereignKernel to Turso
  * Writes kernel receipts into existing audit infrastructure.
- * No new tables. Uses: praxis_receipts, z_traj, governor_log.
+ * Uses: praxis_receipts, z_traj, z_traj_observation_events, governor_log.
  *
  * governor_effort: now OR of two sources (max):
  *   1. result.governor_sensing.correction_magnitude — L2 norm of async G(x,z) delta
@@ -308,8 +308,8 @@ export async function writeKernelReceipt(
   }
 
   // ── Update z_traj (proven Banach rule) BEFORE receipt write ──────────────
-  // Never retried: the z-update rule is stateful — re-applying it would
-  // double-step the trajectory.
+  // The write is transactional and keyed to the logical turn, so a replay
+  // cannot double-step the trajectory.
   try {
     const currentCRS = { c: result.state.C, r: result.state.R, s: result.state.S };
     // Stability is turn-to-turn movement in the persisted trajectory, not the
@@ -318,7 +318,10 @@ export async function writeKernelReceipt(
     const prevCRS = previousTraj
       ? { c: previousTraj.last_c, r: previousTraj.last_r, s: previousTraj.last_s }
       : null;
-    await updateZTraj(sessionId, currentCRS, prevCRS, result.attack_pressure, lawEvents);
+    // Bind the trajectory transition to the logical governed turn. Replays of
+    // the same receipt input/output pair cannot count as a second observation.
+    const observationId = `turn:${turn}:at:${r.timestamp_iso}:input:${inputHash}:output:${outputHash}:receipt:${receiptHash}`;
+    await updateZTraj(sessionId, currentCRS, prevCRS, result.attack_pressure, lawEvents, observationId);
   } catch (e) {
     logger.error('kernel_bridge.write', 'z_traj update failed', errorFields(e));
   }

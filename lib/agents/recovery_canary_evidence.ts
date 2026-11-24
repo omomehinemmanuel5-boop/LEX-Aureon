@@ -177,8 +177,10 @@ export async function readInvariantRecoveryCanaryEvidence(
     const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
     const valid = status === 'passed'
       && (row.state_version === undefined || String(row.state_version) === current.stateVersion)
+      && Number.isFinite(current.M)
       && current.M >= CONSTITUTION.TAU_RECOVERY
       && sigmaWithinBound(current.sigmaViol)
+      && Number.isFinite(current.nStable)
       && current.nStable >= CONSTITUTION.N_MIN
       && Number.isFinite(current.velocity)
       && current.velocity < RECOVERY_STABILITY_THRESHOLD
@@ -227,8 +229,10 @@ export async function readRecoveryCanaryEvidence(
     const issuedMs = Date.parse(String(row.issued_at ?? row.created_at ?? ''));
     const valid = status === 'passed'
       && (row.state_version === undefined || String(row.state_version) === current.stateVersion)
+      && Number.isFinite(current.M)
       && current.M >= CONSTITUTION.TAU_RECOVERY
       && sigmaWithinBound(current.sigmaViol)
+      && Number.isFinite(current.nStable)
       && current.nStable >= CONSTITUTION.N_MIN
       && Number.isFinite(current.velocity)
       && current.velocity < RECOVERY_STABILITY_THRESHOLD

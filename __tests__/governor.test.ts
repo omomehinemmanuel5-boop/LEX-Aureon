@@ -165,14 +165,43 @@ describe('CBF hard floor invariant', () => {
 
 async function loadKvWithMemoryZTraj() {
   const rows = new Map<string, Record<string, unknown>>();
+  const observationEvents = new Set<string>();
   const execute = vi.fn(async (statement: string | { sql: string; args?: unknown[] }) => {
     const sql = typeof statement === 'string' ? statement : statement.sql;
     const args = typeof statement === 'string' ? [] : (statement.args ?? []);
+    if (sql.includes('CREATE TABLE IF NOT EXISTS z_traj_observation_events')) return { rows: [], rowsAffected: 0 };
+    if (sql.startsWith('INSERT OR IGNORE INTO z_traj_observation_events')) {
+      const key = String(args[0]) + ':' + String(args[1]);
+      if (observationEvents.has(key)) return { rows: [], rowsAffected: 0 };
+      observationEvents.add(key);
+      return { rows: [], rowsAffected: 1 };
+    }
+    if (sql.includes('AS now_utc')) {
+      const previous = args[1] == null ? Number.NaN : Date.parse(String(args[1]));
+      const now = Date.now();
+      return { rows: [{
+        now_utc: new Date(now).toISOString(),
+        elapsed_ms: Number.isFinite(previous) ? now - previous : null,
+        updated_at: args[3] == null ? new Date(now).toISOString() : new Date(Math.max(now, previous + 1)).toISOString(),
+      }] };
+    }
     if (sql.startsWith('SELECT * FROM z_traj WHERE session_id = ?')) {
       const row = rows.get(String(args[0]));
       return { rows: row ? [row] : [] };
     }
-    if (sql.includes('INSERT INTO z_traj')) {
+    if (sql.startsWith('UPDATE z_traj SET')) {
+      const [velocity, nStable, driftDir, sigmaViol, lastM, lastC, lastR, lastS,
+        zC, zR, zS, attackPressure, updatedAt, sessionId, expectedUpdatedAt] = args;
+      const row = rows.get(String(sessionId));
+      if (!row || String(row.updated_at) !== String(expectedUpdatedAt)) return { rows: [], rowsAffected: 0 };
+      Object.assign(row, {
+        velocity, n_stable: nStable, drift_dir: driftDir, sigma_viol: sigmaViol,
+        last_m: lastM, last_c: lastC, last_r: lastR, last_s: lastS,
+        z_c: zC, z_r: zR, z_s: zS, attack_pressure: attackPressure, updated_at: updatedAt,
+      });
+      return { rows: [], rowsAffected: 1 };
+    }
+    if (sql.startsWith('INSERT INTO z_traj')) {
       const [sessionId, velocity, nStable, driftDir, sigmaViol, lastM, lastC, lastR, lastS,
         zC, zR, zS, attackPressure, updatedAt] = args;
       rows.set(String(sessionId), {
@@ -185,7 +214,9 @@ async function loadKvWithMemoryZTraj() {
     return { rows: [] };
   });
 
-  vi.doMock('../lib/db', () => ({ getClient: () => ({ execute }) }));
+  vi.doMock('../lib/db', () => ({
+    getClient: () => ({ execute, transaction: async () => ({ execute, commit: async () => undefined, rollback: async () => undefined }) }),
+  }));
   vi.resetModules();
   const kv = await import('../lib/kv');
   return { kv, rows };
@@ -203,26 +234,33 @@ function zTrajRow(lastC: number, lastR: number, lastS: number, nStable: number) 
 
 describe('z_traj stability threshold', () => {
   it('counts three consecutive 0.01 turns at M=0.30 and leaves canary N_MIN at 3', async () => {
-    const { kv, rows } = await loadKvWithMemoryZTraj();
-    rows.set('stable-session', zTrajRow(0.30, 0.35, 0.35, 0));
-    expect(kv.STABILITY_VELOCITY).toBe(0.02);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const { kv, rows } = await loadKvWithMemoryZTraj();
+      rows.set('stable-session', zTrajRow(0.30, 0.35, 0.35, 0));
+      expect(kv.STABILITY_VELOCITY).toBe(0.02);
 
-    const delta = 0.01 / Math.sqrt(2);
-    const turns = [
-      { c: 0.30, r: 0.35 - delta, s: 0.35 + delta },
-      { c: 0.30, r: 0.35, s: 0.35 },
-      { c: 0.30, r: 0.35 - delta, s: 0.35 + delta },
-    ];
-    for (const [index, current] of turns.entries()) {
-      const previous = rows.get('stable-session')!;
-      const updated = await kv.updateZTraj('stable-session', current, {
-        c: Number(previous.last_c), r: Number(previous.last_r), s: Number(previous.last_s),
-      });
-      expect(updated.velocity).toBeCloseTo(0.01, 10);
-      expect(updated.n_stable).toBe(index + 1);
-      expect(updated.last_m).toBeGreaterThanOrEqual(0.30);
+      const delta = 0.01 / Math.sqrt(2);
+      const turns = [
+        { c: 0.30, r: 0.35 - delta, s: 0.35 + delta },
+        { c: 0.30, r: 0.35, s: 0.35 },
+        { c: 0.30, r: 0.35 - delta, s: 0.35 + delta },
+      ];
+      for (const [index, current] of turns.entries()) {
+        vi.advanceTimersByTime(5_000);
+        const previous = rows.get('stable-session')!;
+        const updated = await kv.updateZTraj('stable-session', current, {
+          c: Number(previous.last_c), r: Number(previous.last_r), s: Number(previous.last_s),
+        }, undefined, [], 'stable-turn-' + index);
+        expect(updated.velocity).toBeCloseTo(0.01, 10);
+        expect(updated.n_stable).toBe(index + 1);
+        expect(updated.last_m).toBeGreaterThanOrEqual(0.30);
+      }
+      expect(kv.N_MIN).toBe(3);
+    } finally {
+      vi.useRealTimers();
     }
-    expect(kv.N_MIN).toBe(3);
   });
 
   it('resets the streak at velocity 0.06', async () => {
@@ -231,7 +269,7 @@ describe('z_traj stability threshold', () => {
     const delta = 0.06 / Math.sqrt(2);
     const updated = await kv.updateZTraj('stable-session', {
       c: 0.30, r: 0.35 - delta, s: 0.35 + delta,
-    }, { c: 0.30, r: 0.35, s: 0.35 });
+    }, { c: 0.30, r: 0.35, s: 0.35 }, undefined, [], 'velocity-reset');
 
     expect(updated.velocity).toBeCloseTo(0.06, 10);
     expect(updated.n_stable).toBe(0);
@@ -243,7 +281,7 @@ describe('z_traj stability threshold', () => {
     const delta = 0.01 / Math.sqrt(2);
     const updated = await kv.updateZTraj('stable-session', {
       c: 0.10, r: 0.45 - delta, s: 0.45 + delta,
-    }, { c: 0.10, r: 0.45, s: 0.45 });
+    }, { c: 0.10, r: 0.45, s: 0.45 }, undefined, [], 'below-recovery-floor');
 
     expect(updated.velocity).toBeCloseTo(0.01, 10);
     expect(updated.last_m).toBe(0.10);

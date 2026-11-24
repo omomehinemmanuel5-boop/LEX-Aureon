@@ -8,9 +8,10 @@ const mocks = vi.hoisted(() => ({
   advanceRecoveryPlane: vi.fn(),
   shouldAdvanceRecoveryPlane: vi.fn(() => false),
   rows: new Map<string, Record<string, unknown>>(),
+  observationEvents: new Set<string>(),
 }));
 
-vi.mock('../lib/db', () => ({ getClient: () => ({ execute: mocks.dbExecute }) }));
+vi.mock('../lib/db', () => ({ getClient: () => ({ execute: mocks.dbExecute, transaction: async () => ({ execute: mocks.dbExecute, commit: async () => undefined, rollback: async () => undefined }) }) }));
 vi.mock('../lib/agents/tool_interceptor', () => ({ interceptToolCall: mocks.interceptToolCall, interceptToolCallDeferred: mocks.interceptToolCall, commitDeferredInterceptorDecision: async (d: { approved: boolean }) => d }));
 vi.mock('../lib/agents/canonical_governance_state', () => ({
   readCanonicalGovernanceState: mocks.readCanonicalGovernanceState,
@@ -23,7 +24,7 @@ vi.mock('../lib/agents/recovery_runtime', () => ({
 
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
-import { recordZTrajObservation, type ExpectedZTrajSample } from '../lib/kv';
+import { recordZTrajObservation, updateZTraj, type ExpectedZTrajSample } from '../lib/kv';
 import { SIGMA_ZERO_TOLERANCE } from '../lib/agents/sigma_decay';
 
 const SESSION = 'observation-session';
@@ -119,6 +120,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.LEX_APPROVAL_SIGNING_SECRET = 'executor-observation-test-secret';
   mocks.rows.clear();
+  mocks.observationEvents.clear();
   mocks.rows.set(SESSION, row());
   mocks.interceptToolCall.mockResolvedValue(successDecision());
   mocks.advanceRecoveryPlane.mockResolvedValue({ advanced: false });
@@ -129,13 +131,37 @@ beforeEach(() => {
   mocks.dbExecute.mockImplementation(async (statement: string | { sql: string; args?: unknown[] }) => {
     const sql = typeof statement === 'string' ? statement : statement.sql;
     const args = typeof statement === 'string' ? [] : (statement.args ?? []);
+    if (sql.includes('CREATE TABLE IF NOT EXISTS z_traj_observation_events')) {
+      return { rows: [], rowsAffected: 0 };
+    }
+    if (sql.startsWith('INSERT OR IGNORE INTO z_traj_observation_events')) {
+      const key = String(args[0]) + ':' + String(args[1]);
+      if (mocks.observationEvents.has(key)) return { rows: [], rowsAffected: 0 };
+      mocks.observationEvents.add(key);
+      return { rows: [], rowsAffected: 1 };
+    }
+    if (sql.includes('AS now_utc')) {
+      const previous = args[1] == null ? Number.NaN : Date.parse(String(args[1]));
+      const now = Date.now();
+      const updatedAt = args[3] == null
+        ? new Date(now).toISOString()
+        : new Date(Math.max(now, previous + 1)).toISOString();
+      return { rows: [{ now_utc: new Date(now).toISOString(), elapsed_ms: Number.isFinite(previous) ? now - previous : null, updated_at: updatedAt }] };
+    }
     if (sql.includes('FROM z_traj')) {
       const found = mocks.rows.get(String(args[0]));
       return { rows: found ? [found] : [] };
     }
+    if (sql.startsWith('UPDATE z_traj SET') && sql.includes('velocity = ?')) {
+      const [velocity, nStable, driftDir, sigmaViol, lastM, lastC, lastR, lastS, zC, zR, zS, attackPressure, updatedAt, sessionId, expectedUpdatedAt] = args;
+      const current = mocks.rows.get(String(sessionId));
+      if (!current || String(current.updated_at) !== String(expectedUpdatedAt)) return { rows: [], rowsAffected: 0 };
+      Object.assign(current, { velocity, n_stable: nStable, drift_dir: driftDir, sigma_viol: sigmaViol, last_m: lastM, last_c: lastC, last_r: lastR, last_s: lastS, z_c: zC, z_r: zR, z_s: zS, attack_pressure: attackPressure, updated_at: updatedAt });
+      return { rows: [], rowsAffected: 1 };
+    }
     if (sql.startsWith('UPDATE z_traj')) {
-      const [sigmaViol, velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, lastM, lastC, lastR, lastS,
-        updatedAt, sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt, expectedSigmaViol] = args;
+      const [sigmaViol, velocity, countStableObservation, testedVelocity, threshold, M, tauRecovery, dwellMs, lastM, lastC, lastR, lastS,
+        sessionId, expectedC, expectedR, expectedS, expectedUpdatedAt, expectedSigmaViol] = args;
       const current = mocks.rows.get(String(sessionId));
       if (!current
         || Number(current.last_c) !== Number(expectedC)
@@ -147,16 +173,17 @@ beforeEach(() => {
       }
       current.sigma_viol = sigmaViol;
       current.velocity = velocity;
-      current.n_stable = Number(countStableObservation) === 1
-        && Number(testedVelocity) < Number(threshold)
-        && Number(M) >= Number(tauRecovery)
-        ? Number(current.n_stable) + 1
-        : 0;
+      const dwellElapsed = Date.now() - Date.parse(String(current.updated_at)) >= Number(dwellMs);
+      current.n_stable = Number(countStableObservation) !== 1
+        || Number(testedVelocity) >= Number(threshold)
+        || Number(M) < Number(tauRecovery)
+        ? 0
+        : dwellElapsed ? Number(current.n_stable) + 1 : Number(current.n_stable);
       current.last_m = lastM;
       current.last_c = lastC;
       current.last_r = lastR;
       current.last_s = lastS;
-      current.updated_at = updatedAt;
+      current.updated_at = new Date(Math.max(Date.now(), Date.parse(String(current.updated_at)) + 1)).toISOString();
       return { rows: [], rowsAffected: 1 };
     }
     return { rows: [], rowsAffected: 1 };
@@ -470,6 +497,32 @@ describe('governed tool stability observations', () => {
       typeof query === 'object' && query !== null && 'sql' in query
       && /INSERT\s+INTO\s+z_traj/i.test(String((query as { sql: unknown }).sql)),
     )).toBe(false);
+  });
+
+  it('does not increment stable observations before the canonical dwell interval', async () => {
+    mocks.rows.set(SESSION, row({ n_stable: 2, updated_at: new Date().toISOString() }));
+    const previous = expectedFrom(mocks.rows.get(SESSION)!);
+
+    const recorded = await recordZTrajObservation(SESSION, previous, PREVIOUS);
+
+    expect(recorded).toBe(true);
+    expect(mocks.rows.get(SESSION)?.n_stable).toBe(2);
+  });
+
+  it('does not increment updateZTraj stability before the canonical dwell interval', async () => {
+    mocks.rows.set(SESSION, row({ n_stable: 2, updated_at: new Date().toISOString() }));
+
+    const updated = await updateZTraj(SESSION, PREVIOUS, PREVIOUS, undefined, [], 'update-before-dwell');
+
+    expect(updated.n_stable).toBe(2);
+  });
+
+  it('increments updateZTraj stability after the canonical dwell interval', async () => {
+    mocks.rows.set(SESSION, row({ n_stable: 2, updated_at: OLD_UPDATED_AT }));
+
+    const updated = await updateZTraj(SESSION, PREVIOUS, PREVIOUS, undefined, [], 'update-after-dwell');
+
+    expect(updated.n_stable).toBe(3);
   });
 
   it('records a zero-velocity baseline without incrementing stable observations', async () => {

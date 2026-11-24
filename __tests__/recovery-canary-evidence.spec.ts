@@ -81,13 +81,29 @@ describe('recovery canary evidence', () => {
     ]);
   });
 
-  it('uses the same complete predicate for server and operator canary eligibility', () => {
+  it('uses the same exact-zero predicate for server and operator canary eligibility', () => {
     expect(recoveryCanaryPredicateFailures({
       trajectoryAvailable: true, M: 0.15, nStable: 3, sigmaViol: 0, velocity: 0.019,
     })).toEqual([]);
     expect(recoveryCanaryPredicateFailures({
+      trajectoryAvailable: true, M: 0.15, nStable: 3, sigmaViol: 1e-12, velocity: 0.019,
+    })).toContain('sigma_viol 1e-12 must equal exactly 0 before canary verification');
+    expect(recoveryCanaryPredicateFailures({
       trajectoryAvailable: false, M: 0.04, nStable: 2, sigmaViol: 0.3, velocity: 0.02,
     })).toHaveLength(6);
+  });
+
+  it('rejects non-finite M and stable-observation counts in the canary predicate', () => {
+    for (const M of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(recoveryCanaryPredicateFailures({
+        trajectoryAvailable: true, M, nStable: 3, sigmaViol: 0, velocity: 0,
+      })).toContain('M must be finite before canary verification');
+    }
+    for (const nStable of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(recoveryCanaryPredicateFailures({
+        trajectoryAvailable: true, M: 0.25, nStable, sigmaViol: 0, velocity: 0,
+      })).toContain(`n_stable ${String(nStable)} must be finite and >= N_MIN 3`);
+    }
   });
 
   it('issues server evidence only after rereading the exact canonical row', async () => {
@@ -248,10 +264,25 @@ describe('health-band recovery canary validity', () => {
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
-  it('rejects sigma above SIGMA_THRESHOLD and accepts sigma within it', async () => {
+  it('requires exactly zero canonical sigma and rejects every positive residual', async () => {
+    for (const sigmaViol of [Number.MIN_VALUE, 1e-12, 0.001, 0.249, 0.25]) {
+      dbExecute.mockResolvedValue({ rows: [liveRow()] });
+      await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol }))
+        .resolves.toMatchObject({ passed: false, receiptId: null });
+    }
+    for (const M of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      dbExecute.mockResolvedValue({ rows: [liveRow()] });
+      await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, M }))
+        .resolves.toMatchObject({ passed: false, receiptId: null });
+    }
+    for (const nStable of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      dbExecute.mockResolvedValue({ rows: [liveRow()] });
+      await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, nStable }))
+        .resolves.toMatchObject({ passed: false, receiptId: null });
+    }
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
-    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0.3 }))
-      .resolves.toMatchObject({ passed: false, receiptId: null });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0 }))
+      .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
   });
 
   it('rejects evidence at the exact expiry instant', async () => {
@@ -325,7 +356,7 @@ describe('health-band recovery canary validity', () => {
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
-  it('refuses a canary when state version changes or sigma is above SIGMA_THRESHOLD', async () => {
+  it('refuses a canary when state version changes or canonical sigma is positive', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, stateVersion: 'canonical-v2' }))
       .resolves.toMatchObject({ passed: false });

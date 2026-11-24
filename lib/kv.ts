@@ -120,6 +120,8 @@ export const RECOVERY_RATE   = CONSTITUTION.RECOVERY_RATE;
 export const SIGMA_WINDOW    = 10;
 export const SIGMA_THRESHOLD = CONSTITUTION.SIGMA_THRESHOLD;
 export const STABILITY_VELOCITY = RECOVERY_STABILITY_THRESHOLD;
+/** Minimum database-clock dwell between canonical stability samples. */
+export const MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS = 5_000;
 
 // ── Z-weight update constants (Theorem 3a/3b — Banach fixed-point proof) ──────
 // ρ = memory decay rate (contraction factor, proven convergent at 0.85)
@@ -305,27 +307,28 @@ export async function recordZTrajObservation(
   const M = Math.min(measured.c, measured.r, measured.s);
   const currentViolation = M < TAU_LYP ? TAU_LYP - M : 0;
   const sigmaViol = nextSigmaViolation(expectedPrevious.sigma_viol, currentViolation, SIGMA_WINDOW);
-  const timestampNow = new Date();
-  const timestamp = timestampNow.toISOString();
-  // Ensure the version changes even if this observation occurs in the same
-  // millisecond as the previous write; this makes the CAS single-winner.
-  const updatedAt = timestamp === expectedPrevious.updated_at
-    ? new Date(timestampNow.getTime() + 1).toISOString()
-    : timestamp;
 
   const result = await getClient().execute({
     sql: `UPDATE z_traj
           SET sigma_viol = ?,
               velocity = ?,
-              n_stable = CASE WHEN ? = 1 AND ? < ? AND ? >= ? THEN n_stable + 1 ELSE 0 END,
-              last_m = ?, last_c = ?, last_r = ?, last_s = ?, updated_at = ?
+              n_stable = CASE
+                WHEN ? = 0 THEN 0
+                WHEN ? >= ? OR ? < ? THEN 0
+                WHEN (julianday('now') - julianday(updated_at)) * 86400000 >= ? THEN n_stable + 1
+                ELSE n_stable
+              END,
+              last_m = ?, last_c = ?, last_r = ?, last_s = ?,
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ',
+                MAX(julianday('now'), julianday(updated_at) + 1.0 / 86400000.0))
           WHERE session_id = ? AND last_c = ? AND last_r = ? AND last_s = ? AND updated_at = ? AND sigma_viol = ?`,
     args: [
       sigmaViol,
       velocity,
       countStableObservation ? 1 : 0,
       velocity, STABILITY_VELOCITY, M, CONSTITUTION.TAU_RECOVERY,
-      M, measured.c, measured.r, measured.s, updatedAt,
+      MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS,
+      M, measured.c, measured.r, measured.s,
       sessionId,
       expectedPrevious.last_c, expectedPrevious.last_r, expectedPrevious.last_s,
       expectedPrevious.updated_at, expectedPrevious.sigma_viol,
@@ -335,157 +338,235 @@ export async function recordZTrajObservation(
   return Number(result.rowsAffected ?? 0) > 0;
 }
 
-// updateZTraj — now accepts lawEvents to compute the proven attack signal A(t).
-// lawEvents: array of law_ids fired this turn (e.g. ['bypass_attempt', 'multi_attack']).
-// Backwards compatible: omitting lawEvents defaults to [] (no attack signal this turn).
+// Each kernel turn carries a stable event key so a retried receipt cannot
+// apply the same trajectory transition twice.
+let zTrajObservationEventsReady: Promise<void> | null = null;
+
+async function ensureZTrajObservationEventsSchema(): Promise<void> {
+  if (!zTrajObservationEventsReady) {
+    zTrajObservationEventsReady = getClient().execute({
+      sql: `CREATE TABLE IF NOT EXISTS z_traj_observation_events (
+        session_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (session_id, event_id)
+      )`,
+      args: [],
+    }).then(() => undefined).catch((error: unknown) => {
+      zTrajObservationEventsReady = null;
+      throw error;
+    });
+  }
+  await zTrajObservationEventsReady;
+}
+
+// SQLite/libSQL can reject a concurrent BEGIN IMMEDIATE with SQLITE_BUSY while
+// another writer owns the database lock. Retry only transaction acquisition;
+// never replay a transaction body after a partial write.
+const Z_TRAJ_WRITE_BUSY_RETRY_DELAYS_MS = [10, 20, 40, 80, 160, 320] as const;
+
+async function beginZTrajWriteTransaction(client: ReturnType<typeof getClient>) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await client.transaction('write');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+      const isBusy = code === 'SQLITE_BUSY' || /SQLITE_BUSY|database is locked/i.test(message);
+      const delay = Z_TRAJ_WRITE_BUSY_RETRY_DELAYS_MS[attempt];
+      if (!isBusy || delay === undefined) throw error;
+      await new Promise<void>(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
+// updateZTraj — applies the proven z-weight rule under one serialized write
+// transaction. The event key is mandatory and unique per logical kernel turn.
 export async function updateZTraj(
   sessionId: string,
   crs: CRS,
   prevCRS: CRS | null,
-  attackPressure?: number,
-  lawEvents: string[] = [],
+  attackPressure: number | undefined,
+  lawEvents: string[],
+  observationId: string,
 ): Promise<ZTraj> {
-  const M = Math.min(crs.c, crs.r, crs.s);
-  const existing = await getZTraj(sessionId);
-
-  // ── Velocity: L2 distance from previous CRS ───────────────────────────────
-  const velocity = prevCRS
-    ? Math.sqrt((crs.c - prevCRS.c) ** 2 + (crs.r - prevCRS.r) ** 2 + (crs.s - prevCRS.s) ** 2)
-    : 0;
-
-  // ── n_stable: consecutive low-velocity turns ──────────────────────────────
-  const n_stable = velocity < STABILITY_VELOCITY && M >= CONSTITUTION.TAU_RECOVERY
-    ? (existing?.n_stable ?? 0) + 1
-    : 0;
-
-  // ── drift_dir: dominant dimension of change ───────────────────────────────
-  let drift_dir = 'none';
-  if (prevCRS) {
-    const dc = crs.c - prevCRS.c;
-    const dr = crs.r - prevCRS.r;
-    const ds = crs.s - prevCRS.s;
-    const adC = Math.abs(dc), adR = Math.abs(dr), adS = Math.abs(ds);
-    if (adC > adR && adC > adS && adC > 0.005) {
-      drift_dir = dc < 0 ? 'away_C' : 'toward_C';
-    } else if (adR > adS && adR > 0.005) {
-      drift_dir = dr < 0 ? 'away_R' : 'toward_R';
-    } else if (adS > 0.005) {
-      drift_dir = ds < 0 ? 'away_S' : 'toward_S';
-    }
+  if (!observationId.trim()) throw new Error('A stable z_traj observation ID is required.');
+  if (![crs.c, crs.r, crs.s].every(Number.isFinite)) {
+    throw new Error('Cannot persist a non-finite CRS observation.');
   }
 
-  // ── sigma_viol: rolling exponential average of constitutional stress ───────
-  // Accumulates when M < TAU_LYP (0.08) — detects slow-drip DURING drift.
-  const viol = M < TAU_LYP ? (TAU_LYP - M) : 0;
-  const prevSigma = existing?.sigma_viol ?? 0;
-  const sigma_viol = nextSigmaViolation(prevSigma, viol, SIGMA_WINDOW);
-
-  // ── attack_pressure: scalar summary for receipt/logging ───────────────────
-  const attack_pressure = attackPressure !== undefined
-    ? Math.min(1, Math.max(0, attackPressure))
-    : (existing?.attack_pressure ?? 0);
-
-  // ── Proven z-weight update (Theorem 3a/3b) ────────────────────────────────
-  // A(t) = γ · Σ_law sev(law)·dir(law)
-  // z_{t+1} = normalize(clamp(ρ·z_t + (1−ρ)·x_t − A(t), τ/2, 1−τ))
-  const attackSignal = computeAttackSignal(lawEvents);
-  const { z_c, z_r, z_s } = computeZWeights(
-    existing ? { z_c: existing.z_c, z_r: existing.z_r, z_s: existing.z_s } : null,
-    crs,
-    attackSignal,
-  );
-
-  // ── drift_dir refinement: also check z-trajectory drift ──────────────────
-  // If z-weights show a dominant pillar under attack, record that.
-  const zMax = Math.max(z_c, z_r, z_s);
-  let z_drift = 'stable';
-  if (zMax > 0.45) {
-    z_drift = z_c === zMax ? 'protecting_C' : z_r === zMax ? 'protecting_R' : 'protecting_S';
+  const client = getClient();
+  if (typeof client.transaction !== 'function') {
+    throw new Error('Atomic z_traj writes require a libSQL write transaction.');
   }
-  const effective_drift = drift_dir !== 'none' ? drift_dir : z_drift;
+  await ensureZTrajObservationEventsSchema();
 
-  const z: ZTraj = {
-    session_id:      sessionId,
-    velocity,
-    n_stable,
-    drift_dir:       effective_drift,
-    sigma_viol,
-    last_m:          M,
-    last_c:          crs.c,
-    last_r:          crs.r,
-    last_s:          crs.s,
-    z_c,
-    z_r,
-    z_s,
-    attack_pressure,
-    updated_at:      new Date().toISOString(),
-  };
-
-  // Persist — ADD z_c/z_r/z_s columns if not yet present (migration-safe via ALTER).
-  // The INSERT uses ON CONFLICT to upsert; new columns are added lazily.
+  const tx = await beginZTrajWriteTransaction(client);
   try {
-    await getClient().execute({
-      sql: `INSERT INTO z_traj
-              (session_id, velocity, n_stable, drift_dir, sigma_viol,
-               last_m, last_c, last_r, last_s,
-               z_c, z_r, z_s,
-               attack_pressure, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
-              velocity=excluded.velocity, n_stable=excluded.n_stable,
-              drift_dir=excluded.drift_dir, sigma_viol=excluded.sigma_viol,
-              last_m=excluded.last_m, last_c=excluded.last_c,
-              last_r=excluded.last_r, last_s=excluded.last_s,
-              z_c=excluded.z_c, z_r=excluded.z_r, z_s=excluded.z_s,
-              attack_pressure=excluded.attack_pressure,
-              updated_at=excluded.updated_at`,
+    const selected = await tx.execute({
+      sql: 'SELECT * FROM z_traj WHERE session_id = ?',
+      args: [sessionId],
+    });
+    const row = selected.rows[0] as Record<string, unknown> | undefined;
+    const existing: ZTraj | null = row ? {
+      session_id: String(row.session_id),
+      velocity: Number(row.velocity),
+      n_stable: Number(row.n_stable),
+      drift_dir: String(row.drift_dir),
+      sigma_viol: Number(row.sigma_viol),
+      last_m: Number(row.last_m),
+      last_c: Number(row.last_c),
+      last_r: Number(row.last_r),
+      last_s: Number(row.last_s),
+      z_c: typeof row.z_c === 'number' ? row.z_c : 1 / 3,
+      z_r: typeof row.z_r === 'number' ? row.z_r : 1 / 3,
+      z_s: typeof row.z_s === 'number' ? row.z_s : 1 / 3,
+      attack_pressure: typeof row.attack_pressure === 'number' ? row.attack_pressure : 0,
+      updated_at: String(row.updated_at),
+    } : null;
+
+    const event = await tx.execute({
+      sql: 'INSERT OR IGNORE INTO z_traj_observation_events (session_id, event_id) VALUES (?, ?)',
+      args: [sessionId, observationId],
+    });
+    if (Number(event.rowsAffected ?? 0) !== 1) {
+      await tx.rollback();
+      const latest = await getZTraj(sessionId);
+      if (!latest) throw new Error('Duplicate z_traj event exists without its trajectory row.');
+      return latest;
+    }
+
+    const clock = await tx.execute({
+      sql: `SELECT
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS now_utc,
+        CASE WHEN ? IS NULL THEN NULL
+          ELSE (julianday('now') - julianday(?)) * 86400000 END AS elapsed_ms,
+        CASE WHEN ? IS NULL THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          ELSE strftime('%Y-%m-%dT%H:%M:%fZ',
+            MAX(julianday('now'), julianday(?) + 1.0 / 86400000.0)) END AS updated_at`,
       args: [
-        sessionId, z.velocity, z.n_stable, z.drift_dir, z.sigma_viol,
-        z.last_m, z.last_c, z.last_r, z.last_s,
-        z.z_c, z.z_r, z.z_s,
-        z.attack_pressure, z.updated_at,
+        existing?.updated_at ?? null, existing?.updated_at ?? null,
+        existing?.updated_at ?? null, existing?.updated_at ?? null,
       ],
     });
-    if (z.last_m < CONSTITUTION.TAU_FLOOR) {
-      await markAccountQuarantined(sessionId);
+    const clockRow = clock.rows[0] as Record<string, unknown> | undefined;
+    const updatedAt = String(clockRow?.updated_at ?? clockRow?.now_utc ?? '');
+    if (!updatedAt) throw new Error('Database clock did not return a trajectory timestamp.');
+
+    // Always compare against the latest persisted CRS inside the write
+    // transaction. A caller's pre-transaction snapshot may already be stale.
+    const baseline = existing
+      ? { c: existing.last_c, r: existing.last_r, s: existing.last_s }
+      : prevCRS;
+    const velocity = baseline
+      ? Math.sqrt((crs.c - baseline.c) ** 2 + (crs.r - baseline.r) ** 2 + (crs.s - baseline.s) ** 2)
+      : 0;
+    const M = Math.min(crs.c, crs.r, crs.s);
+    const elapsedMs = Number(clockRow?.elapsed_ms);
+    const dwellElapsed = existing !== null && Number.isFinite(elapsedMs)
+      && elapsedMs >= MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS;
+    const n_stable = velocity >= STABILITY_VELOCITY || M < CONSTITUTION.TAU_RECOVERY
+      ? 0
+      : dwellElapsed ? existing!.n_stable + 1 : (existing?.n_stable ?? 0);
+
+    let drift_dir = 'none';
+    if (baseline) {
+      const dc = crs.c - baseline.c;
+      const dr = crs.r - baseline.r;
+      const ds = crs.s - baseline.s;
+      const adC = Math.abs(dc), adR = Math.abs(dr), adS = Math.abs(ds);
+      if (adC > adR && adC > adS && adC > 0.005) {
+        drift_dir = dc < 0 ? 'away_C' : 'toward_C';
+      } else if (adR > adS && adR > 0.005) {
+        drift_dir = dr < 0 ? 'away_R' : 'toward_R';
+      } else if (adS > 0.005) {
+        drift_dir = ds < 0 ? 'away_S' : 'toward_S';
+      }
     }
-  } catch (e: unknown) {
-    // If z_c/z_r/z_s columns don't exist yet, add them then retry.
-    if (e instanceof Error && e.message.includes('no column')) {
-      const db = getClient();
-      await db.execute('ALTER TABLE z_traj ADD COLUMN z_c REAL NOT NULL DEFAULT 0.333').catch(() => {});
-      await db.execute('ALTER TABLE z_traj ADD COLUMN z_r REAL NOT NULL DEFAULT 0.333').catch(() => {});
-      await db.execute('ALTER TABLE z_traj ADD COLUMN z_s REAL NOT NULL DEFAULT 0.333').catch(() => {});
-      // Retry insert after migration
-      await getClient().execute({
+
+    const viol = M < TAU_LYP ? TAU_LYP - M : 0;
+    const sigma_viol = nextSigmaViolation(existing?.sigma_viol ?? 0, viol, SIGMA_WINDOW);
+    const attack_pressure = attackPressure !== undefined
+      ? Math.min(1, Math.max(0, attackPressure))
+      : (existing?.attack_pressure ?? 0);
+    const attackSignal = computeAttackSignal(lawEvents);
+    const { z_c, z_r, z_s } = computeZWeights(
+      existing ? { z_c: existing.z_c, z_r: existing.z_r, z_s: existing.z_s } : null,
+      crs,
+      attackSignal,
+    );
+    const zMax = Math.max(z_c, z_r, z_s);
+    let z_drift = 'stable';
+    if (zMax > 0.45) {
+      z_drift = z_c === zMax ? 'protecting_C' : z_r === zMax ? 'protecting_R' : 'protecting_S';
+    }
+
+    const z: ZTraj = {
+      session_id: sessionId,
+      velocity,
+      n_stable,
+      drift_dir: drift_dir !== 'none' ? drift_dir : z_drift,
+      sigma_viol,
+      last_m: M,
+      last_c: crs.c,
+      last_r: crs.r,
+      last_s: crs.s,
+      z_c, z_r, z_s,
+      attack_pressure,
+      updated_at: updatedAt,
+    };
+
+    if (existing) {
+      const updated = await tx.execute({
+        sql: `UPDATE z_traj SET
+          velocity = ?, n_stable = ?, drift_dir = ?, sigma_viol = ?,
+          last_m = ?, last_c = ?, last_r = ?, last_s = ?,
+          z_c = ?, z_r = ?, z_s = ?, attack_pressure = ?, updated_at = ?
+          WHERE session_id = ? AND updated_at = ?`,
+        args: [
+          z.velocity, z.n_stable, z.drift_dir, z.sigma_viol,
+          z.last_m, z.last_c, z.last_r, z.last_s,
+          z.z_c, z.z_r, z.z_s, z.attack_pressure, z.updated_at,
+          sessionId, existing.updated_at,
+        ],
+      });
+      if (Number(updated.rowsAffected ?? 0) !== 1) {
+        throw new Error('Concurrent z_traj snapshot conflict; transition was not applied.');
+      }
+    } else {
+      await tx.execute({
         sql: `INSERT INTO z_traj
-                (session_id, velocity, n_stable, drift_dir, sigma_viol,
-                 last_m, last_c, last_r, last_s,
-                 z_c, z_r, z_s,
-                 attack_pressure, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(session_id) DO UPDATE SET
-                velocity=excluded.velocity, n_stable=excluded.n_stable,
-                drift_dir=excluded.drift_dir, sigma_viol=excluded.sigma_viol,
-                last_m=excluded.last_m, last_c=excluded.last_c,
-                last_r=excluded.last_r, last_s=excluded.last_s,
-                z_c=excluded.z_c, z_r=excluded.z_r, z_s=excluded.z_s,
-                attack_pressure=excluded.attack_pressure,
-                updated_at=excluded.updated_at`,
+          (session_id, velocity, n_stable, drift_dir, sigma_viol,
+           last_m, last_c, last_r, last_s, z_c, z_r, z_s, attack_pressure, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           sessionId, z.velocity, z.n_stable, z.drift_dir, z.sigma_viol,
           z.last_m, z.last_c, z.last_r, z.last_s,
-          z.z_c, z.z_r, z.z_s,
-          z.attack_pressure, z.updated_at,
+          z.z_c, z.z_r, z.z_s, z.attack_pressure, z.updated_at,
         ],
       });
-    } else {
-      throw e;
     }
-  }
 
-  return z;
+    await tx.commit();
+    if (z.last_m < CONSTITUTION.TAU_FLOOR) {
+      await markAccountQuarantined(sessionId);
+    }
+    return z;
+  } catch (error: unknown) {
+    await tx.rollback().catch(() => undefined);
+    if (error instanceof Error && error.message.toLowerCase().includes('no column')) {
+      const db = getClient();
+      await db.execute('ALTER TABLE z_traj ADD COLUMN z_c REAL NOT NULL DEFAULT 0.333').catch(() => undefined);
+      await db.execute('ALTER TABLE z_traj ADD COLUMN z_r REAL NOT NULL DEFAULT 0.333').catch(() => undefined);
+      await db.execute('ALTER TABLE z_traj ADD COLUMN z_s REAL NOT NULL DEFAULT 0.333').catch(() => undefined);
+      return updateZTraj(sessionId, crs, prevCRS, attackPressure, lawEvents, observationId);
+    }
+    throw error;
+  }
 }
+
 
 // ── Session turn counter ──────────────────────────────────────────────────────
 

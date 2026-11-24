@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, trajectory } = vi.hoisted(() => ({
+const { execute, trajectory, observationEvents } = vi.hoisted(() => ({
   execute: vi.fn(),
   trajectory: { current: null as Record<string, unknown> | null },
+  observationEvents: new Set<string>(),
 }));
 
 vi.mock('../lib/db', () => ({
-  getClient: () => ({ execute }),
+  getClient: () => ({ execute, transaction: async () => ({ execute, commit: async () => undefined, rollback: async () => undefined }) }),
 }));
 
 vi.mock('../lib/env', () => ({ env: { AUDITOR_SECRET: 'test-signing-key' } }));
@@ -62,18 +63,49 @@ function persistedTrajectory(crs: CRS, nStable = 0) {
     drift_dir: 'stable', sigma_viol: 0, last_m: Math.min(crs.C, crs.R, crs.S),
     last_c: crs.C, last_r: crs.R, last_s: crs.S,
     z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3,
-    attack_pressure: 0, updated_at: new Date().toISOString(),
+    attack_pressure: 0, updated_at: new Date(Date.now() - 5_000).toISOString(),
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   trajectory.current = persistedTrajectory({ C: 0.333, R: 0.333, S: 0.334 });
+  observationEvents.clear();
   execute.mockImplementation(async (statement: string | { sql: string; args?: unknown[] }) => {
     const sql = typeof statement === 'string' ? statement : statement.sql;
     const args = typeof statement === 'string' ? [] : (statement.args ?? []);
+    if (sql.includes('CREATE TABLE IF NOT EXISTS z_traj_observation_events')) return { rows: [], rowsAffected: 0 };
+    if (sql.startsWith('INSERT OR IGNORE INTO z_traj_observation_events')) {
+      const key = String(args[0]) + ':' + String(args[1]);
+      if (observationEvents.has(key)) return { rows: [], rowsAffected: 0 };
+      observationEvents.add(key);
+      return { rows: [], rowsAffected: 1 };
+    }
+    if (sql.includes('AS now_utc')) {
+      const previous = args[1] == null ? Number.NaN : Date.parse(String(args[1]));
+      const now = Date.now();
+      return { rows: [{
+        now_utc: new Date(now).toISOString(),
+        elapsed_ms: Number.isFinite(previous) ? now - previous : null,
+        updated_at: args[3] == null ? new Date(now).toISOString() : new Date(Math.max(now, previous + 1)).toISOString(),
+      }] };
+    }
     if (/SELECT \* FROM z_traj WHERE session_id/.test(sql)) {
       return { rows: trajectory.current ? [trajectory.current] : [] };
+    }
+    if (sql.startsWith('UPDATE z_traj SET')) {
+      const [velocity, nStable, driftDir, sigmaViol, lastM, lastC, lastR, lastS,
+        zC, zR, zS, attackPressure, updatedAt, sessionId, expectedUpdatedAt] = args;
+      if (!trajectory.current || String(trajectory.current.updated_at) !== String(expectedUpdatedAt)) {
+        return { rows: [], rowsAffected: 0 };
+      }
+      trajectory.current = {
+        ...trajectory.current, session_id: sessionId, velocity, n_stable: nStable,
+        drift_dir: driftDir, sigma_viol: sigmaViol, last_m: lastM, last_c: lastC,
+        last_r: lastR, last_s: lastS, z_c: zC, z_r: zR, z_s: zS,
+        attack_pressure: attackPressure, updated_at: updatedAt,
+      };
+      return { rows: [], rowsAffected: 1 };
     }
     if (/INSERT INTO z_traj/.test(sql)) {
       const [sessionId, velocity, nStable, driftDir, sigmaViol, lastM, lastC, lastR, lastS,
@@ -92,17 +124,37 @@ beforeEach(() => {
 
 describe('writeKernelReceipt turn-to-turn stability baseline', () => {
   it('increments n_stable from zero to one and then two for near-identical governed turns', async () => {
-    const firstGoverned = { C: 0.334, R: 0.333, S: 0.333 };
-    const secondGoverned = { C: 0.335, R: 0.332, S: 0.333 };
-    const deliberatelyDifferentRaw = { C: 0.1, R: 0.8, S: 0.1 };
+    vi.useFakeTimers();
+    try {
+      // Keep the real wall-clock epoch so the pre-seeded observation remains older than the dwell window.
+      const firstGoverned = { C: 0.334, R: 0.333, S: 0.333 };
+      const secondGoverned = { C: 0.335, R: 0.332, S: 0.333 };
+      const deliberatelyDifferentRaw = { C: 0.1, R: 0.8, S: 0.1 };
 
-    await writeKernelReceipt('stability-session', 1, cycleResult(firstGoverned, deliberatelyDifferentRaw));
-    expect(trajectory.current?.n_stable).toBe(1);
-    expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
+      await writeKernelReceipt('stability-session', 1, cycleResult(firstGoverned, deliberatelyDifferentRaw));
+      expect(trajectory.current?.n_stable).toBe(1);
+      expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
 
-    await writeKernelReceipt('stability-session', 2, cycleResult(secondGoverned, deliberatelyDifferentRaw));
-    expect(trajectory.current?.n_stable).toBe(2);
-    expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
+      vi.advanceTimersByTime(5_000);
+      await writeKernelReceipt('stability-session', 2, cycleResult(secondGoverned, deliberatelyDifferentRaw));
+      expect(trajectory.current?.n_stable).toBe(2);
+      expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not count a replay of the same governed turn twice', async () => {
+    const governed = { C: 0.334, R: 0.333, S: 0.333 };
+    const result = cycleResult(governed, governed);
+    await writeKernelReceipt('stability-session', 7, result);
+    const afterFirst = { ...trajectory.current! };
+
+    await writeKernelReceipt('stability-session', 7, result);
+
+    expect(trajectory.current?.n_stable).toBe(afterFirst.n_stable);
+    expect(trajectory.current?.updated_at).toBe(afterFirst.updated_at);
+    expect(observationEvents.size).toBe(1);
   });
 
   it('resets n_stable to zero after a large governed-state jump', async () => {
