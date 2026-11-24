@@ -9,6 +9,7 @@ import {
   createApprovalRequest,
   getApprovalRequestStatus,
   decideApprovalRequest,
+  listApprovalRequests,
 } from '../lib/approval_requests';
 
 let row: Record<string, unknown> | null;
@@ -38,7 +39,8 @@ function installDb() {
       return { rowsAffected: 0, rows: [] };
     }
     if (sql.startsWith('UPDATE approval_requests SET status = ?, decided_at = ?, decided_by = ?')) {
-      if (row && row.request_id === args[3] && row.status === 'pending' && Number(row.expires_at) > Number(args[4])) {
+      if (row && row.request_id === args[3] && row.owner_id === args[4]
+        && row.status === 'pending' && Number(row.expires_at) > Number(args[5])) {
         row.status = args[0];
         row.decided_at = args[1];
         row.decided_by = args[2];
@@ -112,8 +114,8 @@ describe('one-tap approval request persistence', () => {
   it('carries one request from pending through operator approval to its first successful consumption', async () => {
     const created = await createApprovalRequest(requestInput);
     expect(row?.status).toBe('pending');
-    expect(await decideApprovalRequest({ requestId: created.requestId, decision: 'approved', decidedBy: 'operator' })).toBe(true);
-    expect(row).toMatchObject({ status: 'approved', decided_by: 'operator' });
+    expect(await decideApprovalRequest({ requestId: created.requestId, ownerId: 'owner-a', decision: 'approved', decidedBy: 'owner:owner-a' })).toBe(true);
+    expect(row).toMatchObject({ status: 'approved', decided_by: 'owner:owner-a' });
     const consumed = await consumeApprovalRequest({ requestId: created.requestId, ...requestInput });
     expect(consumed.consumed).toBe(true);
     expect(row?.status).toBe('used');
@@ -182,6 +184,26 @@ describe('one-tap approval request persistence', () => {
     expect((await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, toolName: 'dispatch_workflow' })).consumed).toBe(false);
     expect((await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, nowMs: created.expiresAt })).consumed).toBe(false);
     expect(row?.status).toBe('approved');
+  });
+
+  it('queries approval history with the authenticated owner ID', async () => {
+    await createApprovalRequest(requestInput);
+    await listApprovalRequests('owner-a');
+    const listQuery = execute.mock.calls.find(([query]) =>
+      typeof query !== 'string' && query.sql.includes('FROM approval_requests WHERE owner_id = ?'))?.[0];
+    expect(listQuery).toMatchObject({ args: ['owner-a', 100] });
+    expect(String((listQuery as { sql: string }).sql)).toContain('ORDER BY created_at DESC');
+  });
+
+  it('cannot decide another owner’s request even with the correct request ID', async () => {
+    const created = await createApprovalRequest(requestInput);
+    expect(await decideApprovalRequest({
+      requestId: created.requestId,
+      ownerId: 'owner-b',
+      decision: 'approved',
+      decidedBy: 'owner:owner-b',
+    })).toBe(false);
+    expect(row?.status).toBe('pending');
   });
 
   it('allows exactly one of two concurrent consumers to win the conditional update', async () => {

@@ -35,7 +35,8 @@ function installDb() {
     }
     if (sql.startsWith('UPDATE approval_requests SET status = ?, decided_at = ?, decided_by = ?')) {
       const current = row;
-      if (current && current.request_id === args[3] && current.status === 'pending' && Number(current.expires_at) > Number(args[4])) {
+      if (current && current.request_id === args[3] && current.owner_id === args[4]
+        && current.status === 'pending' && Number(current.expires_at) > Number(args[5])) {
         current.status = args[0];
         current.decided_at = args[1];
         current.decided_by = args[2];
@@ -79,7 +80,7 @@ describe('concurrent one-tap executor use', () => {
     const request = await createApprovalRequest({
       ownerId: 'owner-a', sessionId, toolName: 'write_file', args: actionArgs,
     });
-    expect(await decideApprovalRequest({ requestId: request.requestId, decision: 'approved', decidedBy: 'operator' })).toBe(true);
+    expect(await decideApprovalRequest({ requestId: request.requestId, ownerId: 'owner-a', decision: 'approved', decidedBy: 'owner:owner-a' })).toBe(true);
     const handler = vi.fn(async () => 'SIDE_EFFECT_COMPLETE');
     const callArgs = { ...actionArgs, approval_request_id: request.requestId };
     const run = () => executeGovernedToolStructured(

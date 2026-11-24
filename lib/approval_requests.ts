@@ -210,14 +210,14 @@ export interface ApprovalRequestRecord {
 }
 
 /** Return a bounded, append-only view of approval history. */
-export async function listApprovalRequests(nowMs = Date.now(), limit = 100): Promise<ApprovalRequestRecord[]> {
+export async function listApprovalRequests(ownerId: string, nowMs = Date.now(), limit = 100): Promise<ApprovalRequestRecord[]> {
   await ensureApprovalRequestSchema();
   const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
   const result = await getClient().execute({
     sql: `SELECT request_id, owner_id, session_id, tool_name, args_json, status,
                  created_at, expires_at, decided_at, decided_by
-          FROM approval_requests ORDER BY created_at DESC LIMIT ?`,
-    args: [boundedLimit],
+          FROM approval_requests WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?`,
+    args: [ownerId, boundedLimit],
   });
   return result.rows.map(row => {
     const storedStatus = String(row.status) as Exclude<ApprovalRequestStatus, 'expired'>;
@@ -240,14 +240,14 @@ export async function listApprovalRequests(nowMs = Date.now(), limit = 100): Pro
 }
 
 export async function decideApprovalRequest(input: {
-  requestId: string; decision: 'approved' | 'denied'; decidedBy: string; nowMs?: number;
+  requestId: string; ownerId: string; decision: 'approved' | 'denied'; decidedBy: string; nowMs?: number;
 }): Promise<boolean> {
   const now = input.nowMs ?? Date.now();
   await ensureApprovalRequestSchema();
   const result = await getClient().execute({
     sql: `UPDATE approval_requests SET status = ?, decided_at = ?, decided_by = ?
-          WHERE request_id = ? AND status = 'pending' AND expires_at > ?`,
-    args: [input.decision, now, input.decidedBy, input.requestId, now],
+          WHERE request_id = ? AND owner_id = ? AND status = 'pending' AND expires_at > ?`,
+    args: [input.decision, now, input.decidedBy, input.requestId, input.ownerId, now],
   });
   return (result.rowsAffected ?? 0) === 1;
 }

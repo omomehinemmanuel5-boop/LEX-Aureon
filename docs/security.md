@@ -14,6 +14,12 @@ The governed application does not forward arbitrary tool calls to remote MCP ser
 
 Tool receipts store an authenticated actor identifier (`operator`, `api_key:<key-id>`, or `internal-agent`) and a hash of arguments, never the raw credential or raw arguments. This identifies the authenticated principal, not necessarily the human or model behind a shared key.
 
+## Owner-scoped approvals
+
+`/approvals` authenticates with the API key that owns the pending request. The key is verified against its stored hash without consuming its MCP usage quota. The browser receives a one-hour `HttpOnly`, `Secure`, `SameSite=Strict` session cookie signed with that key's stored hash; deleting or rotating the API key invalidates the session. The approval history query and the conditional approve/deny update both require the authenticated API-key owner ID, so knowing another request's ID or approval URL does not grant access.
+
+This is strict API-key-owner isolation, not email/account authentication. In the current personal-tenant model, an API key is the owner identity; a different key does not share that inbox, even if a person controls both keys. Requests created under the shared `operator` principal are not visible in an API-key owner's inbox.
+
 Admin-issued `private_test` MCP keys are trusted internal-development credentials: they expire after two hours, are subject to issuance rate limits, and receive the complete internal tool surface, including `authorize_tool_action` and `authorize_external_action`. Consequential approvals are bound to the authenticated API-key actor and exact action; private-test authorization calls consume that key's normal quota and still pass through the constitutional execution gateway. Public API keys remain excluded from internal and authorization-control tools. `MCP_OPERATOR_SECRET` remains an optional, separate operator principal for dedicated service clients.
 
 ## Sensitive areas

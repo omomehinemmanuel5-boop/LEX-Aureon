@@ -83,7 +83,7 @@ describe('MCP patch_file write path', () => {
     const pending = await createApprovalRequest({ ownerId: 'owner-write', sessionId: session.sessionId, toolName: 'patch_file', args });
     expect(pending.requestId).toBeTruthy();
     expect(commitCalls).toBe(0);
-    expect(await decideApprovalRequest({ requestId: pending.requestId, decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
+    expect(await decideApprovalRequest({ requestId: pending.requestId, ownerId: 'owner-write', decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
 
     const execute = (input: Record<string, unknown>) => executeGovernedToolStructured(
       'patch_file', input, (handlerArgs) => patch_file(handlerArgs as Parameters<typeof patch_file>[0]),
@@ -112,7 +112,7 @@ describe('MCP patch_file write path', () => {
   it('keeps the provider side-effect boundary closed when the canonical recovery gate denies', async () => {
     const args = { path: 'README.md', old_str: 'before', new_str: 'after', message: 'blocked patch', session_id: session.sessionId };
     const pending = await createApprovalRequest({ ownerId: 'owner-write', sessionId: session.sessionId, toolName: 'patch_file', args });
-    expect(await decideApprovalRequest({ requestId: pending.requestId, decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
+    expect(await decideApprovalRequest({ requestId: pending.requestId, ownerId: 'owner-write', decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
 
     canonicalExecutionAllowed.mockReturnValue({ allowed: false, reason: 'test: recovery evidence missing' });
     const result = await executeGovernedToolStructured(

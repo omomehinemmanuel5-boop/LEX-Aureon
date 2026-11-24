@@ -1,49 +1,23 @@
 import crypto from 'crypto';
 import { headers as requestHeaders } from 'next/headers';
-import { env } from '@/lib/env';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { listApprovalRequests } from '@/lib/approval_requests';
 import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
 import { readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
 import { CONSTITUTION } from '@/lib/constitution';
+import {
+  approvalOwnerFromCookie,
+  authenticateApprovalOwner,
+  createApprovalOwnerCookie,
+} from '@/lib/approval_owner_auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const OPERATOR_COOKIE = 'lex_approval_session';
-export const OPERATOR_SESSION_TTL_SECONDS = 8 * 60 * 60;
 
 function escapeHtml(value: unknown): string {
   return String(value).replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[character] ?? character);
-}
-
-function safeEqual(left: string, right: string): boolean {
-  const a = crypto.createHash('sha256').update(left).digest();
-  const b = crypto.createHash('sha256').update(right).digest();
-  return crypto.timingSafeEqual(a, b);
-}
-
-function cookieSignature(expires: number, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(`lex-approval-session:${expires}`).digest('base64url');
-}
-
-export function createOperatorSessionCookie(secret: string, nowMs = Date.now()): string {
-  const expires = nowMs + OPERATOR_SESSION_TTL_SECONDS * 1000;
-  const value = `${expires}.${cookieSignature(expires, secret)}`;
-  return `${OPERATOR_COOKIE}=${value}; Path=/approvals; Max-Age=${OPERATOR_SESSION_TTL_SECONDS}; HttpOnly; Secure; SameSite=Strict`;
-}
-
-export function hasOperatorSession(cookieHeader: string | null, secret: string, nowMs = Date.now()): boolean {
-  const entry = cookieHeader?.split(';').map(part => part.trim()).find(part => part.startsWith(`${OPERATOR_COOKIE}=`));
-  if (!entry) return false;
-  const value = entry.slice(OPERATOR_COOKIE.length + 1);
-  const separator = value.indexOf('.');
-  if (separator < 1) return false;
-  const expires = Number(value.slice(0, separator));
-  const signature = value.slice(separator + 1);
-  if (!Number.isSafeInteger(expires) || expires <= nowMs || !signature) return false;
-  return safeEqual(signature, cookieSignature(expires, secret));
 }
 
 function response(body: string, status = 200, headers: HeadersInit = {}) {
@@ -60,13 +34,12 @@ function response(body: string, status = 200, headers: HeadersInit = {}) {
 }
 
 const APPROVAL_NEXT_PATTERN = /^\/approvals(#[A-Za-z0-9_-]{1,64})?$/;
-
 function validApprovalNext(value: string): boolean {
   return APPROVAL_NEXT_PATTERN.test(value);
 }
 
 function signInPage(message = '', next = '/approvals', nonce?: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lex · Approvals</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:24px}.card{max-width:520px;margin:8vh auto;background:#151d31;border:1px solid #293652;border-radius:20px;padding:24px;box-shadow:0 24px 70px #0006}p{color:#adbad2;line-height:1.55}label{font-weight:650}input,button{font:inherit;width:100%;padding:15px;border-radius:12px;margin-top:10px}input{background:#0b1020;color:white;border:1px solid #40506e}button{border:0;background:#6c8cff;color:#081020;font-weight:750;cursor:pointer} .error{color:#ffb4aa}</style></head><body><main class="card"><h1>Lex approvals</h1><p>Sign in once to review and approve exact actions requested by your connected agents. Approval applies only to the action shown and expires automatically.</p>${message ? `<p class="error" role="alert">${escapeHtml(message)}</p>` : ''}<form method="post" action="/approvals"><input type="hidden" name="next" value="${escapeHtml(next)}"><label for="secret">Operator secret</label><input id="secret" name="secret" type="password" autocomplete="current-password" required><button type="submit">Sign in to review requests</button></form></main>${nonce ? `<script nonce="${escapeHtml(nonce)}">(()=>{const n=document.querySelector('input[name="next"]');const h=window.location.hash;if(n&&/^#[A-Za-z0-9_-]{1,64}$/.test(h))n.value="/approvals"+h;})();</script>` : ''} </body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lex · Approvals</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:24px}.card{max-width:520px;margin:8vh auto;background:#151d31;border:1px solid #293652;border-radius:20px;padding:24px;box-shadow:0 24px 70px #0006}p{color:#adbad2;line-height:1.55}label{font-weight:650}input,button{font:inherit;width:100%;padding:15px;border-radius:12px;margin-top:10px}input{background:#0b1020;color:white;border:1px solid #40506e}button{border:0;background:#6c8cff;color:#081020;font-weight:750;cursor:pointer}.error{color:#ffb4aa}</style></head><body><main class="card"><h1>Lex approvals</h1><p>Sign in with the API key that owns this request. Your key is checked without consuming its usage quota. Your approval inbox shows only requests created by this key.</p>${message ? `<p class="error" role="alert">${escapeHtml(message)}</p>` : ''}<form method="post" action="/approvals"><input type="hidden" name="next" value="${escapeHtml(next)}"><label for="api_key">Owner API key</label><input id="api_key" name="api_key" type="password" autocomplete="off" required><button type="submit">Sign in to review requests</button></form></main>${nonce ? `<script nonce="${escapeHtml(nonce)}">(()=>{const n=document.querySelector('input[name="next"]');const h=window.location.hash;if(n&&/^#[A-Za-z0-9_-]{1,64}$/.test(h))n.value="/approvals"+h;})();</script>` : ''} </body></html>`;
 }
 
 function redact(value: unknown, key = ''): unknown {
@@ -79,11 +52,9 @@ function redact(value: unknown, key = ''): unknown {
   return value;
 }
 
-async function approvalsPage(): Promise<Response> {
-  const secret = env.MCP_OPERATOR_SECRET;
-  if (!secret) return response('<!doctype html><title>Approvals unavailable</title><p>The operator approval page is disabled.</p>', 404);
+async function approvalsPage(ownerId: string): Promise<Response> {
   try {
-    const requests = await listApprovalRequests();
+    const requests = await listApprovalRequests(ownerId);
     const cards = (await Promise.all(requests.map(async item => {
       let args: unknown;
       try { args = redact(JSON.parse(item.args_json)); } catch { args = '[unreadable arguments]'; }
@@ -91,7 +62,7 @@ async function approvalsPage(): Promise<Response> {
       try {
         const canonical = await readCanonicalGovernanceState({
           sessionId: item.session_id,
-          actorId: 'approval-page-diagnostic',
+          actorId: `approval-owner:${ownerId}`,
           capability: 'read',
         });
         recoverySnapshot = canonical.available
@@ -112,20 +83,23 @@ async function approvalsPage(): Promise<Response> {
         : `<h3>Exact action details</h3><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre>`;
       return `<article id="${escapeHtml(item.request_id)}" class="request ${escapeHtml(item.status)}"><div class="eyebrow">${escapeHtml(item.status.toUpperCase())}</div><h2>${escapeHtml(item.tool_name)}</h2><dl><div><dt>Approval request ID</dt><dd>${escapeHtml(item.request_id)}</dd></div><div><dt>Requested by</dt><dd>${escapeHtml(item.owner_id)}</dd></div><div><dt>Session</dt><dd>${escapeHtml(item.session_id)}</dd></div><div><dt>Created</dt><dd>${escapeHtml(new Date(item.created_at).toLocaleString())}</dd></div><div><dt>Expires</dt><dd>${escapeHtml(new Date(item.expires_at).toLocaleString())}</dd></div></dl>${recoverySnapshot}${actionDetails}${actions}</article>`;
     }))).join('');
-    return response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1020"><title>Lex · Approval history</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:20px}.wrap{max-width:780px;margin:0 auto}h1{font-size:clamp(1.8rem,6vw,2.5rem);margin:.35rem 0}.lead,.note{color:#adbad2;line-height:1.55}.request{background:#151d31;border:1px solid #293652;border-radius:18px;padding:20px;margin:18px 0;box-shadow:0 18px 48px #0004}.request{scroll-margin-top:1rem}.request:target{outline:2px solid #6c8cff;outline-offset:4px}.patch-block{white-space:pre-wrap;overflow-wrap:anywhere;max-height:30vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}details{margin-top:12px}summary{cursor:pointer;color:#adbad2}.request.approved{border-color:#4a8d68}.request.used{border-color:#5876b6}.request.denied,.request.expired{border-color:#72546a}.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.12em;color:#ffcb77}.approved .eyebrow{color:#a6f0c6}.used .eyebrow{color:#a9c7ff}.denied .eyebrow,.expired .eyebrow{color:#ffb4aa} .request h2{overflow-wrap:anywhere}.request h3{font-size:1rem;margin-bottom:8px}.request dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.request dt{font-size:.78rem;color:#9caecb}.request dd{margin:4px 0 0;overflow-wrap:anywhere}.recovery{border:1px solid #40506e;border-radius:12px;padding:12px;margin:14px 0}.recovery h3{margin-top:0}.recovery dl{margin:8px 0}.request pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:38vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}.buttons{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:16px}.buttons form{margin:0}.buttons button{width:100%;min-height:54px;border-radius:12px;border:0;font:inherit;font-weight:800;cursor:pointer}.allow{background:#a6f0c6;color:#062618}.deny{background:#303c54;color:#fff}.note{font-size:.82rem;margin-bottom:0}.empty{background:#151d31;border-radius:16px;padding:22px;color:#adbad2}@media(max-width:520px){body{padding:14px}.request{padding:16px}.request dl{grid-template-columns:1fr}.buttons{grid-template-columns:1fr}.buttons button{min-height:58px}}</style></head><body><main class="wrap"><h1>Approval history</h1><p class="lead">Pending requests are actionable. Approved, denied, expired, and used requests remain visible so a tap never appears to make a request disappear. Approval records consent only; Lex rechecks governance and consumes it once when the agent retries the unchanged action.</p>${cards || '<p class="empty">No approval requests have been recorded.</p>'}</main></body></html>`);
+    return response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1020"><title>Lex · Approval history</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:20px}.wrap{max-width:780px;margin:0 auto}h1{font-size:clamp(1.8rem,6vw,2.5rem);margin:.35rem 0}.lead,.note{color:#adbad2;line-height:1.55}.request{background:#151d31;border:1px solid #293652;border-radius:18px;padding:20px;margin:18px 0;box-shadow:0 18px 48px #0004}.request{scroll-margin-top:1rem}.request:target{outline:2px solid #6c8cff;outline-offset:4px}.patch-block{white-space:pre-wrap;overflow-wrap:anywhere;max-height:30vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}details{margin-top:12px}summary{cursor:pointer;color:#adbad2}.request.approved{border-color:#4a8d68}.request.used{border-color:#5876b6}.request.denied,.request.expired{border-color:#72546a}.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.12em;color:#ffcb77}.approved .eyebrow{color:#a6f0c6}.used .eyebrow{color:#a9c7ff}.denied .eyebrow,.expired .eyebrow{color:#ffb4aa}.request h2{overflow-wrap:anywhere}.request h3{font-size:1rem;margin-bottom:8px}.request dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.request dt{font-size:.78rem;color:#9caecb}.request dd{margin:4px 0 0;overflow-wrap:anywhere}.recovery{border:1px solid #40506e;border-radius:12px;padding:12px;margin:14px 0}.recovery h3{margin-top:0}.recovery dl{margin:8px 0}.request pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:38vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}.buttons{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:16px}.buttons form{margin:0}.buttons button{width:100%;min-height:54px;border-radius:12px;border:0;font:inherit;font-weight:800;cursor:pointer}.allow{background:#a6f0c6;color:#062618}.deny{background:#303c54;color:#fff}.note{font-size:.82rem;margin-bottom:0}.empty{background:#151d31;border-radius:16px;padding:22px;color:#adbad2}@media(max-width:520px){body{padding:14px}.request{padding:16px}.request dl{grid-template-columns:1fr}.buttons{grid-template-columns:1fr}.buttons button{min-height:58px}}</style></head><body><main class="wrap"><h1>Approval history</h1><p class="lead">This inbox contains only requests created by your authenticated API key. Pending requests are actionable. Approval records consent only; Lex rechecks governance and consumes it once when the agent retries the unchanged action.</p>${cards || '<p class="empty">No approval requests have been recorded for this API key.</p>'}</main></body></html>`);
   } catch {
     return response('<!doctype html><title>Approvals unavailable</title><p>Approval requests could not be loaded. No action was authorized.</p>', 503);
   }
 }
 
 export async function GET(req?: Request): Promise<Response> {
-  const secret = env.MCP_OPERATOR_SECRET;
-  if (!secret) return response('<!doctype html><title>Approvals unavailable</title><p>The operator approval page is disabled.</p>', 404);
   const requestedNext = req ? new URL(req.url).searchParams.get('next') : null;
   if (requestedNext !== null && !validApprovalNext(requestedNext)) return response('<!doctype html><title>Invalid return target</title><p>The sign-in return target was rejected.</p>', 400);
   const next = requestedNext ?? '/approvals';
-  const incoming = await requestHeaders();
-  if (hasOperatorSession(incoming.get('cookie'), secret)) return approvalsPage();
+  const cookieHeader = req ? req.headers.get('cookie') : (await requestHeaders()).get('cookie');
+  try {
+    const ownerId = await approvalOwnerFromCookie(cookieHeader);
+    if (ownerId) return approvalsPage(ownerId);
+  } catch {
+    return response('<!doctype html><title>Approvals unavailable</title><p>Owner authentication is temporarily unavailable.</p>', 503);
+  }
   const nonce = crypto.randomBytes(16).toString('base64');
   return response(signInPage('', next, nonce), 200, {
     'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
@@ -133,21 +107,22 @@ export async function GET(req?: Request): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const secret = env.MCP_OPERATOR_SECRET;
-  if (!secret) return response('<!doctype html><p>The operator approval page is disabled.</p>', 404);
   if (!isTrustedApprovalOrigin(req)) return response(signInPage('Request origin was not accepted.'), 403);
   let form: FormData;
   try { form = await req.formData(); } catch { return response(signInPage('Invalid sign-in request.'), 400); }
   const next = String(form.get('next') ?? '/approvals');
   if (!validApprovalNext(next)) return response(signInPage('The sign-in return target was rejected.'), 400);
-  const submitted = String(form.get('secret') ?? '');
-  if (!safeEqual(submitted, secret)) {
-    const limit = await checkRateLimit(`approval-login:${getClientIp(req)}`, 5, 60 * 60);
-    if (limit.storageError) return response(signInPage('Sign-in is temporarily unavailable.', next), 503);
-    if (!limit.allowed) return response(signInPage('Too many failed sign-in attempts. Try again later.', next), 429);
-    return response(signInPage('The operator secret was not accepted.', next), 401);
+  const limit = await checkRateLimit(`approval-owner-login:${getClientIp(req)}`, 10, 60 * 60);
+  if (limit.storageError) return response(signInPage('Sign-in is temporarily unavailable.', next), 503);
+  if (!limit.allowed) return response(signInPage('Too many sign-in attempts. Try again later.', next), 429);
+  const submitted = String(form.get('api_key') ?? '');
+  try {
+    const owner = await authenticateApprovalOwner(submitted);
+    if (!owner) return response(signInPage('The API key was not accepted.', next), 401);
+    const headers = new Headers({ location: next, 'cache-control': 'no-store' });
+    headers.append('set-cookie', createApprovalOwnerCookie(owner));
+    return new Response(null, { status: 303, headers });
+  } catch {
+    return response(signInPage('Owner verification is temporarily unavailable.', next), 503);
   }
-  const headers = new Headers({ location: next, 'cache-control': 'no-store' });
-  headers.append('set-cookie', createOperatorSessionCookie(secret));
-  return new Response(null, { status: 303, headers });
 }
