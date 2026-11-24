@@ -28,14 +28,15 @@ function installDb() {
     const args = typeof query === 'string' ? [] : query.args ?? [];
     if (sql.startsWith('INSERT INTO approval_requests')) {
       row = {
-        request_id: args[0], owner_id: args[1], session_id: args[2], tool_name: args[3], args_hash: args[4],
-        args_json: args[5], status: 'pending', created_at: args[6], expires_at: args[7],
+        request_id: args[0], owner_id: args[1], tenant_id: args[2], session_id: args[3], tool_name: args[4], args_hash: args[5],
+        args_json: args[6], status: 'pending', created_at: args[7], expires_at: args[8],
       };
       return { rowsAffected: 1, rows: [] };
     }
     if (sql.startsWith('UPDATE approval_requests SET status = ?, decided_at = ?, decided_by = ?')) {
       const current = row;
-      if (current && current.request_id === args[3] && current.status === 'pending' && Number(current.expires_at) > Number(args[4])) {
+      if (current && current.request_id === args[3] && current.tenant_id === args[4]
+        && current.status === 'pending' && Number(current.expires_at) > Number(args[5])) {
         current.status = args[0];
         current.decided_at = args[1];
         current.decided_by = args[2];
@@ -77,9 +78,9 @@ describe('concurrent one-tap executor use', () => {
     const sessionId = state.sessionId;
     const actionArgs = { path: 'README.md', content: 'one exact edit', message: 'test', session_id: sessionId };
     const request = await createApprovalRequest({
-      ownerId: 'owner-a', sessionId, toolName: 'write_file', args: actionArgs,
+      ownerId: 'owner-a', tenantId: 'tenant-a', sessionId, toolName: 'write_file', args: actionArgs,
     });
-    expect(await decideApprovalRequest({ requestId: request.requestId, decision: 'approved', decidedBy: 'operator' })).toBe(true);
+    expect(await decideApprovalRequest({ requestId: request.requestId, tenantId: 'tenant-a', decision: 'approved', decidedBy: 'owner:owner-a' })).toBe(true);
     const handler = vi.fn(async () => 'SIDE_EFFECT_COMPLETE');
     const callArgs = { ...actionArgs, approval_request_id: request.requestId };
     const run = () => executeGovernedToolStructured(

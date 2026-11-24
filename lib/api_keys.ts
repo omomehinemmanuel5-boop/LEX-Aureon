@@ -102,6 +102,7 @@ export async function generateApiKey(params: {
   name?: string;
   plan?: 'free' | 'sovereign' | 'private_test';
   expiresAt?: number;
+  tenantId?: string;
 }): Promise<ApiKey | null> {
   const db = getClient();
   await initApiKeySchema();
@@ -110,21 +111,30 @@ export async function generateApiKey(params: {
   const plan = params.plan ?? 'free';
   const limit = PLANS[plan].limit;
   const expiresAt = params.expiresAt ?? (plan === 'private_test' ? Date.now() + 2 * 60 * 60 * 1000 : null);
-  const tenantId = personalTenantIdForApiKey(id);
+  const tenantId = params.tenantId ?? personalTenantIdForApiKey(id);
   const createdAt = Math.floor(Date.now() / 1000);
   // Keep tenant creation, owner membership, default environment, and API-key
   // binding atomic. A partially provisioned credential must never escape.
+  const tenantSetup = params.tenantId
+    ? [{
+        sql: `INSERT INTO tenant_members (tenant_id, actor_id, role, status, created_at)
+              VALUES (?, ?, 'member', 'active', ?)`,
+        args: [tenantId, `api_key:${id}`, createdAt],
+      }]
+    : [
+        {
+          sql: `INSERT INTO tenants (id, kind, display_name, created_at, updated_at)
+                VALUES (?, 'personal', 'Personal workspace', ?, ?)`,
+          args: [tenantId, createdAt, createdAt],
+        },
+        {
+          sql: `INSERT INTO tenant_members (tenant_id, actor_id, role, status, created_at)
+                VALUES (?, ?, 'owner', 'active', ?)`,
+          args: [tenantId, `api_key:${id}`, createdAt],
+        },
+      ];
   await db.batch([
-    {
-      sql: `INSERT INTO tenants (id, kind, display_name, created_at, updated_at)
-            VALUES (?, 'personal', 'Personal workspace', ?, ?)`,
-      args: [tenantId, createdAt, createdAt],
-    },
-    {
-      sql: `INSERT INTO tenant_members (tenant_id, actor_id, role, status, created_at)
-            VALUES (?, ?, 'owner', 'active', ?)`,
-      args: [tenantId, `api_key:${id}`, createdAt],
-    },
+    ...tenantSetup,
     {
       sql: `INSERT INTO tenant_environments (environment_id, tenant_id, display_name, status, created_at)
             VALUES (?, ?, 'Default environment', 'active', ?)`,
@@ -254,8 +264,30 @@ export async function getKeysByEmail(email: string): Promise<ApiKey[]> {
   return r.rows.map(row => rowToApiKey(row as Record<string, unknown>));
 }
 
+export async function getKeysByTenantId(tenantId: string): Promise<ApiKey[]> {
+  const db = getClient();
+  await initApiKeySchema();
+  const r = await db.execute({ sql: 'SELECT * FROM api_keys WHERE tenant_id = ? ORDER BY created_at DESC', args: [tenantId] });
+  return r.rows.map(row => rowToApiKey(row as Record<string, unknown>));
+}
+
 export async function revokeKey(id: string, email: string): Promise<boolean> {
   const db = getClient();
   const r = await db.execute({ sql: 'DELETE FROM api_keys WHERE id = ? AND email = ?', args: [id, email] });
   return (r.rowsAffected ?? 0) > 0;
+}
+
+export async function revokeKeyForTenant(id: string, tenantId: string): Promise<boolean> {
+  const db = getClient();
+  await initApiKeySchema();
+  const result = await db.execute({
+    sql: 'DELETE FROM api_keys WHERE id = ? AND tenant_id = ?',
+    args: [id, tenantId],
+  });
+  if ((result.rowsAffected ?? 0) !== 1) return false;
+  await db.execute({
+    sql: 'DELETE FROM tenant_members WHERE tenant_id = ? AND actor_id = ?',
+    args: [tenantId, `api_key:${id}`],
+  });
+  return true;
 }

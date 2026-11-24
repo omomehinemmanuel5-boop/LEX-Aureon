@@ -9,6 +9,7 @@ import {
   createApprovalRequest,
   getApprovalRequestStatus,
   decideApprovalRequest,
+  listApprovalRequests,
 } from '../lib/approval_requests';
 
 let row: Record<string, unknown> | null;
@@ -19,8 +20,8 @@ function installDb() {
     const args = typeof query === 'string' ? [] : (query.args ?? []);
     if (sql.startsWith('INSERT INTO approval_requests')) {
       row = {
-        request_id: args[0], owner_id: args[1], session_id: args[2], tool_name: args[3],
-        args_hash: args[4], args_json: args[5], status: 'pending', created_at: args[6], expires_at: args[7],
+        request_id: args[0], owner_id: args[1], tenant_id: args[2], session_id: args[3], tool_name: args[4],
+        args_hash: args[5], args_json: args[6], status: 'pending', created_at: args[7], expires_at: args[8],
         decided_at: null, decided_by: null,
       };
       return { rowsAffected: 1, rows: [] };
@@ -38,7 +39,8 @@ function installDb() {
       return { rowsAffected: 0, rows: [] };
     }
     if (sql.startsWith('UPDATE approval_requests SET status = ?, decided_at = ?, decided_by = ?')) {
-      if (row && row.request_id === args[3] && row.status === 'pending' && Number(row.expires_at) > Number(args[4])) {
+      if (row && row.request_id === args[3] && row.tenant_id === args[4]
+        && row.status === 'pending' && Number(row.expires_at) > Number(args[5])) {
         row.status = args[0];
         row.decided_at = args[1];
         row.decided_by = args[2];
@@ -52,6 +54,7 @@ function installDb() {
 
 const requestInput = {
   ownerId: 'owner-a',
+  tenantId: 'tenant-a',
   sessionId: 'owner-a:session-1',
   toolName: 'write_file',
   args: { path: 'README.md', content: 'hello', message: 'test', session_id: 'owner-a:session-1' },
@@ -112,8 +115,8 @@ describe('one-tap approval request persistence', () => {
   it('carries one request from pending through operator approval to its first successful consumption', async () => {
     const created = await createApprovalRequest(requestInput);
     expect(row?.status).toBe('pending');
-    expect(await decideApprovalRequest({ requestId: created.requestId, decision: 'approved', decidedBy: 'operator' })).toBe(true);
-    expect(row).toMatchObject({ status: 'approved', decided_by: 'operator' });
+    expect(await decideApprovalRequest({ requestId: created.requestId, tenantId: 'tenant-a', decision: 'approved', decidedBy: 'user:user-a' })).toBe(true);
+    expect(row).toMatchObject({ status: 'approved', decided_by: 'user:user-a' });
     const consumed = await consumeApprovalRequest({ requestId: created.requestId, ...requestInput });
     expect(consumed.consumed).toBe(true);
     expect(row?.status).toBe('used');
@@ -122,6 +125,7 @@ describe('one-tap approval request persistence', () => {
   it('binds branch and every PR-defining field into the approval hash', async () => {
     const action = {
       ownerId: 'owner-a',
+      tenantId: 'tenant-a',
       sessionId: 'owner-a:session-1',
       toolName: 'open_pr',
       args: {
@@ -151,6 +155,7 @@ describe('one-tap approval request persistence', () => {
   it('rejects a changed create_branch target when retrying an approved request', async () => {
     const action = {
       ownerId: 'owner-a',
+      tenantId: 'tenant-a',
       sessionId: 'owner-a:session-1',
       toolName: 'create_branch',
       args: { branch: 'fix/original', from_branch: 'main', session_id: 'owner-a:session-1' },
@@ -182,6 +187,26 @@ describe('one-tap approval request persistence', () => {
     expect((await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, toolName: 'dispatch_workflow' })).consumed).toBe(false);
     expect((await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, nowMs: created.expiresAt })).consumed).toBe(false);
     expect(row?.status).toBe('approved');
+  });
+
+  it('queries approval history with the authenticated tenant ID', async () => {
+    await createApprovalRequest(requestInput);
+    await listApprovalRequests('tenant-a');
+    const listQuery = execute.mock.calls.find(([query]) =>
+      typeof query !== 'string' && query.sql.includes('FROM approval_requests WHERE tenant_id = ?'))?.[0];
+    expect(listQuery).toMatchObject({ args: ['tenant-a', 100] });
+    expect(String((listQuery as { sql: string }).sql)).toContain('ORDER BY created_at DESC');
+  });
+
+  it('cannot decide another owner’s request even with the correct request ID', async () => {
+    const created = await createApprovalRequest(requestInput);
+    expect(await decideApprovalRequest({
+      requestId: created.requestId,
+      tenantId: 'tenant-b',
+      decision: 'approved',
+      decidedBy: 'user:user-b',
+    })).toBe(false);
+    expect(row?.status).toBe('pending');
   });
 
   it('allows exactly one of two concurrent consumers to win the conditional update', async () => {

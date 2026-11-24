@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { generateApiKey, getKeysByEmail } from '@/lib/api_keys';
+import { generateApiKey, getKeysByTenantId } from '@/lib/api_keys';
+import { accountFromCookie } from '@/lib/auth_accounts';
+import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
 
 const KeyCreateSchema = z.object({
-  email: z.string().email().max(254),
   name:  z.string().max(64).optional(),
-  plan:  z.enum(['free', 'sovereign']).optional(),
-});
+}).strict();
 
 export async function POST(req: Request) {
+  if (!isTrustedApprovalOrigin(req)) return NextResponse.json({ error: 'Request origin was not accepted.' }, { status: 403 });
+  const user = await accountFromCookie(req.headers.get('cookie')).catch(() => null);
+  if (!user) return NextResponse.json({ error: 'Verified account sign-in required.' }, { status: 401 });
   try {
     let raw: unknown;
     try { raw = await req.json(); } catch {
@@ -19,12 +22,12 @@ export async function POST(req: Request) {
       const msg = parsed.error?.issues?.[0]?.message ?? 'invalid request';
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    const { email, name, plan } = parsed.data;
-    const existing = await getKeysByEmail(email);
-    if (existing.length >= 3 && plan !== 'sovereign') {
-      return NextResponse.json({ error: 'Free tier limit: 3 keys per email. Upgrade to Sovereign.' }, { status: 429 });
+    const { name } = parsed.data;
+    const existing = await getKeysByTenantId(user.tenantId);
+    if (existing.length >= 3) {
+      return NextResponse.json({ error: 'Free tier limit: 3 keys per tenant.' }, { status: 429 });
     }
-    const apiKey = await generateApiKey({ email, name, plan });
+    const apiKey = await generateApiKey({ email: user.email, name, plan: 'free', tenantId: user.tenantId });
     if (!apiKey) return NextResponse.json({ error: 'Failed to generate key' }, { status: 500 });
     return NextResponse.json({
       ok: true, key: apiKey.key, id: apiKey.id, name: apiKey.name,
@@ -38,10 +41,9 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const email = searchParams.get('email');
-    if (!email?.includes('@')) return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
-    const keys = await getKeysByEmail(email);
+    const user = await accountFromCookie(req.headers.get('cookie'));
+    if (!user) return NextResponse.json({ error: 'Verified account sign-in required.' }, { status: 401 });
+    const keys = await getKeysByTenantId(user.tenantId);
     const masked = keys.map(k => ({
       id: k.id, name: k.name,
       key_preview: k.key_preview,

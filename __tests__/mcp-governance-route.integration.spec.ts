@@ -717,7 +717,7 @@ describe('MCP constitutional dispatch boundary', () => {
   });
 
   it('cannot set an approval request status or owner through MCP arguments', async () => {
-    const key = { id: 'owner-a', plan: 'private_test' };
+    const key = { id: 'owner-a', plan: 'private_test', tenant_id: 'tenant-owner-a' };
     validateApiKey.mockResolvedValue({ valid: true, key });
     validateAndConsumeKey.mockResolvedValue({ valid: true, key });
     executeGovernedTool.mockImplementation(async (_name, args, handler) =>
@@ -736,7 +736,7 @@ describe('MCP constitutional dispatch boundary', () => {
     }));
     expect(response.status).toBe(200);
     expect(createApprovalRequest).toHaveBeenCalledWith({
-      ownerId: 'owner-a', toolName: 'write_file',
+      ownerId: 'owner-a', tenantId: 'tenant-owner-a', toolName: 'write_file',
       sessionId: expect.stringMatching(/^owner-a:/),
       args: {
         path: 'README.md', content: 'safe edit', message: 'test',
