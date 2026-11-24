@@ -26,10 +26,15 @@ export function recoveryCanaryPredicateFailures(input: {
 }): string[] {
   const unmet: string[] = [];
   if (input.trajectoryAvailable === false) unmet.push('canonical trajectory is uninitialized');
-  if (!Number.isFinite(input.M)) unmet.push('M must be finite before canary verification');
-  if (input.M < CONSTITUTION.TAU_FLOOR) unmet.push(`M ${input.M.toFixed(3)} < τ_floor ${CONSTITUTION.TAU_FLOOR}`);
-  if (input.M < CONSTITUTION.TAU_RECOVERY) unmet.push(`M ${input.M.toFixed(3)} < τ_recovery ${CONSTITUTION.TAU_RECOVERY}`);
-  if (input.nStable < CONSTITUTION.N_MIN) unmet.push(`n_stable ${input.nStable} < N_MIN ${CONSTITUTION.N_MIN}`);
+  if (!Number.isFinite(input.M)) {
+    unmet.push('M must be finite before canary verification');
+  } else {
+    if (input.M < CONSTITUTION.TAU_FLOOR) unmet.push(`M ${input.M.toFixed(3)} < τ_floor ${CONSTITUTION.TAU_FLOOR}`);
+    if (input.M < CONSTITUTION.TAU_RECOVERY) unmet.push(`M ${input.M.toFixed(3)} < τ_recovery ${CONSTITUTION.TAU_RECOVERY}`);
+  }
+  if (!Number.isFinite(input.nStable) || input.nStable < CONSTITUTION.N_MIN) {
+    unmet.push(`n_stable ${String(input.nStable)} must be finite and >= N_MIN ${CONSTITUTION.N_MIN}`);
+  }
   if (!sigmaWithinBound(input.sigmaViol)) unmet.push(`sigma_viol ${String(input.sigmaViol)} must equal exactly 0 before canary verification`);
   if (!Number.isFinite(input.velocity) || input.velocity >= RECOVERY_STABILITY_THRESHOLD) {
     unmet.push(`velocity ${String(input.velocity)} must be finite and < ${RECOVERY_STABILITY_THRESHOLD}`);
@@ -46,11 +51,12 @@ export interface RecoveryEvidence {
 }
 
 export function deriveRecoveryState(M: number, evidence: RecoveryEvidence): RecoveryState {
-  if (M < CONSTITUTION.TAU_FLOOR) return 'QUARANTINED';
+  if (!Number.isFinite(M) || M < CONSTITUTION.TAU_FLOOR) return 'QUARANTINED';
   if (M < CONSTITUTION.TAU_RECOVERY) return 'RECOVERING';
 
   const verified =
     evidence.canaryPassed === true &&
+    Number.isFinite(evidence.nStable) &&
     evidence.nStable >= CONSTITUTION.N_MIN &&
     sigmaWithinBound(evidence.sigmaViol);
 
@@ -74,6 +80,14 @@ export function recoveryCapabilityAllowed(
   evidence: RecoveryEvidence,
 ): { allowed: boolean; state: RecoveryState; reason?: string } {
   const state = deriveRecoveryState(M, evidence);
+
+  if (!Number.isFinite(M)) {
+    return {
+      allowed: false,
+      state: 'QUARANTINED',
+      reason: 'Canonical M must be finite; governed execution remains fail-closed.',
+    };
+  }
 
   if (M < CONSTITUTION.TAU_FLOOR) {
     return {
@@ -113,8 +127,8 @@ export function recoveryCapabilityAllowed(
   if (state !== 'VERIFIED' && state !== 'NORMAL') {
     const evidenceBlock = evidence.canaryPassed !== true
       ? 'No passing canary is current for this session. The server evaluates and persists evidence from canonical storage once the full predicate passes; existing operator-issued evidence is preserved, and an operator may use run_recovery_canary for explicit audit or re-evaluation.'
-      : evidence.nStable < CONSTITUTION.N_MIN
-        ? `Stable observations ${evidence.nStable}/${CONSTITUTION.N_MIN} are insufficient; continue safe governed observations.`
+      : !Number.isFinite(evidence.nStable) || evidence.nStable < CONSTITUTION.N_MIN
+        ? `Stable observations ${String(evidence.nStable)} must be finite and >= ${CONSTITUTION.N_MIN}; continue safe governed observations.`
         : `sigmaViol=${String(evidence.sigmaViol)} must equal exactly 0 before restoration.`;
     return {
       allowed: false,
