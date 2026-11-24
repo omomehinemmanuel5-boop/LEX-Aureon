@@ -248,10 +248,15 @@ describe('health-band recovery canary validity', () => {
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
-  it('rejects sigma above SIGMA_THRESHOLD and accepts sigma within it', async () => {
+  it('requires exactly zero canonical sigma and rejects every positive residual', async () => {
+    for (const sigmaViol of [Number.MIN_VALUE, 1e-12, 0.001, 0.249, 0.25]) {
+      dbExecute.mockResolvedValue({ rows: [liveRow()] });
+      await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol }))
+        .resolves.toMatchObject({ passed: false, receiptId: null });
+    }
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
-    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0.3 }))
-      .resolves.toMatchObject({ passed: false, receiptId: null });
+    await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0 }))
+      .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
   });
 
   it('rejects evidence at the exact expiry instant', async () => {
@@ -325,7 +330,7 @@ describe('health-band recovery canary validity', () => {
       .resolves.toMatchObject({ passed: false, receiptId: null });
   });
 
-  it('refuses a canary when state version changes or sigma is above SIGMA_THRESHOLD', async () => {
+  it('refuses a canary when state version changes or canonical sigma is positive', async () => {
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, stateVersion: 'canonical-v2' }))
       .resolves.toMatchObject({ passed: false });
