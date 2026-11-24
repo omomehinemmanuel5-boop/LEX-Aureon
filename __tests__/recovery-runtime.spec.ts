@@ -373,7 +373,7 @@ describe('bounded recovery plane', () => {
 
     expect(result.advanced).toBe(true);
     expect(result.state).toBe('RESTORING');
-    expect(result.reason).toContain('sigma_viol=0.3 must be within SIGMA_THRESHOLD');
+    expect(result.reason).toContain('canonical sigma_viol=0.3 must equal exactly 0 before canary verification');
     expect(result.reason).toContain('healthy observations');
   });
 
