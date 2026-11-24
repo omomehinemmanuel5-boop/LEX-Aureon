@@ -117,27 +117,26 @@ describe('operator recovery canary probe', () => {
     expect(result.next_step).toContain('continue safe governed observations');
   });
 
-  it('blocks canary preflight when sigma is above SIGMA_THRESHOLD', async () => {
-    readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, { sigmaViol: 0.3 }));
+  it('blocks canary preflight for any positive canonical sigma residual', async () => {
+    readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, { sigmaViol: 1e-12 }));
 
     const result = JSON.parse(await run_recovery_canary({ session_id: sessionId }));
 
     expect(result.status).toBe('not_run');
-    expect(result.reason).toContain('sigma_viol 0.3 exceeds SIGMA_THRESHOLD');
-    expect(result.reason).toContain('within SIGMA_THRESHOLD required');
+    expect(result.reason).toContain('sigma_viol 1e-12 must equal exactly 0');
     expect(readCanonicalGovernanceState).toHaveBeenCalledTimes(1);
   });
 
-  it('reports sigma above SIGMA_THRESHOLD as the next step before canary verification', async () => {
+  it('reports exact-zero sigma as the next step before canary verification', async () => {
     readCanonicalGovernanceState.mockResolvedValueOnce(canonical(fingerprint, {
-      sigmaViol: 0.3,
+      sigmaViol: 1e-12,
       nStable: 3,
     }));
 
     const result = JSON.parse(await get_constitutional_state({ session_id: sessionId }));
 
-    expect(result.next_step).toContain('sigma_viol must be within SIGMA_THRESHOLD');
-    expect(result.next_step).toContain('decays to zero');
+    expect(result.next_step).toContain('must equal exactly 0');
+    expect(result.next_step).toContain('reaches exact zero');
   });
 
   it('passes only after the actual canonical diagnostic returns the same session and exact snapshot', async () => {
