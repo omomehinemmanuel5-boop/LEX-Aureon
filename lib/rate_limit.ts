@@ -82,3 +82,58 @@ export async function checkRateLimit(
     return { allowed: false, remaining: 0, retryAfter: 5, storageError: true };
   }
 }
+
+// Reserve-on-allow variant. Only admitted requests increment the counter, so
+// denied retries cannot exhaust the window. The check and the increment are a
+// single conditional upsert, so concurrent callers cannot both take the last slot.
+export async function checkRateLimitReserve(
+  key: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<RateLimitResult> {
+  const windowMs = windowSeconds * 1000;
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  const localKey = `${key}:${limit}:${windowSeconds}`;
+  const blockedUntil = localBlockedUntil.get(localKey) ?? 0;
+  if (blockedUntil > now) {
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfter: Math.max(1, Math.ceil((blockedUntil - now) / 1000)),
+    };
+  }
+  localBlockedUntil.delete(localKey);
+
+  try {
+    await ensureSchema();
+    const reserved = await getClient().execute({
+      sql: `INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              count = CASE WHEN window_start < ? THEN 1 ELSE count + 1 END,
+              window_start = CASE WHEN window_start < ? THEN ? ELSE window_start END
+            WHERE window_start < ? OR count < ?
+            RETURNING count, window_start`,
+      args: [key, now, windowStart, windowStart, now, windowStart, limit],
+    });
+
+    if (reserved.rows.length > 0) {
+      const count = (reserved.rows[0]?.count as number) ?? 1;
+      return { allowed: true, remaining: Math.max(0, limit - count), retryAfter: 0 };
+    }
+
+    // Denied: the conditional upsert wrote nothing. Read the window only to
+    // report when a slot frees up.
+    const current = await getClient().execute({
+      sql: 'SELECT count, window_start FROM rate_limits WHERE key = ?',
+      args: [key],
+    });
+    const ws = (current.rows[0]?.window_start as number) ?? now;
+    const retryAfter = Math.max(1, Math.ceil((ws + windowMs - now) / 1000));
+    localBlockedUntil.set(localKey, now + retryAfter * 1000);
+    return { allowed: false, remaining: 0, retryAfter };
+  } catch (e) {
+    logger.error('rate_limit', 'turso rate limit reserve failed, failing closed', { error: String(e) });
+    return { allowed: false, remaining: 0, retryAfter: 5, storageError: true };
+  }
+}
