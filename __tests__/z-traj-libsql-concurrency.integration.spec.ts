@@ -63,6 +63,12 @@ describe('z_traj embedded libSQL transaction integration', () => {
   });
 
   beforeEach(async () => {
+    await clientA.execute(`CREATE TABLE IF NOT EXISTS z_traj_observation_events (
+      session_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      PRIMARY KEY (session_id, event_id)
+    )`);
     await clientA.execute('DELETE FROM z_traj_observation_events');
     await clientA.execute('DELETE FROM z_traj');
     await clientA.execute({
