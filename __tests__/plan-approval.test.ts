@@ -40,7 +40,7 @@ const okDraft = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const activePlan = (overrides: Record<string, unknown> = {}) => {
-  const draft = createDraft(okDraft(overrides) as any);
+  const draft = createDraft(okDraft(overrides) as never);
   return approvePlan({ draft, approverId: OPERATOR, approvalRequestId: `req-${draft.planId}`, nowMs: NOW });
 };
 
@@ -65,74 +65,74 @@ const expectCode = (fn: () => unknown, code: string) => {
 
 describe('plan creation: scope', () => {
   it('refuses a branch outside fix/* and govern/*', () => {
-    expectCode(() => createDraft(okDraft({ branch: 'feature/x' }) as any), 'BRANCH_NOT_ALLOWED');
+    expectCode(() => createDraft(okDraft({ branch: 'feature/x' }) as never), 'BRANCH_NOT_ALLOWED');
   });
 
   it('refuses a branch named main', () => {
-    expectCode(() => createDraft(okDraft({ branch: 'main' }) as any), 'MAIN_REFUSED');
+    expectCode(() => createDraft(okDraft({ branch: 'main' }) as never), 'MAIN_REFUSED');
   });
 
   it('refuses a PR whose base is main', () => {
-    expectCode(() => createDraft(okDraft({ pr: { draft: true, base: 'main', title_sha256: sha('t'), body_sha256: sha('b') } }) as any), 'MAIN_REFUSED');
+    expectCode(() => createDraft(okDraft({ pr: { draft: true, base: 'main', title_sha256: sha('t'), body_sha256: sha('b') } }) as never), 'MAIN_REFUSED');
   });
 
   it('refuses a path outside the tier 1 allowlist', () => {
-    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'secrets/.env')] }) as any), 'PATH_OUTSIDE_ALLOWLIST');
+    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'secrets/.env')] }) as never), 'PATH_OUTSIDE_ALLOWLIST');
   });
 
   it('refuses tier 2 runtime paths lib/ and app/', () => {
-    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'lib/sovereign_kernel.ts')] }) as any), 'TIER2_PATH');
-    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'app/api/mcp/route.ts')] }) as any), 'TIER2_PATH');
+    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'lib/sovereign_kernel.ts')] }) as never), 'TIER2_PATH');
+    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'app/api/mcp/route.ts')] }) as never), 'TIER2_PATH');
   });
 
   it('refuses governance-layer paths even inside docs-looking names', () => {
-    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'lib/scoped_grants.ts')] }) as any), 'PATH_OUTSIDE_ALLOWLIST');
-    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'lib/rate_limit.ts')] }) as any), 'PATH_OUTSIDE_ALLOWLIST');
+    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'lib/scoped_grants.ts')] }) as never), 'PATH_OUTSIDE_ALLOWLIST');
+    expectCode(() => createDraft(okDraft({ writes: [okWrite(0, 'lib/rate_limit.ts')] }) as never), 'PATH_OUTSIDE_ALLOWLIST');
   });
 
   it('accepts docs/ and __tests__/ paths', () => {
-    expect(() => createDraft(okDraft({ writes: [okWrite(0, 'docs/x.md'), okWrite(1, '__tests__/x.test.ts')] }) as any)).not.toThrow();
+    expect(() => createDraft(okDraft({ writes: [okWrite(0, 'docs/x.md'), okWrite(1, '__tests__/x.test.ts')] }) as never)).not.toThrow();
   });
 });
 
 describe('plan creation: limits', () => {
   it('refuses more than 20 writes', () => {
     const writes = Array.from({ length: 21 }, (_, i) => okWrite(i, `docs/${i}.md`, String(i)));
-    expectCode(() => createDraft(okDraft({ writes }) as any), 'LIMIT_WRITES');
+    expectCode(() => createDraft(okDraft({ writes }) as never), 'LIMIT_WRITES');
   });
 
   it('accepts exactly 20 writes', () => {
     const writes = Array.from({ length: 20 }, (_, i) => okWrite(i, `docs/${i}.md`, String(i)));
-    expect(() => createDraft(okDraft({ writes }) as any)).not.toThrow();
+    expect(() => createDraft(okDraft({ writes }) as never)).not.toThrow();
   });
 
   it('refuses more than 10 files', () => {
     const writes = Array.from({ length: 11 }, (_, i) => okWrite(i, `docs/f${i}.md`, String(i)));
-    expectCode(() => createDraft(okDraft({ writes }) as any), 'LIMIT_FILES');
+    expectCode(() => createDraft(okDraft({ writes }) as never), 'LIMIT_FILES');
   });
 
   it('refuses a lifetime over 60 minutes', () => {
-    expectCode(() => createDraft(okDraft({ expiresInMinutes: 61 }) as any), 'LIFETIME_TOO_LONG');
+    expectCode(() => createDraft(okDraft({ expiresInMinutes: 61 }) as never), 'LIFETIME_TOO_LONG');
   });
 });
 
 describe('approval', () => {
   it('anyone can draft a plan', () => {
-    expect(() => createDraft(okDraft({ ownerId: 'agent-session-1' }) as any)).not.toThrow();
+    expect(() => createDraft(okDraft({ ownerId: 'agent-session-1' }) as never)).not.toThrow();
   });
 
   it('a draft cannot execute before the operator approves it', () => {
-    const draft = createDraft(okDraft() as any);
+    const draft = createDraft(okDraft() as never);
     expectCode(() => executeWrite(execOpts(draft)), 'NOT_APPROVED');
   });
 
   it('only the operator can approve', () => {
-    const draft = createDraft(okDraft() as any);
+    const draft = createDraft(okDraft() as never);
     expectCode(() => approvePlan({ draft, approverId: 'agent-session-1', approvalRequestId: 'r', nowMs: NOW }), 'NOT_OPERATOR');
   });
 
   it('an approval is single use', () => {
-    const draft = createDraft(okDraft() as any);
+    const draft = createDraft(okDraft() as never);
     approvePlan({ draft, approverId: OPERATOR, approvalRequestId: 'r1', nowMs: NOW });
     expectCode(() => approvePlan({ draft, approverId: OPERATOR, approvalRequestId: 'r1', nowMs: NOW }), 'APPROVAL_REUSED');
   });
