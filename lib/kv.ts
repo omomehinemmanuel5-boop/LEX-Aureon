@@ -120,6 +120,8 @@ export const RECOVERY_RATE   = CONSTITUTION.RECOVERY_RATE;
 export const SIGMA_WINDOW    = 10;
 export const SIGMA_THRESHOLD = CONSTITUTION.SIGMA_THRESHOLD;
 export const STABILITY_VELOCITY = RECOVERY_STABILITY_THRESHOLD;
+/** Minimum server-side dwell between canonical stability samples. */
+export const MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS = 5_000;
 
 // ── Z-weight update constants (Theorem 3a/3b — Banach fixed-point proof) ──────
 // ρ = memory decay rate (contraction factor, proven convergent at 0.85)
@@ -303,6 +305,10 @@ export async function recordZTrajObservation(
     + (measured.s - expectedPrevious.last_s) ** 2,
   );
   const M = Math.min(measured.c, measured.r, measured.s);
+  const previousObservedAt = Date.parse(expectedPrevious.updated_at);
+  const elapsedSincePreviousWriteMs = Date.now() - previousObservedAt;
+  const dwellElapsed = Number.isFinite(previousObservedAt)
+    && elapsedSincePreviousWriteMs >= MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS;
   const currentViolation = M < TAU_LYP ? TAU_LYP - M : 0;
   const sigmaViol = nextSigmaViolation(expectedPrevious.sigma_viol, currentViolation, SIGMA_WINDOW);
   const timestampNow = new Date();
@@ -317,7 +323,12 @@ export async function recordZTrajObservation(
     sql: `UPDATE z_traj
           SET sigma_viol = ?,
               velocity = ?,
-              n_stable = CASE WHEN ? = 1 AND ? < ? AND ? >= ? THEN n_stable + 1 ELSE 0 END,
+              n_stable = CASE
+                WHEN ? = 0 THEN 0
+                WHEN ? >= ? OR ? < ? THEN 0
+                WHEN ? = 1 THEN n_stable + 1
+                ELSE n_stable
+              END,
               last_m = ?, last_c = ?, last_r = ?, last_s = ?, updated_at = ?
           WHERE session_id = ? AND last_c = ? AND last_r = ? AND last_s = ? AND updated_at = ? AND sigma_viol = ?`,
     args: [
@@ -325,6 +336,7 @@ export async function recordZTrajObservation(
       velocity,
       countStableObservation ? 1 : 0,
       velocity, STABILITY_VELOCITY, M, CONSTITUTION.TAU_RECOVERY,
+      dwellElapsed ? 1 : 0,
       M, measured.c, measured.r, measured.s, updatedAt,
       sessionId,
       expectedPrevious.last_c, expectedPrevious.last_r, expectedPrevious.last_s,
@@ -354,9 +366,14 @@ export async function updateZTraj(
     : 0;
 
   // ── n_stable: consecutive low-velocity turns ──────────────────────────────
-  const n_stable = velocity < STABILITY_VELOCITY && M >= CONSTITUTION.TAU_RECOVERY
-    ? (existing?.n_stable ?? 0) + 1
-    : 0;
+  const previousUpdatedAt = existing ? Date.parse(existing.updated_at) : Number.NaN;
+  const dwellElapsed = Number.isFinite(previousUpdatedAt)
+    && Date.now() - previousUpdatedAt >= MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS;
+  const n_stable = velocity >= STABILITY_VELOCITY || M < CONSTITUTION.TAU_RECOVERY
+    ? 0
+    : dwellElapsed
+      ? (existing?.n_stable ?? 0) + 1
+      : (existing?.n_stable ?? 0);
 
   // ── drift_dir: dominant dimension of change ───────────────────────────────
   let drift_dir = 'none';
