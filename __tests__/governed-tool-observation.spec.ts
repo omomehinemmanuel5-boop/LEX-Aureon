@@ -23,7 +23,7 @@ vi.mock('../lib/agents/recovery_runtime', () => ({
 
 import { executeGovernedToolStructured } from '../lib/agents/constitutional_tool_executor';
 import { createGovernanceApprovalToken } from '../lib/agents/tool_governance_gateway';
-import { recordZTrajObservation, type ExpectedZTrajSample } from '../lib/kv';
+import { recordZTrajObservation, updateZTraj, type ExpectedZTrajSample } from '../lib/kv';
 import { SIGMA_ZERO_TOLERANCE } from '../lib/agents/sigma_decay';
 
 const SESSION = 'observation-session';
@@ -482,6 +482,22 @@ describe('governed tool stability observations', () => {
 
     expect(recorded).toBe(true);
     expect(mocks.rows.get(SESSION)?.n_stable).toBe(2);
+  });
+
+  it('does not increment updateZTraj stability before the canonical dwell interval', async () => {
+    mocks.rows.set(SESSION, row({ n_stable: 2, updated_at: new Date().toISOString() }));
+
+    const updated = await updateZTraj(SESSION, PREVIOUS, PREVIOUS);
+
+    expect(updated.n_stable).toBe(2);
+  });
+
+  it('increments updateZTraj stability after the canonical dwell interval', async () => {
+    mocks.rows.set(SESSION, row({ n_stable: 2, updated_at: OLD_UPDATED_AT }));
+
+    const updated = await updateZTraj(SESSION, PREVIOUS, PREVIOUS);
+
+    expect(updated.n_stable).toBe(3);
   });
 
   it('records a zero-velocity baseline without incrementing stable observations', async () => {
