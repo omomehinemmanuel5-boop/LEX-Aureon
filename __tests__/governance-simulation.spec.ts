@@ -54,7 +54,10 @@ vi.mock('../lib/governor_loop', () => ({
   consumePendingCorrection: mocks.consumePendingCorrection,
 }));
 vi.mock('../lib/llm_provider', () => ({ generateGoverned: mocks.generateGoverned }));
-vi.mock('../lib/kv', () => ({ getLawImpact: mocks.getLawImpact }));
+vi.mock('../lib/kv', () => ({
+  getLawImpact: mocks.getLawImpact,
+  MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS: 5_000,
+}));
 
 import { executeGovern } from '../lib/governance_service';
 import { clearKernelCacheForTests, getCachedKernel } from '../lib/kernel_cache';
