@@ -30,11 +30,11 @@ export function nextSigmaViolation(
 
 
 /**
- * Sigma is within bound when it is finite and at or below SIGMA_THRESHOLD.
- * Residual sigma decays geometrically and only reaches exact zero after a very
- * long run of healthy observations, so exact-zero checks block recovery for any
- * session that has ever dipped. The threshold is the existing design bound.
+ * Recovery eligibility requires exact-zero canonical sigma. SIGMA_THRESHOLD
+ * remains a separate stress/diagnostic bound and must never authorize recovery.
+ * The decay helper above provides a finite-time, auditable normalization of
+ * sufficiently small residuals, but never rounds away current positive stress.
  */
 export function sigmaWithinBound(sigma: number): boolean {
-  return Number.isFinite(sigma) && sigma <= CONSTITUTION.SIGMA_THRESHOLD;
+  return sigma === 0;
 }
