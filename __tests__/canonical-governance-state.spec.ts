@@ -111,7 +111,7 @@ describe('canonical governance state', () => {
       // SIGMA_THRESHOLD; the session remains RESTORING.
       recoveryState: 'RESTORING',
       canaryPassed: false,
-      canaryReceiptId: expect.any(String),
+      canaryReceiptId: null,
     });
     expect(result.state.stateFingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
