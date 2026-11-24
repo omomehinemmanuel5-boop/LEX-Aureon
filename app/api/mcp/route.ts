@@ -20,7 +20,7 @@ import type { AutonomousRunContext } from '@/lib/agents/trajectory_executor';
 import { validateApiKey, validateAndConsumeKey, consumeApiKeyById, getApiKeyById } from '@/lib/api_keys';
 import { validateMcpSession } from '@/lib/mcp_sessions';
 import { recordMcpClientIdentity, runZTrajMigrations } from '@/lib/db';
-import { checkRateLimit } from '@/lib/rate_limit';
+import { checkRateLimit, checkRateLimitReserve } from '@/lib/rate_limit';
 import { canCallTool, profileForApiKey, toolsForProfile, type McpAccessProfile } from '@/lib/lex_crs_agent/mcp_access';
 import { getToolCapability, requireKnownToolCapability, type ToolCapability } from '@/lib/agents/tool_capability_registry';
 import { interceptToolCall } from '@/lib/agents/tool_interceptor';
