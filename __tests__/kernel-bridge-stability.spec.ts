@@ -94,7 +94,7 @@ describe('writeKernelReceipt turn-to-turn stability baseline', () => {
   it('increments n_stable from zero to one and then two for near-identical governed turns', async () => {
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      // Keep the real wall-clock epoch so the pre-seeded observation remains older than the dwell window.
       const firstGoverned = { C: 0.334, R: 0.333, S: 0.333 };
       const secondGoverned = { C: 0.335, R: 0.332, S: 0.333 };
       const deliberatelyDifferentRaw = { C: 0.1, R: 0.8, S: 0.1 };
