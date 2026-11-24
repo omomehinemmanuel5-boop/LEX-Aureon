@@ -1060,7 +1060,7 @@ async function handlePost(req: Request) {
             return 'Error: the requested tool is not registered as a governed capability.';
           }
           if (!canCallTool(profile, requestedTool)) return 'Error: this caller is not authorized for the requested tool.';
-          const rate = await checkRateLimit(`approval-request:${ownerId}`, 10, 60 * 60);
+          const rate = await checkRateLimitReserve(`approval-request:${ownerId}`, 25, 60 * 60);
           if (rate.storageError) throw new Error('Approval request admission is unavailable.');
           if (!rate.allowed) return 'Error: approval request rate limit reached; try again later.';
           const exactArgs = { ...proposedArgs, session_id: sessionId };
