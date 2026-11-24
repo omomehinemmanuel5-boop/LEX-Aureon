@@ -177,3 +177,15 @@ cannot earn another stability count. A genuine velocity or M-threshold failure
 still resets the count. The recovery-plane's persisted-breach escalation
 (10/15 seconds) remains an additional, stricter precondition for its own pulse
 path. The two-second candidate is not enabled by this change.
+
+
+## Concurrency and replay protection (PR #268)
+
+Canonical trajectory persistence now uses two complementary safeguards:
+
+- Governed-tool observations retain compare-and-set semantics against the exact prior CRS, sigma value, and timestamp. Their dwell calculation and next timestamp are evaluated by the Turso/SQLite clock, not an individual application instance's wall clock.
+- Kernel-turn updates execute inside a libSQL write transaction. The transaction reads the latest persisted CRS, computes velocity and the Banach z-weight update from that state, and commits the trajectory transition together with a unique `z_traj_observation_events(session_id, event_id)` record. A stable event identity derived from the governed turn, input/output hashes, and receipt hash makes a retry a no-op for trajectory state.
+
+The event ledger is intentionally separate from `praxis_receipts`: receipt persistence can be retried independently, while the trajectory transition is applied at most once for its logical governed turn. A transaction failure rolls back both the event marker and trajectory mutation. No threshold, recovery floor, dwell interval, or canary eligibility predicate is changed.
+
+Regression coverage includes duplicate governed-turn replay, transaction-backed trajectory updates, compare-and-set observation races, the five-second dwell, and stability reset conditions. CI status must be evaluated against the exact current PR head; these source changes alone do not establish passing validation or live production recovery.
