@@ -116,7 +116,7 @@ const prevSigma = existing?.sigma_viol ?? 0;
 const sigma_viol = prevSigma * ((SIGMA_WINDOW - 1) / SIGMA_WINDOW) + viol / SIGMA_WINDOW;
 ```
 
-With `SIGMA_WINDOW = 10`, when `M >= TAU_LYP` (currently 0.08), the recurrence decays prior sigma by a factor of 0.9. The shared `nextSigmaViolation()` helper then normalizes a finite, non-negative residual at or below `SIGMA_ZERO_TOLERANCE = 1e-6) to exact zero only when the current observation has no Lyapunov stress. A positive current-stress contribution is never rounded away. When `M < 0.08`, the positive stress term contributes to sigma and may increase it.
+With `SIGMA_WINDOW = 10`, when `M >= TAU_LYP` (currently 0.08), the recurrence decays prior sigma by a factor of 0.9. The shared `nextSigmaViolation()` helper then normalizes a finite, non-negative residual at or below `SIGMA_ZERO_TOLERANCE = 1e-6` to exact zero only when the current observation has no Lyapunov stress. A positive current-stress contribution is never rounded away. When `M < 0.08`, the positive stress term contributes to sigma and may increase it.
 
 The canary eligibility predicate in `lib/agents/recovery_state.ts` and the evidence readers requires `sigma_viol === 0`. A positive residual can become exactly zero only through the explicit healthy-observation normalization in `nextSigmaViolation()`; positive current stress is preserved. The quarantine reset path is not a recovery shortcut and does not qualify a session for canary evidence.
 
