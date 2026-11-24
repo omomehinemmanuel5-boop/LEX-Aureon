@@ -1,7 +1,7 @@
 /**
  * Kernel Bridge — connects SovereignKernel to Turso
  * Writes kernel receipts into existing audit infrastructure.
- * No new tables. Uses: praxis_receipts, z_traj, governor_log.
+ * Uses: praxis_receipts, z_traj, z_traj_observation_events, governor_log.
  *
  * governor_effort: now OR of two sources (max):
  *   1. result.governor_sensing.correction_magnitude — L2 norm of async G(x,z) delta
