@@ -12,7 +12,7 @@ vi.mock('../lib/db', () => ({
   getClient: () => clients.current,
 }));
 
-import { updateZTraj } from '../lib/kv';
+import { recordZTrajObservation, updateZTraj } from '../lib/kv';
 
 describe('z_traj embedded libSQL transaction integration', () => {
   let clientA: Client;
@@ -32,7 +32,10 @@ describe('z_traj embedded libSQL transaction integration', () => {
     clientB = createClient({ url: `file:${databasePath}` });
     let nextClient = 0;
     clients.current = {
-      execute: clientA.execute.bind(clientA),
+      execute: (...args: Parameters<Client['execute']>) => {
+        const selected = nextClient++ % 2 === 0 ? clientA : clientB;
+        return selected.execute(...args);
+      },
       transaction: (...args: Parameters<Client['transaction']>) => {
         const selected = nextClient++ % 2 === 0 ? clientA : clientB;
         return selected.transaction(...args);
@@ -157,4 +160,29 @@ describe('z_traj embedded libSQL transaction integration', () => {
     expect(immediate.n_stable).toBe(1);
     expect(immediate.sigma_viol).toBe(0);
   });
+
+  it('allows only one concurrent CAS stability observation from the same persisted snapshot', async () => {
+    const expectedPrevious = {
+      last_c: 0.34,
+      last_r: 0.33,
+      last_s: 0.33,
+      sigma_viol: 0,
+      updated_at: '2026-01-01T00:00:00.000Z',
+    };
+    const measured = { c: 0.341, r: 0.329, s: 0.33 };
+
+    const results = await Promise.all([
+      recordZTrajObservation('integration-session', expectedPrevious, measured, true),
+      recordZTrajObservation('integration-session', expectedPrevious, measured, true),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const persisted = await clientA.execute({
+      sql: 'SELECT n_stable, last_c, last_r, last_s FROM z_traj WHERE session_id = ?',
+      args: ['integration-session'],
+    });
+    expect(Number(persisted.rows[0].n_stable)).toBe(1);
+    expect(Number(persisted.rows[0].last_c)).toBe(measured.c);
+  });
+
 });
