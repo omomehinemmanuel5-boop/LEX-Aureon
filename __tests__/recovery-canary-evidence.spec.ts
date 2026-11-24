@@ -81,10 +81,13 @@ describe('recovery canary evidence', () => {
     ]);
   });
 
-  it('uses the same complete predicate for server and operator canary eligibility', () => {
+  it('uses the same exact-zero predicate for server and operator canary eligibility', () => {
     expect(recoveryCanaryPredicateFailures({
       trajectoryAvailable: true, M: 0.15, nStable: 3, sigmaViol: 0, velocity: 0.019,
     })).toEqual([]);
+    expect(recoveryCanaryPredicateFailures({
+      trajectoryAvailable: true, M: 0.15, nStable: 3, sigmaViol: 1e-12, velocity: 0.019,
+    })).toContain('sigma_viol 1e-12 must equal exactly 0 before canary verification');
     expect(recoveryCanaryPredicateFailures({
       trajectoryAvailable: false, M: 0.04, nStable: 2, sigmaViol: 0.3, velocity: 0.02,
     })).toHaveLength(6);
