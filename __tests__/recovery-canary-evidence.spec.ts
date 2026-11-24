@@ -93,6 +93,19 @@ describe('recovery canary evidence', () => {
     })).toHaveLength(6);
   });
 
+  it('rejects non-finite M and stable-observation counts in the canary predicate', () => {
+    for (const M of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(recoveryCanaryPredicateFailures({
+        trajectoryAvailable: true, M, nStable: 3, sigmaViol: 0, velocity: 0,
+      })).toContain('M must be finite before canary verification');
+    }
+    for (const nStable of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(recoveryCanaryPredicateFailures({
+        trajectoryAvailable: true, M: 0.25, nStable, sigmaViol: 0, velocity: 0,
+      })).toContain(`n_stable ${String(nStable)} must be finite and >= N_MIN 3`);
+    }
+  });
+
   it('issues server evidence only after rereading the exact canonical row', async () => {
     getZTrajMock.mockResolvedValueOnce({
       session_id: snapshot.sessionId, velocity: 0, n_stable: 3, drift_dir: 'stable',
