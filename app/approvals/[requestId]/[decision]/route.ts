@@ -1,6 +1,6 @@
 import { decideApprovalRequest } from '@/lib/approval_requests';
 import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
-import { approvalOwnerFromCookie } from '@/lib/approval_owner_auth';
+import { accountFromCookie } from '@/lib/auth_accounts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,24 +31,24 @@ export async function POST(
   context: { params: Promise<{ requestId: string; decision: string }> },
 ): Promise<Response> {
   if (!isTrustedApprovalOrigin(req)) return page('Request origin was not accepted.', 403);
-  let ownerId: string | null;
+  let account;
   try {
-    ownerId = await approvalOwnerFromCookie(req.headers.get('cookie'));
+    account = await accountFromCookie(req.headers.get('cookie'));
   } catch {
     return page('Owner verification is temporarily unavailable. No decision was recorded.', 503);
   }
-  if (!ownerId) return page('Sign in with the API key that owns this request.', 401);
+  if (!account) return page('Sign in with your verified tenant-owner account.', 401);
   const { requestId, decision } = await context.params;
   if (decision !== 'approved' && decision !== 'denied') return page('Invalid decision.', 400);
   if (!/^[A-Za-z0-9_-]{22}$/.test(requestId)) return page('Invalid request identifier.', 400);
   try {
     const changed = await decideApprovalRequest({
       requestId,
-      ownerId,
+      tenantId: account.tenantId,
       decision,
-      decidedBy: `owner:${ownerId}`,
+      decidedBy: `user:${account.id}`,
     });
-    if (!changed) return page('This request is expired, no longer pending, does not belong to this API-key owner, or does not exist. No change was made.', 409);
+    if (!changed) return page('This request is expired, no longer pending, does not belong to this tenant, or does not exist. No change was made.', 409);
     return page(
       decision === 'approved'
         ? 'Approval recorded. This does not execute the action. Lex rechecks current policy and consumes this approval only when the agent retries the exact action.'

@@ -27,7 +27,7 @@ const session = {
 } as const;
 
 describe('MCP patch_file write path', () => {
-  let approval: { request_id: string; owner_id: string; session_id: string; tool_name: string; args_hash: string; status: string; expires_at: number } | null;
+  let approval: { request_id: string; owner_id: string; tenant_id: string; session_id: string; tool_name: string; args_hash: string; status: string; expires_at: number } | null;
   let content = 'const before = true;\n';
   let commitCalls = 0;
 
@@ -47,7 +47,7 @@ describe('MCP patch_file write path', () => {
       const sql = typeof query === 'string' ? query : query.sql;
       const args = typeof query === 'string' ? [] : query.args ?? [];
       if (sql.includes('INSERT INTO approval_requests')) {
-        approval = { request_id: String(args[0]), owner_id: String(args[1]), session_id: String(args[2]), tool_name: String(args[3]), args_hash: String(args[4]), status: 'pending', expires_at: Number(args[7]) };
+        approval = { request_id: String(args[0]), owner_id: String(args[1]), tenant_id: String(args[2]), session_id: String(args[3]), tool_name: String(args[4]), args_hash: String(args[5]), status: 'pending', expires_at: Number(args[8]) };
       } else if (sql.startsWith('SELECT request_id, owner_id')) {
         return { rows: approval ? [approval] : [] };
       } else if (sql.includes("UPDATE approval_requests SET status = ?")) {
@@ -80,10 +80,10 @@ describe('MCP patch_file write path', () => {
     expect(dryRun).toContain('dry_run — no commit made');
     expect(commitCalls).toBe(0);
 
-    const pending = await createApprovalRequest({ ownerId: 'owner-write', sessionId: session.sessionId, toolName: 'patch_file', args });
+    const pending = await createApprovalRequest({ ownerId: 'owner-write', tenantId: 'tenant-write', sessionId: session.sessionId, toolName: 'patch_file', args });
     expect(pending.requestId).toBeTruthy();
     expect(commitCalls).toBe(0);
-    expect(await decideApprovalRequest({ requestId: pending.requestId, ownerId: 'owner-write', decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
+    expect(await decideApprovalRequest({ requestId: pending.requestId, tenantId: 'tenant-write', decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
 
     const execute = (input: Record<string, unknown>) => executeGovernedToolStructured(
       'patch_file', input, (handlerArgs) => patch_file(handlerArgs as Parameters<typeof patch_file>[0]),
@@ -111,8 +111,8 @@ describe('MCP patch_file write path', () => {
 
   it('keeps the provider side-effect boundary closed when the canonical recovery gate denies', async () => {
     const args = { path: 'README.md', old_str: 'before', new_str: 'after', message: 'blocked patch', session_id: session.sessionId };
-    const pending = await createApprovalRequest({ ownerId: 'owner-write', sessionId: session.sessionId, toolName: 'patch_file', args });
-    expect(await decideApprovalRequest({ requestId: pending.requestId, ownerId: 'owner-write', decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
+    const pending = await createApprovalRequest({ ownerId: 'owner-write', tenantId: 'tenant-write', sessionId: session.sessionId, toolName: 'patch_file', args });
+    expect(await decideApprovalRequest({ requestId: pending.requestId, tenantId: 'tenant-write', decision: 'approved', decidedBy: 'test-approver' })).toBe(true);
 
     canonicalExecutionAllowed.mockReturnValue({ allowed: false, reason: 'test: recovery evidence missing' });
     const result = await executeGovernedToolStructured(

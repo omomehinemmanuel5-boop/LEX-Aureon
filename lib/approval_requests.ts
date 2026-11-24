@@ -37,6 +37,7 @@ export async function ensureApprovalRequestSchema(): Promise<void> {
   await db.execute(`CREATE TABLE IF NOT EXISTS approval_requests (
     request_id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL,
+    tenant_id TEXT,
     session_id TEXT NOT NULL,
     tool_name TEXT NOT NULL,
     args_hash TEXT NOT NULL,
@@ -47,17 +48,21 @@ export async function ensureApprovalRequestSchema(): Promise<void> {
     decided_at INTEGER,
     decided_by TEXT
   )`);
+  try { await db.execute('ALTER TABLE approval_requests ADD COLUMN tenant_id TEXT'); } catch { /* migrated */ }
   await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_owner ON approval_requests(owner_id)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_tenant ON approval_requests(tenant_id, created_at DESC)');
   await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status)');
 }
 
 export async function createApprovalRequest(input: {
   ownerId: string;
+  tenantId: string;
   sessionId: string;
   toolName: string;
   args: Record<string, unknown>;
 }): Promise<{ requestId: string; expiresAt: number }> {
   if (!input.ownerId) throw new Error('Authenticated owner is required.');
+  if (!input.tenantId) throw new Error('Authenticated tenant is required.');
   const capability = getToolCapability(input.toolName);
   if (!capability?.approvalRequired || input.toolName === 'request_approval') {
     throw new Error('The requested tool does not require operator approval.');
@@ -69,9 +74,9 @@ export async function createApprovalRequest(input: {
   await ensureApprovalRequestSchema();
   await getClient().execute({
     sql: `INSERT INTO approval_requests
-      (request_id, owner_id, session_id, tool_name, args_hash, args_json, status, created_at, expires_at, decided_at, decided_by)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL)`,
-    args: [requestId, input.ownerId, input.sessionId, input.toolName, approvalArgsHash(input.args), argsJson, now, expiresAt],
+      (request_id, owner_id, tenant_id, session_id, tool_name, args_hash, args_json, status, created_at, expires_at, decided_at, decided_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL)`,
+    args: [requestId, input.ownerId, input.tenantId, input.sessionId, input.toolName, approvalArgsHash(input.args), argsJson, now, expiresAt],
   });
   return { requestId, expiresAt };
 }
@@ -210,14 +215,14 @@ export interface ApprovalRequestRecord {
 }
 
 /** Return a bounded, append-only view of approval history. */
-export async function listApprovalRequests(ownerId: string, nowMs = Date.now(), limit = 100): Promise<ApprovalRequestRecord[]> {
+export async function listApprovalRequests(tenantId: string, nowMs = Date.now(), limit = 100): Promise<ApprovalRequestRecord[]> {
   await ensureApprovalRequestSchema();
   const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
   const result = await getClient().execute({
     sql: `SELECT request_id, owner_id, session_id, tool_name, args_json, status,
                  created_at, expires_at, decided_at, decided_by
-          FROM approval_requests WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?`,
-    args: [ownerId, boundedLimit],
+          FROM approval_requests WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?`,
+    args: [tenantId, boundedLimit],
   });
   return result.rows.map(row => {
     const storedStatus = String(row.status) as Exclude<ApprovalRequestStatus, 'expired'>;
@@ -240,14 +245,14 @@ export async function listApprovalRequests(ownerId: string, nowMs = Date.now(), 
 }
 
 export async function decideApprovalRequest(input: {
-  requestId: string; ownerId: string; decision: 'approved' | 'denied'; decidedBy: string; nowMs?: number;
+  requestId: string; tenantId: string; decision: 'approved' | 'denied'; decidedBy: string; nowMs?: number;
 }): Promise<boolean> {
   const now = input.nowMs ?? Date.now();
   await ensureApprovalRequestSchema();
   const result = await getClient().execute({
     sql: `UPDATE approval_requests SET status = ?, decided_at = ?, decided_by = ?
-          WHERE request_id = ? AND owner_id = ? AND status = 'pending' AND expires_at > ?`,
-    args: [input.decision, now, input.decidedBy, input.requestId, input.ownerId, now],
+          WHERE request_id = ? AND tenant_id = ? AND status = 'pending' AND expires_at > ?`,
+    args: [input.decision, now, input.decidedBy, input.requestId, input.tenantId, now],
   });
   return (result.rowsAffected ?? 0) === 1;
 }

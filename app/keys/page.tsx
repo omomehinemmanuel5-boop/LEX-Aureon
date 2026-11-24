@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/app/context/AuthContext';
 import Link from 'next/link';
 
 interface KeyRecord {
@@ -15,7 +16,7 @@ interface KeyRecord {
 }
 
 export default function KeysPage() {
-  const [email, setEmail]     = useState('');
+  const { user } = useAuth();
   const [name, setName]       = useState('');
   const [keys, setKeys]       = useState<KeyRecord[]>([]);
   const [newKey, setNewKey]   = useState('');
@@ -25,13 +26,12 @@ export default function KeysPage() {
   const [copied, setCopied]   = useState(false);
 
   const generate = async () => {
-    if (!email.includes('@')) { setError('Enter a valid email'); return; }
     setLoading(true); setError(''); setNewKey('');
     try {
       const r = await fetch('/api/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name: name || 'My Key' }),
+        body: JSON.stringify({ name: name || 'My Key' }),
       });
       const d = await r.json();
       if (!r.ok) { setError(d.error); return; }
@@ -42,10 +42,9 @@ export default function KeysPage() {
   };
 
   const fetchKeys = async () => {
-    if (!email.includes('@')) { setError('Enter a valid email'); return; }
     setLoading(true); setError('');
     try {
-      const r = await fetch(`/api/keys?email=${encodeURIComponent(email)}`);
+      const r = await fetch('/api/keys', { cache: 'no-store' });
       const d = await r.json();
       if (!r.ok) { setError(d.error); return; }
       setKeys(d.keys); setFetched(true);
@@ -58,10 +57,12 @@ export default function KeysPage() {
     const r = await fetch('/api/keys/revoke', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, email }),
+      body: JSON.stringify({ id }),
     });
     if (r.ok) setKeys(keys.filter(k => k.id !== id));
   };
+
+  useEffect(() => { if (user) void fetchKeys(); }, [user]);
 
   const copy = () => {
     navigator.clipboard.writeText(newKey);
@@ -93,15 +94,7 @@ export default function KeysPage() {
 
         {/* Input */}
         <div style={{ background:'#0d0d1a', border:'1px solid #1f2937', borderRadius:8, padding:'1.25rem', marginBottom:'1rem' }}>
-          <div style={{ marginBottom:'0.75rem' }}>
-            <label style={{ color:'#9ca3af', fontSize:12, display:'block', marginBottom:4 }}>EMAIL</label>
-            <input
-              type="email" value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              style={{ width:'100%', background:'#07070d', border:'1px solid #374151', borderRadius:6, padding:'0.6rem 0.75rem', color:'#e8e8e8', fontSize:14, boxSizing:'border-box' }}
-            />
-          </div>
+          {user ? <p style={{ color:'#9ca3af', fontSize:12, margin:'0 0 0.75rem' }}>Signed in as {user.email}. Keys are managed within your tenant.</p> : <p style={{ color:'#fbbf24', fontSize:12, margin:'0 0 0.75rem' }}>Sign in with a verified account to manage API keys. Email alone does not grant access.</p>}
           <div style={{ marginBottom:'1rem' }}>
             <label style={{ color:'#9ca3af', fontSize:12, display:'block', marginBottom:4 }}>KEY NAME (optional)</label>
             <input
@@ -112,11 +105,11 @@ export default function KeysPage() {
             />
           </div>
           <div style={{ display:'flex', gap:'0.5rem' }}>
-            <button onClick={generate} disabled={loading}
+            <button onClick={generate} disabled={loading || !user}
               style={{ flex:1, background:'#c9a84c', color:'#07070d', border:'none', borderRadius:6, padding:'0.7rem', fontWeight:700, fontSize:14, cursor:'pointer' }}>
               {loading ? 'Generating...' : '⚡ Generate Key'}
             </button>
-            <button onClick={fetchKeys} disabled={loading}
+            <button onClick={fetchKeys} disabled={loading || !user}
               style={{ padding:'0.7rem 1rem', background:'transparent', color:'#c9a84c', border:'1px solid #c9a84c', borderRadius:6, fontSize:13, cursor:'pointer' }}>
               View Keys
             </button>
@@ -148,7 +141,7 @@ export default function KeysPage() {
 
         {/* Keys list */}
         {fetched && keys.length === 0 && (
-          <p style={{ color:'#6b7280', fontSize:13, textAlign:'center', padding:'2rem' }}>No keys found for this email.</p>
+          <p style={{ color:'#6b7280', fontSize:13, textAlign:'center', padding:'2rem' }}>No keys found in this tenant.</p>
         )}
 
         {keys.map(k => (

@@ -1,15 +1,10 @@
 import crypto from 'crypto';
-import { headers as requestHeaders } from 'next/headers';
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { listApprovalRequests } from '@/lib/approval_requests';
 import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
 import { readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
 import { CONSTITUTION } from '@/lib/constitution';
-import {
-  approvalOwnerFromCookie,
-  authenticateApprovalOwner,
-  createApprovalOwnerCookie,
-} from '@/lib/approval_owner_auth';
+import { accountFromCookie, authenticateAccount, createAccountSessionCookie } from '@/lib/auth_accounts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,7 +34,7 @@ function validApprovalNext(value: string): boolean {
 }
 
 function signInPage(message = '', next = '/approvals', nonce?: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lex · Approvals</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:24px}.card{max-width:520px;margin:8vh auto;background:#151d31;border:1px solid #293652;border-radius:20px;padding:24px;box-shadow:0 24px 70px #0006}p{color:#adbad2;line-height:1.55}label{font-weight:650}input,button{font:inherit;width:100%;padding:15px;border-radius:12px;margin-top:10px}input{background:#0b1020;color:white;border:1px solid #40506e}button{border:0;background:#6c8cff;color:#081020;font-weight:750;cursor:pointer}.error{color:#ffb4aa}</style></head><body><main class="card"><h1>Lex approvals</h1><p>Sign in with the API key that owns this request. Your key is checked without consuming its usage quota. Your approval inbox shows only requests created by this key.</p>${message ? `<p class="error" role="alert">${escapeHtml(message)}</p>` : ''}<form method="post" action="/approvals"><input type="hidden" name="next" value="${escapeHtml(next)}"><label for="api_key">Owner API key</label><input id="api_key" name="api_key" type="password" autocomplete="off" required><button type="submit">Sign in to review requests</button></form></main>${nonce ? `<script nonce="${escapeHtml(nonce)}">(()=>{const n=document.querySelector('input[name="next"]');const h=window.location.hash;if(n&&/^#[A-Za-z0-9_-]{1,64}$/.test(h))n.value="/approvals"+h;})();</script>` : ''} </body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lex · Approvals</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:24px}.card{max-width:520px;margin:8vh auto;background:#151d31;border:1px solid #293652;border-radius:20px;padding:24px;box-shadow:0 24px 70px #0006}p{color:#adbad2;line-height:1.55}label{font-weight:650}input,button{font:inherit;width:100%;padding:15px;border-radius:12px;margin-top:10px}input{background:#0b1020;color:white;border:1px solid #40506e}button{border:0;background:#6c8cff;color:#081020;font-weight:750;cursor:pointer}.error{color:#ffb4aa}</style></head><body><main class="card"><h1>Lex approvals</h1><p>Sign in with your verified Lex Aureon tenant account. Your inbox shows approval requests associated with your tenant.</p>${message ? `<p class="error" role="alert">${escapeHtml(message)}</p>` : ''}<form method="post" action="/approvals"><input type="hidden" name="next" value="${escapeHtml(next)}"><label for="email">Account email</label><input id="email" name="email" type="email" autocomplete="username" required><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit">Sign in to review requests</button></form></main>${nonce ? `<script nonce="${escapeHtml(nonce)}">(()=>{const n=document.querySelector('input[name="next"]');const h=window.location.hash;if(n&&/^#[A-Za-z0-9_-]{1,64}$/.test(h))n.value="/approvals"+h;})();</script>` : ''} </body></html>`;
 }
 
 function redact(value: unknown, key = ''): unknown {
@@ -52,9 +47,9 @@ function redact(value: unknown, key = ''): unknown {
   return value;
 }
 
-async function approvalsPage(ownerId: string): Promise<Response> {
+async function approvalsPage(tenantId: string): Promise<Response> {
   try {
-    const requests = await listApprovalRequests(ownerId);
+    const requests = await listApprovalRequests(tenantId);
     const cards = (await Promise.all(requests.map(async item => {
       let args: unknown;
       try { args = redact(JSON.parse(item.args_json)); } catch { args = '[unreadable arguments]'; }
@@ -62,7 +57,7 @@ async function approvalsPage(ownerId: string): Promise<Response> {
       try {
         const canonical = await readCanonicalGovernanceState({
           sessionId: item.session_id,
-          actorId: `approval-owner:${ownerId}`,
+          actorId: `approval-owner:${tenantId}`,
           capability: 'read',
         });
         recoverySnapshot = canonical.available
@@ -83,20 +78,20 @@ async function approvalsPage(ownerId: string): Promise<Response> {
         : `<h3>Exact action details</h3><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre>`;
       return `<article id="${escapeHtml(item.request_id)}" class="request ${escapeHtml(item.status)}"><div class="eyebrow">${escapeHtml(item.status.toUpperCase())}</div><h2>${escapeHtml(item.tool_name)}</h2><dl><div><dt>Approval request ID</dt><dd>${escapeHtml(item.request_id)}</dd></div><div><dt>Requested by</dt><dd>${escapeHtml(item.owner_id)}</dd></div><div><dt>Session</dt><dd>${escapeHtml(item.session_id)}</dd></div><div><dt>Created</dt><dd>${escapeHtml(new Date(item.created_at).toLocaleString())}</dd></div><div><dt>Expires</dt><dd>${escapeHtml(new Date(item.expires_at).toLocaleString())}</dd></div></dl>${recoverySnapshot}${actionDetails}${actions}</article>`;
     }))).join('');
-    return response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1020"><title>Lex · Approval history</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:20px}.wrap{max-width:780px;margin:0 auto}h1{font-size:clamp(1.8rem,6vw,2.5rem);margin:.35rem 0}.lead,.note{color:#adbad2;line-height:1.55}.request{background:#151d31;border:1px solid #293652;border-radius:18px;padding:20px;margin:18px 0;box-shadow:0 18px 48px #0004}.request{scroll-margin-top:1rem}.request:target{outline:2px solid #6c8cff;outline-offset:4px}.patch-block{white-space:pre-wrap;overflow-wrap:anywhere;max-height:30vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}details{margin-top:12px}summary{cursor:pointer;color:#adbad2}.request.approved{border-color:#4a8d68}.request.used{border-color:#5876b6}.request.denied,.request.expired{border-color:#72546a}.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.12em;color:#ffcb77}.approved .eyebrow{color:#a6f0c6}.used .eyebrow{color:#a9c7ff}.denied .eyebrow,.expired .eyebrow{color:#ffb4aa}.request h2{overflow-wrap:anywhere}.request h3{font-size:1rem;margin-bottom:8px}.request dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.request dt{font-size:.78rem;color:#9caecb}.request dd{margin:4px 0 0;overflow-wrap:anywhere}.recovery{border:1px solid #40506e;border-radius:12px;padding:12px;margin:14px 0}.recovery h3{margin-top:0}.recovery dl{margin:8px 0}.request pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:38vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}.buttons{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:16px}.buttons form{margin:0}.buttons button{width:100%;min-height:54px;border-radius:12px;border:0;font:inherit;font-weight:800;cursor:pointer}.allow{background:#a6f0c6;color:#062618}.deny{background:#303c54;color:#fff}.note{font-size:.82rem;margin-bottom:0}.empty{background:#151d31;border-radius:16px;padding:22px;color:#adbad2}@media(max-width:520px){body{padding:14px}.request{padding:16px}.request dl{grid-template-columns:1fr}.buttons{grid-template-columns:1fr}.buttons button{min-height:58px}}</style></head><body><main class="wrap"><h1>Approval history</h1><p class="lead">This inbox contains only requests created by your authenticated API key. Pending requests are actionable. Approval records consent only; Lex rechecks governance and consumes it once when the agent retries the unchanged action.</p>${cards || '<p class="empty">No approval requests have been recorded for this API key.</p>'}</main></body></html>`);
+    return response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1020"><title>Lex · Approval history</title><style>*{box-sizing:border-box}body{font:16px system-ui;background:#0b1020;color:#edf2ff;margin:0;padding:20px}.wrap{max-width:780px;margin:0 auto}h1{font-size:clamp(1.8rem,6vw,2.5rem);margin:.35rem 0}.lead,.note{color:#adbad2;line-height:1.55}.request{background:#151d31;border:1px solid #293652;border-radius:18px;padding:20px;margin:18px 0;box-shadow:0 18px 48px #0004}.request{scroll-margin-top:1rem}.request:target{outline:2px solid #6c8cff;outline-offset:4px}.patch-block{white-space:pre-wrap;overflow-wrap:anywhere;max-height:30vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}details{margin-top:12px}summary{cursor:pointer;color:#adbad2}.request.approved{border-color:#4a8d68}.request.used{border-color:#5876b6}.request.denied,.request.expired{border-color:#72546a}.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.12em;color:#ffcb77}.approved .eyebrow{color:#a6f0c6}.used .eyebrow{color:#a9c7ff}.denied .eyebrow,.expired .eyebrow{color:#ffb4aa}.request h2{overflow-wrap:anywhere}.request h3{font-size:1rem;margin-bottom:8px}.request dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.request dt{font-size:.78rem;color:#9caecb}.request dd{margin:4px 0 0;overflow-wrap:anywhere}.recovery{border:1px solid #40506e;border-radius:12px;padding:12px;margin:14px 0}.recovery h3{margin-top:0}.recovery dl{margin:8px 0}.request pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:38vh;overflow:auto;background:#0b1020;border:1px solid #293652;border-radius:12px;padding:14px;color:#dbe5fa;font-size:.84rem}.buttons{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:16px}.buttons form{margin:0}.buttons button{width:100%;min-height:54px;border-radius:12px;border:0;font:inherit;font-weight:800;cursor:pointer}.allow{background:#a6f0c6;color:#062618}.deny{background:#303c54;color:#fff}.note{font-size:.82rem;margin-bottom:0}.empty{background:#151d31;border-radius:16px;padding:22px;color:#adbad2}@media(max-width:520px){body{padding:14px}.request{padding:16px}.request dl{grid-template-columns:1fr}.buttons{grid-template-columns:1fr}.buttons button{min-height:58px}}</style></head><body><main class="wrap"><h1>Approval history</h1><p class="lead">This inbox contains requests associated with your authenticated tenant. Pending requests are actionable. Approval records consent only; Lex rechecks governance and consumes it once when the agent retries the unchanged action.</p>${cards || '<p class="empty">No approval requests have been recorded for this tenant.</p>'}</main></body></html>`);
   } catch {
     return response('<!doctype html><title>Approvals unavailable</title><p>Approval requests could not be loaded. No action was authorized.</p>', 503);
   }
 }
 
-export async function GET(req?: Request): Promise<Response> {
-  const requestedNext = req ? new URL(req.url).searchParams.get('next') : null;
+export async function GET(req: Request): Promise<Response> {
+  const requestedNext = new URL(req.url).searchParams.get('next');
   if (requestedNext !== null && !validApprovalNext(requestedNext)) return response('<!doctype html><title>Invalid return target</title><p>The sign-in return target was rejected.</p>', 400);
   const next = requestedNext ?? '/approvals';
-  const cookieHeader = req ? req.headers.get('cookie') : (await requestHeaders()).get('cookie');
+  const cookieHeader = req.headers.get('cookie');
   try {
-    const ownerId = await approvalOwnerFromCookie(cookieHeader);
-    if (ownerId) return approvalsPage(ownerId);
+    const account = await accountFromCookie(cookieHeader);
+    if (account) return approvalsPage(account.tenantId);
   } catch {
     return response('<!doctype html><title>Approvals unavailable</title><p>Owner authentication is temporarily unavailable.</p>', 503);
   }
@@ -115,12 +110,14 @@ export async function POST(req: Request): Promise<Response> {
   const limit = await checkRateLimit(`approval-owner-login:${getClientIp(req)}`, 10, 60 * 60);
   if (limit.storageError) return response(signInPage('Sign-in is temporarily unavailable.', next), 503);
   if (!limit.allowed) return response(signInPage('Too many sign-in attempts. Try again later.', next), 429);
-  const submitted = String(form.get('api_key') ?? '');
+  const email = String(form.get('email') ?? '');
+  const password = String(form.get('password') ?? '');
   try {
-    const owner = await authenticateApprovalOwner(submitted);
-    if (!owner) return response(signInPage('The API key was not accepted.', next), 401);
+    const account = await authenticateAccount(email, password);
+    if (!account) return response(signInPage('Email or password was not accepted.', next), 401);
+    if (!account.verified) return response(signInPage('Verify your email address before signing in.', next), 403);
     const headers = new Headers({ location: next, 'cache-control': 'no-store' });
-    headers.append('set-cookie', createApprovalOwnerCookie(owner));
+    headers.append('set-cookie', createAccountSessionCookie(account.user));
     return new Response(null, { status: 303, headers });
   } catch {
     return response(signInPage('Owner verification is temporarily unavailable.', next), 503);

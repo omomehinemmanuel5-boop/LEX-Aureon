@@ -491,6 +491,7 @@ async function handlePost(req: Request) {
     const operator = isOperator(req);
     let profile: McpAccessProfile = operator ? 'operator' : 'public';
     let ownerId = 'operator';
+    let tenantId: string | null = null;
     let actorId = 'operator';
     let apiKey: string | null = null;
     let sessionKeyId: string | null = null;
@@ -506,6 +507,7 @@ async function handlePost(req: Request) {
         }
         sessionKeyId = session.key.id;
         ownerId = session.key.id;
+        tenantId = session.key.tenant_id;
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(session.key.plan);
       } else {
@@ -536,6 +538,7 @@ async function handlePost(req: Request) {
           sessionKeyId = oauth.keyId;
           apiKey = null;
           ownerId = String(oauthKey.id);
+          tenantId = oauthKey.tenant_id;
           actorId = `api_key:${ownerId}`;
           profile = profileForApiKey(oauthKey.plan);
         } else {
@@ -548,6 +551,7 @@ async function handlePost(req: Request) {
             return unauthorized(id);
           }
           ownerId = String(keyCheck.key?.id ?? 'anonymous');
+          tenantId = keyCheck.key?.tenant_id ?? null;
           actorId = `api_key:${ownerId}`;
           profile = profileForApiKey(keyCheck.key?.plan);
         }
@@ -606,6 +610,7 @@ async function handlePost(req: Request) {
           return unauthorized(id);
         }
         ownerId = String(consumption.key?.id ?? 'anonymous');
+        tenantId = consumption.key?.tenant_id ?? null;
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
         if (!hasOperatorAuthority(operator, profile)) return unauthorized(id);
@@ -728,6 +733,7 @@ async function handlePost(req: Request) {
       try {
         const pending = await createApprovalRequest({
           ownerId,
+            tenantId: tenantId ?? '',
           sessionId: requestedSession,
           toolName: requestedTool,
           args: { ...normalizedRequestedArgs, session_id: requestedSession },
@@ -772,6 +778,7 @@ async function handlePost(req: Request) {
           return unauthorized(id);
         }
         ownerId = String(consumption.key?.id ?? 'anonymous');
+        tenantId = consumption.key?.tenant_id ?? null;
         actorId = `api_key:${ownerId}`;
         profile = profileForApiKey(consumption.key?.plan);
         if (toolName === 'authorize_external_action' && !hasOperatorAuthority(operator, profile)) {
@@ -897,6 +904,7 @@ async function handlePost(req: Request) {
           if (!review.approvalRequired) return mcpToolResult(id, review);
           const pending = await createApprovalRequest({
             ownerId,
+            tenantId: tenantId ?? '',
             sessionId,
             toolName: 'consume_external_action',
             args: { environment_id: environmentId, manifest, action_args: actionArgs, session_id: sessionId },
@@ -995,6 +1003,7 @@ async function handlePost(req: Request) {
       // profile selection, so a concurrent revoke/plan change cannot retain
       // stale privileges from the preflight validation above.
       ownerId = String(consumption.key?.id ?? 'anonymous');
+      tenantId = consumption.key?.tenant_id ?? null;
       actorId = `api_key:${ownerId}`;
       profile = profileForApiKey(consumption.key?.plan);
       if (!canCallTool(profile, dispatchToolName)) return unauthorized(id);
@@ -1064,7 +1073,7 @@ async function handlePost(req: Request) {
           if (rate.storageError) throw new Error('Approval request admission is unavailable.');
           if (!rate.allowed) return 'Error: approval request rate limit reached; try again later.';
           const exactArgs = { ...proposedArgs, session_id: sessionId };
-          const created = await createApprovalRequest({ ownerId, sessionId, toolName: requestedTool, args: exactArgs });
+          const created = await createApprovalRequest({ ownerId, tenantId: tenantId ?? '', sessionId, toolName: requestedTool, args: exactArgs });
           return JSON.stringify({
             request_id: created.requestId,
             expires_at: new Date(created.expiresAt).toISOString(),
@@ -1238,6 +1247,7 @@ async function handlePost(req: Request) {
         try {
           const pending = await createApprovalRequest({
             ownerId,
+            tenantId: tenantId ?? '',
             sessionId,
             toolName: dispatchToolName,
             args: toolArgs,
@@ -1426,7 +1436,7 @@ async function handlePost(req: Request) {
               message: 'Scoped grant no longer matched; approval fallback could not be admitted.',
             }, id }, { status: approvalRate.storageError ? 503 : 429 });
           }
-          const pending = await createApprovalRequest({ ownerId, sessionId, toolName: dispatchToolName, args: fallbackArgs });
+          const pending = await createApprovalRequest({ ownerId, tenantId: tenantId ?? '', sessionId, toolName: dispatchToolName, args: fallbackArgs });
           await persistNonStateMovingMcpReceipt({
             sessionId, actorId, toolName: dispatchToolName, args: fallbackArgs,
             decision: 'APPROVAL_REQUIRED',
@@ -1688,7 +1698,7 @@ async function handlePost(req: Request) {
         }
         const fallbackArgs = { ...(toolArgs as Record<string, unknown>) };
         delete fallbackArgs.__scoped_grant_id;
-        const pending = await createApprovalRequest({ ownerId, sessionId, toolName: dispatchToolName, args: fallbackArgs });
+        const pending = await createApprovalRequest({ ownerId, tenantId: tenantId ?? '', sessionId, toolName: dispatchToolName, args: fallbackArgs });
         await persistNonStateMovingMcpReceipt({
           sessionId, actorId, toolName: dispatchToolName, args: fallbackArgs,
           decision: 'APPROVAL_REQUIRED',
