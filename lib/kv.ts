@@ -120,7 +120,7 @@ export const RECOVERY_RATE   = CONSTITUTION.RECOVERY_RATE;
 export const SIGMA_WINDOW    = 10;
 export const SIGMA_THRESHOLD = CONSTITUTION.SIGMA_THRESHOLD;
 export const STABILITY_VELOCITY = RECOVERY_STABILITY_THRESHOLD;
-/** Minimum server-side dwell between canonical stability samples. */
+/** Minimum database-clock dwell between canonical stability samples. */
 export const MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS = 5_000;
 
 // ── Z-weight update constants (Theorem 3a/3b — Banach fixed-point proof) ──────
