@@ -166,3 +166,14 @@ Recovery-state classification also requires exact-zero sigma for VERIFIED/NORMAL
 
 
 The operator canary preflight now also requires velocity to be finite and strictly below `RECOVERY_STABILITY_THRESHOLD` before starting the diagnostic probe, and rechecks velocity in the diagnostic and post-probe canonical state. This closes a second preflight/evidence mismatch: a canary must not be attempted when the evidence validator will reject it for unstable velocity.
+
+
+## Canonical stability dwell enforcement
+
+Both `recordZTrajObservation()` and `updateZTraj()` enforce a server-side
+minimum five-second dwell before incrementing canonical `z_traj.n_stable`.
+A healthy but too-early sample may update the measured trajectory, but it
+cannot earn another stability count. A genuine velocity or M-threshold failure
+still resets the count. The recovery-plane's persisted-breach escalation
+(10/15 seconds) remains an additional, stricter precondition for its own pulse
+path. The two-second candidate is not enabled by this change.
