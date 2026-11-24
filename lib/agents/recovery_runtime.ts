@@ -1,5 +1,5 @@
 import { sigmaWithinBound } from './sigma_decay';
-import { getZTraj, recordZTrajObservation } from '../kv';
+import { getZTraj, recordZTrajObservation, MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS } from '../kv';
 import { getClient } from '../db';
 import {
   TARGET_MARGIN,
@@ -13,7 +13,7 @@ import { readCanonicalGovernanceState } from './canonical_governance_state';
 
 const MAX_RECOVERY_STEP = 0.08;
 
-export const RECOVERY_MIN_OBSERVATION_INTERVAL_MS = 5_000;
+export const RECOVERY_MIN_OBSERVATION_INTERVAL_MS = MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS;
 export const RECOVERY_ONE_BREACH_OBSERVATION_INTERVAL_MS = 10_000;
 export const RECOVERY_MULTIPLE_BREACH_OBSERVATION_INTERVAL_MS = 15_000;
 
