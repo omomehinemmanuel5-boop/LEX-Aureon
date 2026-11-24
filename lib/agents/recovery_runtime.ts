@@ -341,7 +341,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     const reason = wasMoving
       ? `A zero-velocity baseline was recorded, but the prior velocity ${current.velocity.toFixed(4)} exceeded the stability threshold ${RECOVERY_STABILITY_THRESHOLD}; wait at least ${observationIntervalMs / 1000}s before counting the next observation.`
       : canonical.available && !sigmaWithinBound(canonical.state.sigmaViol)
-        ? `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); canonical sigma_viol=${String(canonical.state.sigmaViol)} must be within SIGMA_THRESHOLD before canary verification. Continue healthy observations until residual stress decays to zero.`
+        ? `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); canonical sigma_viol=${String(canonical.state.sigmaViol)} must equal exactly 0 before canary verification. Continue healthy observations until the residual reaches exact zero.`
         : canonical.available && canonical.state.canaryPassed
           ? 'Stable recovery observation recorded; exact-snapshot canary evidence is current.'
           : `Stable recovery observation recorded (${nextStable}/${CONSTITUTION.N_MIN}); the server evaluates the canonical canary predicate automatically when all prerequisites pass. Consequential execution still requires ordinary authorization.`;
@@ -443,7 +443,7 @@ export async function advanceRecoveryPlane(sessionId: string): Promise<RecoveryP
     ? canonical.state.nStable < CONSTITUTION.N_MIN
       ? `Recovery observation ${canonical.state.nStable}/${CONSTITUTION.N_MIN}; continue safe governed observations before canary verification.`
       : !sigmaWithinBound(canonical.state.sigmaViol)
-        ? `Canonical sigma_viol=${String(canonical.state.sigmaViol)} must be within SIGMA_THRESHOLD before canary verification; continue healthy observations until residual stress decays to zero.`
+        ? `Canonical sigma_viol=${String(canonical.state.sigmaViol)} must equal exactly 0 before canary verification; continue healthy observations until the residual reaches exact zero.`
         : 'Stability thresholds are met, but no passing canary is persisted for this exact state snapshot; the server issues the recovery canary automatically on the next governed read; retry the action.'
     : reason;
 
