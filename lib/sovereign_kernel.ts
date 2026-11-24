@@ -942,7 +942,8 @@ export class SovereignKernel {
         : LEX_IDENTITY;
       const systemContent = identityBlock ? `${identityBlock}\n\n${context}` : context;
       const result = await generateGoverned([{ role: 'system', content: systemContent }, { role: 'user', content: prompt }]);
-      return result.text ? result : { ...result, text: 'I was unable to generate a response at this time.' };
+      if (!result.text) return { ...result, provider: 'static', text: '' };
+      return result;
     } catch (e) {
       console.error('LLM governed call error:', e);
       return { text: 'I was unable to generate a response at this time.', provider: 'error', model: 'none', fallback_used: true, attempts: 0 };
