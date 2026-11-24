@@ -82,7 +82,8 @@ Each write records:
 - A write beyond `max_files` (10) is refused.
 - A plan with a path outside the allowlist is refused at creation.
 - A plan with a `lib/` or `app/` path in tier 1 is refused at creation.
-- A plan with `main` as the branch or base is refused at creation.
+- A plan whose branch is `main` is refused at creation.
+- A PR whose base is `main` is refused at creation. A plan may branch from `main`; only the PR target is restricted.
 - A draft plan cannot execute before the operator approves it.
 - A write while recovery is not VERIFIED is refused.
 - A write with a `fallback` measurement blocks the plan.
