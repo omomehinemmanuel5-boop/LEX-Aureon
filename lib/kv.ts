@@ -360,6 +360,28 @@ async function ensureZTrajObservationEventsSchema(): Promise<void> {
   await zTrajObservationEventsReady;
 }
 
+// SQLite/libSQL can reject a concurrent BEGIN IMMEDIATE with SQLITE_BUSY while
+// another writer owns the database lock. Retry only transaction acquisition;
+// never replay a transaction body after a partial write.
+const Z_TRAJ_WRITE_BUSY_RETRY_DELAYS_MS = [10, 20, 40, 80, 160, 320] as const;
+
+async function beginZTrajWriteTransaction(client: ReturnType<typeof getClient>) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await client.transaction('write');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+      const isBusy = code === 'SQLITE_BUSY' || /SQLITE_BUSY|database is locked/i.test(message);
+      const delay = Z_TRAJ_WRITE_BUSY_RETRY_DELAYS_MS[attempt];
+      if (!isBusy || delay === undefined) throw error;
+      await new Promise<void>(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
 // updateZTraj — applies the proven z-weight rule under one serialized write
 // transaction. The event key is mandatory and unique per logical kernel turn.
 export async function updateZTraj(
@@ -381,7 +403,7 @@ export async function updateZTraj(
   }
   await ensureZTrajObservationEventsSchema();
 
-  const tx = await client.transaction('write');
+  const tx = await beginZTrajWriteTransaction(client);
   try {
     const selected = await tx.execute({
       sql: 'SELECT * FROM z_traj WHERE session_id = ?',
