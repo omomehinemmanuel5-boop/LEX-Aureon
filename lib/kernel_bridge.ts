@@ -318,7 +318,10 @@ export async function writeKernelReceipt(
     const prevCRS = previousTraj
       ? { c: previousTraj.last_c, r: previousTraj.last_r, s: previousTraj.last_s }
       : null;
-    await updateZTraj(sessionId, currentCRS, prevCRS, result.attack_pressure, lawEvents);
+    // Bind the trajectory transition to the logical governed turn. Replays of
+    // the same receipt input/output pair cannot count as a second observation.
+    const observationId = `turn:${turn}:input:${inputHash}:output:${outputHash}:receipt:${receiptHash}`;
+    await updateZTraj(sessionId, currentCRS, prevCRS, result.attack_pressure, lawEvents, observationId);
   } catch (e) {
     logger.error('kernel_bridge.write', 'z_traj update failed', errorFields(e));
   }
