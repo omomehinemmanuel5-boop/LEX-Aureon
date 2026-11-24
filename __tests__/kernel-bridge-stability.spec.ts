@@ -96,12 +96,12 @@ describe('writeKernelReceipt turn-to-turn stability baseline', () => {
     try {
       vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
       const firstGoverned = { C: 0.334, R: 0.333, S: 0.333 };
-    const secondGoverned = { C: 0.335, R: 0.332, S: 0.333 };
-    const deliberatelyDifferentRaw = { C: 0.1, R: 0.8, S: 0.1 };
+      const secondGoverned = { C: 0.335, R: 0.332, S: 0.333 };
+      const deliberatelyDifferentRaw = { C: 0.1, R: 0.8, S: 0.1 };
 
-    await writeKernelReceipt('stability-session', 1, cycleResult(firstGoverned, deliberatelyDifferentRaw));
-    expect(trajectory.current?.n_stable).toBe(1);
-    expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
+      await writeKernelReceipt('stability-session', 1, cycleResult(firstGoverned, deliberatelyDifferentRaw));
+      expect(trajectory.current?.n_stable).toBe(1);
+      expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
 
       vi.advanceTimersByTime(5_000);
       await writeKernelReceipt('stability-session', 2, cycleResult(secondGoverned, deliberatelyDifferentRaw));
