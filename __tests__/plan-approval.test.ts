@@ -44,7 +44,7 @@ const activePlan = (overrides: Record<string, unknown> = {}) => {
   return approvePlan({ draft, approverId: OPERATOR, approvalRequestId: `req-${draft.planId}`, nowMs: NOW });
 };
 
-const execOpts = (plan: any, overrides: Record<string, unknown> = {}) => ({
+const execOpts = (plan: unknown, overrides: Record<string, unknown> = {}) => ({
   plan,
   index: 0,
   path: 'docs/a.md',
