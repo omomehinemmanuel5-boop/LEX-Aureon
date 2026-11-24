@@ -81,7 +81,7 @@ beforeEach(() => {
       observationEvents.add(key);
       return { rows: [], rowsAffected: 1 };
     }
-    if (sql.startsWith('SELECT strftime')) {
+    if (sql.includes('AS now_utc')) {
       const previous = args[1] == null ? Number.NaN : Date.parse(String(args[1]));
       const now = Date.now();
       return { rows: [{
