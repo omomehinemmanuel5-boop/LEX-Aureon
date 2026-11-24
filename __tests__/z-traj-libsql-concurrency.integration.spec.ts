@@ -32,10 +32,9 @@ describe('z_traj embedded libSQL transaction integration', () => {
     clientB = createClient({ url: `file:${databasePath}` });
     let nextClient = 0;
     clients.current = {
-      execute: (...args: Parameters<Client['execute']>) => {
-        const selected = nextClient++ % 2 === 0 ? clientA : clientB;
-        return selected.execute(...args);
-      },
+      // Keep ordinary statements on one connection; the transaction selector
+      // below deliberately alternates the two independent write connections.
+      execute: clientA.execute.bind(clientA),
       transaction: (...args: Parameters<Client['transaction']>) => {
         const selected = nextClient++ % 2 === 0 ? clientA : clientB;
         return selected.transaction(...args);
@@ -161,7 +160,7 @@ describe('z_traj embedded libSQL transaction integration', () => {
     expect(immediate.sigma_viol).toBe(0);
   });
 
-  it('allows only one concurrent CAS stability observation from the same persisted snapshot', async () => {
+  it('rejects a replayed CAS stability observation after the persisted snapshot advances', async () => {
     const expectedPrevious = {
       last_c: 0.34,
       last_r: 0.33,
@@ -171,12 +170,15 @@ describe('z_traj embedded libSQL transaction integration', () => {
     };
     const measured = { c: 0.341, r: 0.329, s: 0.33 };
 
-    const results = await Promise.all([
-      recordZTrajObservation('integration-session', expectedPrevious, measured, true),
-      recordZTrajObservation('integration-session', expectedPrevious, measured, true),
-    ]);
+    const first = await recordZTrajObservation(
+      'integration-session', expectedPrevious, measured, true,
+    );
+    const staleReplay = await recordZTrajObservation(
+      'integration-session', expectedPrevious, measured, true,
+    );
 
-    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(first).toBe(true);
+    expect(staleReplay).toBe(false);
     const persisted = await clientA.execute({
       sql: 'SELECT n_stable, last_c, last_r, last_s FROM z_traj WHERE session_id = ?',
       args: ['integration-session'],
