@@ -23,11 +23,13 @@ describe('z_traj embedded libSQL transaction integration', () => {
   beforeAll(async () => {
     directory = await mkdtemp(join(tmpdir(), 'lex-ztraj-concurrency-'));
     databasePath = join(directory, 'trajectory.db');
+  });
+
+  beforeEach(async () => {
+    // Fresh connections per case prevent a completed test's local SQLite
+    // cursor state from leaking into the next transaction scenario.
     clientA = createClient({ url: `file:${databasePath}` });
     clientB = createClient({ url: `file:${databasePath}` });
-
-    // Route successive transactions through independent SQLite connections
-    // sharing one isolated file-backed libSQL database.
     let nextClient = 0;
     clients.current = {
       execute: clientA.execute.bind(clientA),
@@ -38,7 +40,7 @@ describe('z_traj embedded libSQL transaction integration', () => {
     } as Client;
 
     await clientA.execute(`
-      CREATE TABLE z_traj (
+      CREATE TABLE IF NOT EXISTS z_traj (
         session_id TEXT PRIMARY KEY,
         velocity REAL NOT NULL,
         n_stable INTEGER NOT NULL,
@@ -55,14 +57,6 @@ describe('z_traj embedded libSQL transaction integration', () => {
         updated_at TEXT NOT NULL
       )
     `);
-  });
-
-  afterAll(async () => {
-    await Promise.all([clientA.close(), clientB.close()]);
-    await rm(directory, { recursive: true, force: true });
-  });
-
-  beforeEach(async () => {
     await clientA.execute(`CREATE TABLE IF NOT EXISTS z_traj_observation_events (
       session_id TEXT NOT NULL,
       event_id TEXT NOT NULL,
@@ -79,6 +73,14 @@ describe('z_traj embedded libSQL transaction integration', () => {
         0.333333, 0.333333, 0.333334, 0, '2026-01-01T00:00:00.000Z')`,
       args: ['integration-session'],
     });
+  });
+
+  afterEach(async () => {
+    await Promise.all([clientA.close(), clientB.close()]);
+  });
+
+  afterAll(async () => {
+    await rm(directory, { recursive: true, force: true });
   });
 
   it('serializes distinct concurrent observations without losing either event or using a stale CRS baseline', async () => {
