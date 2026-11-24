@@ -21,6 +21,26 @@ describe('constitutional recovery policy', () => {
     expect(gate.reason).toContain('0.05');
   });
 
+  it('fails closed when canonical M is non-finite', () => {
+    for (const M of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(deriveRecoveryState(M, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('QUARANTINED');
+      for (const capability of ['read', 'write'] as const) {
+        const gate = recoveryCapabilityAllowed(M, capability, { nStable: 3, sigmaViol: 0, canaryPassed: true });
+        expect(gate.allowed).toBe(false);
+        expect(gate.state).toBe('QUARANTINED');
+      }
+    }
+  });
+
+  it('fails closed when the stable-observation count is non-finite', () => {
+    for (const nStable of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(deriveRecoveryState(0.25, { nStable, sigmaViol: 0, canaryPassed: true })).toBe('RESTORING');
+      const gate = recoveryCapabilityAllowed(0.25, 'write', { nStable, sigmaViol: 0, canaryPassed: true });
+      expect(gate.allowed).toBe(false);
+      expect(gate.reason).toContain('must be finite');
+    }
+  });
+
   it('keeps 0.05 through 0.149... in recovery-only mode', () => {
     for (const m of [0.05, 0.079, 0.08, 0.149]) {
       expect(recoveryCapabilityAllowed(m, 'read', { nStable: 0, sigmaViol: 1 }).allowed).toBe(true);
