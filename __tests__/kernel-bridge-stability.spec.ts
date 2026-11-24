@@ -62,7 +62,7 @@ function persistedTrajectory(crs: CRS, nStable = 0) {
     drift_dir: 'stable', sigma_viol: 0, last_m: Math.min(crs.C, crs.R, crs.S),
     last_c: crs.C, last_r: crs.R, last_s: crs.S,
     z_c: 1 / 3, z_r: 1 / 3, z_s: 1 / 3,
-    attack_pressure: 0, updated_at: new Date().toISOString(),
+    attack_pressure: 0, updated_at: new Date(Date.now() - 5_000).toISOString(),
   };
 }
 
@@ -92,7 +92,10 @@ beforeEach(() => {
 
 describe('writeKernelReceipt turn-to-turn stability baseline', () => {
   it('increments n_stable from zero to one and then two for near-identical governed turns', async () => {
-    const firstGoverned = { C: 0.334, R: 0.333, S: 0.333 };
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const firstGoverned = { C: 0.334, R: 0.333, S: 0.333 };
     const secondGoverned = { C: 0.335, R: 0.332, S: 0.333 };
     const deliberatelyDifferentRaw = { C: 0.1, R: 0.8, S: 0.1 };
 
@@ -100,9 +103,13 @@ describe('writeKernelReceipt turn-to-turn stability baseline', () => {
     expect(trajectory.current?.n_stable).toBe(1);
     expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
 
-    await writeKernelReceipt('stability-session', 2, cycleResult(secondGoverned, deliberatelyDifferentRaw));
-    expect(trajectory.current?.n_stable).toBe(2);
-    expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
+      vi.advanceTimersByTime(5_000);
+      await writeKernelReceipt('stability-session', 2, cycleResult(secondGoverned, deliberatelyDifferentRaw));
+      expect(trajectory.current?.n_stable).toBe(2);
+      expect(trajectory.current?.velocity).toBeLessThan(STABILITY_VELOCITY);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('resets n_stable to zero after a large governed-state jump', async () => {
