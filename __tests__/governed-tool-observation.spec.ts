@@ -152,7 +152,7 @@ beforeEach(() => {
       const found = mocks.rows.get(String(args[0]));
       return { rows: found ? [found] : [] };
     }
-    if (sql.startsWith('UPDATE z_traj SET\\n          velocity')) {
+    if (sql.startsWith('UPDATE z_traj SET') && sql.includes('velocity = ?')) {
       const [velocity, nStable, driftDir, sigmaViol, lastM, lastC, lastR, lastS, zC, zR, zS, attackPressure, updatedAt, sessionId, expectedUpdatedAt] = args;
       const current = mocks.rows.get(String(sessionId));
       if (!current || String(current.updated_at) !== String(expectedUpdatedAt)) return { rows: [], rowsAffected: 0 };
