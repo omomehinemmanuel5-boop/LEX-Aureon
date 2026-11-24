@@ -12,6 +12,7 @@ vi.mock('../lib/db', () => ({ getClient: () => ({ execute: mocks.dbExecute }) })
 vi.mock('../lib/kv', () => ({
   getZTraj: mocks.getZTraj,
   recordZTrajObservation: mocks.recordZTrajObservation,
+  MIN_CANONICAL_STABILITY_OBSERVATION_INTERVAL_MS: 5_000,
 }));
 
 vi.mock('../lib/agents/canonical_governance_state', () => ({
