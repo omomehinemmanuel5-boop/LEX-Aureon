@@ -203,7 +203,10 @@ function zTrajRow(lastC: number, lastR: number, lastS: number, nStable: number) 
 
 describe('z_traj stability threshold', () => {
   it('counts three consecutive 0.01 turns at M=0.30 and leaves canary N_MIN at 3', async () => {
-    const { kv, rows } = await loadKvWithMemoryZTraj();
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const { kv, rows } = await loadKvWithMemoryZTraj();
     rows.set('stable-session', zTrajRow(0.30, 0.35, 0.35, 0));
     expect(kv.STABILITY_VELOCITY).toBe(0.02);
 
@@ -213,16 +216,20 @@ describe('z_traj stability threshold', () => {
       { c: 0.30, r: 0.35, s: 0.35 },
       { c: 0.30, r: 0.35 - delta, s: 0.35 + delta },
     ];
-    for (const [index, current] of turns.entries()) {
-      const previous = rows.get('stable-session')!;
+      for (const [index, current] of turns.entries()) {
+        vi.advanceTimersByTime(5_000);
+        const previous = rows.get('stable-session')!;
       const updated = await kv.updateZTraj('stable-session', current, {
         c: Number(previous.last_c), r: Number(previous.last_r), s: Number(previous.last_s),
       });
       expect(updated.velocity).toBeCloseTo(0.01, 10);
       expect(updated.n_stable).toBe(index + 1);
-      expect(updated.last_m).toBeGreaterThanOrEqual(0.30);
+        expect(updated.last_m).toBeGreaterThanOrEqual(0.30);
+      }
+      expect(kv.N_MIN).toBe(3);
+    } finally {
+      vi.useRealTimers();
     }
-    expect(kv.N_MIN).toBe(3);
   });
 
   it('resets the streak at velocity 0.06', async () => {
