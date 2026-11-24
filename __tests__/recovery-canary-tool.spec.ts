@@ -89,7 +89,7 @@ describe('operator recovery canary probe', () => {
     const result = JSON.parse(await run_recovery_canary({ session_id: sessionId }));
 
     expect(result.status).toBe('not_run');
-    expect(result.reason).toContain('n_stable 2 < N_MIN');
+    expect(result.reason).toContain('n_stable 2 must be finite and >= N_MIN 3');
     expect(readCanonicalGovernanceState).toHaveBeenCalledTimes(1);
   });
 
