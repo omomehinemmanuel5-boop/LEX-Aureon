@@ -58,7 +58,7 @@ const execOpts = (plan: unknown, overrides: Record<string, unknown> = {}) => ({
 
 const expectCode = (fn: () => unknown, code: string) => {
   let caught: { code?: string } | undefined;
-  try { fn(); } catch (e) { caught = e; }
+  try { fn(); } catch (e) { caught = e as { code?: string }; }
   expect(caught, `expected PlanError ${code}`).toBeDefined();
   expect(caught.code).toBe(code);
 };
