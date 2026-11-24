@@ -270,6 +270,16 @@ describe('health-band recovery canary validity', () => {
       await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol }))
         .resolves.toMatchObject({ passed: false, receiptId: null });
     }
+    for (const M of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      dbExecute.mockResolvedValue({ rows: [liveRow()] });
+      await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, M }))
+        .resolves.toMatchObject({ passed: false, receiptId: null });
+    }
+    for (const nStable of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      dbExecute.mockResolvedValue({ rows: [liveRow()] });
+      await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, nStable }))
+        .resolves.toMatchObject({ passed: false, receiptId: null });
+    }
     dbExecute.mockResolvedValue({ rows: [liveRow()] });
     await expect(readRecoveryCanaryEvidence(snapshot.sessionId, 'a'.repeat(64), { ...current, sigmaViol: 0 }))
       .resolves.toMatchObject({ passed: true, receiptId: 'bounded-canary-receipt' });
