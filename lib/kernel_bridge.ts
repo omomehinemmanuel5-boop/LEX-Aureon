@@ -308,8 +308,8 @@ export async function writeKernelReceipt(
   }
 
   // ── Update z_traj (proven Banach rule) BEFORE receipt write ──────────────
-  // Never retried: the z-update rule is stateful — re-applying it would
-  // double-step the trajectory.
+  // The write is transactional and keyed to the logical turn, so a replay
+  // cannot double-step the trajectory.
   try {
     const currentCRS = { c: result.state.C, r: result.state.R, s: result.state.S };
     // Stability is turn-to-turn movement in the persisted trajectory, not the
