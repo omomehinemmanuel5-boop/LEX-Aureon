@@ -36,7 +36,7 @@ describe('constitutional recovery policy', () => {
     expect(at.state).toBe('VERIFIED');
   });
 
-  it('restores ordinary writes after verified evidence but keeps destructive actions gated until NORMAL', () => {
+  it('restores ordinary writes only with exact-zero sigma and keeps destructive actions gated until NORMAL', () => {
     const unverified = recoveryCapabilityAllowed(0.20, 'write', { nStable: 0, sigmaViol: 0, canaryPassed: false });
     const verified = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true });
     const destructive = recoveryCapabilityAllowed(0.20, 'destructive', { nStable: 3, sigmaViol: 0, canaryPassed: true });
@@ -91,7 +91,7 @@ describe('constitutional recovery policy', () => {
 describe('canonical governance state', () => {
   beforeEach(() => { vi.resetAllMocks(); });
 
-  it('projects CRS and recovery state from z_traj rather than local tool scores', async () => {
+  it('projects CRS and exact-zero recovery state from z_traj rather than local tool scores', async () => {
     dbExecute
       .mockResolvedValueOnce({ rows: [{ last_c: 0.42, last_r: 0.18, last_s: 0.31, velocity: 0.001, sigma_viol: 0.04, n_stable: 3, updated_at: '2026-10-10T00:00:00.000Z' }] })
       .mockResolvedValueOnce({ rows: [{ sigma_viol: 0.12, tool_calls: 7 }] })
@@ -107,10 +107,10 @@ describe('canonical governance state', () => {
       // The legacy tool-session row reports 0.12, but z_traj is authoritative.
       sigmaViol: 0.04, toolCalls: 7, healthBand: 'ALERT',
       trajectoryAvailable: true,
-      // Sigma 0.04 is within SIGMA_THRESHOLD, and the other predicate terms hold,
-      // so the healthy trajectory is verified and the server issues its canary.
-      recoveryState: 'VERIFIED',
-      canaryPassed: true,
+      // Positive canonical sigma is never eligible for a canary, even below
+      // SIGMA_THRESHOLD; the session remains RESTORING.
+      recoveryState: 'RESTORING',
+      canaryPassed: false,
       canaryReceiptId: expect.any(String),
     });
     expect(result.state.stateFingerprint).toMatch(/^[a-f0-9]{64}$/);
@@ -181,16 +181,15 @@ describe('canonical governance state', () => {
     expect(canonicalExecutionAllowed(result.state).allowed).toBe(false);
   });
 
-  it('classifies recovery as verified when sigma is within SIGMA_THRESHOLD, and not when above it', () => {
-    const within = deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
-    expect(within).toBe('VERIFIED');
-    const above = deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0.3, canaryPassed: true });
-    expect(above).toBe('RESTORING');
-    const gate = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0.001, canaryPassed: true });
-    expect(gate.allowed).toBe(true);
-    const aboveGate = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0.3, canaryPassed: true });
-    expect(aboveGate.allowed).toBe(false);
-    expect(aboveGate.reason).toContain('SIGMA_THRESHOLD');
+  it('keeps recovery RESTORING for every positive sigma residual', () => {
+    for (const sigmaViol of [Number.MIN_VALUE, 1e-12, 0.001, 0.249, 0.25]) {
+      expect(deriveRecoveryState(0.20, { nStable: 3, sigmaViol, canaryPassed: true })).toBe('RESTORING');
+      const gate = recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol, canaryPassed: true });
+      expect(gate.allowed).toBe(false);
+      expect(gate.reason).toContain('exactly 0');
+    }
+    expect(deriveRecoveryState(0.20, { nStable: 3, sigmaViol: 0, canaryPassed: true })).toBe('VERIFIED');
+    expect(recoveryCapabilityAllowed(0.20, 'write', { nStable: 3, sigmaViol: 0, canaryPassed: true }).allowed).toBe(true);
   });
 
   it.each([
