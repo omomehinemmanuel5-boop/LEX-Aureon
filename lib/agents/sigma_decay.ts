@@ -1,4 +1,3 @@
-import { CONSTITUTION } from '../constitution';
 /**
  * Finite-time decay policy for the canonical constitutional stress accumulator.
  *
