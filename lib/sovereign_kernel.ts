@@ -1160,7 +1160,7 @@ export class SovereignKernel {
         governedSource     = 'raw_fallback';
       } else if (governedExhausted && !rawSucceeded) {
         // Both arms exhausted — no real content produced either side.
-        governedResponse  = governedLLM.text;
+        governedResponse  = governedLLM.text || 'I was unable to generate a response at this time.';
         governedProvider  = governedLLM.provider;
         governedSource     = 'unavailable';
       } else {
