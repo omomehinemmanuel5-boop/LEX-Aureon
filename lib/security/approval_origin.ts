@@ -3,35 +3,34 @@ const OFFICIAL_LEX_ORIGINS = new Set([
   'https://www.lexaureon.com',
 ]);
 
-/**
- * Prefer the explicit Origin header. Some WebKit form-navigation requests
- * omit Origin; accept those only when Fetch Metadata proves a same-origin
- * top-level HTML form navigation. Referer is intentionally suppressed on
- * approval pages to protect the bearer-capability URL.
- *
- * An explicit invalid Origin (including "null") always fails closed.
- */
+function isOfficialOrigin(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.origin === value && OFFICIAL_LEX_ORIGINS.has(parsed.origin);
+  } catch {
+    return false;
+  }
+}
+
+/** Strict Origin validation retained for account and key-management routes. */
 export function isTrustedApprovalOrigin(req: Request): boolean {
   const suppliedOrigin = req.headers.get('origin');
+  return suppliedOrigin !== null && isOfficialOrigin(suppliedOrigin);
+}
 
-  if (suppliedOrigin !== null) {
-    try {
-      const parsedOrigin = new URL(suppliedOrigin);
-      return parsedOrigin.origin === suppliedOrigin
-        && OFFICIAL_LEX_ORIGINS.has(parsedOrigin.origin);
-    } catch {
-      return false;
-    }
-  }
+/**
+ * Approval links use no-referrer to avoid leaking their bearer capability.
+ * When WebKit omits Origin on a native form navigation, use Fetch Metadata as
+ * a narrowly scoped fallback. Explicit invalid Origins always fail closed.
+ */
+export function isTrustedApprovalDecisionOrigin(req: Request): boolean {
+  const suppliedOrigin = req.headers.get('origin');
+  if (suppliedOrigin !== null) return isOfficialOrigin(suppliedOrigin);
 
-  const fetchSite = req.headers.get('sec-fetch-site');
-  const fetchMode = req.headers.get('sec-fetch-mode');
-  const fetchDest = req.headers.get('sec-fetch-dest');
   const contentType = req.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-
   return req.method === 'POST'
-    && fetchSite === 'same-origin'
-    && fetchMode === 'navigate'
-    && fetchDest === 'document'
+    && req.headers.get('sec-fetch-site') === 'same-origin'
+    && req.headers.get('sec-fetch-mode') === 'navigate'
+    && req.headers.get('sec-fetch-dest') === 'document'
     && contentType === 'application/x-www-form-urlencoded';
 }
