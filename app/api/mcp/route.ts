@@ -1077,7 +1077,7 @@ async function handlePost(req: Request) {
           return JSON.stringify({
             request_id: created.requestId,
             expires_at: new Date(created.expiresAt).toISOString(),
-            approval_url: new URL(`/approvals#${created.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals/link?id=${created.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           });
         };
       }
