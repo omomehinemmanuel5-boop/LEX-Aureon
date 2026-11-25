@@ -402,6 +402,9 @@ npm run build          verify TypeScript
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
 
+[2026-11-25] SECURITY: Direct approval links now permit a single tenant-bound approve/deny decision without an email/password sign-in. Links are 128-bit random request IDs, expire with the underlying 15-minute request, require same-origin POSTs, and are consumed by one conditional pending-state update. The authenticated tenant inbox remains protected. Validation pending CI; no deployment performed.
+
+
 [2026-11-25] FIX: API Keys page now exposes the existing sign-in/registration modal to unauthenticated users; no authentication, tenant, or key-management logic changed.
 
 [2026-11-24] SECURITY (PR #271): Tenant approval access now uses verified owner accounts with scrypt passwords and signed HttpOnly sessions, rather than API-key sign-in. Approval inbox/decisions and key listing/creation/revocation are tenant-scoped; account email verification is required via Resend. Legacy API keys remain valid but are not auto-associated with accounts. Validation: typecheck, lint, production build, and 838 Vitest tests passed; deployment not performed.

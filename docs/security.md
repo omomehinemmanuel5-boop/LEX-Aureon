@@ -15,6 +15,8 @@ The governed application does not forward arbitrary tool calls to remote MCP ser
 Tool receipts store an authenticated actor identifier (`operator`, `api_key:<key-id>`, or `internal-agent`) and a hash of arguments, never the raw credential or raw arguments. This identifies the authenticated principal, not necessarily the human or model behind a shared key.
 
 ## Account and tenant-scoped approvals
+A direct approval URL is a short-lived bearer capability for one exact approval request. It is available only when the request row has a non-null tenant binding; the 128-bit random request ID is used to retrieve and decide that single row, and the conditional decision update requires the row to remain pending and unexpired. The link can be used by anyone who possesses it, so it must be treated as a secret and not forwarded. The authenticated tenant inbox and account/key management remain behind verified owner sessions. A recorded approval is consent only: execution still requires the unchanged action arguments, one-time consumption, and a fresh governance/recovery check.
+
 
 Tenants register with an email address, company name, and password. Passwords are stored as salted scrypt digests; raw passwords and verification tokens are never stored. Registration is not activated until the single-use, short-lived email verification link is confirmed. The verification email requires `RESEND_API_KEY`; when email delivery is not configured or fails, registration and approval sign-in fail closed. Browser account sessions are signed with `MCP_SESSION_SECRET` and stored only in an `HttpOnly`, `SameSite=Strict` cookie (also `Secure` in production). Account sign-in and sensitive browser POSTs validate the request origin and apply rate limits.
 

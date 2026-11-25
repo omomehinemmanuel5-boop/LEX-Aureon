@@ -747,7 +747,7 @@ describe('MCP constitutional dispatch boundary', () => {
     });
     const requestApprovalBody = response.body as { result?: { content?: Array<{ text?: string }> } };
     const requestApprovalText = requestApprovalBody.result?.content?.[0]?.text ?? '';
-    expect(requestApprovalText).toMatch(/^\{"request_id":"a{22}","expires_at":"[^"]+","approval_url":"https:\/\/[^/]+\/approvals#a{22}"\}$/);
+    expect(requestApprovalText).toMatch(/^\{"request_id":"a{22}","expires_at":"[^"]+","approval_url":"https:\/\/[^"]+\/approvals\/link\?id=a{22}"\}$/);
   });
 
   it('serves the actual operator tool definitions and branch schemas from tools/list', async () => {
@@ -1054,7 +1054,7 @@ describe('MCP constitutional dispatch boundary', () => {
       n_stable: 3,
       canary_passed: true,
     });
-    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals#a{22}$/);
+    expect(approvalResult.approval_url).toMatch(/^https:\/\/[^"]+\/approvals\/link\?id=a{22}$/);
     expect(checkRateLimit).toHaveBeenCalledWith('approval-implicit:private-test-1', 20, 3600);
   });
 
@@ -1306,7 +1306,7 @@ describe('MCP constitutional dispatch boundary', () => {
       args: { ...actionArgs, session_id: 'private-test-1:private-test-session' },
     }));
     const authorizationResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
-    expect(authorizationResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals#a{22}$/);
+    expect(authorizationResult.approval_url).toMatch(/^https:\/\/[^"]+\/approvals\/link\?id=a{22}$/);
     expect(createGovernanceApprovalToken).not.toHaveBeenCalled();
     expect((response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent)
       .toMatchObject({ status: 'approval_required', request_id: 'a'.repeat(22) });
@@ -1449,7 +1449,7 @@ describe('MCP constitutional dispatch boundary', () => {
       args: expect.objectContaining({ session_id: 'private-test-1:external-session' }),
     }));
     const externalApprovalResult = (response.body as unknown as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent;
-    expect(externalApprovalResult.approval_url).toMatch(/^https:\/\/[^/]+\/approvals#a{22}$/);
+    expect(externalApprovalResult.approval_url).toMatch(/^https:\/\/[^"]+\/approvals\/link\?id=a{22}$/);
 
     externalBrokerMocks.consumeExternalAction.mockResolvedValueOnce({ granted: true, reason: 'consumed once' });
     const consumeResponse = await POST(request({
