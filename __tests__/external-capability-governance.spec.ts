@@ -215,12 +215,14 @@ describe('external capability governance boundary', () => {
       sessionId: 'external-human-approval',
       actorId: 'api_key:private-test-1',
       ownerId: 'private-test-1',
+      tenantId: 'tenant-external',
       approvalRequestId: 'request-once',
     });
 
     expect(mocks.consumeApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
       requestId: 'request-once',
       ownerId: 'private-test-1',
+      tenantId: 'tenant-external',
       sessionId: 'external-human-approval',
       toolName: 'consume_external_action',
       args: expect.objectContaining({
