@@ -13,6 +13,10 @@ vi.mock('../lib/db', () => ({
       if (sql.startsWith('INSERT INTO rate_limits')) {
         const [key, now, windowStart, , nowFresh] = args as [string, number, number, number, number];
         const existing = store.get(key);
+        const isReserve = sql.includes('WHERE window_start < ? OR count < ?');
+        if (isReserve && existing && existing.window_start >= windowStart && existing.count >= Number(args[6])) {
+          return { rows: [] };
+        }
         let row: Row;
         if (!existing) {
           row = { count: 1, window_start: now };
@@ -24,12 +28,17 @@ vi.mock('../lib/db', () => ({
         store.set(key, row);
         return { rows: [row] };
       }
+      if (sql.startsWith('SELECT count, window_start FROM rate_limits')) {
+        const key = String(args[0]);
+        const row = store.get(key);
+        return { rows: row ? [row] : [] };
+      }
       return { rows: [] };
     },
   }),
 }));
 
-import { checkRateLimit, getClientIp } from '../lib/rate_limit';
+import { checkRateLimit, checkRateLimitReserve, getClientIp } from '../lib/rate_limit';
 
 beforeEach(() => {
   store.clear();
@@ -60,6 +69,35 @@ describe('checkRateLimit (Turso-backed)', () => {
     const r2 = await checkRateLimit(key, 5, 60);
     expect(r1.remaining).toBe(4);
     expect(r2.remaining).toBe(3);
+  });
+});
+
+describe('checkRateLimitReserve (Turso-backed)', () => {
+  it('admits exactly the configured number of requests', async () => {
+    const key = `reserve:1795576840498-${Math.random()}`;
+    const results = await Promise.all(Array.from({ length: 5 }, () => checkRateLimitReserve(key, 3, 60)));
+    expect(results.filter(result => result.allowed)).toHaveLength(3);
+    expect(results.filter(result => !result.allowed)).toHaveLength(2);
+  });
+
+  it('does not increment the stored count for denied retries', async () => {
+    const key = `reserve-denied:1795576840498-${Math.random()}`;
+    await checkRateLimitReserve(key, 1, 60);
+    const denied = await checkRateLimitReserve(key, 1, 60);
+    expect(denied.allowed).toBe(false);
+    expect(store.get(key)?.count).toBe(1);
+  });
+
+  it('resets the reservation count after the window expires', async () => {
+    const key = `reserve-reset:${Date.now()}-${Math.random()}`;
+    vi.spyOn(Date, 'now').mockReturnValueOnce(1_000_000).mockReturnValueOnce(1_000_000).mockReturnValueOnce(1_061_001);
+    const first = await checkRateLimitReserve(key, 1, 60);
+    const denied = await checkRateLimitReserve(key, 1, 60);
+    const afterWindow = await checkRateLimitReserve(key, 1, 60);
+    expect(first.allowed).toBe(true);
+    expect(denied.allowed).toBe(false);
+    expect(afterWindow.allowed).toBe(true);
+    vi.restoreAllMocks();
   });
 });
 
