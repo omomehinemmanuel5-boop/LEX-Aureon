@@ -353,6 +353,7 @@ export async function executeGovernedToolStructured(
   signal?: AbortSignal,
   environmentId = 'internal',
   ownerId = 'operator',
+  tenantId: string | null = null,
 ): Promise<GovernedToolExecution> {
   // Internal grant metadata is injected only by the authenticated MCP route after a read-only match.
   // Strip it before hashing arguments, classification, or invoking any tool adapter.
@@ -587,6 +588,7 @@ export async function executeGovernedToolStructured(
       return releaseConsumedApprovalRequest({
         requestId: consumedApprovalRequestId,
         ownerId,
+        tenantId: tenantId ?? '',
         sessionId,
         toolName,
         args,
@@ -641,6 +643,7 @@ export async function executeGovernedToolStructured(
       ? await consumeApprovalRequest({
         requestId: approvalRequestId,
         ownerId,
+        tenantId: tenantId ?? '',
         sessionId,
         toolName,
         args,
@@ -1044,6 +1047,7 @@ export async function executeGovernedTool(
   signal?: AbortSignal,
   environmentId = 'internal',
   ownerId = 'operator',
+  tenantId: string | null = null,
 ): Promise<string> {
   const execution = await executeGovernedToolStructured(
     toolName,
@@ -1055,6 +1059,7 @@ export async function executeGovernedTool(
     signal,
     environmentId,
     ownerId,
+    tenantId,
   );
   return execution.result;
 }

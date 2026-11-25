@@ -6,6 +6,7 @@ vi.mock('../lib/db', () => ({ getClient: () => ({ execute }) }));
 import {
   approvalArgsHash,
   consumeApprovalRequest,
+  releaseConsumedApprovalRequest,
   createApprovalRequest,
   getApprovalRequestStatus,
   decideApprovalRequest,
@@ -30,10 +31,19 @@ function installDb() {
       return { rows: row && row.request_id === args[0] ? [{ ...row }] : [] };
     }
     if (sql.startsWith("UPDATE approval_requests SET status = 'used'")) {
-      if (row && row.request_id === args[0] && row.owner_id === args[1] && row.session_id === args[2]
-        && row.tool_name === args[3] && row.args_hash === args[4] && row.status === 'approved'
-        && Number(row.expires_at) > Number(args[5])) {
+      if (row && row.request_id === args[0] && row.owner_id === args[1] && row.tenant_id === args[2] && row.session_id === args[3]
+        && row.tool_name === args[4] && row.args_hash === args[5] && row.status === 'approved'
+        && Number(row.expires_at) > Number(args[6])) {
         row.status = 'used';
+        return { rowsAffected: 1, rows: [] };
+      }
+      return { rowsAffected: 0, rows: [] };
+    }
+    if (sql.startsWith("UPDATE approval_requests SET status = 'approved'")) {
+      if (row && row.request_id === args[0] && row.owner_id === args[1] && row.tenant_id === args[2]
+        && row.session_id === args[3] && row.tool_name === args[4] && row.status === 'used'
+        && row.args_hash === args[5]) {
+        row.status = 'approved';
         return { rowsAffected: 1, rows: [] };
       }
       return { rowsAffected: 0, rows: [] };
@@ -94,6 +104,16 @@ describe('one-tap approval request persistence', () => {
       requestId: created.requestId, ...requestInput, nowMs: created.expiresAt,
     })).status).toBe('expired');
     expect(row?.status).toBe('approved');
+  });
+
+  it('does not reveal approval status across tenant boundaries', async () => {
+    const created = await createApprovalRequest(requestInput);
+    row!.status = 'approved';
+    const status = await getApprovalRequestStatus({
+      requestId: created.requestId, ...requestInput, tenantId: 'tenant-b',
+    });
+    expect(status.status).toBe('invalid');
+    expect(status.reason).toContain('tenant');
   });
 
   it('rejects a pending approval without consuming it', async () => {
@@ -180,12 +200,30 @@ describe('one-tap approval request persistence', () => {
     expect(row?.status).toBe('approved');
   });
 
+  it('denies a different tenant even when owner, session, tool, and arguments match', async () => {
+    const created = await createApprovalRequest(requestInput);
+    row!.status = 'approved';
+    const result = await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, tenantId: 'tenant-b' });
+    expect(result.consumed).toBe(false);
+    expect(result.reason).toContain('another tenant');
+    expect(row?.status).toBe('approved');
+  });
+
   it('denies a mismatched session or tool and an expired request', async () => {
     const created = await createApprovalRequest(requestInput);
     row!.status = 'approved';
     expect((await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, sessionId: 'owner-a:other' })).consumed).toBe(false);
     expect((await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, toolName: 'dispatch_workflow' })).consumed).toBe(false);
     expect((await consumeApprovalRequest({ requestId: created.requestId, ...requestInput, nowMs: created.expiresAt })).consumed).toBe(false);
+    expect(row?.status).toBe('approved');
+  });
+
+  it('restores a consumed approval only within its original tenant', async () => {
+    const created = await createApprovalRequest(requestInput);
+    row!.status = 'used';
+    expect(await releaseConsumedApprovalRequest({ requestId: created.requestId, ...requestInput, tenantId: 'tenant-b' })).toBe(false);
+    expect(row?.status).toBe('used');
+    expect(await releaseConsumedApprovalRequest({ requestId: created.requestId, ...requestInput })).toBe(true);
     expect(row?.status).toBe('approved');
   });
 

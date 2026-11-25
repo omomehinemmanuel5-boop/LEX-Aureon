@@ -49,9 +49,9 @@ function installDb() {
     }
     if (sql.startsWith("UPDATE approval_requests SET status = 'used'")) {
       const current = row;
-      if (current && current.request_id === args[0] && current.owner_id === args[1] && current.session_id === args[2]
-        && current.tool_name === args[3] && current.args_hash === args[4] && current.status === 'approved'
-        && Number(current.expires_at) > Number(args[5])) {
+      if (current && current.request_id === args[0] && current.owner_id === args[1] && current.tenant_id === args[2] && current.session_id === args[3]
+        && current.tool_name === args[4] && current.args_hash === args[5] && current.status === 'approved'
+        && Number(current.expires_at) > Number(args[6])) {
         current.status = 'used';
         return { rowsAffected: 1, rows: [] };
       }
@@ -84,7 +84,7 @@ describe('concurrent one-tap executor use', () => {
     const handler = vi.fn(async () => 'SIDE_EFFECT_COMPLETE');
     const callArgs = { ...actionArgs, approval_request_id: request.requestId };
     const run = () => executeGovernedToolStructured(
-      'write_file', callArgs, handler, sessionId, undefined, 'api_key:owner-a', undefined, 'owner-a', 'owner-a',
+      'write_file', callArgs, handler, sessionId, undefined, 'api_key:owner-a', undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
 
     const outcomes = await Promise.all([run(), run()]);

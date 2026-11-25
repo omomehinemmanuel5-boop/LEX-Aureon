@@ -84,6 +84,7 @@ export async function createApprovalRequest(input: {
 export async function getApprovalRequestStatus(input: {
   requestId: string;
   ownerId: string;
+  tenantId: string;
   sessionId: string;
   toolName: string;
   args: Record<string, unknown>;
@@ -92,17 +93,18 @@ export async function getApprovalRequestStatus(input: {
   try {
     await ensureApprovalRequestSchema();
     const found = await getClient().execute({
-      sql: `SELECT request_id, owner_id, session_id, tool_name, args_hash, status, expires_at
+      sql: `SELECT request_id, owner_id, tenant_id, session_id, tool_name, args_hash, status, expires_at
             FROM approval_requests WHERE request_id = ? LIMIT 1`,
       args: [input.requestId],
     });
     if (!found.rows.length) return { status: 'invalid', reason: 'Approval request was not found.' };
     const row = found.rows[0];
-    if (String(row.owner_id) !== input.ownerId
+    if (!input.tenantId || String(row.tenant_id ?? '') !== input.tenantId
+      || String(row.owner_id) !== input.ownerId
       || String(row.session_id) !== input.sessionId
       || String(row.tool_name) !== input.toolName
       || String(row.args_hash) !== approvalArgsHash(input.args)) {
-      return { status: 'invalid', reason: 'Approval request does not match this owner, session, tool, and exact action.' };
+      return { status: 'invalid', reason: 'Approval request does not match this tenant, owner, session, tool, and exact action.' };
     }
     const now = input.nowMs ?? Date.now();
     const status = String(row.status) as ApprovalRequestStatus;
@@ -118,6 +120,7 @@ export async function getApprovalRequestStatus(input: {
 export async function consumeApprovalRequest(input: {
   requestId: string;
   ownerId: string;
+  tenantId: string;
   sessionId: string;
   toolName: string;
   args: Record<string, unknown>;
@@ -127,7 +130,7 @@ export async function consumeApprovalRequest(input: {
   try {
     await ensureApprovalRequestSchema();
     const found = await getClient().execute({
-      sql: `SELECT request_id, owner_id, session_id, tool_name, args_hash, status, expires_at
+      sql: `SELECT request_id, owner_id, tenant_id, session_id, tool_name, args_hash, status, expires_at
             FROM approval_requests WHERE request_id = ? LIMIT 1`,
       args: [input.requestId],
     });
@@ -135,15 +138,16 @@ export async function consumeApprovalRequest(input: {
     const row = found.rows[0];
     if (String(row.status) !== 'approved') return { consumed: false, reason: 'Approval request is not approved or was already used.' };
     if (now >= Number(row.expires_at)) return { consumed: false, reason: 'Approval request has expired.' };
+    if (!input.tenantId || String(row.tenant_id ?? '') !== input.tenantId) return { consumed: false, reason: 'Approval request belongs to another tenant.' };
     if (String(row.owner_id) !== input.ownerId) return { consumed: false, reason: 'Approval request belongs to another owner.' };
     if (String(row.session_id) !== input.sessionId) return { consumed: false, reason: 'Approval request belongs to another session.' };
     if (String(row.tool_name) !== input.toolName) return { consumed: false, reason: 'Approval request is bound to another tool.' };
     if (String(row.args_hash) !== approvalArgsHash(input.args)) return { consumed: false, reason: 'Approval request is bound to different arguments. Retry with exactly the arguments shown on the approval screen; fields such as task_context are part of the binding and must be omitted unless they were approved. See docs/recovery-runbook.md.' };
     const result = await getClient().execute({
       sql: `UPDATE approval_requests SET status = 'used'
-            WHERE request_id = ? AND owner_id = ? AND session_id = ? AND tool_name = ?
+            WHERE request_id = ? AND owner_id = ? AND tenant_id = ? AND session_id = ? AND tool_name = ?
               AND args_hash = ? AND status = 'approved' AND expires_at > ?`,
-      args: [input.requestId, input.ownerId, input.sessionId, input.toolName, approvalArgsHash(input.args), now],
+      args: [input.requestId, input.ownerId, input.tenantId, input.sessionId, input.toolName, approvalArgsHash(input.args), now],
     });
     if ((result.rowsAffected ?? 0) !== 1) {
       return { consumed: false, reason: 'Approval request could not be consumed exactly once.' };
@@ -162,6 +166,7 @@ export async function consumeApprovalRequest(input: {
 export async function releaseConsumedApprovalRequest(input: {
   requestId: string;
   ownerId: string;
+  tenantId: string;
   sessionId: string;
   toolName: string;
   args: Record<string, unknown>;
@@ -170,10 +175,10 @@ export async function releaseConsumedApprovalRequest(input: {
     await ensureApprovalRequestSchema();
     const result = await getClient().execute({
       sql: `UPDATE approval_requests SET status = 'approved'
-            WHERE request_id = ? AND owner_id = ? AND session_id = ? AND tool_name = ?
+            WHERE request_id = ? AND owner_id = ? AND tenant_id = ? AND session_id = ? AND tool_name = ?
               AND args_hash = ? AND status = 'used' AND expires_at > ?`,
       args: [
-        input.requestId, input.ownerId, input.sessionId, input.toolName,
+        input.requestId, input.ownerId, input.tenantId, input.sessionId, input.toolName,
         approvalArgsHash(input.args), Date.now(),
       ],
     });

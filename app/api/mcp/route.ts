@@ -637,6 +637,7 @@ async function handlePost(req: Request) {
         const status = await getApprovalRequestStatus({
           requestId: args.approval_request_id,
           ownerId,
+          tenantId: tenantId ?? '',
           sessionId: requestedSession,
           toolName: requestedTool,
           args: { ...normalizedRequestedArgs, session_id: requestedSession },
@@ -933,7 +934,7 @@ async function handlePost(req: Request) {
           return invalidParams(id ?? null, 'approval_request_id is required after human approval; request it with request_approval for consume_external_action');
         }
         const result = await consumeExternalAction({
-          environmentId, manifest, actionArgs, sessionId, actorId, ownerId,
+          environmentId, manifest, actionArgs, sessionId, actorId, ownerId, tenantId,
           approvalToken, approvalRequestId,
         });
         return mcpToolResult(id, {
@@ -1397,6 +1398,7 @@ async function handlePost(req: Request) {
           trajectoryController.signal,
           ownerId,
           ownerId,
+          tenantId,
         ), 30_000, trajectoryController);
 
         if (trajectoryOutcome.timedOut) {
@@ -1513,6 +1515,7 @@ async function handlePost(req: Request) {
           controller.signal,
           ownerId,
           ownerId,
+          tenantId,
         ), 30_000, controller);
         if (outcome.timedOut) {
           return mcpToolResult(id, {
@@ -1548,6 +1551,7 @@ async function handlePost(req: Request) {
           controller.signal,
           ownerId,
           ownerId,
+          tenantId,
         ), 30_000, controller);
 
         if (outcome.timedOut) {
@@ -1680,6 +1684,7 @@ async function handlePost(req: Request) {
         controller.signal,
         ownerId,
         ownerId,
+        tenantId,
       ), 30_000, controller);
 
       const result = outcome.timedOut

@@ -252,6 +252,7 @@ export async function consumeExternalAction(input: {
   approvalToken?: string;
   approvalRequestId?: string;
   ownerId?: string;
+  tenantId?: string | null;
 }): Promise<{ granted: boolean; approvalId?: string; reason: string }> {
   const capability = await getDiscoveredToolCapability(input.environmentId, input.manifest.name);
   if (!capability) return { granted: false, reason: 'Discovered capability is missing or expired; rediscover before execution.' };
@@ -276,6 +277,7 @@ export async function consumeExternalAction(input: {
     ? await consumeApprovalRequest({
       requestId: input.approvalRequestId,
       ownerId: input.ownerId ?? input.actorId,
+      tenantId: input.tenantId ?? '',
       sessionId: input.sessionId,
       toolName: 'consume_external_action',
       args: {

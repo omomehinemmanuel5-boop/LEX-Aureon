@@ -51,7 +51,7 @@ describe('one-tap approval executor integration', () => {
     });
     const result = await executeGovernedToolStructured(
       'write_file', args, handler, state.sessionId, undefined, state.actorId,
-      undefined, 'owner-a', 'owner-a',
+      undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(consumeApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
       requestId: 'a'.repeat(22), ownerId: 'owner-a', sessionId: state.sessionId,
@@ -77,13 +77,13 @@ describe('one-tap approval executor integration', () => {
     const args = { ...actionArgs, session_id: state.sessionId, approval_request_id: 'd'.repeat(22) };
     const first = await executeGovernedToolStructured(
       toolName, args, handler, state.sessionId, undefined, state.actorId,
-      undefined, 'owner-a', 'owner-a',
+      undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(first.approved).toBe(true);
     expect(handler).toHaveBeenCalledTimes(1);
     const replay = await executeGovernedToolStructured(
       toolName, args, handler, state.sessionId, undefined, state.actorId,
-      undefined, 'owner-a', 'owner-a',
+      undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(replay.approved).toBe(false);
     expect(handler).toHaveBeenCalledTimes(1);
@@ -98,7 +98,7 @@ describe('one-tap approval executor integration', () => {
     const result = await executeGovernedToolStructured(
       toolName,
       { ...actionArgs, session_id: state.sessionId, approval_request_id: 'e'.repeat(22) },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(false);
     expect(handler).not.toHaveBeenCalled();
@@ -109,7 +109,7 @@ describe('one-tap approval executor integration', () => {
     const handler = vi.fn(async () => 'SHOULD_NOT_RUN');
     const result = await executeGovernedToolStructured(
       'write_file', { path: 'README.md', approval_request_id: 'b'.repeat(22) }, handler,
-      state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(false);
     expect(consumeApprovalRequest).not.toHaveBeenCalled();
@@ -121,7 +121,7 @@ describe('one-tap approval executor integration', () => {
     const handler = vi.fn(async () => 'SHOULD_NOT_RUN');
     const result = await executeGovernedToolStructured(
       'write_file', { path: 'README.md', approval_request_id: 'c'.repeat(22) }, handler,
-      state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(false);
     expect(handler).not.toHaveBeenCalled();
@@ -138,7 +138,7 @@ describe('one-tap approval executor integration', () => {
     const result = await executeGovernedToolStructured(
       toolName,
       { ...actionArgs, session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(consumeScopedGrant).toHaveBeenCalledWith(expect.objectContaining({
       grantId: 'grant-1', ownerId: 'owner-a', toolName, sessionId: state.sessionId,
@@ -155,7 +155,7 @@ describe('one-tap approval executor integration', () => {
     const result = await executeGovernedToolStructured(
       'create_branch',
       { branch: 'govern/blocked', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(false);
     expect(consumeScopedGrant).not.toHaveBeenCalled();
@@ -168,7 +168,7 @@ describe('one-tap approval executor integration', () => {
     const result = await executeGovernedToolStructured(
       'create_branch',
       { branch: 'govern/race', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(false);
     expect(result.result).toBe('SCOPED_GRANT_FALLBACK_APPROVAL');
@@ -185,7 +185,7 @@ describe('one-tap approval executor integration', () => {
     const result = await executeGovernedToolStructured(
       'create_branch',
       { branch: 'govern/denied', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(false);
     expect(consumeScopedGrant).not.toHaveBeenCalled();
@@ -205,7 +205,7 @@ describe('one-tap approval executor integration', () => {
     const result = await executeGovernedToolStructured(
       'create_branch',
       { branch: 'govern/approved', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(true);
     expect(interceptToolCall.mock.invocationCallOrder[0]).toBeLessThan(consumeScopedGrant.mock.invocationCallOrder[0]);
@@ -221,7 +221,7 @@ describe('one-tap approval executor integration', () => {
     const result = await executeGovernedToolStructured(
       'create_branch',
       { branch: 'govern/consume-error', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(result.approved).toBe(false);
     expect(result.result).toBe('SCOPED_GRANT_FALLBACK_APPROVAL');
@@ -239,14 +239,14 @@ describe('one-tap approval executor integration', () => {
     const first = await executeGovernedToolStructured(
       'create_branch',
       { branch: 'govern/last-use', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(first.approved).toBe(true);
     expect(uses).toBe(1);
     const second = await executeGovernedToolStructured(
       'create_branch',
       { branch: 'govern/over-limit', session_id: state.sessionId, __scoped_grant_id: 'grant-1' },
-      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a',
+      handler, state.sessionId, undefined, state.actorId, undefined, 'owner-a', 'owner-a', 'tenant-a',
     );
     expect(second.approved).toBe(false);
     expect(second.result).toBe('SCOPED_GRANT_FALLBACK_APPROVAL');

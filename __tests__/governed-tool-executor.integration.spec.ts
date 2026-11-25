@@ -166,7 +166,7 @@ describe('governed tool execution integration boundary', () => {
       if (sql.includes('FROM tool_sessions')) return { rows: [{ sigma_viol: 0, tool_calls: 0 }] };
       if (sql.includes('FROM approval_requests WHERE request_id = ?')) {
         return { rows: [{
-          request_id: requestId, owner_id: 'operator', session_id: sessionId, tool_name: 'write_file',
+          request_id: requestId, owner_id: 'operator', tenant_id: 'tenant-a', session_id: sessionId, tool_name: 'write_file',
           args_hash: approvalArgsHash(actionArgs), status, expires_at: expiresAt,
         }] };
       }
@@ -184,6 +184,7 @@ describe('governed tool execution integration boundary', () => {
 
     const result = await executeGovernedToolStructured(
       'write_file', actionArgs, write, sessionId, undefined, 'internal-agent', controller.signal,
+      'internal', 'operator', 'tenant-a',
     );
 
     expect(result.decision).toBe('EXECUTION_CANCELLED_BEFORE_START');
