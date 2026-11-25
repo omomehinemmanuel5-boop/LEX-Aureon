@@ -106,6 +106,16 @@ describe('one-tap approval request persistence', () => {
     expect(row?.status).toBe('approved');
   });
 
+  it('does not reveal approval status across tenant boundaries', async () => {
+    const created = await createApprovalRequest(requestInput);
+    row!.status = 'approved';
+    const status = await getApprovalRequestStatus({
+      requestId: created.requestId, ...requestInput, tenantId: 'tenant-b',
+    });
+    expect(status.status).toBe('invalid');
+    expect(status.reason).toContain('tenant');
+  });
+
   it('rejects a pending approval without consuming it', async () => {
     const created = await createApprovalRequest(requestInput);
     const result = await consumeApprovalRequest({ requestId: created.requestId, ...requestInput });
