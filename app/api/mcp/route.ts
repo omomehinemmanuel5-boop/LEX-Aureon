@@ -743,7 +743,7 @@ async function handlePost(req: Request) {
           request_id: pending.requestId,
           tool_name: requestedTool,
           expires_at: new Date(pending.expiresAt).toISOString(),
-          approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+          approval_url: new URL(`/approvals/link?id=${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           receipt_id: review.receipt_id ?? null,
           execution_granted: false,
           recovery_state: authorizationCanonical.state.recoveryState,
@@ -915,7 +915,7 @@ async function handlePost(req: Request) {
             tool_name: manifest.name,
             risk: review.risk,
             expires_at: new Date(pending.expiresAt).toISOString(),
-            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals/link?id=${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             receipt_id: review.receiptId ?? null,
             execution_granted: false,
             recovery_state: externalApprovalRecovery?.recoveryState,
@@ -1263,7 +1263,7 @@ async function handlePost(req: Request) {
             request_id: pending.requestId,
             tool_name: dispatchToolName,
             expires_at: new Date(pending.expiresAt).toISOString(),
-            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals/link?id=${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             recovery_state: canonical.state.recoveryState,
             ...quarantineHint(canonical.state),
             M: canonical.state.M,
@@ -1445,7 +1445,7 @@ async function handlePost(req: Request) {
           return mcpToolResult(id, {
             status: 'approval_required', request_id: pending.requestId, tool_name: dispatchToolName,
             expires_at: new Date(pending.expiresAt).toISOString(),
-            approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+            approval_url: new URL(`/approvals/link?id=${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
             next_step: 'The grant could not be consumed; a human approver must approve this exact action. Retry with approval_request_id and unchanged arguments.',
           });
         }
@@ -1707,7 +1707,7 @@ async function handlePost(req: Request) {
         return mcpToolResult(id, {
           status: 'approval_required', request_id: pending.requestId, tool_name: dispatchToolName,
           expires_at: new Date(pending.expiresAt).toISOString(),
-          approval_url: new URL(`/approvals#${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
+          approval_url: new URL(`/approvals/link?id=${pending.requestId}`, env.NEXT_PUBLIC_SITE_URL).toString(),
           next_step: 'The grant could not be consumed; a human approver must approve this exact action. Retry with approval_request_id and unchanged arguments.',
         });
       }
