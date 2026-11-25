@@ -105,6 +105,7 @@ describe('owner-scoped approval page and POST boundary', () => {
     const html = await page.text();
     expect(page.status).toBe(200);
     expect(html).toContain('window.location.hash');
+    expect(html).toContain("window.location.replace('/approvals/link?id='+encodeURIComponent(h))");
     expect(html).toContain('name="next"');
     const valid = await signInPost(loginRequest(values.email, ownOrigin, `/approvals#${requestId}`));
     expect(valid.status).toBe(303);
