@@ -87,7 +87,7 @@ describe('MCP patch_file write path', () => {
 
     const execute = (input: Record<string, unknown>) => executeGovernedToolStructured(
       'patch_file', input, (handlerArgs) => patch_file(handlerArgs as Parameters<typeof patch_file>[0]),
-      session.sessionId, undefined, session.actorId, undefined, 'owner-write', 'owner-write',
+      session.sessionId, undefined, session.actorId, undefined, 'owner-write', 'owner-write', 'tenant-write',
     );
     const changedBeforeCommit = await execute({ ...args, new_str: 'different', approval_request_id: pending.requestId });
     expect(changedBeforeCommit.approved).toBe(false);
@@ -119,7 +119,7 @@ describe('MCP patch_file write path', () => {
       'patch_file',
       { ...args, approval_request_id: pending.requestId },
       (handlerArgs) => patch_file(handlerArgs as Parameters<typeof patch_file>[0]),
-      session.sessionId, undefined, session.actorId, undefined, 'owner-write', 'owner-write',
+      session.sessionId, undefined, session.actorId, undefined, 'owner-write', 'owner-write', 'tenant-write',
     );
 
     expect(result.approved).toBe(false);
