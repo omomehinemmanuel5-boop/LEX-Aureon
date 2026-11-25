@@ -1,79 +1,85 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkRateLimit, getClientIp, accountFromCookie, decideApprovalRequest } = vi.hoisted(() => ({
+const { checkRateLimit, getClientIp, getApprovalRequestForLink, decideApprovalRequestByLink } = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   getClientIp: vi.fn(() => '192.0.2.20'),
-  accountFromCookie: vi.fn(),
-  decideApprovalRequest: vi.fn(),
+  getApprovalRequestForLink: vi.fn(),
+  decideApprovalRequestByLink: vi.fn(),
 }));
 vi.mock('../lib/rate_limit', () => ({ checkRateLimit, getClientIp }));
-vi.mock('../lib/auth_accounts', () => ({ accountFromCookie }));
-vi.mock('../lib/approval_requests', () => ({ decideApprovalRequest }));
+vi.mock('../lib/approval_link', () => ({ getApprovalRequestForLink, decideApprovalRequestByLink }));
 
 import { GET } from '../app/approvals/link/route';
 import { POST } from '../app/approvals/link/[requestId]/[decision]/route';
 
 const origin = 'https://www.lexaureon.com';
 const id = 'a'.repeat(22);
-const cookie = 'lex_account_session=verified-session';
 
-describe('tenant-authenticated approval link routes', () => {
+describe('public request-capability approval routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 29, retryAfter: 0 });
-    accountFromCookie.mockResolvedValue({ id: 'approver-a', tenantId: 'tenant-a' });
-    decideApprovalRequest.mockResolvedValue(true);
+    getApprovalRequestForLink.mockResolvedValue({ request_id: id, tenant_id: 'tenant-a' });
+    decideApprovalRequestByLink.mockResolvedValue(true);
   });
 
-  it('redirects a valid approval URL to the authenticated tenant inbox', async () => {
+  it('validates the capability and redirects to the exact public request page', async () => {
     const response = await GET(new Request(`${origin}/approvals/link?id=${id}`));
     expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toBe(`${origin}/approvals#${id}`);
+    expect(response.headers.get('location')).toBe(`${origin}/approvals?id=${id}`);
+    expect(getApprovalRequestForLink).toHaveBeenCalledWith(id);
   });
 
-  it('rejects malformed approval links', async () => {
-    const response = await GET(new Request(`${origin}/approvals/link?id=bad`));
-    expect(response.status).toBe(400);
+  it('rejects malformed and unavailable links', async () => {
+    expect((await GET(new Request(`${origin}/approvals/link?id=bad`))).status).toBe(400);
+    getApprovalRequestForLink.mockResolvedValueOnce(null);
+    expect((await GET(new Request(`${origin}/approvals/link?id=${id}`))).status).toBe(404);
   });
 
-  it('requires a verified approver session before recording a decision', async () => {
-    accountFromCookie.mockResolvedValueOnce(null);
+  it('records a decision without an account cookie when the private capability is valid', async () => {
     const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
       method: 'POST', headers: { origin },
     }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
-    expect(response.status).toBe(401);
-    expect(decideApprovalRequest).not.toHaveBeenCalled();
-  });
-
-  it('binds the decision to the signed-in approver tenant and identity', async () => {
-    const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
-      method: 'POST', headers: { origin, cookie },
-    }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
     expect(response.status).toBe(200);
-    expect(decideApprovalRequest).toHaveBeenCalledWith({
-      requestId: id, tenantId: 'tenant-a', decision: 'approved', decidedBy: 'user:approver-a',
-    });
-    expect(checkRateLimit).toHaveBeenCalledWith('approval-owner-decision:192.0.2.20', 30, 60);
+    expect(decideApprovalRequestByLink).toHaveBeenCalledWith({ requestId: id, decision: 'approved' });
+    expect(checkRateLimit).toHaveBeenCalledWith('approval-capability-decision:192.0.2.20', 30, 60);
+    expect(await response.text()).toContain('This does not execute the action');
   });
 
-  it('shows a clear conflict instead of success when the tenant-scoped update changes zero rows', async () => {
-    decideApprovalRequest.mockResolvedValueOnce(false);
-    const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
-      method: 'POST', headers: { origin, cookie },
-    }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
-    expect(response.status).toBe(409);
-    const html = await response.text();
-    expect(html).toContain('No decision was recorded');
-    expect(html).toContain('different tenant');
-    expect(html).toContain('Approval not completed');
+  it('supports denial without account authentication', async () => {
+    const response = await POST(new Request(`${origin}/approvals/link/${id}/denied`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'denied' }) });
+    expect(response.status).toBe(200);
+    expect(decideApprovalRequestByLink).toHaveBeenCalledWith({ requestId: id, decision: 'denied' });
   });
 
-  it('rejects cross-origin decisions before authentication or database mutation', async () => {
+  it('rejects cross-origin decisions before touching the approval store', async () => {
     const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
-      method: 'POST', headers: { origin: 'https://attacker.example', cookie },
+      method: 'POST', headers: { origin: 'https://attacker.example' },
     }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
     expect(response.status).toBe(403);
-    expect(accountFromCookie).not.toHaveBeenCalled();
-    expect(decideApprovalRequest).not.toHaveBeenCalled();
+    expect(decideApprovalRequestByLink).not.toHaveBeenCalled();
+  });
+
+  it('returns an explicit conflict when the one-time conditional update changes zero rows', async () => {
+    decideApprovalRequestByLink.mockResolvedValueOnce(false);
+    const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
+    expect(response.status).toBe(409);
+    expect(await response.text()).toContain('No decision was recorded');
+  });
+
+  it('rejects invalid decisions and rate-limits repeated attempts', async () => {
+    const invalid = await POST(new Request(`${origin}/approvals/link/${id}/pending`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'pending' }) });
+    expect(invalid.status).toBe(400);
+    checkRateLimit.mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfter: 60 });
+    const limited = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
+    expect(limited.status).toBe(429);
   });
 });
