@@ -1,6 +1,6 @@
 import { checkRateLimit, getClientIp } from '@/lib/rate_limit';
 import { decideApprovalRequestByLink } from '@/lib/approval_link';
-import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
+import { isTrustedApprovalDecisionOrigin } from '@/lib/security/approval_origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function POST(
   req: Request,
   context: { params: Promise<{ requestId: string; decision: string }> },
 ): Promise<Response> {
-  if (!isTrustedApprovalOrigin(req)) return page('Request origin was not accepted.', 403);
+  if (!isTrustedApprovalDecisionOrigin(req)) return page('Request origin was not accepted.', 403);
   const limit = await checkRateLimit(`approval-capability-decision:${getClientIp(req)}`, 30, 60);
   if (limit.storageError) return page('Approval service is temporarily unavailable. No decision was recorded.', 503);
   if (!limit.allowed) return page('Too many approval attempts. Try again later.', 429);
