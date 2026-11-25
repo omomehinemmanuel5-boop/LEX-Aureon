@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getApprovalRequestForLink, decideApprovalRequestByLink, readCanonicalGovernanceState, checkRateLimit, getClientIp } = vi.hoisted(() => ({
-  getApprovalRequestForLink: vi.fn(),
-  decideApprovalRequestByLink: vi.fn(),
-  readCanonicalGovernanceState: vi.fn(),
+const { checkRateLimit, getClientIp, getApprovalRequestForLink, decideApprovalRequestByLink } = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   getClientIp: vi.fn(() => '192.0.2.20'),
+  getApprovalRequestForLink: vi.fn(),
+  decideApprovalRequestByLink: vi.fn(),
 }));
-vi.mock('../lib/approval_link', () => ({ getApprovalRequestForLink, decideApprovalRequestByLink }));
-vi.mock('../lib/agents/canonical_governance_state', () => ({ readCanonicalGovernanceState }));
 vi.mock('../lib/rate_limit', () => ({ checkRateLimit, getClientIp }));
+vi.mock('../lib/approval_link', () => ({ getApprovalRequestForLink, decideApprovalRequestByLink }));
 
 import { GET } from '../app/approvals/link/route';
 import { POST } from '../app/approvals/link/[requestId]/[decision]/route';
@@ -17,71 +15,71 @@ import { POST } from '../app/approvals/link/[requestId]/[decision]/route';
 const origin = 'https://www.lexaureon.com';
 const id = 'a'.repeat(22);
 
-describe('direct tenant-scoped approval link routes', () => {
+describe('public request-capability approval routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getApprovalRequestForLink.mockResolvedValue({
-      request_id: id,
-      owner_id: 'owner-a',
-      tenant_id: 'tenant-a',
-      session_id: 'owner-a:session-1',
-      tool_name: 'write_file',
-      args_json: JSON.stringify({ path: 'README.md', api_key: 'secret-value' }),
-      status: 'pending',
-      created_at: 1_800_000_000_000,
-      expires_at: Date.now() + 600_000,
-    });
-    readCanonicalGovernanceState.mockResolvedValue({
-      available: true,
-      state: { recoveryState: 'NORMAL', M: 0.31, nStable: 3, canaryPassed: true },
-    });
     checkRateLimit.mockResolvedValue({ allowed: true, remaining: 29, retryAfter: 0 });
+    getApprovalRequestForLink.mockResolvedValue({ request_id: id, tenant_id: 'tenant-a' });
     decideApprovalRequestByLink.mockResolvedValue(true);
   });
 
-  it('renders the exact tenant-bound action without asking for email or password', async () => {
+  it('validates the capability and redirects to the exact public request page', async () => {
     const response = await GET(new Request(`${origin}/approvals/link?id=${id}`));
-    const html = await response.text();
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(`${origin}/approvals?id=${id}`);
     expect(getApprovalRequestForLink).toHaveBeenCalledWith(id);
-    expect(html).toContain('Approve this exact action');
-    expect(html).toContain('write_file');
-    expect(html).toContain('README.md');
-    expect(html).toContain('[REDACTED]');
-    expect(html).not.toContain('secret-value');
-    expect(html).not.toContain('Account email');
-    expect(html).not.toContain('name="password"');
-    expect(html).toContain('Anyone who has the link');
-    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
   });
 
-  it('does not offer a decision for an expired or previously decided request', async () => {
-    getApprovalRequestForLink.mockResolvedValueOnce({
-      request_id: id, owner_id: 'owner-a', tenant_id: 'tenant-a',
-      session_id: 'owner-a:session-1', tool_name: 'write_file', args_json: '{}',
-      status: 'expired', created_at: 1, expires_at: 2,
-    });
-    const html = await (await GET(new Request(`${origin}/approvals/link?id=${id}`))).text();
-    expect(html).toContain('expired');
-    expect(html).not.toContain('Approve this exact action');
+  it('rejects malformed and unavailable links', async () => {
+    expect((await GET(new Request(`${origin}/approvals/link?id=bad`))).status).toBe(400);
+    getApprovalRequestForLink.mockResolvedValueOnce(null);
+    expect((await GET(new Request(`${origin}/approvals/link?id=${id}`))).status).toBe(404);
   });
 
-  it('records a decision without requiring an account cookie', async () => {
+  it('records a decision without an account cookie when the private capability is valid', async () => {
     const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
-      method: 'POST',
-      headers: { origin },
+      method: 'POST', headers: { origin },
     }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
     expect(response.status).toBe(200);
     expect(decideApprovalRequestByLink).toHaveBeenCalledWith({ requestId: id, decision: 'approved' });
-    expect(checkRateLimit).toHaveBeenCalledWith('approval-link-decision:192.0.2.20', 30, 60);
+    expect(checkRateLimit).toHaveBeenCalledWith('approval-capability-decision:192.0.2.20', 30, 60);
+    expect(await response.text()).toContain('This does not execute the action');
   });
 
-  it('rejects cross-origin decisions before touching the approval', async () => {
+  it('supports denial without account authentication', async () => {
+    const response = await POST(new Request(`${origin}/approvals/link/${id}/denied`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'denied' }) });
+    expect(response.status).toBe(200);
+    expect(decideApprovalRequestByLink).toHaveBeenCalledWith({ requestId: id, decision: 'denied' });
+  });
+
+  it('rejects cross-origin decisions before touching the approval store', async () => {
     const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
-      method: 'POST',
-      headers: { origin: 'https://attacker.example' },
+      method: 'POST', headers: { origin: 'https://attacker.example' },
     }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
     expect(response.status).toBe(403);
     expect(decideApprovalRequestByLink).not.toHaveBeenCalled();
+  });
+
+  it('returns an explicit conflict when the one-time conditional update changes zero rows', async () => {
+    decideApprovalRequestByLink.mockResolvedValueOnce(false);
+    const response = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
+    expect(response.status).toBe(409);
+    expect(await response.text()).toContain('No decision was recorded');
+  });
+
+  it('rejects invalid decisions and rate-limits repeated attempts', async () => {
+    const invalid = await POST(new Request(`${origin}/approvals/link/${id}/pending`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'pending' }) });
+    expect(invalid.status).toBe(400);
+    checkRateLimit.mockResolvedValueOnce({ allowed: false, remaining: 0, retryAfter: 60 });
+    const limited = await POST(new Request(`${origin}/approvals/link/${id}/approved`, {
+      method: 'POST', headers: { origin },
+    }), { params: Promise.resolve({ requestId: id, decision: 'approved' }) });
+    expect(limited.status).toBe(429);
   });
 });
