@@ -65,6 +65,7 @@ export async function executeGovernedTrajectoryAction(
   signal?: AbortSignal,
   environmentId = 'internal',
   ownerId = 'operator',
+  tenantId: string | null = null,
 ): Promise<GovernedTrajectoryExecution> {
   const trajectoryDecision = authorizeTrajectoryAction(state, action);
   if (!trajectoryDecision.approved) {
@@ -136,6 +137,7 @@ export async function executeGovernedTrajectoryAction(
       signal,
       environmentId,
       ownerId,
+      tenantId,
     );
   } catch (error) {
     if (runContext) {
