@@ -1,6 +1,5 @@
 import { getApprovalRequestForLink } from '@/lib/approval_link';
 import { readCanonicalGovernanceState } from '@/lib/agents/canonical_governance_state';
-import { CONSTITUTION } from '@/lib/constitution';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
