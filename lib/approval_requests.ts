@@ -84,6 +84,7 @@ export async function createApprovalRequest(input: {
 export async function getApprovalRequestStatus(input: {
   requestId: string;
   ownerId: string;
+  tenantId: string;
   sessionId: string;
   toolName: string;
   args: Record<string, unknown>;
@@ -92,17 +93,18 @@ export async function getApprovalRequestStatus(input: {
   try {
     await ensureApprovalRequestSchema();
     const found = await getClient().execute({
-      sql: `SELECT request_id, owner_id, session_id, tool_name, args_hash, status, expires_at
+      sql: `SELECT request_id, owner_id, tenant_id, session_id, tool_name, args_hash, status, expires_at
             FROM approval_requests WHERE request_id = ? LIMIT 1`,
       args: [input.requestId],
     });
     if (!found.rows.length) return { status: 'invalid', reason: 'Approval request was not found.' };
     const row = found.rows[0];
-    if (String(row.owner_id) !== input.ownerId
+    if (!input.tenantId || String(row.tenant_id ?? '') !== input.tenantId
+      || String(row.owner_id) !== input.ownerId
       || String(row.session_id) !== input.sessionId
       || String(row.tool_name) !== input.toolName
       || String(row.args_hash) !== approvalArgsHash(input.args)) {
-      return { status: 'invalid', reason: 'Approval request does not match this owner, session, tool, and exact action.' };
+      return { status: 'invalid', reason: 'Approval request does not match this tenant, owner, session, tool, and exact action.' };
     }
     const now = input.nowMs ?? Date.now();
     const status = String(row.status) as ApprovalRequestStatus;
