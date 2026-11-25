@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
+import AuthModal from '@/components/AuthModal';
 import Link from 'next/link';
 
 interface KeyRecord {
@@ -17,6 +18,7 @@ interface KeyRecord {
 
 export default function KeysPage() {
   const { user } = useAuth();
+  const [showAuth, setShowAuth] = useState(false);
   const [name, setName]       = useState('');
   const [keys, setKeys]       = useState<KeyRecord[]>([]);
   const [newKey, setNewKey]   = useState('');
@@ -94,7 +96,17 @@ export default function KeysPage() {
 
         {/* Input */}
         <div style={{ background:'#0d0d1a', border:'1px solid #1f2937', borderRadius:8, padding:'1.25rem', marginBottom:'1rem' }}>
-          {user ? <p style={{ color:'#9ca3af', fontSize:12, margin:'0 0 0.75rem' }}>Signed in as {user.email}. Keys are managed within your tenant.</p> : <p style={{ color:'#fbbf24', fontSize:12, margin:'0 0 0.75rem' }}>Sign in with a verified account to manage API keys. Email alone does not grant access.</p>}
+          {user ? <p style={{ color:'#9ca3af', fontSize:12, margin:'0 0 0.75rem' }}>Signed in as {user.email}. Keys are managed within your tenant.</p> : (
+            <div style={{ margin:'0 0 0.75rem' }}>
+              <p style={{ color:'#fbbf24', fontSize:12, margin:'0 0 0.5rem' }}>Sign in with a verified account to manage API keys.</p>
+              <button
+                onClick={() => setShowAuth(true)}
+                style={{ background:'#2563eb', color:'#fff', border:'none', borderRadius:6, padding:'0.55rem 0.8rem', fontSize:12, cursor:'pointer' }}
+              >
+                Sign in or register
+              </button>
+            </div>
+          )}
           <div style={{ marginBottom:'1rem' }}>
             <label style={{ color:'#9ca3af', fontSize:12, display:'block', marginBottom:4 }}>KEY NAME (optional)</label>
             <input
@@ -192,6 +204,7 @@ export default function KeysPage() {
         </div>
 
       </div>
+      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     </main>
   );
 }

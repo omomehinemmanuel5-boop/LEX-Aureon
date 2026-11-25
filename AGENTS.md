@@ -402,6 +402,8 @@ npm run build          verify TypeScript
 
 ## CHANGELOG — WHAT HAS BEEN BUILT
 
+[2026-11-25] FIX: API Keys page now exposes the existing sign-in/registration modal to unauthenticated users; no authentication, tenant, or key-management logic changed.
+
 [2026-11-24] SECURITY (PR #271): Tenant approval access now uses verified owner accounts with scrypt passwords and signed HttpOnly sessions, rather than API-key sign-in. Approval inbox/decisions and key listing/creation/revocation are tenant-scoped; account email verification is required via Resend. Legacy API keys remain valid but are not auto-associated with accounts. Validation: typecheck, lint, production build, and 838 Vitest tests passed; deployment not performed.
 
 [2026-11-17] SYSTEM/SECURITY (PR #249, pending review): R1b adds central tenant registry DDL in lib/db.ts, nullable api_keys.tenant_id, atomic personal-tenant provisioning for new credentials, and a guarded manual backfill for existing credentials. Every API key gets its own deterministic personal tenant; email is never used to group credentials. Backfill is not run by CI or application startup. Organization sharing and full tenant-scoped authorization remain future R1c/R2 work.
