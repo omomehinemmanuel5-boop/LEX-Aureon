@@ -933,7 +933,7 @@ async function handlePost(req: Request) {
           return invalidParams(id ?? null, 'approval_request_id is required after human approval; request it with request_approval for consume_external_action');
         }
         const result = await consumeExternalAction({
-          environmentId, manifest, actionArgs, sessionId, actorId, ownerId,
+          environmentId, manifest, actionArgs, sessionId, actorId, ownerId, tenantId,
           approvalToken, approvalRequestId,
         });
         return mcpToolResult(id, {
