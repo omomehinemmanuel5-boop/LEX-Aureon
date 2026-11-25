@@ -48,7 +48,7 @@ export async function GET(req: Request): Promise<Response> {
     try {
       const canonical = await readCanonicalGovernanceState({
         sessionId: item.session_id,
-        actorId: `approval-link:${item.owner_id}`,
+        actorId: `approval-owner:${item.tenant_id}`,
         capability: 'read',
       });
       recovery = canonical.available
