@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, writeGovernanceReceipt, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
+const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanaryEvidence, readCanonicalGovernanceState, createCanonicalGovernanceStateReader, canonicalExecutionAllowed, advanceRecoveryPlane, shouldAdvanceRecoveryPlane, ensureCanonicalTrajectoryState, writeGovernanceReceipt, toolFn, definitions, patchDefinition, validateApiKey, validateAndConsumeKey, checkRateLimit, checkRateLimitReserve, isOperatorSecret, interceptToolCall, createGovernanceApprovalToken, createApprovalRequest, getApprovalRequestStatus, validateMcpSession, findMatchingScopedGrant } = vi.hoisted(() => ({
   executeGovernedTool: vi.fn(),
   executeGovernedToolStructured: vi.fn(),
   ensureCanonicalTrajectoryState: vi.fn(async (sessionId: string) => ({ status: 'created' as const, sessionId, verified: true as const })),
@@ -20,6 +20,7 @@ const { executeGovernedTool, executeGovernedToolStructured, recordRecoveryCanary
   validateApiKey: vi.fn(async () => ({ valid: true, key: {} })),
   validateAndConsumeKey: vi.fn(async () => ({ valid: true, key: {} })),
   checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 59, retryAfter: 0, storageError: false })),
+  checkRateLimitReserve: vi.fn(async () => ({ allowed: true, remaining: 24, retryAfter: 0, storageError: false })),
   isOperatorSecret: vi.fn(),
   interceptToolCall: vi.fn(async () => ({ approved: true, decision: 'approved', reason: 'allowed', receipt_id: 'approval-receipt' })),
   createGovernanceApprovalToken: vi.fn(() => 'approval-token'),
@@ -82,7 +83,7 @@ vi.mock('@/lib/api_keys', () => ({
 
 vi.mock('@/lib/mcp_sessions', () => ({ validateMcpSession }));
 
-vi.mock('@/lib/rate_limit', () => ({ checkRateLimit }));
+vi.mock('@/lib/rate_limit', () => ({ checkRateLimit, checkRateLimitReserve }));
 
 vi.mock('@/lib/lex_crs_agent/mcp_access', async () => {
   const actual = await vi.importActual<typeof import('../lib/lex_crs_agent/mcp_access')>('../lib/lex_crs_agent/mcp_access');
@@ -709,6 +710,7 @@ describe('MCP constitutional dispatch boundary', () => {
     expect(response.status).toBe(200);
     const result = (response.body as { result?: { content?: Array<{ text?: string }> } }).result;
     expect(result?.content?.[0]?.text).not.toContain('unclassified_tool:request_approval');
+    expect(checkRateLimitReserve).toHaveBeenCalledWith('approval-request:public-approval-owner', 25, 3600);
     expect(createApprovalRequest).toHaveBeenCalledWith(expect.objectContaining({
       ownerId: 'public-approval-owner',
       toolName: 'run_governance',
