@@ -637,6 +637,7 @@ async function handlePost(req: Request) {
         const status = await getApprovalRequestStatus({
           requestId: args.approval_request_id,
           ownerId,
+          tenantId: tenantId ?? '',
           sessionId: requestedSession,
           toolName: requestedTool,
           args: { ...normalizedRequestedArgs, session_id: requestedSession },
