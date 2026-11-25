@@ -39,6 +39,15 @@ function installDb() {
       }
       return { rowsAffected: 0, rows: [] };
     }
+    if (sql.startsWith("UPDATE approval_requests SET status = 'approved'")) {
+      if (row && row.request_id === args[0] && row.owner_id === args[1] && row.tenant_id === args[2]
+        && row.session_id === args[3] && row.tool_name === args[4] && row.status === 'used'
+        && row.args_hash === args[5]) {
+        row.status = 'approved';
+        return { rowsAffected: 1, rows: [] };
+      }
+      return { rowsAffected: 0, rows: [] };
+    }
     if (sql.startsWith('UPDATE approval_requests SET status = ?, decided_at = ?, decided_by = ?')) {
       if (row && row.request_id === args[3] && row.tenant_id === args[4]
         && row.status === 'pending' && Number(row.expires_at) > Number(args[5])) {
