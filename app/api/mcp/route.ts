@@ -1397,6 +1397,7 @@ async function handlePost(req: Request) {
           trajectoryController.signal,
           ownerId,
           ownerId,
+          tenantId,
         ), 30_000, trajectoryController);
 
         if (trajectoryOutcome.timedOut) {
@@ -1513,6 +1514,7 @@ async function handlePost(req: Request) {
           controller.signal,
           ownerId,
           ownerId,
+          tenantId,
         ), 30_000, controller);
         if (outcome.timedOut) {
           return mcpToolResult(id, {
@@ -1548,6 +1550,7 @@ async function handlePost(req: Request) {
           controller.signal,
           ownerId,
           ownerId,
+          tenantId,
         ), 30_000, controller);
 
         if (outcome.timedOut) {
@@ -1680,6 +1683,7 @@ async function handlePost(req: Request) {
         controller.signal,
         ownerId,
         ownerId,
+        tenantId,
       ), 30_000, controller);
 
       const result = outcome.timedOut
