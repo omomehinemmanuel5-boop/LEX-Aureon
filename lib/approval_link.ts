@@ -4,6 +4,7 @@ import { ensureApprovalRequestSchema, type ApprovalRequestStatus } from './appro
 export interface ApprovalLinkRequest {
   request_id: string;
   owner_id: string;
+  tenant_id: string;
   session_id: string;
   tool_name: string;
   args_json: string;
@@ -24,7 +25,7 @@ export async function getApprovalRequestForLink(
   if (!/^[A-Za-z0-9_-]{22}$/.test(requestId)) return null;
   await ensureApprovalRequestSchema();
   const result = await getClient().execute({
-    sql: `SELECT request_id, owner_id, session_id, tool_name, args_json, status, created_at, expires_at
+    sql: `SELECT request_id, owner_id, tenant_id, session_id, tool_name, args_json, status, created_at, expires_at
           FROM approval_requests
           WHERE request_id = ? AND tenant_id IS NOT NULL
           LIMIT 1`,
@@ -36,6 +37,7 @@ export async function getApprovalRequestForLink(
   return {
     request_id: String(row.request_id),
     owner_id: String(row.owner_id),
+    tenant_id: String(row.tenant_id),
     session_id: String(row.session_id),
     tool_name: String(row.tool_name),
     args_json: String(row.args_json),
