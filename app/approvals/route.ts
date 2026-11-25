@@ -16,7 +16,7 @@ function redact(value: unknown, key = ''): unknown {
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([childKey, child]) => [childKey, redact(child, childKey)]));
   }
-  if (typeof value === 'string' && /(lex_sk_|lex_at_|lex_rt_|gh[pousr]_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9_-]{16,}|bearer\\s+|password\\s*[:=])/i.test(value)) return '[REDACTED]';
+  if (typeof value === 'string' && /(lex_sk_|lex_at_|lex_rt_|gh[pousr]_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9_-]{16,}|bearer\s+|password\s*[:=])/i.test(value)) return '[REDACTED]';
   return value;
 }
 
