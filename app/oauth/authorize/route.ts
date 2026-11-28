@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
-  createAuthorizationCodeForAccount, normalizeMcpResource, MCP_ISSUER, MCP_SCOPE,
+  createAuthorizationCodeForAccount, isRegisteredRedirectUri, normalizeMcpResource, MCP_ISSUER, MCP_SCOPE,
 } from '@/lib/mcp_oauth';
 import {
   accountFromCookie, authenticateAccount, checkAccountRateLimit,
@@ -90,7 +90,8 @@ export async function GET(req: Request) {
     codeChallenge: p.get('code_challenge') ?? '',
   };
   const codeChallengeMethod = p.get('code_challenge_method') ?? '';
-  if (p.get('response_type') !== 'code' || !validAuthorizationRequest(fields, codeChallengeMethod)) {
+  if (p.get('response_type') !== 'code' || !validAuthorizationRequest(fields, codeChallengeMethod)
+    || !await isRegisteredRedirectUri(fields.clientId, fields.redirectUri)) {
     return new NextResponse('Invalid OAuth authorization request', { status: 400 });
   }
 
