@@ -237,18 +237,44 @@ function withApprovalRequestSchema(tool: { name: string; description: string; in
 }
 
 function toolAnnotations(name: string) {
-  const capability = getToolCapability(name);
-  // Unknown capabilities must never be advertised as safe. The dispatcher
-  // independently fails closed for unknown tools; these conservative hints
-  // prevent the client from presenting them as harmless.
-  const readOnlyHint = capability?.capability === 'read';
-  const destructiveHint = !capability
-    || (capability.capability !== 'read' && !capability.reversible);
-  const openWorldHint = !capability
-    || capability.capability === 'external'
-    || capability.capability === 'network'
-    || ['fetch_page', 'curl', 'http_get', 'discover_external_tool', 'govern_external_action'].includes(name);
-  return { readOnlyHint, destructiveHint, openWorldHint };
+  // These are based on the actual implementations, not merely the capability
+  // registry: several governance tools persist receipts or bounded state.
+  const readOnlyTools = new Set([
+    'get_constitutional_state',
+    'get_trajectory_status',
+    'review_agent_action',
+    'simulate_agent_plan',
+    'explain_denial',
+    'get_recent_receipts',
+  ]);
+  const destructiveTools = new Set([
+    'declare_trajectory_plan',
+    'clear_trajectory_plan',
+    'consume_external_action',
+  ]);
+  const openWorldTools = new Set([
+    'run_governance',
+    'discover_external_tool',
+    'govern_external_action',
+    'consume_external_action',
+  ]);
+  const knownPublicTools = new Set([
+    'run_governance', 'request_approval', 'get_constitutional_state',
+    'request_recovery_pulse', 'declare_trajectory_plan', 'get_trajectory_status',
+    'clear_trajectory_plan', 'review_agent_action', 'simulate_agent_plan',
+    'explain_denial', 'discover_external_tool', 'govern_external_action',
+    'consume_external_action',
+  ]);
+  // Unknown or newly added tools receive conservative hints until their
+  // implementation has been reviewed and explicitly classified.
+  if (!knownPublicTools.has(name)) {
+    return { readOnlyHint: false, destructiveHint: true, openWorldHint: true };
+  }
+  return {
+    readOnlyHint: readOnlyTools.has(name),
+    destructiveHint: destructiveTools.has(name),
+    openWorldHint: openWorldTools.has(name),
+  };
 }
 
 function servedTools() {
