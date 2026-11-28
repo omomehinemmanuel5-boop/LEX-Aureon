@@ -1,8 +1,32 @@
 import { NextResponse } from 'next/server';
-import { createAuthorizationCode, normalizeMcpResource, MCP_ISSUER, MCP_SCOPE } from '@/lib/mcp_oauth';
+import {
+  createAuthorizationCodeForAccount, isRegisteredRedirectUri, normalizeMcpResource, MCP_ISSUER, MCP_SCOPE,
+} from '@/lib/mcp_oauth';
+import {
+  accountFromCookie, authenticateAccount, checkAccountRateLimit,
+  clientRateLimitKey, createAccountSessionCookie, registerAccount,
+} from '@/lib/auth_accounts';
+import { getClientIp } from '@/lib/rate_limit';
+import { isTrustedSameOriginFormPost } from '@/lib/security/approval_origin';
 
-function html(body: string) {
-  return new NextResponse(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Lex Aureon</title><style>body{font-family:system-ui;max-width:520px;margin:10vh auto;padding:24px}input{width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box}button{padding:12px 18px;border:0;border-radius:8px;cursor:pointer}small{color:#666}</style></head><body>${body}</body></html>`, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char] ?? char);
+}
+
+function html(body: string, status = 200) {
+  return new NextResponse(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Connect Lex Aureon</title><style>
+    body{font-family:system-ui;max-width:520px;margin:8vh auto;padding:24px;color:#171717}
+    input{width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box;border:1px solid #bbb;border-radius:8px}
+    button{padding:12px 18px;border:0;border-radius:8px;background:#171717;color:white;cursor:pointer}
+    a{color:#2457c5}small{color:#666}.error{color:#a21b1b}
+  </style></head><body>${body}</body></html>`, {
+    status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' },
+  });
 }
 
 function redirectError(redirectUri: string, state: string, error: string, description: string) {
@@ -11,81 +35,179 @@ function redirectError(redirectUri: string, state: string, error: string, descri
   u.searchParams.set('error_description', description);
   if (state) u.searchParams.set('state', state);
   u.searchParams.set('iss', MCP_ISSUER);
-  // The authorization form is submitted with POST. A 307 would preserve
-  // that method when following the redirect, but OAuth callbacks must be
-  // reached with GET so ChatGPT can receive the authorization response.
   return NextResponse.redirect(u, 302);
+}
+
+function readAuthorizationFields(form: FormData) {
+  const clientId = String(form.get('client_id') ?? '');
+  const redirectUri = String(form.get('redirect_uri') ?? '');
+  const scope = String(form.get('scope') ?? '');
+  const state = String(form.get('state') ?? '');
+  const resource = normalizeMcpResource(String(form.get('resource') ?? '')) ?? '';
+  const codeChallenge = String(form.get('code_challenge') ?? '');
+  return { clientId, redirectUri, scope, state, resource, codeChallenge };
+}
+
+function authorizationUrl(fields: ReturnType<typeof readAuthorizationFields>): URL {
+  const url = new URL('/oauth/authorize', MCP_ISSUER);
+  url.searchParams.set('client_id', fields.clientId);
+  url.searchParams.set('redirect_uri', fields.redirectUri);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', fields.scope);
+  url.searchParams.set('state', fields.state);
+  url.searchParams.set('resource', fields.resource);
+  url.searchParams.set('code_challenge', fields.codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  return url;
+}
+
+function hiddenFields(fields: ReturnType<typeof readAuthorizationFields>): string {
+  const values: Record<string, string> = {
+    client_id: fields.clientId, redirect_uri: fields.redirectUri,
+    scope: fields.scope, state: fields.state, resource: fields.resource,
+    code_challenge: fields.codeChallenge,
+  };
+  return Object.entries(values).map(([name, value]) =>
+    `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`,
+  ).join('');
+}
+
+function validAuthorizationRequest(fields: ReturnType<typeof readAuthorizationFields>, codeChallengeMethod: string): boolean {
+  return Boolean(fields.clientId && fields.redirectUri && fields.state && fields.resource
+    && fields.scope === MCP_SCOPE && codeChallengeMethod === 'S256'
+    && /^[A-Za-z0-9_-]{43,128}$/.test(fields.codeChallenge));
 }
 
 export async function GET(req: Request) {
   const u = new URL(req.url);
   const p = u.searchParams;
-  const clientId = p.get('client_id') ?? '';
-  const redirectUri = p.get('redirect_uri') ?? '';
-  const responseType = p.get('response_type') ?? '';
-  const scope = p.get('scope') ?? MCP_SCOPE;
-  const state = p.get('state') ?? '';
-  const resource = normalizeMcpResource(p.get('resource')) ?? '';
-  const codeChallenge = p.get('code_challenge') ?? '';
+  const fields = {
+    clientId: p.get('client_id') ?? '',
+    redirectUri: p.get('redirect_uri') ?? '',
+    scope: p.get('scope') ?? '',
+    state: p.get('state') ?? '',
+    resource: normalizeMcpResource(p.get('resource')) ?? '',
+    codeChallenge: p.get('code_challenge') ?? '',
+  };
   const codeChallengeMethod = p.get('code_challenge_method') ?? '';
-
-  if (responseType !== 'code' || !clientId || !redirectUri || !state || !resource || codeChallengeMethod !== 'S256') {
+  if (p.get('response_type') !== 'code' || !validAuthorizationRequest(fields, codeChallengeMethod)
+    || !await isRegisteredRedirectUri(fields.clientId, fields.redirectUri)) {
     return new NextResponse('Invalid OAuth authorization request', { status: 400 });
   }
 
+  const user = await accountFromCookie(req.headers.get('cookie')).catch(() => null);
+  const formFields = hiddenFields(fields);
+  if (!user) {
+    if (p.get('mode') === 'register') {
+      return html(`<h1>Create your Lex account</h1>
+        <p>Create a free tenant account to connect Lex Aureon to ChatGPT. Your original connection request will resume after email verification.</p>
+        <form method="post">
+          <input type="hidden" name="action" value="register">${formFields}
+          <label>Email</label><input name="email" type="email" autocomplete="email" maxlength="254" required>
+          <label>Password (minimum 10 characters)</label><input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" required>
+          <label>Workspace name</label><input name="company_name" type="text" minlength="2" maxlength="120" required>
+          <button type="submit">Create account and continue</button>
+        </form>
+        <p><a href="${escapeHtml(authorizationUrl(fields).toString())}">Already have an account? Sign in</a></p>
+        <small>We will email a one-time verification link. It expires after 30 minutes.</small>`);
+    }
+    return html(`<h1>Sign in to connect Lex</h1>
+      <p>Use your verified Lex Aureon account to authorize this connection. You do not need to copy or disclose an API key.</p>
+      <form method="post">
+        <input type="hidden" name="action" value="login">${formFields}
+        <label>Email</label><input name="email" type="email" autocomplete="username" maxlength="254" required>
+        <label>Password</label><input name="password" type="password" autocomplete="current-password" maxlength="256" required>
+        <button type="submit">Sign in and continue</button>
+      </form>
+      <p><a href="${escapeHtml(authorizationUrl(fields).toString())}&amp;mode=register">New to Lex? Create an account</a></p>
+      <small>New accounts must verify their email before connecting.</small>`);
+  }
+
   return html(`<h1>Connect Lex Aureon</h1>
-    <p>Your MCP client is requesting access to Lex Aureon. Enter your Lex API key to authorize this connection.</p>
+    <p>Signed in as <strong>${escapeHtml(user.email)}</strong>.</p>
+    <p>ChatGPT is requesting access to Lex Aureon governance tools under your account's free-tier permissions.</p>
     <form method="post">
-      <input type="hidden" name="client_id" value="${encodeURIComponent(clientId)}">
-      <input type="hidden" name="redirect_uri" value="${encodeURIComponent(redirectUri)}">
-      <input type="hidden" name="scope" value="${encodeURIComponent(scope)}">
-      <input type="hidden" name="state" value="${encodeURIComponent(state)}">
-      <input type="hidden" name="resource" value="${encodeURIComponent(resource)}">
-      <input type="hidden" name="code_challenge" value="${encodeURIComponent(codeChallenge)}">
-      <input type="hidden" name="code_challenge_method" value="S256">
-      <label>Lex API key</label>
-      <input name="api_key" type="password" autocomplete="off" required placeholder="lex_sk_…">
-      <button type="submit">Authorize ChatGPT</button>
+      <input type="hidden" name="action" value="authorize">${formFields}
+      <button type="submit">Authorize connection</button>
     </form>
-    <small>Your API key is validated by Lex and is not returned to ChatGPT. OAuth tokens are stored as hashes.</small>`);
+    <small>Lex will not grant operator, private-test, or sovereign privileges through this public connection.</small>`);
 }
 
 export async function POST(req: Request) {
+  if (!isTrustedSameOriginFormPost(req)) return html('<h1>Request not accepted</h1><p>The request origin was not accepted.</p>', 403);
   const form = await req.formData().catch(() => null);
-  if (!form) return new NextResponse('Invalid request', { status: 400 });
+  if (!form) return html('<h1>Invalid request</h1>', 400);
+  const fields = readAuthorizationFields(form);
+  const action = String(form.get('action') ?? '');
+  if (!validAuthorizationRequest(fields, 'S256') || !await isRegisteredRedirectUri(fields.clientId, fields.redirectUri)) return html('<h1>Invalid authorization request</h1>', 400);
 
-  const decode = (name: string) => {
-    const raw = String(form.get(name) ?? '');
-    try { return decodeURIComponent(raw); } catch { return raw; }
-  };
-  const clientId = decode('client_id');
-  const redirectUri = decode('redirect_uri');
-  const scope = decode('scope') || MCP_SCOPE;
-  const state = decode('state');
-  const resource = normalizeMcpResource(decode('resource')) ?? '';
-  const codeChallenge = decode('code_challenge');
-  const apiKey = String(form.get('api_key') ?? '');
-
-  if (!clientId || !redirectUri || !state || !resource || !apiKey) {
-    return new NextResponse('Invalid authorization request', { status: 400 });
-  }
-
-  const result = await createAuthorizationCode({ clientId, redirectUri, apiKey, scope, resource, codeChallenge });
-  if ('error' in result) {
-    // Never redirect to an unregistered callback. The client/redirect pair is
-    // validated before any authorization code is issued.
-    if (result.error === 'invalid_client') {
-      return new NextResponse('OAuth client or redirect URI is not registered', { status: 400 });
+  if (action === 'register') {
+    const email = String(form.get('email') ?? '');
+    const password = String(form.get('password') ?? '');
+    const companyName = String(form.get('company_name') ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 10 || password.length > 256 || companyName.length < 2 || companyName.length > 120) {
+      return html('<h1>Check your details</h1><p>Enter a valid email, a password of at least 10 characters, and a workspace name.</p>', 400);
     }
-    const description = result.error === 'invalid_api_key' ? 'The Lex API key was invalid, expired, or exhausted.' : 'The OAuth authorization request was rejected.';
-    return redirectError(redirectUri, state, 'access_denied', description);
+    try {
+      const ip = getClientIp(req);
+      if (!await checkAccountRateLimit(clientRateLimitKey(ip, 'oauth-register'), 5, 60 * 60)) {
+        return html('<h1>Too many registration attempts</h1><p>Please try again later.</p>', 429);
+      }
+      const result = await registerAccount({ email, password, companyName, continuationUrl: authorizationUrl(fields).toString() });
+      if (result === 'unavailable') return html('<h1>Registration temporarily unavailable</h1><p>Lex could not send the verification email. No connection was authorized. Please try again later.</p>', 503);
+      if (result === 'already_exists') return html('<h1>Account already exists</h1><p>This email is already registered. Sign in with your existing password to continue connecting ChatGPT.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
+      return html('<h1>Check your email</h1><p>Lex has sent a verification link if this account is eligible. Open it on this device to verify your account and resume this ChatGPT connection.</p><p>The link expires in 30 minutes. If you previously started registration, use the password you originally chose.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
+    } catch {
+      return html('<h1>Registration unavailable</h1><p>Please try again later. No connection was authorized.</p>', 503);
+    }
   }
 
-  const callback = new URL(redirectUri);
+  if (action === 'login') {
+    const email = String(form.get('email') ?? '');
+    const password = String(form.get('password') ?? '');
+    try {
+      const ip = getClientIp(req);
+      if (!await checkAccountRateLimit(clientRateLimitKey(ip, 'oauth-login'), 12, 15 * 60)
+        || !await checkAccountRateLimit(clientRateLimitKey(ip, `oauth-login:${email.trim().toLowerCase()}`), 6, 15 * 60)) {
+        return html('<h1>Too many sign-in attempts</h1><p>Please try again later.</p>', 429);
+      }
+      const result = await authenticateAccount(email, password);
+      if (!result) return html(`<h1>Sign-in failed</h1><p class="error">Email or password was not accepted.</p><p><a href="${escapeHtml(authorizationUrl(fields).toString())}">Return to connection</a></p>`, 401);
+      if (!result.verified) {
+        const verification = await registerAccount({
+          email, password, companyName: result.user.name,
+          continuationUrl: authorizationUrl(fields).toString(),
+        });
+        if (verification === 'unavailable') return html('<h1>Email verification required</h1><p>Lex could not send a verification email right now. No connection was authorized. Please try again later.</p>', 503);
+        if (verification === 'already_exists') return NextResponse.redirect(authorizationUrl(fields), 302);
+        return html('<h1>Check your email</h1><p>Your account is not verified yet. Lex has sent a fresh verification link. Open it to verify your account and resume this ChatGPT connection.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
+      }
+      const response = NextResponse.redirect(authorizationUrl(fields), 302);
+      response.headers.set('Set-Cookie', createAccountSessionCookie(result.user));
+      response.headers.set('Cache-Control', 'no-store');
+      return response;
+    } catch {
+      return html('<h1>Sign-in unavailable</h1><p>Please try again later.</p>', 503);
+    }
+  }
+
+  if (action !== 'authorize') return html('<h1>Invalid request</h1>', 400);
+  const result = await createAuthorizationCodeForAccount({
+    clientId: fields.clientId, redirectUri: fields.redirectUri,
+    cookieHeader: req.headers.get('cookie'), scope: fields.scope,
+    resource: fields.resource, codeChallenge: fields.codeChallenge,
+  });
+  if ('error' in result) {
+    if (result.error === 'invalid_client') return html('<h1>OAuth client rejected</h1><p>The registered client or redirect URI was not accepted.</p>', 400);
+    if (result.error === 'account_required') return NextResponse.redirect(authorizationUrl(fields), 302);
+    if (result.error === 'account_key_limit') return html('<h1>Connection limit reached</h1><p>Your tenant has reached the free-tier API key limit. Revoke an unused key from account settings and try again.</p><p><a href="/keys">Manage account keys</a></p>', 429);
+    if (result.error === 'account_key_unavailable') return html('<h1>Connection unavailable</h1><p>Lex could not provision a tenant-scoped connection. No authorization was issued.</p>', 503);
+    return redirectError(fields.redirectUri, fields.state, 'access_denied', 'The OAuth authorization request was rejected.');
+  }
+
+  const callback = new URL(fields.redirectUri);
   callback.searchParams.set('code', result.code);
-  callback.searchParams.set('state', state);
+  callback.searchParams.set('state', fields.state);
   callback.searchParams.set('iss', MCP_ISSUER);
-  // Use the conventional OAuth 302 after the POSTed consent form; the default
-  // 307 preserves POST at ChatGPT's callback and prevents code exchange.
   return NextResponse.redirect(callback, 302);
 }

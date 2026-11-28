@@ -32,6 +32,7 @@ import { discoverExternalTool, governExternalAction, consumeExternalAction } fro
 import type { ToolManifest } from '@/lib/agents/tool_capability_discovery';
 import { negotiateMcpHandshakeVersion } from '@/lib/mcp_protocol';
 import { resolveAccessToken } from '@/lib/mcp_oauth';
+import { toolAnnotations } from '@/lib/mcp_tool_annotations';
 import { createApprovalRequest, getApprovalRequestStatus } from '@/lib/approval_requests';
 import { findMatchingScopedGrant } from '@/lib/scoped_grants';
 import { env } from '@/lib/env';
@@ -236,15 +237,24 @@ function withApprovalRequestSchema(tool: { name: string; description: string; in
   };
 }
 
+
 function servedTools() {
+  const oauthSecurity = [{ type: 'oauth2', scopes: ['mcp'] }];
+  const withOAuthSecurity = <T extends { name: string; description: string; inputSchema: Record<string, unknown> }>(tool: T) => ({
+    ...tool,
+    annotations: toolAnnotations(tool.name),
+    _meta: { ...((tool as T & { _meta?: Record<string, unknown> })._meta ?? {}), securitySchemes: oauthSecurity },
+  });
   return [
-    ...TOOL_DEFINITIONS.map(t => withApprovalRequestSchema({
+    ...TOOL_DEFINITIONS.map(t => withOAuthSecurity(withApprovalRequestSchema({
       name: t.name, description: t.description, inputSchema: t.parameters as Record<string, unknown>,
-    })),
-    ...EXTENSION_DEFINITIONS.map(t => withApprovalRequestSchema({
+    }))),
+    ...EXTENSION_DEFINITIONS.map(t => withOAuthSecurity(withApprovalRequestSchema({
+      name: t.name, description: t.description, inputSchema: t.inputSchema as Record<string, unknown>,
+    }))),
+    ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => withOAuthSecurity({
       name: t.name, description: t.description, inputSchema: t.inputSchema as Record<string, unknown>,
     })),
-    ...EXTERNAL_CAPABILITY_DEFINITIONS,
   ];
 }
 

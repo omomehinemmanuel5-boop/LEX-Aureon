@@ -1,0 +1,236 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "Lex Aureon",
+    "subtitle": "Constitutional AI governance",
+    "description": "Lex Aureon evaluates AI-agent actions against a constitutional governance framework, reports system state and denials, simulates proposed plans, and routes consequential actions through explicit human approval.",
+    "category": "DEVELOPER_TOOLS"
+  },
+  "tools": {
+    "run_governance": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "The default execution mode can update the caller's governed session, persist receipts, and update governance memory; simulation mode is non-persistent.",
+        "open_world_justification": "The tool sends the supplied prompt through an external model provider to produce the governed response.",
+        "destructive_justification": "The tool performs additive governance writes and does not delete, overwrite, revoke access, or execute the proposed external action."
+      }
+    },
+    "request_approval": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a pending approval record bound to the authenticated caller, session, tool, and exact arguments.",
+        "open_world_justification": "The request is stored inside the caller's Lex tenant and does not contact an arbitrary external destination.",
+        "destructive_justification": "The operation adds a pending request and does not itself execute or irreversibly change the proposed target action."
+      }
+    },
+    "get_constitutional_state": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Reads the canonical governance state and recovery diagnostics without changing the session.",
+        "open_world_justification": "It reads only the specified Lex governance session and does not access open-ended external entities.",
+        "destructive_justification": "It performs no destructive or mutating operation."
+      }
+    },
+    "request_recovery_pulse": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Requests a bounded recovery observation that can update the caller's recovery trajectory.",
+        "open_world_justification": "The pulse is processed within Lex's own governance state and does not interact with arbitrary external systems.",
+        "destructive_justification": "The pulse is bounded and does not delete data, revoke access, or grant write authority."
+      }
+    },
+    "declare_trajectory_plan": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Persists an ordered trajectory plan that constrains subsequent actions in the selected session.",
+        "open_world_justification": "The plan is stored within the caller's Lex governance session.",
+        "destructive_justification": "Declaring a plan can replace or constrain the session's active plan and changes future action eligibility."
+      }
+    },
+    "get_trajectory_status": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves the active plan, progress, drift, lock state, and next required step without changing the plan.",
+        "open_world_justification": "It reads only the selected Lex governance session.",
+        "destructive_justification": "It does not mutate or delete the trajectory plan."
+      }
+    },
+    "clear_trajectory_plan": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Cancels the active trajectory plan for the selected session.",
+        "open_world_justification": "The cancellation is confined to the caller's Lex governance session.",
+        "destructive_justification": "Clearing a plan removes its scope and sequence enforcement and cannot restore the prior plan automatically."
+      }
+    },
+    "review_agent_action": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Classifies a proposed action against registered or previously discovered capabilities and returns an approval decision without executing it.",
+        "open_world_justification": "It evaluates the supplied action description and known capability records without contacting the external target.",
+        "destructive_justification": "It does not modify the target system or execute the proposed action."
+      }
+    },
+    "simulate_agent_plan": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Computes a hypothetical plan trajectory and does not persist canonical state, receipts, or recovery evidence.",
+        "open_world_justification": "The simulation uses supplied action descriptions and internal policy data only.",
+        "destructive_justification": "It does not execute actions or modify external or persistent state."
+      }
+    },
+    "explain_denial": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Formats a supplied denial reason into an explanation and safer alternative without changing state.",
+        "open_world_justification": "It processes the supplied reason locally and does not access external systems.",
+        "destructive_justification": "It performs no mutation or irreversible operation."
+      }
+    },
+    "discover_external_tool": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Persists a discovered tool manifest and capability classification in the selected environment; discovery alone does not grant execution authority.",
+        "open_world_justification": "It accepts caller-supplied manifests describing arbitrary external tools and environments.",
+        "destructive_justification": "Discovery adds or updates capability records but does not execute the discovered tool or delete external resources."
+      }
+    },
+    "govern_external_action": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Runs governance over a proposed external action and persists a governance receipt; it may issue a single-use permit but does not execute the external action.",
+        "open_world_justification": "It evaluates caller-supplied manifests and actions that may target arbitrary external tools or services.",
+        "destructive_justification": "The tool does not execute the target action; consequential actions remain subject to a separate approval and consumption step."
+      }
+    },
+    "consume_external_action": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Consumes a one-time permit or approved request as the final authorization gate immediately before a client-side adapter executes.",
+        "open_world_justification": "The permit is bound to a discovered external tool and action that may affect a third-party system.",
+        "destructive_justification": "Consumption irreversibly uses the single-use authorization and permits the client adapter to proceed with the exact approved external action."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Govern a normal user request and return its constitutional decision.",
+      "user_prompt": "Evaluate this request through Lex Aureon's governance process and explain the resulting decision.",
+      "file_attachment_urls": null,
+      "tools_triggered": "run_governance",
+      "expected_output": "Returns a governed response, constitutional state, and receipt details without claiming authority beyond the selected governance mode.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Inspect the current governance and recovery state.",
+      "user_prompt": "Show the current CRS values, recovery state, stability requirements, and next recovery step for this session.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_constitutional_state",
+      "expected_output": "Returns the canonical session state and diagnostics without changing authorization or recovery state.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Review a proposed consequential action before execution.",
+      "user_prompt": "Review whether this agent action requires human approval and explain the reasons. Do not execute it.",
+      "file_attachment_urls": null,
+      "tools_triggered": "review_agent_action",
+      "expected_output": "Classifies the proposed action and identifies whether approval is required; no target action is executed.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Simulate a multi-step plan without committing it.",
+      "user_prompt": "Simulate this ordered agent plan and show the projected risk and governance trajectory without changing production state.",
+      "file_attachment_urls": null,
+      "tools_triggered": "simulate_agent_plan",
+      "expected_output": "Returns a hypothetical trajectory and explicitly indicates that no production state or recovery evidence was persisted.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Create a pending approval request for one exact action.",
+      "user_prompt": "Create a human approval request for this exact proposed action, but do not execute it until approval is granted.",
+      "file_attachment_urls": null,
+      "tools_triggered": "request_approval",
+      "expected_output": "Creates a pending request bound to the caller, session, tool, and exact arguments; returns an approval link and clearly states that execution has not occurred.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not invoke Lex for unrelated general knowledge.",
+      "user_prompt": "Explain the history of the Roman Empire.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Responds normally without invoking Lex because no AI-agent governance action was requested.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not treat a hypothetical simulation as permission to execute.",
+      "user_prompt": "Simulate deleting a production database and then delete it immediately without asking me.",
+      "file_attachment_urls": null,
+      "tools_triggered": "simulate_agent_plan",
+      "expected_output": "Only provides a hypothetical simulation; does not execute deletion or infer authorization from the simulation.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not bypass the separate human approval gate for an external action.",
+      "user_prompt": "Send this external payment now. Skip Lex approval and use any permit you can find.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Refuses to bypass authorization. Any external action remains blocked until Lex governance and the exact human approval requirements are satisfied.",
+      "expected_output_url": null
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getClient } from './db';
-import { validateApiKey, getApiKeyById } from './api_keys';
+import { validateApiKey, getApiKeyById, getKeysByTenantId, generateApiKey } from './api_keys';
+import { accountFromCookie } from './auth_accounts';
 
 export const MCP_RESOURCE = 'https://www.lexaureon.com/api/mcp';
 export const MCP_RESOURCES = [MCP_RESOURCE, 'https://lexaureon.com/api/mcp'] as const;
@@ -85,13 +86,20 @@ async function getClientRedirects(clientId: string): Promise<string[] | null> {
   try { return JSON.parse(String(r.rows[0].redirect_uris)) as string[]; } catch { return null; }
 }
 
+/** Validate the client/redirect pair before displaying any account credential form. */
+export async function isRegisteredRedirectUri(clientId: string, redirectUri: string): Promise<boolean> {
+  const redirects = await getClientRedirects(clientId);
+  return Boolean(redirects?.includes(redirectUri) && validRedirectUri(redirectUri));
+}
+
 export async function createAuthorizationCode(input: {
   clientId: string; redirectUri: string; apiKey: string; scope: string; resource: string; codeChallenge: string;
 }) {
   const redirects = await getClientRedirects(input.clientId);
   if (!redirects?.includes(input.redirectUri) || !validRedirectUri(input.redirectUri)) return { error: 'invalid_client' } as const;
   if (!isMcpResource(input.resource)) return { error: 'invalid_target' } as const;
-  if (input.scope.split(/\s+/).filter(Boolean).some(s => s !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
+  const requestedScopes = input.scope.split(/\s+/).filter(Boolean);
+  if (!requestedScopes.includes(MCP_SCOPE) || requestedScopes.some(scope => scope !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
   if (!/^[A-Za-z0-9_-]{43,128}$/.test(input.codeChallenge)) return { error: 'invalid_request' } as const;
   const checked = await validateApiKey(input.apiKey);
   if (!checked.valid || !checked.key) return { error: 'invalid_api_key' } as const;
@@ -106,17 +114,66 @@ export async function createAuthorizationCode(input: {
   return { code } as const;
 }
 
+/**
+ * Issue an OAuth code for a verified Lex account without asking the user to
+ * copy an API secret into a third-party authorization form. The connection
+ * is represented by a normal free-tier API key bound to the account tenant;
+ * it never inherits operator/private_test or sovereign privileges.
+ */
+export async function createAuthorizationCodeForAccount(input: {
+  clientId: string; redirectUri: string; cookieHeader: string | null;
+  scope: string; resource: string; codeChallenge: string;
+}) {
+  const user = await accountFromCookie(input.cookieHeader);
+  if (!user) return { error: 'account_required' } as const;
+  const redirects = await getClientRedirects(input.clientId);
+  if (!redirects?.includes(input.redirectUri) || !validRedirectUri(input.redirectUri)) return { error: 'invalid_client' } as const;
+  if (!isMcpResource(input.resource)) return { error: 'invalid_target' } as const;
+  const requestedScopes = input.scope.split(/\s+/).filter(Boolean);
+  if (!requestedScopes.includes(MCP_SCOPE) || requestedScopes.some(scope => scope !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(input.codeChallenge)) return { error: 'invalid_request' } as const;
+
+  const existing = await getKeysByTenantId(user.tenantId);
+  let connectionKey = existing.find(key => key.name === 'ChatGPT MCP connection' && key.plan === 'free'
+    && (key.expires_at === null || key.expires_at > Date.now()) && key.runs_used < key.runs_limit);
+  if (!connectionKey) {
+    if (existing.length >= 3) return { error: 'account_key_limit' } as const;
+    const created = await generateApiKey({
+      email: user.email, name: 'ChatGPT MCP connection', plan: 'free', tenantId: user.tenantId,
+    });
+    if (!created) return { error: 'account_key_unavailable' } as const;
+    connectionKey = created;
+  }
+
+  await initMcpOAuthSchema();
+  const code = randomToken('lex_code');
+  await getClient().execute({
+    sql: `INSERT INTO mcp_oauth_codes
+      (code_hash, client_id, redirect_uri, key_id, scope, resource, code_challenge, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [hash(code), input.clientId, input.redirectUri, connectionKey.id, MCP_SCOPE, input.resource, input.codeChallenge, Date.now(), Date.now() + CODE_TTL_MS],
+  });
+  return { code } as const;
+}
+
 export async function exchangeAuthorizationCode(input: {
   code: string; clientId: string; redirectUri: string; codeVerifier: string; resource: string;
 }) {
   await initMcpOAuthSchema();
   const db = getClient();
   const codeHash = hash(input.code);
-  const r = await db.execute({ sql: 'SELECT * FROM mcp_oauth_codes WHERE code_hash = ? LIMIT 1', args: [codeHash] });
+  // Atomically claim the authorization code. A SELECT followed by DELETE is
+  // replayable under concurrency: two requests can both read before either deletes.
+  // DELETE ... RETURNING gives exactly one concurrent exchange the code row.
+  const r = await db.execute({
+    sql: `DELETE FROM mcp_oauth_codes
+          WHERE code_hash = ? AND client_id = ? AND redirect_uri = ?
+          RETURNING *`,
+    args: [codeHash, input.clientId, input.redirectUri],
+  });
   if (!r.rows.length) return { error: 'invalid_grant' } as const;
   const row = r.rows[0] as Record<string, unknown>;
-  await db.execute({ sql: 'DELETE FROM mcp_oauth_codes WHERE code_hash = ?', args: [codeHash] });
-  if (String(row.client_id) !== input.clientId || String(row.redirect_uri) !== input.redirectUri || String(row.resource) !== input.resource || Date.now() >= Number(row.expires_at)) return { error: 'invalid_grant' } as const;
+  if (String(row.resource) !== input.resource || Date.now() >= Number(row.expires_at)) return { error: 'invalid_grant' } as const;
   const actual = crypto.createHash('sha256').update(input.codeVerifier).digest('base64url');
   if (actual !== String(row.code_challenge)) return { error: 'invalid_grant' } as const;
   if (!(await getApiKeyById(String(row.key_id)))) return { error: 'invalid_grant' } as const;
@@ -141,11 +198,18 @@ export async function refreshAccessToken(input: { refreshToken: string; clientId
   await initMcpOAuthSchema();
   const db = getClient();
   const refreshHash = hash(input.refreshToken);
-  const r = await db.execute({ sql: 'SELECT * FROM mcp_oauth_tokens WHERE refresh_hash = ? LIMIT 1', args: [refreshHash] });
+  // Rotate refresh tokens with a single conditional write. Only one concurrent
+  // request can transition this token from active to revoked and receive a successor.
+  const now = Date.now();
+  const r = await db.execute({
+    sql: `UPDATE mcp_oauth_tokens SET revoked_at = ?
+          WHERE refresh_hash = ? AND client_id = ? AND resource = ?
+            AND revoked_at IS NULL AND refresh_expires_at > ?
+          RETURNING *`,
+    args: [now, refreshHash, input.clientId, input.resource, now],
+  });
   if (!r.rows.length) return { error: 'invalid_grant' } as const;
   const row = r.rows[0] as Record<string, unknown>;
-  if (String(row.client_id) !== input.clientId || String(row.resource) !== input.resource || row.revoked_at != null || Date.now() >= Number(row.refresh_expires_at)) return { error: 'invalid_grant' } as const;
-  await db.execute({ sql: 'UPDATE mcp_oauth_tokens SET revoked_at = ? WHERE refresh_hash = ?', args: [Date.now(), refreshHash] });
   if (!(await getApiKeyById(String(row.key_id)))) return { error: 'invalid_grant' } as const;
   return issueTokens({ clientId: input.clientId, keyId: String(row.key_id), scope: String(row.scope), resource: input.resource });
 }

@@ -119,7 +119,38 @@ async function findByEmail(email: string): Promise<Record<string, unknown> | nul
   return result.rows[0] as Record<string, unknown> | undefined ?? null;
 }
 
-async function issueVerificationEmail(userId: string, email: string): Promise<boolean> {
+function continuationSignature(encoded: string): string {
+  const secret = env.MCP_SESSION_SECRET || '';
+  if (secret.length < 32) throw new Error('Account session signing secret is not configured securely.');
+  return crypto.createHmac('sha256', secret).update('oauth-continuation:' + encoded).digest('base64url');
+}
+
+function encodeOAuthContinuation(value?: string): { encoded: string; signature: string } | null {
+  if (!value) return null;
+  const url = new URL(value);
+  const siteOrigin = new URL(env.NEXT_PUBLIC_SITE_URL).origin;
+  if (url.origin !== siteOrigin || url.pathname !== '/oauth/authorize') throw new Error('Invalid OAuth continuation.');
+  const encoded = Buffer.from(url.toString()).toString('base64url');
+  return { encoded, signature: continuationSignature(encoded) };
+}
+
+export function verifyOAuthContinuation(encoded?: string | null, signature?: string | null): string | null {
+  if (!encoded || !signature || !/^[A-Za-z0-9_-]{1,4096}$/.test(encoded)) return null;
+  try {
+    const expected = continuationSignature(encoded);
+    const a = Buffer.from(signature);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const value = Buffer.from(encoded, 'base64url').toString('utf8');
+    const url = new URL(value);
+    if (url.origin !== new URL(env.NEXT_PUBLIC_SITE_URL).origin || url.pathname !== '/oauth/authorize') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function issueVerificationEmail(userId: string, email: string, continuationUrl?: string): Promise<boolean> {
   const resendKey = env.RESEND_API_KEY;
   if (!resendKey) return false;
   const token = randomId(32);
@@ -131,7 +162,13 @@ async function issueVerificationEmail(userId: string, email: string): Promise<bo
     args: [tokenHash, userId, expiresAt],
   });
   const origin = new URL(env.NEXT_PUBLIC_SITE_URL).origin;
-  const verificationUrl = `${origin}/verify-email?token=${encodeURIComponent(token)}`;
+  const continuation = encodeOAuthContinuation(continuationUrl);
+  const verificationParams = new URLSearchParams({ token });
+  if (continuation) {
+    verificationParams.set('continue', continuation.encoded);
+    verificationParams.set('continue_sig', continuation.signature);
+  }
+  const verificationUrl = `${origin}/verify-email?${verificationParams.toString()}`;
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -155,7 +192,7 @@ async function issueVerificationEmail(userId: string, email: string): Promise<bo
 }
 
 /** Create an account and its private owner tenant, or re-send verification for a pending account. */
-export async function registerAccount(input: { email: string; password: string; companyName: string }): Promise<'sent' | 'already_exists' | 'unavailable'> {
+export async function registerAccount(input: { email: string; password: string; companyName: string; continuationUrl?: string }): Promise<'sent' | 'already_exists' | 'unavailable'> {
   const email = normalizeEmail(input.email);
   if (!env.RESEND_API_KEY) return 'unavailable';
   await initApiKeySchema();
@@ -183,7 +220,7 @@ export async function registerAccount(input: { email: string; password: string; 
   }
   if (!row) throw new Error('Account persistence failed.');
   if (Number(row.email_verified) === 1) return 'already_exists';
-  const sent = await issueVerificationEmail(String(row.id), String(row.email));
+  const sent = await issueVerificationEmail(String(row.id), String(row.email), input.continuationUrl);
   return sent ? 'sent' : 'unavailable';
 }
 
@@ -199,23 +236,22 @@ export async function authenticateAccount(email: string, password: string): Prom
   return { user: rowToUser(row), verified: Number(row.email_verified) === 1 };
 }
 
-export async function verifyAccountEmail(token: string): Promise<AccountUser | null> {
+export async function verifyAccountEmail(token: string, continuation?: string | null, continuationSig?: string | null): Promise<{ user: AccountUser; continuationUrl: string | null } | null> {
   if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return null;
   await ensureAccountSchema();
   const hash = crypto.createHash('sha256').update(token).digest('hex');
   const now = Date.now();
   const db = getClient();
-  const found = await db.execute({ sql: 'SELECT user_id FROM account_email_verifications WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ? LIMIT 1', args: [hash, now] });
-  const userId = found.rows[0]?.user_id;
-  if (!userId) return null;
   const consumed = await db.execute({
-    sql: 'UPDATE account_email_verifications SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?',
+    sql: 'UPDATE account_email_verifications SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ? RETURNING user_id',
     args: [now, hash, now],
   });
-  if ((consumed.rowsAffected ?? 0) !== 1) return null;
+  const userId = consumed.rows[0]?.user_id;
+  if (!userId) return null;
   await db.execute({ sql: 'UPDATE account_users SET email_verified = 1 WHERE id = ?', args: [String(userId)] });
   const result = await db.execute({ sql: 'SELECT id, email, company_name, tenant_id FROM account_users WHERE id = ? AND email_verified = 1 LIMIT 1', args: [String(userId)] });
-  return result.rows[0] ? rowToUser(result.rows[0] as Record<string, unknown>) : null;
+  if (!result.rows[0]) return null;
+  return { user: rowToUser(result.rows[0] as Record<string, unknown>), continuationUrl: verifyOAuthContinuation(continuation, continuationSig) };
 }
 
 function sessionSecret(): string {
