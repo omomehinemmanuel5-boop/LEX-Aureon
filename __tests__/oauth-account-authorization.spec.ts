@@ -71,6 +71,14 @@ describe('ChatGPT OAuth account authorization', () => {
     mocks.registerAccount.mockResolvedValue('sent');
   });
 
+  it('rejects an authorization request that omits the required MCP scope', async () => {
+    const query = params();
+    query.delete('scope');
+    const response = await GET(new Request(`${BASE}?${query.toString()}`));
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('Invalid OAuth authorization request');
+  });
+
   it('shows account sign-in rather than asking for a raw API key', async () => {
     const query = params();
     const response = await GET(new Request(`${BASE}?${query.toString()}`));
