@@ -237,14 +237,21 @@ function withApprovalRequestSchema(tool: { name: string; description: string; in
 }
 
 function servedTools() {
+  const oauthSecurity = [{ type: 'oauth2', scopes: ['mcp'] }];
+  const withOAuthSecurity = <T extends { name: string; description: string; inputSchema: Record<string, unknown> }>(tool: T) => ({
+    ...tool,
+    _meta: { securitySchemes: oauthSecurity },
+  });
   return [
-    ...TOOL_DEFINITIONS.map(t => withApprovalRequestSchema({
+    ...TOOL_DEFINITIONS.map(t => withOAuthSecurity(withApprovalRequestSchema({
       name: t.name, description: t.description, inputSchema: t.parameters as Record<string, unknown>,
-    })),
-    ...EXTENSION_DEFINITIONS.map(t => withApprovalRequestSchema({
+    }))),
+    ...EXTENSION_DEFINITIONS.map(t => withOAuthSecurity(withApprovalRequestSchema({
+      name: t.name, description: t.description, inputSchema: t.inputSchema as Record<string, unknown>,
+    }))),
+    ...EXTERNAL_CAPABILITY_DEFINITIONS.map(t => withOAuthSecurity({
       name: t.name, description: t.description, inputSchema: t.inputSchema as Record<string, unknown>,
     })),
-    ...EXTERNAL_CAPABILITY_DEFINITIONS,
   ];
 }
 
