@@ -1,0 +1,34 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "lex-aureon",
+  "version": "0.1.0",
+  "description": "Constitutional runtime governance for AI agents and model workflows.",
+  "author": {
+    "name": "Lex Aureon",
+    "url": "https://www.lexaureon.com"
+  },
+  "homepage": "https://www.lexaureon.com",
+  "repository": "https://github.com/omomehinemmanuel5-boop/LEX-Aureon",
+  "license": "MIT",
+  "keywords": ["ai-governance", "agent-safety", "constitutional-ai", "auditability", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Lex Aureon",
+        "shortDescription": "Constitutional governance for AI agents.",
+        "longDescription": "Route AI-agent actions through Lex Aureon's constitutional governance runtime. Inspect governance decisions, explain denials, review approval requests, and examine auditable receipts. Consequential actions remain subject to Lex policy and explicit human approval.",
+        "developerName": "Lex Aureon",
+        "category": "Developer Tools",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://www.lexaureon.com",
+        "privacyPolicyURL": "https://www.lexaureon.com/privacy",
+        "defaultPrompt": [
+          "Use Lex Aureon to govern this AI-agent action and explain the decision.",
+          "Review this proposed action with Lex Aureon and identify any approval requirements.",
+          "Explain this Lex governance receipt and its constitutional decision."
+        ],
+        "brandColor": "#C9A84C"
+      }
+    }
+  }
+}
