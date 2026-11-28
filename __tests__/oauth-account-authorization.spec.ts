@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   clientRateLimitKey: vi.fn(),
   createAccountSessionCookie: vi.fn(),
   getClientIp: vi.fn(),
-  isTrustedApprovalOrigin: vi.fn(),
+  isTrustedSameOriginFormPost: vi.fn(),
   createAuthorizationCodeForAccount: vi.fn(),
   isRegisteredRedirectUri: vi.fn(),
 }));
@@ -27,7 +27,7 @@ vi.mock('@/lib/auth_accounts', () => ({
   createAccountSessionCookie: mocks.createAccountSessionCookie,
 }));
 vi.mock('@/lib/rate_limit', () => ({ getClientIp: mocks.getClientIp }));
-vi.mock('@/lib/security/approval_origin', () => ({ isTrustedApprovalOrigin: mocks.isTrustedApprovalOrigin }));
+vi.mock('@/lib/security/approval_origin', () => ({ isTrustedSameOriginFormPost: mocks.isTrustedSameOriginFormPost }));
 
 import { GET, POST } from '@/app/oauth/authorize/route';
 
@@ -59,7 +59,7 @@ function postRequest(fields: URLSearchParams) {
 describe('ChatGPT OAuth account authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.isTrustedApprovalOrigin.mockReturnValue(true);
+    mocks.isTrustedSameOriginFormPost.mockReturnValue(true);
     mocks.isRegisteredRedirectUri.mockResolvedValue(true);
     mocks.accountFromCookie.mockResolvedValue(null);
     mocks.checkAccountRateLimit.mockResolvedValue(true);
