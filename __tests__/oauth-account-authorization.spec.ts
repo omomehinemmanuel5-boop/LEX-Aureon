@@ -134,6 +134,24 @@ describe('ChatGPT OAuth account authorization', () => {
     expect(response.headers.get('set-cookie')).toContain('lex_account_session=test');
   });
 
+  it('resends verification and preserves OAuth continuation for an unverified existing account', async () => {
+    mocks.authenticateAccount.mockResolvedValue({ user: USER, verified: false });
+    mocks.registerAccount.mockResolvedValue('sent');
+    const form = params();
+    form.set('action', 'login');
+    form.set('email', USER.email);
+    form.set('password', 'correct-horse-battery');
+    const response = await POST(postRequest(form));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('resume this ChatGPT connection');
+    expect(mocks.registerAccount).toHaveBeenCalledWith(expect.objectContaining({
+      email: USER.email,
+      companyName: USER.name,
+      continuationUrl: expect.stringContaining('/oauth/authorize?'),
+    }));
+    expect(mocks.createAuthorizationCodeForAccount).not.toHaveBeenCalled();
+  });
+
   it('issues authorization only after explicit consent from a verified account session', async () => {
     mocks.accountFromCookie.mockResolvedValue(USER);
     mocks.createAuthorizationCodeForAccount.mockResolvedValue({ code: 'lex_code_one_time' });
