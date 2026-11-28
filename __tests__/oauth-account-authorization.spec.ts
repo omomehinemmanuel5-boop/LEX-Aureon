@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   checkAccountRateLimit: vi.fn(),
   clientRateLimitKey: vi.fn(),
   createAccountSessionCookie: vi.fn(),
+  registerAccount: vi.fn(),
   getClientIp: vi.fn(),
   isTrustedSameOriginFormPost: vi.fn(),
   createAuthorizationCodeForAccount: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('@/lib/auth_accounts', () => ({
   checkAccountRateLimit: mocks.checkAccountRateLimit,
   clientRateLimitKey: mocks.clientRateLimitKey,
   createAccountSessionCookie: mocks.createAccountSessionCookie,
+  registerAccount: mocks.registerAccount,
 }));
 vi.mock('@/lib/rate_limit', () => ({ getClientIp: mocks.getClientIp }));
 vi.mock('@/lib/security/approval_origin', () => ({ isTrustedSameOriginFormPost: mocks.isTrustedSameOriginFormPost }));
@@ -66,6 +68,7 @@ describe('ChatGPT OAuth account authorization', () => {
     mocks.clientRateLimitKey.mockImplementation((ip: string, suffix: string) => `${ip}:${suffix}`);
     mocks.getClientIp.mockReturnValue('127.0.0.1');
     mocks.createAccountSessionCookie.mockReturnValue('lex_account_session=test; HttpOnly');
+    mocks.registerAccount.mockResolvedValue('sent');
   });
 
   it('shows account sign-in rather than asking for a raw API key', async () => {
@@ -78,6 +81,36 @@ describe('ChatGPT OAuth account authorization', () => {
     expect(body).toContain('name="password"');
     expect(body).not.toContain('name="api_key"');
     expect(body).toContain('client_id');
+  });
+
+  it('offers account creation inside the OAuth flow without dropping the request', async () => {
+    const query = params();
+    const response = await GET(new Request(`${BASE}?${query.toString()}`));
+    const body = await response.text();
+    expect(body).toContain('New to Lex? Create an account');
+    const registerQuery = new URL(`${BASE}?${query.toString()}&mode=register`);
+    const registerResponse = await GET(new Request(registerQuery.toString()));
+    const registerBody = await registerResponse.text();
+    expect(registerBody).toContain('Create your Lex account');
+    expect(registerBody).toContain('name="action" value="register"');
+    expect(registerBody).toContain('code_challenge');
+  });
+
+  it('sends a signed continuation with registration verification and does not authorize early', async () => {
+    const form = params();
+    form.set('action', 'register');
+    form.set('email', 'new-owner@example.com');
+    form.set('password', 'correct-horse-battery');
+    form.set('company_name', 'New Workspace');
+    const response = await POST(postRequest(form));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('resume this ChatGPT connection');
+    expect(mocks.registerAccount).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'new-owner@example.com',
+      companyName: 'New Workspace',
+      continuationUrl: expect.stringContaining('/oauth/authorize?'),
+    }));
+    expect(mocks.createAuthorizationCodeForAccount).not.toHaveBeenCalled();
   });
 
   it('authenticates the account and resumes the same PKCE request', async () => {
