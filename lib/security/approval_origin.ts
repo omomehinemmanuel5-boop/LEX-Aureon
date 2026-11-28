@@ -3,24 +3,34 @@ const OFFICIAL_LEX_ORIGINS = new Set([
   'https://www.lexaureon.com',
 ]);
 
-/**
- * Validate browser POST origins for the public, request-scoped approval
- * capability. Trust only Lex's exact HTTPS production origins. Do not make
- * approval availability depend on NEXT_PUBLIC_SITE_URL: that value may be
- * configured to a preview/deployment URL even while the request is served
- * through a verified Lex custom domain.
- *
- * Missing, malformed, non-canonical, and unrelated origins fail closed.
- */
-export function isTrustedApprovalOrigin(req: Request): boolean {
-  const suppliedOrigin = req.headers.get('origin');
-  if (!suppliedOrigin) return false;
-
+function isOfficialOrigin(value: string): boolean {
   try {
-    const parsedOrigin = new URL(suppliedOrigin);
-    return parsedOrigin.origin === suppliedOrigin
-      && OFFICIAL_LEX_ORIGINS.has(parsedOrigin.origin);
+    const parsed = new URL(value);
+    return parsed.origin === value && OFFICIAL_LEX_ORIGINS.has(parsed.origin);
   } catch {
     return false;
   }
+}
+
+/** Strict Origin validation retained for account and key-management routes. */
+export function isTrustedApprovalOrigin(req: Request): boolean {
+  const suppliedOrigin = req.headers.get('origin');
+  return suppliedOrigin !== null && isOfficialOrigin(suppliedOrigin);
+}
+
+/**
+ * Approval links use no-referrer to avoid leaking their bearer capability.
+ * When WebKit omits Origin on a native form navigation, use Fetch Metadata as
+ * a narrowly scoped fallback. Explicit invalid Origins always fail closed.
+ */
+export function isTrustedApprovalDecisionOrigin(req: Request): boolean {
+  const suppliedOrigin = req.headers.get('origin');
+  if (suppliedOrigin !== null) return isOfficialOrigin(suppliedOrigin);
+
+  const contentType = req.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  return req.method === 'POST'
+    && req.headers.get('sec-fetch-site') === 'same-origin'
+    && req.headers.get('sec-fetch-mode') === 'navigate'
+    && req.headers.get('sec-fetch-dest') === 'document'
+    && contentType === 'application/x-www-form-urlencoded';
 }
