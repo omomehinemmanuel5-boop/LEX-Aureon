@@ -41,7 +41,7 @@ function redirectError(redirectUri: string, state: string, error: string, descri
 function readAuthorizationFields(form: FormData) {
   const clientId = String(form.get('client_id') ?? '');
   const redirectUri = String(form.get('redirect_uri') ?? '');
-  const scope = String(form.get('scope') ?? MCP_SCOPE);
+  const scope = String(form.get('scope') ?? '');
   const state = String(form.get('state') ?? '');
   const resource = normalizeMcpResource(String(form.get('resource') ?? '')) ?? '';
   const codeChallenge = String(form.get('code_challenge') ?? '');
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
   const fields = {
     clientId: p.get('client_id') ?? '',
     redirectUri: p.get('redirect_uri') ?? '',
-    scope: p.get('scope') ?? MCP_SCOPE,
+    scope: p.get('scope') ?? '',
     state: p.get('state') ?? '',
     resource: normalizeMcpResource(p.get('resource')) ?? '',
     codeChallenge: p.get('code_challenge') ?? '',
