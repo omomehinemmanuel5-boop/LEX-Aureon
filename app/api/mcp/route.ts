@@ -236,11 +236,27 @@ function withApprovalRequestSchema(tool: { name: string; description: string; in
   };
 }
 
+function toolAnnotations(name: string) {
+  const capability = getToolCapability(name);
+  // Unknown capabilities must never be advertised as safe. The dispatcher
+  // independently fails closed for unknown tools; these conservative hints
+  // prevent the client from presenting them as harmless.
+  const readOnlyHint = capability?.capability === 'read';
+  const destructiveHint = !capability
+    || (capability.capability !== 'read' && !capability.reversible);
+  const openWorldHint = !capability
+    || capability.capability === 'external'
+    || capability.capability === 'network'
+    || ['fetch_page', 'curl', 'http_get', 'discover_external_tool', 'govern_external_action'].includes(name);
+  return { readOnlyHint, destructiveHint, openWorldHint };
+}
+
 function servedTools() {
   const oauthSecurity = [{ type: 'oauth2', scopes: ['mcp'] }];
   const withOAuthSecurity = <T extends { name: string; description: string; inputSchema: Record<string, unknown> }>(tool: T) => ({
     ...tool,
-    _meta: { securitySchemes: oauthSecurity },
+    annotations: toolAnnotations(tool.name),
+    _meta: { ...((tool as T & { _meta?: Record<string, unknown> })._meta ?? {}), securitySchemes: oauthSecurity },
   });
   return [
     ...TOOL_DEFINITIONS.map(t => withOAuthSecurity(withApprovalRequestSchema({
