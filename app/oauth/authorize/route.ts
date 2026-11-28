@@ -155,7 +155,8 @@ export async function POST(req: Request) {
       }
       const result = await registerAccount({ email, password, companyName, continuationUrl: authorizationUrl(fields).toString() });
       if (result === 'unavailable') return html('<h1>Registration temporarily unavailable</h1><p>Lex could not send the verification email. No connection was authorized. Please try again later.</p>', 503);
-      return html('<h1>Check your email</h1><p>If this address can be registered, Lex has sent a verification link. Open it on this device to verify your account and resume this ChatGPT connection.</p><p>The link expires in 30 minutes. You can return here to sign in if you already have an account.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
+      if (result === 'already_exists') return html('<h1>Account already exists</h1><p>This email is already registered. Sign in with your existing password to continue connecting ChatGPT.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
+      return html('<h1>Check your email</h1><p>Lex has sent a verification link if this account is eligible. Open it on this device to verify your account and resume this ChatGPT connection.</p><p>The link expires in 30 minutes. If you previously started registration, use the password you originally chose.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
     } catch {
       return html('<h1>Registration unavailable</h1><p>Please try again later. No connection was authorized.</p>', 503);
     }
