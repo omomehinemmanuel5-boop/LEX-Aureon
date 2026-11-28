@@ -1,0 +1,20 @@
+{
+  "name": "lex-aureon-development",
+  "interface": {
+    "displayName": "Lex Aureon Development"
+  },
+  "plugins": [
+    {
+      "name": "lex-aureon",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lex-aureon"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
