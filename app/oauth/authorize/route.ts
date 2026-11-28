@@ -173,7 +173,15 @@ export async function POST(req: Request) {
       }
       const result = await authenticateAccount(email, password);
       if (!result) return html(`<h1>Sign-in failed</h1><p class="error">Email or password was not accepted.</p><p><a href="${escapeHtml(authorizationUrl(fields).toString())}">Return to connection</a></p>`, 401);
-      if (!result.verified) return html('<h1>Email verification required</h1><p>Verify your email address before connecting. You can request a fresh verification email from the account registration page.</p><p><a href="/keys">Open account settings</a></p>', 403);
+      if (!result.verified) {
+        const verification = await registerAccount({
+          email, password, companyName: result.user.name,
+          continuationUrl: authorizationUrl(fields).toString(),
+        });
+        if (verification === 'unavailable') return html('<h1>Email verification required</h1><p>Lex could not send a verification email right now. No connection was authorized. Please try again later.</p>', 503);
+        if (verification === 'already_exists') return NextResponse.redirect(authorizationUrl(fields), 302);
+        return html('<h1>Check your email</h1><p>Your account is not verified yet. Lex has sent a fresh verification link. Open it to verify your account and resume this ChatGPT connection.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
+      }
       const response = NextResponse.redirect(authorizationUrl(fields), 302);
       response.headers.set('Set-Cookie', createAccountSessionCookie(result.user));
       response.headers.set('Cache-Control', 'no-store');
