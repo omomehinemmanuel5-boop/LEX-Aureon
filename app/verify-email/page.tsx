@@ -5,11 +5,16 @@ import { useEffect, useState } from 'react';
 
 export default function VerifyEmailPage() {
   const [token, setToken] = useState('');
+  const [continuation, setContinuation] = useState('');
+  const [continuationSig, setContinuationSig] = useState('');
   const [status, setStatus] = useState<'ready' | 'loading' | 'done' | 'error'>('ready');
   const [message, setMessage] = useState('Confirm your email address to activate your account.');
 
   useEffect(() => {
-    setToken(new URLSearchParams(window.location.search).get('token') ?? '');
+    const params = new URLSearchParams(window.location.search);
+    setToken(params.get('token') ?? '');
+    setContinuation(params.get('continue') ?? '');
+    setContinuationSig(params.get('continue_sig') ?? '');
   }, []);
 
   const verify = async () => {
@@ -19,13 +24,14 @@ export default function VerifyEmailPage() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, continuation, continuation_sig: continuationSig }),
       });
-      const result = await response.json() as { error?: string };
+      const result = await response.json() as { error?: string; continuationUrl?: string | null };
       if (!response.ok) throw new Error(result.error ?? 'Verification failed.');
       setStatus('done');
-      setMessage('Your email is verified. Opening your approval workspace…');
-      window.setTimeout(() => window.location.assign('/approvals'), 700);
+      const destination = result.continuationUrl || '/approvals';
+      setMessage(result.continuationUrl ? 'Your email is verified. Returning to your ChatGPT connection…' : 'Your email is verified. Opening your account workspace…');
+      window.setTimeout(() => window.location.assign(destination), 700);
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Verification failed.');
