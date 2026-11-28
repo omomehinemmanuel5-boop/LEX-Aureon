@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getClientIp: vi.fn(),
   isTrustedApprovalOrigin: vi.fn(),
   createAuthorizationCodeForAccount: vi.fn(),
+  isRegisteredRedirectUri: vi.fn(),
 }));
 
 vi.mock('@/lib/mcp_oauth', () => ({
@@ -16,6 +17,7 @@ vi.mock('@/lib/mcp_oauth', () => ({
   MCP_SCOPE: 'mcp',
   normalizeMcpResource: (value: string | null) => value === 'https://www.lexaureon.com/api/mcp' ? value : null,
   createAuthorizationCodeForAccount: mocks.createAuthorizationCodeForAccount,
+  isRegisteredRedirectUri: mocks.isRegisteredRedirectUri,
 }));
 vi.mock('@/lib/auth_accounts', () => ({
   accountFromCookie: mocks.accountFromCookie,
@@ -58,6 +60,7 @@ describe('ChatGPT OAuth account authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isTrustedApprovalOrigin.mockReturnValue(true);
+    mocks.isRegisteredRedirectUri.mockResolvedValue(true);
     mocks.accountFromCookie.mockResolvedValue(null);
     mocks.checkAccountRateLimit.mockResolvedValue(true);
     mocks.clientRateLimitKey.mockImplementation((ip: string, suffix: string) => `${ip}:${suffix}`);
