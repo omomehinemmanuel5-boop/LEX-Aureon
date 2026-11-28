@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getClient } from './db';
-import { validateApiKey, getApiKeyById } from './api_keys';
+import { validateApiKey, getApiKeyById, getKeysByTenantId, generateApiKey } from './api_keys';
+import { accountFromCookie } from './auth_accounts';
 
 export const MCP_RESOURCE = 'https://www.lexaureon.com/api/mcp';
 export const MCP_RESOURCES = [MCP_RESOURCE, 'https://lexaureon.com/api/mcp'] as const;
@@ -102,6 +103,46 @@ export async function createAuthorizationCode(input: {
       (code_hash, client_id, redirect_uri, key_id, scope, resource, code_challenge, created_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [hash(code), input.clientId, input.redirectUri, checked.key.id, MCP_SCOPE, input.resource, input.codeChallenge, Date.now(), Date.now() + CODE_TTL_MS],
+  });
+  return { code } as const;
+}
+
+/**
+ * Issue an OAuth code for a verified Lex account without asking the user to
+ * copy an API secret into a third-party authorization form. The connection
+ * is represented by a normal free-tier API key bound to the account tenant;
+ * it never inherits operator/private_test or sovereign privileges.
+ */
+export async function createAuthorizationCodeForAccount(input: {
+  clientId: string; redirectUri: string; cookieHeader: string | null;
+  scope: string; resource: string; codeChallenge: string;
+}) {
+  const user = await accountFromCookie(input.cookieHeader);
+  if (!user) return { error: 'account_required' } as const;
+  const redirects = await getClientRedirects(input.clientId);
+  if (!redirects?.includes(input.redirectUri) || !validRedirectUri(input.redirectUri)) return { error: 'invalid_client' } as const;
+  if (!isMcpResource(input.resource)) return { error: 'invalid_target' } as const;
+  if (input.scope.split(/\\s+/).filter(Boolean).some(s => s !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(input.codeChallenge)) return { error: 'invalid_request' } as const;
+
+  const existing = await getKeysByTenantId(user.tenantId);
+  let connectionKey = existing.find(key => key.name === 'ChatGPT MCP connection' && key.plan === 'free');
+  if (!connectionKey) {
+    if (existing.length >= 3) return { error: 'account_key_limit' } as const;
+    const created = await generateApiKey({
+      email: user.email, name: 'ChatGPT MCP connection', plan: 'free', tenantId: user.tenantId,
+    });
+    if (!created) return { error: 'account_key_unavailable' } as const;
+    connectionKey = created;
+  }
+
+  await initMcpOAuthSchema();
+  const code = randomToken('lex_code');
+  await getClient().execute({
+    sql: `INSERT INTO mcp_oauth_codes
+      (code_hash, client_id, redirect_uri, key_id, scope, resource, code_challenge, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [hash(code), input.clientId, input.redirectUri, connectionKey.id, MCP_SCOPE, input.resource, input.codeChallenge, Date.now(), Date.now() + CODE_TTL_MS],
   });
   return { code } as const;
 }
