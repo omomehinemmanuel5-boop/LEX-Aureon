@@ -7,7 +7,7 @@ import {
   clientRateLimitKey, createAccountSessionCookie,
 } from '@/lib/auth_accounts';
 import { getClientIp } from '@/lib/rate_limit';
-import { isTrustedApprovalOrigin } from '@/lib/security/approval_origin';
+import { isTrustedSameOriginFormPost } from '@/lib/security/approval_origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -121,7 +121,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!isTrustedApprovalOrigin(req)) return html('<h1>Request not accepted</h1><p>The request origin was not accepted.</p>', 403);
+  if (!isTrustedSameOriginFormPost(req)) return html('<h1>Request not accepted</h1><p>The request origin was not accepted.</p>', 403);
   const form = await req.formData().catch(() => null);
   if (!form) return html('<h1>Invalid request</h1>', 400);
   const fields = readAuthorizationFields(form);
