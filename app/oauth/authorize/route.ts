@@ -116,7 +116,6 @@ export async function GET(req: Request) {
       <input type="hidden" name="action" value="authorize">${formFields}
       <button type="submit">Authorize connection</button>
     </form>
-    <p><a href="/api/auth/logout">Sign out</a></p>
     <small>Lex will not grant operator, private-test, or sovereign privileges through this public connection.</small>`);
 }
 
