@@ -74,7 +74,7 @@ function hiddenFields(fields: ReturnType<typeof readAuthorizationFields>): strin
 
 function validAuthorizationRequest(fields: ReturnType<typeof readAuthorizationFields>, codeChallengeMethod: string): boolean {
   return Boolean(fields.clientId && fields.redirectUri && fields.state && fields.resource
-    && codeChallengeMethod === 'S256'
+    && fields.scope === MCP_SCOPE && codeChallengeMethod === 'S256'
     && /^[A-Za-z0-9_-]{43,128}$/.test(fields.codeChallenge));
 }
 
