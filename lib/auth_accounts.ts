@@ -242,14 +242,12 @@ export async function verifyAccountEmail(token: string, continuation?: string | 
   const hash = crypto.createHash('sha256').update(token).digest('hex');
   const now = Date.now();
   const db = getClient();
-  const found = await db.execute({ sql: 'SELECT user_id FROM account_email_verifications WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ? LIMIT 1', args: [hash, now] });
-  const userId = found.rows[0]?.user_id;
-  if (!userId) return null;
   const consumed = await db.execute({
-    sql: 'UPDATE account_email_verifications SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?',
+    sql: 'UPDATE account_email_verifications SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ? RETURNING user_id',
     args: [now, hash, now],
   });
-  if ((consumed.rowsAffected ?? 0) !== 1) return null;
+  const userId = consumed.rows[0]?.user_id;
+  if (!userId) return null;
   await db.execute({ sql: 'UPDATE account_users SET email_verified = 1 WHERE id = ?', args: [String(userId)] });
   const result = await db.execute({ sql: 'SELECT id, email, company_name, tenant_id FROM account_users WHERE id = ? AND email_verified = 1 LIMIT 1', args: [String(userId)] });
   if (!result.rows[0]) return null;
