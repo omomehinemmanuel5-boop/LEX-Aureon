@@ -126,7 +126,7 @@ export async function createAuthorizationCodeForAccount(input: {
   if (!/^[A-Za-z0-9_-]{43,128}$/.test(input.codeChallenge)) return { error: 'invalid_request' } as const;
 
   const existing = await getKeysByTenantId(user.tenantId);
-  let connectionKey = existing.find(key => key.name === 'ChatGPT MCP connection' && key.plan === 'free');
+  let connectionKey = existing.find(key => key.name === 'ChatGPT MCP connection' && key.plan === 'free'\n    && (key.expires_at === null || key.expires_at > Date.now()) && key.runs_used < key.runs_limit);
   if (!connectionKey) {
     if (existing.length >= 3) return { error: 'account_key_limit' } as const;
     const created = await generateApiKey({
