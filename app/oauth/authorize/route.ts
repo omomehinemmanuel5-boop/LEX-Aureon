@@ -62,7 +62,12 @@ function authorizationUrl(fields: ReturnType<typeof readAuthorizationFields>): U
 }
 
 function hiddenFields(fields: ReturnType<typeof readAuthorizationFields>): string {
-  return Object.entries(fields).map(([name, value]) =>
+  const values: Record<string, string> = {
+    client_id: fields.clientId, redirect_uri: fields.redirectUri,
+    scope: fields.scope, state: fields.state, resource: fields.resource,
+    code_challenge: fields.codeChallenge,
+  };
+  return Object.entries(values).map(([name, value]) =>
     `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`,
   ).join('');
 }
