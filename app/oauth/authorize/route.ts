@@ -4,7 +4,7 @@ import {
 } from '@/lib/mcp_oauth';
 import {
   accountFromCookie, authenticateAccount, checkAccountRateLimit,
-  clientRateLimitKey, createAccountSessionCookie,
+  clientRateLimitKey, createAccountSessionCookie, registerAccount,
 } from '@/lib/auth_accounts';
 import { getClientIp } from '@/lib/rate_limit';
 import { isTrustedSameOriginFormPost } from '@/lib/security/approval_origin';
@@ -98,6 +98,19 @@ export async function GET(req: Request) {
   const user = await accountFromCookie(req.headers.get('cookie')).catch(() => null);
   const formFields = hiddenFields(fields);
   if (!user) {
+    if (p.get('mode') === 'register') {
+      return html(`<h1>Create your Lex account</h1>
+        <p>Create a free tenant account to connect Lex Aureon to ChatGPT. Your original connection request will resume after email verification.</p>
+        <form method="post">
+          <input type="hidden" name="action" value="register">${formFields}
+          <label>Email</label><input name="email" type="email" autocomplete="email" maxlength="254" required>
+          <label>Password (minimum 10 characters)</label><input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" required>
+          <label>Workspace name</label><input name="company_name" type="text" minlength="2" maxlength="120" required>
+          <button type="submit">Create account and continue</button>
+        </form>
+        <p><a href="${escapeHtml(authorizationUrl(fields).toString())}">Already have an account? Sign in</a></p>
+        <small>We will email a one-time verification link. It expires after 30 minutes.</small>`);
+    }
     return html(`<h1>Sign in to connect Lex</h1>
       <p>Use your verified Lex Aureon account to authorize this connection. You do not need to copy or disclose an API key.</p>
       <form method="post">
@@ -106,7 +119,7 @@ export async function GET(req: Request) {
         <label>Password</label><input name="password" type="password" autocomplete="current-password" maxlength="256" required>
         <button type="submit">Sign in and continue</button>
       </form>
-      <p><a href="/keys">Create a Lex account</a> if you do not have one yet.</p>
+      <p><a href="${escapeHtml(authorizationUrl(fields).toString())}&amp;mode=register">New to Lex? Create an account</a></p>
       <small>New accounts must verify their email before connecting.</small>`);
   }
 
@@ -127,6 +140,26 @@ export async function POST(req: Request) {
   const fields = readAuthorizationFields(form);
   const action = String(form.get('action') ?? '');
   if (!validAuthorizationRequest(fields, 'S256')) return html('<h1>Invalid authorization request</h1>', 400);
+
+  if (action === 'register') {
+    const email = String(form.get('email') ?? '');
+    const password = String(form.get('password') ?? '');
+    const companyName = String(form.get('company_name') ?? '').trim();
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 10 || password.length > 256 || companyName.length < 2 || companyName.length > 120) {
+      return html('<h1>Check your details</h1><p>Enter a valid email, a password of at least 10 characters, and a workspace name.</p>', 400);
+    }
+    try {
+      const ip = getClientIp(req);
+      if (!await checkAccountRateLimit(clientRateLimitKey(ip, 'oauth-register'), 5, 60 * 60)) {
+        return html('<h1>Too many registration attempts</h1><p>Please try again later.</p>', 429);
+      }
+      const result = await registerAccount({ email, password, companyName, continuationUrl: authorizationUrl(fields).toString() });
+      if (result === 'unavailable') return html('<h1>Registration temporarily unavailable</h1><p>Lex could not send the verification email. No connection was authorized. Please try again later.</p>', 503);
+      return html('<h1>Check your email</h1><p>If this address can be registered, Lex has sent a verification link. Open it on this device to verify your account and resume this ChatGPT connection.</p><p>The link expires in 30 minutes. You can return here to sign in if you already have an account.</p><p><a href="' + escapeHtml(authorizationUrl(fields).toString()) + '">Return to sign in</a></p>');
+    } catch {
+      return html('<h1>Registration unavailable</h1><p>Please try again later. No connection was authorized.</p>', 503);
+    }
+  }
 
   if (action === 'login') {
     const email = String(form.get('email') ?? '');
