@@ -139,13 +139,13 @@ export async function POST(req: Request) {
   if (!form) return html('<h1>Invalid request</h1>', 400);
   const fields = readAuthorizationFields(form);
   const action = String(form.get('action') ?? '');
-  if (!validAuthorizationRequest(fields, 'S256')) return html('<h1>Invalid authorization request</h1>', 400);
+  if (!validAuthorizationRequest(fields, 'S256') || !await isRegisteredRedirectUri(fields.clientId, fields.redirectUri)) return html('<h1>Invalid authorization request</h1>', 400);
 
   if (action === 'register') {
     const email = String(form.get('email') ?? '');
     const password = String(form.get('password') ?? '');
     const companyName = String(form.get('company_name') ?? '').trim();
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 10 || password.length > 256 || companyName.length < 2 || companyName.length > 120) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 10 || password.length > 256 || companyName.length < 2 || companyName.length > 120) {
       return html('<h1>Check your details</h1><p>Enter a valid email, a password of at least 10 characters, and a workspace name.</p>', 400);
     }
     try {
