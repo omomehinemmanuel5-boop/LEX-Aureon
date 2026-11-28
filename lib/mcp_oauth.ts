@@ -98,7 +98,8 @@ export async function createAuthorizationCode(input: {
   const redirects = await getClientRedirects(input.clientId);
   if (!redirects?.includes(input.redirectUri) || !validRedirectUri(input.redirectUri)) return { error: 'invalid_client' } as const;
   if (!isMcpResource(input.resource)) return { error: 'invalid_target' } as const;
-  if (input.scope.split(/\s+/).filter(Boolean).some(s => s !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
+  const requestedScopes = input.scope.split(/\s+/).filter(Boolean);
+  if (!requestedScopes.includes(MCP_SCOPE) || requestedScopes.some(scope => scope !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
   if (!/^[A-Za-z0-9_-]{43,128}$/.test(input.codeChallenge)) return { error: 'invalid_request' } as const;
   const checked = await validateApiKey(input.apiKey);
   if (!checked.valid || !checked.key) return { error: 'invalid_api_key' } as const;
@@ -128,7 +129,8 @@ export async function createAuthorizationCodeForAccount(input: {
   const redirects = await getClientRedirects(input.clientId);
   if (!redirects?.includes(input.redirectUri) || !validRedirectUri(input.redirectUri)) return { error: 'invalid_client' } as const;
   if (!isMcpResource(input.resource)) return { error: 'invalid_target' } as const;
-  if (input.scope.split(/\s+/).filter(Boolean).some(s => s !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
+  const requestedScopes = input.scope.split(/\s+/).filter(Boolean);
+  if (!requestedScopes.includes(MCP_SCOPE) || requestedScopes.some(scope => scope !== MCP_SCOPE)) return { error: 'invalid_scope' } as const;
   if (!/^[A-Za-z0-9_-]{43,128}$/.test(input.codeChallenge)) return { error: 'invalid_request' } as const;
 
   const existing = await getKeysByTenantId(user.tenantId);
