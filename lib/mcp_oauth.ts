@@ -86,6 +86,12 @@ async function getClientRedirects(clientId: string): Promise<string[] | null> {
   try { return JSON.parse(String(r.rows[0].redirect_uris)) as string[]; } catch { return null; }
 }
 
+/** Validate the client/redirect pair before displaying any account credential form. */
+export async function isRegisteredRedirectUri(clientId: string, redirectUri: string): Promise<boolean> {
+  const redirects = await getClientRedirects(clientId);
+  return Boolean(redirects?.includes(redirectUri) && validRedirectUri(redirectUri));
+}
+
 export async function createAuthorizationCode(input: {
   clientId: string; redirectUri: string; apiKey: string; scope: string; resource: string; codeChallenge: string;
 }) {
