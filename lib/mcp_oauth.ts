@@ -162,11 +162,18 @@ export async function exchangeAuthorizationCode(input: {
   await initMcpOAuthSchema();
   const db = getClient();
   const codeHash = hash(input.code);
-  const r = await db.execute({ sql: 'SELECT * FROM mcp_oauth_codes WHERE code_hash = ? LIMIT 1', args: [codeHash] });
+  // Atomically claim the authorization code. A SELECT followed by DELETE is
+  // replayable under concurrency: two requests can both read before either deletes.
+  // DELETE ... RETURNING gives exactly one concurrent exchange the code row.
+  const r = await db.execute({
+    sql: `DELETE FROM mcp_oauth_codes
+          WHERE code_hash = ? AND client_id = ? AND redirect_uri = ?
+          RETURNING *`,
+    args: [codeHash, input.clientId, input.redirectUri],
+  });
   if (!r.rows.length) return { error: 'invalid_grant' } as const;
   const row = r.rows[0] as Record<string, unknown>;
-  await db.execute({ sql: 'DELETE FROM mcp_oauth_codes WHERE code_hash = ?', args: [codeHash] });
-  if (String(row.client_id) !== input.clientId || String(row.redirect_uri) !== input.redirectUri || String(row.resource) !== input.resource || Date.now() >= Number(row.expires_at)) return { error: 'invalid_grant' } as const;
+  if (String(row.resource) !== input.resource || Date.now() >= Number(row.expires_at)) return { error: 'invalid_grant' } as const;
   const actual = crypto.createHash('sha256').update(input.codeVerifier).digest('base64url');
   if (actual !== String(row.code_challenge)) return { error: 'invalid_grant' } as const;
   if (!(await getApiKeyById(String(row.key_id)))) return { error: 'invalid_grant' } as const;
@@ -191,11 +198,18 @@ export async function refreshAccessToken(input: { refreshToken: string; clientId
   await initMcpOAuthSchema();
   const db = getClient();
   const refreshHash = hash(input.refreshToken);
-  const r = await db.execute({ sql: 'SELECT * FROM mcp_oauth_tokens WHERE refresh_hash = ? LIMIT 1', args: [refreshHash] });
+  // Rotate refresh tokens with a single conditional write. Only one concurrent
+  // request can transition this token from active to revoked and receive a successor.
+  const now = Date.now();
+  const r = await db.execute({
+    sql: `UPDATE mcp_oauth_tokens SET revoked_at = ?
+          WHERE refresh_hash = ? AND client_id = ? AND resource = ?
+            AND revoked_at IS NULL AND refresh_expires_at > ?
+          RETURNING *`,
+    args: [now, refreshHash, input.clientId, input.resource, now],
+  });
   if (!r.rows.length) return { error: 'invalid_grant' } as const;
   const row = r.rows[0] as Record<string, unknown>;
-  if (String(row.client_id) !== input.clientId || String(row.resource) !== input.resource || row.revoked_at != null || Date.now() >= Number(row.refresh_expires_at)) return { error: 'invalid_grant' } as const;
-  await db.execute({ sql: 'UPDATE mcp_oauth_tokens SET revoked_at = ? WHERE refresh_hash = ?', args: [Date.now(), refreshHash] });
   if (!(await getApiKeyById(String(row.key_id)))) return { error: 'invalid_grant' } as const;
   return issueTokens({ clientId: input.clientId, keyId: String(row.key_id), scope: String(row.scope), resource: input.resource });
 }
