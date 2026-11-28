@@ -23,7 +23,7 @@ export function isTrustedApprovalOrigin(req: Request): boolean {
  * When WebKit omits Origin on a native form navigation, use Fetch Metadata as
  * a narrowly scoped fallback. Explicit invalid Origins always fail closed.
  */
-export function isTrustedApprovalDecisionOrigin(req: Request): boolean {
+export function isTrustedSameOriginFormPost(req: Request): boolean {
   const suppliedOrigin = req.headers.get('origin');
   if (suppliedOrigin !== null) return isOfficialOrigin(suppliedOrigin);
 
@@ -33,4 +33,9 @@ export function isTrustedApprovalDecisionOrigin(req: Request): boolean {
     && req.headers.get('sec-fetch-mode') === 'navigate'
     && req.headers.get('sec-fetch-dest') === 'document'
     && contentType === 'application/x-www-form-urlencoded';
+}
+
+/** Approval links and first-party OAuth forms share the narrowly scoped WebKit fallback. */
+export function isTrustedApprovalDecisionOrigin(req: Request): boolean {
+  return isTrustedSameOriginFormPost(req);
 }
